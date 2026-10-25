@@ -18,9 +18,8 @@ import Foundation
 /// `sideload slot restore` (`SlotRestore`); a newer lend marks older unrestored backups `supersededAt`, so that retry never
 /// pushes data from an earlier lend.
 ///
-/// The restore (`device copy to`) has never been run on a real device, so whether the app is still signed in afterwards is
-/// unverified until the owner's first run (docs/design.md section 18); everything here is written to leave the backup in place
-/// when the restore does not work.
+/// The restore (`device copy to`) was first checked on a real device on 2026-10-25 (the app was still signed in; docs/design.md
+/// section 18); everything here is still written to leave the backup in place when the restore does not work.
 enum AppDataBackup {
     static let totalBudgetSec = 120
     static let listTimeoutSec = 60
