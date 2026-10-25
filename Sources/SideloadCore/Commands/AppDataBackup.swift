@@ -14,11 +14,12 @@ import Foundation
 /// warning, and the caller goes on. The backup is read-only, so a crash leaves a `.partial` folder and an untouched device.
 /// A backup is tied to the lend that made it (`lendSince`, the `since` the slot record carries), so a return never restores
 /// a stale one. The restore only ever follows a confirmed install; a successful, verified restore marks the manifest
-/// (`restoredAt`) and is never repeated.
+/// (`restoredAt`) and is not repeated by the return. A restore that did not finish is retried by the owner with
+/// `sideload slot restore` (`SlotRestore`); a newer lend marks older unrestored backups `supersededAt`, so that retry never
+/// pushes data from an earlier lend.
 ///
-/// The restore (`device copy to`) has never been run on a real device, so whether the app is still signed in afterwards is
-/// unverified until the owner's first run (docs/design.md section 18); everything here is written to leave the backup in place
-/// when the restore does not work.
+/// The restore (`device copy to`) was first checked on a real device on 2026-10-25 (the app was still signed in; docs/design.md
+/// section 18); everything here is still written to leave the backup in place when the restore does not work.
 enum AppDataBackup {
     static let totalBudgetSec = 120
     static let listTimeoutSec = 60
@@ -47,6 +48,13 @@ enum AppDataBackup {
         var complete: Bool
         var files: [Entry]
         var restoredAt: Date?
+        /// Set by a later `slot lend` that started a new lend of this app (design section 18): the backup belongs to an earlier
+        /// lend, so `slot restore` never pushes it. Absent in manifests written before it existed.
+        var supersededAt: Date?
+        /// Set once the lend that made this backup is known to have taken the app off the device (the uninstall confirmed at the
+        /// lend, or the return that found the app gone). Until then the app's live data was never deleted, so the backup may be
+        /// older than it, and `slot restore` does not push it. Absent in manifests written before it existed.
+        var uninstalledAt: Date?
     }
 
     /// What a half did, as the lab reads it: counts and booleans, and warnings (codes, counts-only messages).
@@ -329,8 +337,11 @@ enum AppDataBackup {
 
     /// Finished backups of one app, newest first (a `.partial` folder is never one).
     private static func finished(_ directory: String) -> [String] {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []
-        return names.filter { !$0.hasSuffix(".partial") && !$0.hasPrefix(".") }.sorted(by: >)
+        finished((try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? [])
+    }
+
+    private static func finished(_ names: [String]) -> [String] {
+        names.filter { !$0.hasSuffix(".partial") && !$0.hasPrefix(".") }.sorted(by: >)
     }
 
     /// Keeps the newest `keep` backups of this device and app, and sweeps every `.partial` folder (the command holds
@@ -505,29 +516,146 @@ enum AppDataBackup {
 
     // MARK: restore
 
-    /// The newest backup made for this lend and not yet restored.
-    private static func candidate(_ services: Services, _ target: FreeTarget, since: Date) -> (directory: String, manifest: Manifest)? {
-        let base = appDirectory(services, target)
+    /// The manifest of `directory` (a finished backup folder), only when the folder and the file are real, not links, and the
+    /// manifest reads and is for this app's bundle ID. Nothing is followed.
+    private static func trustedManifest(in directory: String, _ services: Services, _ target: FreeTarget) -> Manifest? {
         let root = services.home.backups
-        guard isPlain(base, root: root, regularFile: false) else { return nil }
-        for name in finished(base) {
-            let directory = base + "/" + name
-            guard isPlain(directory, root: root, regularFile: false),
-                isPlain(directory + "/manifest.json", root: root, regularFile: true),
-                let manifest = readManifest(in: directory), manifest.bundleId == target.bundleId,
-                abs(manifest.lendSince.timeIntervalSince(since)) < 1, manifest.restoredAt == nil
-            else { continue }
-            return (directory, manifest)
-        }
-        return nil
+        guard isPlain(directory, root: root, regularFile: false), isPlain(directory + "/manifest.json", root: root, regularFile: true),
+            let manifest = readManifest(in: directory), manifest.bundleId == target.bundleId
+        else { return nil }
+        return manifest
     }
 
-    /// Restores the backup of this lend into the reinstalled app, file by file, then relists and compares. Never throws and
-    /// never fails the return: `done` is true only when every file was pushed and the relisting matched, and only then is
-    /// the manifest marked and the old backups pruned. No backup for this lend is simply `done == false` with no warning.
+    /// Every finished backup of this app that passes the link-safe scan (a plain app folder, then per folder a plain folder and
+    /// manifest that reads for this bundle ID), newest first. A folder that fails any check is left out; callers add their own
+    /// predicate and write.
+    private static func manifests(_ services: Services, _ target: FreeTarget) -> [(directory: String, manifest: Manifest)] {
+        let base = appDirectory(services, target)
+        guard isPlain(base, root: services.home.backups, regularFile: false) else { return [] }
+        return finished(base).compactMap { name in
+            let directory = base + "/" + name
+            return trustedManifest(in: directory, services, target).map { (directory, $0) }
+        }
+    }
+
+    /// The newest backup made for this lend and not yet restored.
+    private static func candidate(_ services: Services, _ target: FreeTarget, since: Date) -> (directory: String, manifest: Manifest)? {
+        manifests(services, target).first { abs($0.manifest.lendSince.timeIntervalSince(since)) < 1 && $0.manifest.restoredAt == nil }
+    }
+
+    /// Restores the backup of this lend into the reinstalled app (`push`). Never throws and never fails the return. No backup
+    /// for this lend is simply `done == false` with no warning.
     static func restore(_ services: Services, target: FreeTarget, calls: FreeDeviceCalls, since: Date?) async -> Result {
+        // The return marked the backup at T4, before its install, so a failed push can be retried by `slot restore`.
+        guard let since, let found = candidate(services, target, since: since) else { return Result() }
+        return await push(services, target: target, calls: calls, found: found)
+    }
+
+    /// What `slot restore` finds: the newest finished backup when it is still waiting to be pushed, else why not (booleans only).
+    enum PendingBackup {
+        case found(directory: String, manifest: Manifest)
+        case none(restored: Bool, superseded: Bool, unreadable: Bool, notUninstalled: Bool)
+
+        static func nothing(
+            restored: Bool = false, superseded: Bool = false, unreadable: Bool = false, notUninstalled: Bool = false
+        ) -> PendingBackup {
+            .none(restored: restored, superseded: superseded, unreadable: unreadable, notUninstalled: notUninstalled)
+        }
+    }
+
+    /// The newest finished backup folder of this device and app decides, and only it (an older one is never a fallback: it
+    /// belongs to an earlier lend). Pending means a readable manifest for this app's bundle ID with `restoredAt` and
+    /// `supersededAt` unset and `uninstalledAt` set, and every file it lists a readable regular file under real folders. Each
+    /// boolean is set on its own. Nothing is followed: the folder chain is walked from `backups/` one part at a time with
+    /// `lstat`, and every manifest entry's local path is checked the same way before any device call. Anything that cannot be
+    /// read, listed or `lstat`ed, or that is a link at any level, is `unreadable`, never "no backup": only a real folder chain
+    /// that stops at a missing part, or an app folder with no finished backup in it, is that.
+    static func pending(_ services: Services, _ target: FreeTarget) -> PendingBackup {
+        let base = appDirectory(services, target)
+        let root = services.home.backups
+        switch walk(base, root: root) {
+        case .missing: return .nothing()
+        case .unreadable: return .nothing(unreadable: true)
+        case .plain: break
+        }
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: base) else { return .nothing(unreadable: true) }
+        guard let name = finished(names).first else { return .nothing() }
+        let directory = base + "/" + name
+        guard let manifest = trustedManifest(in: directory, services, target) else { return .nothing(unreadable: true) }
+        let readable = manifest.files.allSatisfy { entry in
+            guard let local = localPath(directory, entry.path, services: services) else { return false }
+            return isPlain(local, root: root, regularFile: true) && canOpen(local)
+        }
+        let restored = manifest.restoredAt != nil
+        let superseded = manifest.supersededAt != nil
+        let notUninstalled = manifest.uninstalledAt == nil  // its lend never took the app off the device (or predates the mark)
+        guard readable, !restored, !superseded, !notUninstalled else {
+            return .nothing(restored: restored, superseded: superseded, unreadable: !readable, notUninstalled: notUninstalled)
+        }
+        return .found(directory: directory, manifest: manifest)
+    }
+
+    private enum Walk { case plain, missing, unreadable }
+
+    /// How the folder `path` (`root` or a path inside it) stands, walked from `root` one part at a time with `lstat`, never
+    /// following a link: every part a real folder (`plain`); real folders up to a part that does not exist (`missing`); anything
+    /// else, a link or a non-folder at any level or an `lstat` failure other than ENOENT (`unreadable`).
+    private static func walk(_ path: String, root: String) -> Walk {
+        guard path == root || path.hasPrefix(root + "/") else { return .unreadable }
+        let parts = path.dropFirst(root.count).split(separator: "/", omittingEmptySubsequences: false).dropFirst()
+        func check(_ item: String) -> Walk {
+            var st = stat()
+            guard lstat(item, &st) == 0 else { return errno == ENOENT ? .missing : .unreadable }
+            return st.st_mode & S_IFMT == S_IFDIR ? .plain : .unreadable
+        }
+        var current = root
+        var state = check(current)
+        for part in parts where state == .plain {
+            guard !part.isEmpty else { return .unreadable }
+            current += "/" + part
+            state = check(current)
+        }
+        return state
+    }
+
+    /// Whether the regular file at `path` opens for reading without following a link (the caller `lstat`ed it).
+    private static func canOpen(_ path: String) -> Bool {
+        let fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { return false }
+        close(fd)
+        return true
+    }
+
+    /// Marks the finished backups made for the lend `since` (`lendSince` within a second) as having had their app taken off the
+    /// device, so `slot restore` may push them. Called once the lend's uninstall is confirmed. Never throws; same plain checks.
+    static func markUninstalled(_ services: Services, _ target: FreeTarget, since: Date) {
+        for (directory, found) in manifests(services, target)
+        where found.uninstalledAt == nil && abs(found.lendSince.timeIntervalSince(since)) < 1 {
+            var manifest = found
+            manifest.uninstalledAt = wholeSeconds(services.clock.now())
+            try? writeManifest(manifest, in: directory)
+        }
+    }
+
+    /// Marks every finished, unrestored backup of an earlier lend (`lendSince` at least a second before `lendSince`) as
+    /// superseded, so `slot restore` can never push data older than the lend that replaced it. Never throws: an unreadable or
+    /// unwritable one is left as it is. The manifest is rewritten atomically, mode 0600, and no link is followed.
+    static func supersedeOlder(_ services: Services, _ target: FreeTarget, than lendSince: Date) {
+        for (directory, found) in manifests(services, target)
+        where found.restoredAt == nil && found.supersededAt == nil && found.lendSince.timeIntervalSince(lendSince) <= -1 {
+            var manifest = found
+            manifest.supersededAt = wholeSeconds(services.clock.now())
+            try? writeManifest(manifest, in: directory)
+        }
+    }
+
+    /// Pushes a found backup into the app's data container file by file, then relists and compares. `done` is true only when
+    /// every file was pushed and the relisting matched, and only then is the manifest marked and the old backups pruned. The
+    /// whole step shares one `Budget`. Safe to repeat: a push overwrites.
+    static func push(
+        _ services: Services, target: FreeTarget, calls: FreeDeviceCalls, found: (directory: String, manifest: Manifest)
+    ) async -> Result {
         var result = Result()
-        guard let since, let found = candidate(services, target, since: since) else { return result }
         let budget = Budget(services.clock)
         let manifest = found.manifest
         var pushed: [Entry] = []
@@ -576,7 +704,7 @@ enum AppDataBackup {
                     CanaryCommand.warning(
                         "DATA_RESTORE_UNVERIFIED",
                         "The app's data was copied back, but the device's file list could not be read to confirm it.",
-                        "Open the app and check it is signed in; the backup is kept."))
+                        "Open the app and check it is signed in; the backup is kept. The owner can retry: sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes."))
             }
         }
         if result.failed > 0 {
@@ -584,7 +712,7 @@ enum AppDataBackup {
                 CanaryCommand.warning(
                     "DATA_RESTORE_INCOMPLETE",
                     "\(result.failed) of \(manifest.files.count) data files were not restored (or did not verify).",
-                    "The backup is kept; the app may ask to sign in again."))
+                    "The backup is kept; the app may ask to sign in again. The owner can retry: sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes (it refuses a backup that holds a link or an unreadable file, and then the app needs signing in again)."))
         }
         if verified {
             result.done = true

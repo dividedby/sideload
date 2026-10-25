@@ -20,7 +20,7 @@ team) before changing anything.
   or launches any bundle ID outside `io.github.dividedby.free.*` (WebDriverAgent and atvloadly's apps included),
   and never touches mobile-safari-lab, atvloadly or the `atv` VM. `canary`, `export-cert`, `portal` and the
   ledger's certificate/profile lists stay paid-only. Signing code matches identities by certificate OU, never by
-  name. `provision`, `sign`, `install`, `refresh` (manual), `app remove` and `slot lend|return` are built (owner-run, or run by the lab for `slot`); `refresh --auto` and `--print-agent` are designed, not built (`docs/design.md` section 18). `refresh` runs `provision`, `sign` and `install`, each taking `.op.lock` itself, and spends no new App ID on a renewal.
+  name. `provision`, `sign`, `install`, `refresh` (manual), `app remove`, `slot restore` and `slot lend|return` are built (owner-run, or run by the lab for `slot lend|return`); `refresh --auto` and `--print-agent` are designed, not built (`docs/design.md` section 18). `refresh` runs `provision`, `sign` and `install`, each taking `.op.lock` itself, and spends no new App ID on a renewal.
 - **One lock for the free team.** `$SIDELOAD_HOME/.op.lock` is the shared operation lock for any signing with
   6ZU5Z6ZKK7. mobile-safari-lab takes it too (dividedby/mobile-safari-lab#63, sideload #2), so a sideload run
   and a lab run never sign at the same time. Take it before touching that team's identity or profiles. A busy
@@ -52,8 +52,8 @@ team) before changing anything.
   copied by an agent. Tests generate throwaway P-256 keys at runtime.
 - App-data backups under `$SIDELOAD_HOME/backups/` (`slot lend` saves the lent app's data container) are secrets-class: they hold
   session tokens. Directories 0700, files 0600; never print, log, put in JSON, the ledger or the repo, and agents never open,
-  read or copy them. Output carries counts and booleans only. `copy to` (the restore) is untested on a device until the owner
-  runs the first check.
+  read or copy them. Output carries counts and booleans only. `copy to` (the restore, in `slot return` and in `slot restore`) was
+  first checked live on 2026-10-25 (mobile-safari-lab#63, Stage 2: an iPhone on Wi-Fi, stremio-ios, a backup of 11 of 13 files; after the return the app was still signed in with its library and add-ons); `slot restore` itself has not been run on a device.
 - The pre-commit hook (`.githooks/pre-commit` → `scripts/check-secrets.mjs --staged`) must stay enabled.
   `pnpm install` sets `core.hooksPath`. Never bypass it with `--no-verify`.
 
@@ -64,7 +64,9 @@ team) before changing anything.
 - Pairing changes, atvloadly changes, and any new download source.
 - Running `canary`, `provision`, `sign`, `install` or `refresh` (any mode) on a real device (they change the portal
   and/or the device), and `app remove` (it uninstalls one managed install to free a slot; owner-only, allowlisted
-  to `io.github.dividedby.free.*`, `--yes` is the owner's).
+  to `io.github.dividedby.free.*`, `--yes` is the owner's), and `slot restore` (the owner's retry of an app-data restore: it
+  pushes a saved backup into the app on the device; owner-only, `--yes` is the owner's, and it takes `--device <alias>`, never
+  `--udid`).
 - `device lendable` (it chooses which app the lab may borrow the slot of). `slot lend` and `slot return` are run by
   mobile-safari-lab with no `--yes`; agents never run them against a real device, and they take `.op.lock`, accept
   `--udid` only for a saved device and never print it.

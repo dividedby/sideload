@@ -1,7 +1,7 @@
 import Foundation
 
 public struct SlotOptions: Sendable, Equatable {
-    /// `lend` or `return`.
+    /// `lend`, `return` or `restore`.
     public var sub: String?
     /// A saved device alias, or...
     public var device: String?
@@ -9,27 +9,38 @@ public struct SlotOptions: Sendable, Equatable {
     public var udid: String?
     /// Who the slot is lent to; only `lab`.
     public var to: String?
+    /// `restore` only: the app whose backup is pushed back (default: the device's lendable app).
+    public var app: String?
+    /// `restore` only: the owner's confirmation; agents must not pass it.
+    public var yes: Bool
 
-    public init(sub: String? = nil, device: String? = nil, udid: String? = nil, to: String? = nil) {
+    public init(
+        sub: String? = nil, device: String? = nil, udid: String? = nil, to: String? = nil, app: String? = nil, yes: Bool = false
+    ) {
         self.sub = sub
         self.device = device
         self.udid = udid
         self.to = to
+        self.app = app
+        self.yes = yes
     }
 }
 
 /// `slot lend --device <alias>|--udid <id> --to lab` and `slot return --device|--udid` (design section 18, agreed with
 /// mobile-safari-lab#63). The lab borrows the slot of the device's one owner-configured lendable app
 /// (`devices.<d>.lendableApp`): `lend` uninstalls it and records `lent`, `return` reinstalls it from the `freeSigned`
-/// build through the `install` path. No `--yes`: the lab runs these. Both take `.op.lock` themselves and settle the
-/// crash-safe marker first; a saved device only, free scope only. The slot is a record of the unified pending-operation
-/// model (`SlotRule`, `SlotBook`): a durable op is written before each device change, a device with an op in flight answers
-/// `SLOT_PENDING` to every mutating command, and one evidence rule settles it (the 27-cell table, docs/design.md section 18).
+/// build through the `install` path. No `--yes`: the lab runs these (`restore`, the owner's retry of the app-data
+/// restore, is `SlotRestore`). Both take `.op.lock` themselves and settle the crash-safe marker first; a saved device
+/// only, free scope only. The slot is a record of the unified pending-operation model (`SlotRule`, `SlotBook`): a
+/// durable op is written before each device change, a device with an op in flight answers `SLOT_PENDING` to every
+/// mutating command, and one evidence rule settles it (the 27-cell table, docs/design.md section 18).
 public enum SlotCommand {
     static let command = "slot"
     static let lab = "lab"
 
     public static func run(_ services: Services, _ options: SlotOptions) async -> Envelope {
+        // Owner-only and not a slot operation: it never reaches the lab's debug hook below.
+        if options.sub == "restore" { return await SlotRestore.run(services, options) }
         guard options.sub == "lend" || options.sub == "return" else {
             return .fail(
                 command, code: "USAGE", message: "Unknown slot subcommand \"\(printableCut(options.sub ?? ""))\".",
@@ -38,6 +49,11 @@ public enum SlotCommand {
         let lend = options.sub == "lend"
         let action = options.sub ?? ""
         do {
+            if options.app != nil || options.yes {
+                throw SideloadError(
+                    "USAGE", "slot \(action) does not take \(options.yes ? "--yes" : "--app").",
+                    fix: lend ? "sideload slot lend --device <alias> --to lab" : "sideload slot return --device <alias>")
+            }
             if lend {
                 guard options.to == lab else {
                     throw SideloadError("USAGE", "slot lend needs --to lab.", fix: "sideload slot lend --device <alias> --to lab")
@@ -114,7 +130,7 @@ public enum SlotCommand {
     }
     #endif
 
-    private static func fail(_ error: SideloadError, action: String, extra: [String: JSONValue] = [:]) -> Envelope {
+    static func fail(_ error: SideloadError, action: String, extra: [String: JSONValue] = [:]) -> Envelope {
         var data: [String: JSONValue] = ["action": .string(action)]
         data.merge(extra) { _, new in new }
         data.merge(error.data) { _, new in new }
@@ -210,6 +226,8 @@ public enum SlotCommand {
         let settled = try await book.settle(s0, takenAt: s0Read.takenAt, point: "lend.settle")
         var out: [String: JSONValue] = ["action": "lend", "app": .string(app.rawValue), "device": .string(alias)]
         if let was = settled.before(app.rawValue), was.lentTo != nil, let landed = settled.after(app.rawValue), SlotRule.holds(landed) {
+            // The app is off the device and the lend holds, so its backup is one `slot restore` may push.
+            if let since = landed.since { AppDataBackup.markUninstalled(services, target, since: since) }
             if let op = was.op, op.kind == .uninstall {  // L3: the earlier uninstall did land.
                 out["freed"] = 1
                 out["warnings"] = [
@@ -240,15 +258,21 @@ public enum SlotCommand {
         let signed = try target.requireSigned(try services.ledgerStore.load(), home: services.home.home, now: now)
 
         // The app's data is saved before the intent and the uninstall (read-only, no slot operation, never a failure of the
-        // lend). The backup belongs to this lend: `since` is what `begin` records for it.
+        // lend). The backup belongs to this lend, whose `since` is what `begin` below keeps: the SETTLED record's (the settle
+        // above clears a lend it found undone, and `begin` then starts a new one at `now`), not the one read before it.
+        let lendSince = settled.after(app.rawValue)?.since ?? now
         var data = AppDataBackup.Result(skipped: true)
         if AppDataBackup.isEnabled(config, app: app) {
             data = AppDataBackup.Result()
             if s0.ids.contains(target.bundleId) {
                 data = await AppDataBackup.backup(
-                    services, target: target, calls: calls, version: signed.record.version, lendSince: existing?.since ?? now)
+                    services, target: target, calls: calls, version: signed.record.version, lendSince: lendSince)
             }
         }
+
+        // Backups of earlier lends that never got restored are marked superseded, whether or not this lend saved a new one (never
+        // a failure of the lend; a resumed lend keeps its own backup: same `since`).
+        AppDataBackup.supersedeOlder(services, target, than: lendSince)
 
         // L7: the intent is durable before the uninstall.
         let removal = FreeRemoval(services: services, target: target)
@@ -270,6 +294,7 @@ public enum SlotCommand {
         let lendingFix = "Not lent yet: `sideload slot lend --device \(alias) --to lab` (or `slot return`) settles it from a fresh snapshot once the window is over, and the slot is not free meanwhile."
         switch confirmation.effect {
         case .absent:  // L8
+            AppDataBackup.markUninstalled(services, target, since: lendSince)
             let after = outcome.after ?? s0
             let delta = AppSnapshot.delta(from: s0, to: after)
             if delta.removed != [target.bundleId] || !delta.added.isEmpty {
@@ -402,7 +427,10 @@ public enum SlotCommand {
             return .result(command, out)
         }
 
-        // T4: absent, recorded `lent`. T5: everything that can fail before the device is touched.
+        // T4: absent, recorded `lent`: the lend took the app off the device. Its backup is marked before anything else, so
+        // `slot restore` can push it even when this return stops before its own restore. T5: everything that can fail before
+        // the device is touched.
+        if let since = record.since { AppDataBackup.markUninstalled(services, target, since: since) }
         let run = FreeInstallRun(services: services, target: target)
         let planned = try await step { () async throws -> FreeInstallRun.Plan in
             let checked = try await run.checks(identities: identities, allowLent: true)
