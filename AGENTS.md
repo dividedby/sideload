@@ -52,8 +52,8 @@ team) before changing anything.
   copied by an agent. Tests generate throwaway P-256 keys at runtime.
 - App-data backups under `$SIDELOAD_HOME/backups/` (`slot lend` saves the lent app's data container) are secrets-class: they hold
   session tokens. Directories 0700, files 0600; never print, log, put in JSON, the ledger or the repo, and agents never open,
-  read or copy them. Output carries counts and booleans only. `copy to` (the restore, in `slot return` and in `slot restore`) is
-  untested on a device until the owner runs the first check.
+  read or copy them. Output carries counts and booleans only. `copy to` (the restore, in `slot return` and in `slot restore`) was
+  first checked live on 2026-10-25 (mobile-safari-lab#63, Stage 2: an iPhone on Wi-Fi, stremio-ios, a backup of 11 of 13 files; after the return the app was still signed in with its library and add-ons); `slot restore` itself has not been run on a device.
 - The pre-commit hook (`.githooks/pre-commit` → `scripts/check-secrets.mjs --staged`) must stay enabled.
   `pnpm install` sets `core.hooksPath`. Never bypass it with `--no-verify`.
 

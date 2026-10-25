@@ -25,8 +25,7 @@ All notable changes to this project are documented here. Format follows
   Allow the lab up to about 2 more minutes per call. Backups are secrets-class (session tokens): `check-secrets` refuses a
   `backups` path segment and AGENTS.md says so. The `DeviceCtl` allowlist gained exactly three argument shapes (free scope,
   `appDataContainer` for the scoped `<prefix>.free.*` app only, relative device paths, local paths under `backups/`), with a
-  Sources scan test. **The restore (`copy to`) has not been run on a real device; the owner runs the first check** (sign in
-  to stremio-ios, lend, return, open the app and confirm it is still signed in). The owner-only `slot restore` for failed or
+  Sources scan test. **The restore (`copy to`) was first checked live on 2026-10-25 (mobile-safari-lab#63, Stage 2: an iPhone on Wi-Fi, stremio-ios, a backup of 11 of 13 files; after the return the app was still signed in with its library and add-ons).** The owner-only `slot restore` for failed or
   crashed restores is the next entry.
 - `slot restore --device <alias> [--app <app>] --yes` (docs/design.md section 18, "App data"), owner-only: the retry of an
   app-data restore that `slot return` did not finish. `--app` defaults to the device's lendable app; `--udid` and `--to` are
@@ -38,11 +37,12 @@ All notable changes to this project are documented here. Format follows
   not fully verified is `RESTORE_FAILED` with `cause`, `dataRestored:false`, the counts and `kept:true`. The backup is kept
   either way and a rerun is safe. Only the newest finished backup is considered. New codes: `NO_PENDING_RESTORE`,
   `APP_NOT_INSTALLED`, `RESTORE_FAILED`. Counts and booleans only; the `DATA_RESTORE_*` warnings of `slot return` now name the
-  command, with the `--device` and `--app` to retry, in their `fix`. `status` and the menu do not show a pending restore yet. The restore is still untested on a real device.
+  command, with the `--device` and `--app` to retry, in their `fix`. `status` and the menu do not show a pending restore yet. `slot restore` itself has not been run on a device yet.
 - The backup manifest gains an optional `supersededAt`: `slot lend` marks every older, unrestored backup of the app superseded
   (whether or not the new lend saved a backup), so `slot restore` never pushes data from an earlier lend. Older manifests
-  without the key still read. It gains an optional `uninstalledAt`, set when the lend's uninstall is confirmed (or by the return
-  that finds the app gone, before its push): `slot restore` pushes only a backup that has it, so a lend that saved a backup and
+  without the key still read. It gains an optional `uninstalledAt`, set wherever a snapshot shows the app off the device while the slot
+  is lent (the lend's confirmed uninstall; a later lend that finds the app gone and records the slot lent; the return that finds
+  the app gone, before its install, so a return that stops before its own restore still leaves the backup to `slot restore`): `slot restore` pushes only a backup that has it, so a lend that saved a backup and
   then failed to uninstall (the app and its live data stay) can never be restored over newer data; such a backup answers
   `NO_PENDING_RESTORE` with `notUninstalled:true`. Backups from before the field are not restorable by `slot restore` (the return
   still restores its own lend's). The `NO_PENDING_RESTORE` booleans are each set on their own (a superseded backup that also

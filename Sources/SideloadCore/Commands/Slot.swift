@@ -225,6 +225,8 @@ public enum SlotCommand {
         let settled = try await book.settle(s0, takenAt: s0Read.takenAt, point: "lend.settle")
         var out: [String: JSONValue] = ["action": "lend", "app": .string(app.rawValue), "device": .string(alias)]
         if let was = settled.before(app.rawValue), was.lentTo != nil, let landed = settled.after(app.rawValue), SlotRule.holds(landed) {
+            // The app is off the device and the lend holds, so its backup is one `slot restore` may push.
+            if let since = landed.since { AppDataBackup.markUninstalled(services, target, since: since) }
             if let op = was.op, op.kind == .uninstall {  // L3: the earlier uninstall did land.
                 out["freed"] = 1
                 out["warnings"] = [
@@ -424,7 +426,10 @@ public enum SlotCommand {
             return .result(command, out)
         }
 
-        // T4: absent, recorded `lent`. T5: everything that can fail before the device is touched.
+        // T4: absent, recorded `lent`: the lend took the app off the device. Its backup is marked before anything else, so
+        // `slot restore` can push it even when this return stops before its own restore. T5: everything that can fail before
+        // the device is touched.
+        if let since = record.since { AppDataBackup.markUninstalled(services, target, since: since) }
         let run = FreeInstallRun(services: services, target: target)
         let planned = try await step { () async throws -> FreeInstallRun.Plan in
             let checked = try await run.checks(identities: identities, allowLent: true)

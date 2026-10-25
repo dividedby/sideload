@@ -537,13 +537,8 @@ enum AppDataBackup {
     /// Restores the backup of this lend into the reinstalled app (`push`). Never throws and never fails the return. No backup
     /// for this lend is simply `done == false` with no warning.
     static func restore(_ services: Services, target: FreeTarget, calls: FreeDeviceCalls, since: Date?) async -> Result {
-        guard let since, var found = candidate(services, target, since: since) else { return Result() }
-        if found.manifest.uninstalledAt == nil {
-            // The return found the app gone and has just reinstalled it: the lend did take it off the device (its own uninstall
-            // result was uncertain). Recorded before the push so a failed push can be retried by `slot restore`.
-            found.manifest.uninstalledAt = wholeSeconds(services.clock.now())
-            try? writeManifest(found.manifest, in: found.directory)
-        }
+        // The return marked the backup at T4, before its install, so a failed push can be retried by `slot restore`.
+        guard let since, let found = candidate(services, target, since: since) else { return Result() }
         return await push(services, target: target, calls: calls, found: found)
     }
 
@@ -723,7 +718,7 @@ enum AppDataBackup {
                 CanaryCommand.warning(
                     "DATA_RESTORE_INCOMPLETE",
                     "\(result.failed) of \(manifest.files.count) data files were not restored (or did not verify).",
-                    "The backup is kept; the app may ask to sign in again. The owner can retry: sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes."))
+                    "The backup is kept; the app may ask to sign in again. The owner can retry: sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes (it refuses a backup that holds a link or an unreadable file, and then the app needs signing in again)."))
         }
         if verified {
             result.done = true

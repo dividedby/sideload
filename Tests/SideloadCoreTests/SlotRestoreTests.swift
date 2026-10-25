@@ -486,6 +486,46 @@ struct SlotRestoreTests {
         }
     }
 
+    @Test("an uncertain uninstall settled as lent marks the backup: at L3 by the next lend, and at T4 by the return before its install")
+    func settledLentMark() async throws {
+        // L3: lend 1 cannot list the device after its uninstall; lend 2 finds the app gone and records the slot lent. The
+        // return then stops after its install, before its restore, and its rerun is a no-op: slot restore is the retry.
+        var blind = script()
+        blind.snapshotFailures = [2]
+        try await withInstallWorld(script: blind, lendable: "stremio-ios", ledger: prepare) { w in
+            #expect(await w.lend().errorCodes == ["UNINSTALL_RESULT_UNCERTAIN"])
+            #expect(!w.runner.deviceApps.keys.contains(stremioId))
+            let name = try #require(w.finishedBackups.last)
+            #expect(try w.manifest(name).uninstalledAt == nil, "not confirmed yet")
+            w.clock.advance(86_400)
+            w.runner.arm(script())
+            let second = await w.lend()
+            #expect(second.ok && json(second)["freed"] == 1, "\(second.errors)")
+            #expect(warningCodes(second) == ["UNINSTALL_RESULT_UNCERTAIN"])
+            #expect(try w.manifest(name).uninstalledAt != nil, "L3 marks it")
+            #expect(w.finishedBackups == [name], "L3 makes no new backup")
+            _ = await runSlotCommand(.giveBack, w, crashAt: "return.final")
+            #expect(w.runner.deviceApps.keys.contains(stremioId))
+            #expect(w.pushes.isEmpty, "the crash came before the restore")
+            let rerun = await w.giveBack()
+            #expect(rerun.ok && json(rerun)["nothingLent"] == true, "the crash came after the return was recorded: \(rerun.errors)")
+            #expect(w.pushes.isEmpty, "a no-op return never restores")
+            let out = await w.restore()
+            #expect(out.ok && json(out)["dataRestored"] == true, "\(out.errors)")
+            #expect(w.runner.container(stremioId) == [library: files[library]!, prefs: files[prefs]!])
+        }
+        // T4: the same uncertain lend, then a return that stops at its intent, before the install: already marked.
+        try await withInstallWorld(script: blind, lendable: "stremio-ios", ledger: prepare) { w in
+            #expect(await w.lend().errorCodes == ["UNINSTALL_RESULT_UNCERTAIN"])
+            let name = try #require(w.finishedBackups.last)
+            w.clock.advance(86_400)
+            w.runner.arm(script())
+            _ = await runSlotCommand(.giveBack, w, crashAt: "return.intent")
+            #expect(try w.manifest(name).uninstalledAt != nil, "T4 marks it before the install")
+            #expect(w.pushes.isEmpty)
+        }
+    }
+
     // MARK: staleness
 
     @Test("a later lend supersedes an earlier unrestored backup, even when it saved nothing: slot restore never pushes it")
