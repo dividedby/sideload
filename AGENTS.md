@@ -22,7 +22,7 @@ team) before changing anything.
   ledger's certificate/profile lists stay paid-only. Signing code matches identities by certificate OU, never by
   name. `provision`, `sign`, `install`, `refresh` (manual), `app remove` and `slot lend|return` are built (owner-run, or run by the lab for `slot`); `refresh --auto` and `--print-agent` are designed, not built (`docs/design.md` section 18). `refresh` runs `provision`, `sign` and `install`, each taking `.op.lock` itself, and spends no new App ID on a renewal.
 - **One lock for the free team.** `$SIDELOAD_HOME/.op.lock` is the shared operation lock for any signing with
-  6ZU5Z6ZKK7. mobile-safari-lab takes it too (dividedby/mobile-safari-lab#63, sideload #24), so a sideload run
+  6ZU5Z6ZKK7. mobile-safari-lab takes it too (dividedby/mobile-safari-lab#63, sideload #2), so a sideload run
   and a lab run never sign at the same time. Take it before touching that team's identity or profiles. A busy
   lock means a manual run reports `OPERATION_IN_PROGRESS` and auto-refresh logs a skip; never wait on it or
   delete the file. The lock is a BSD `flock` (`LOCK_EX|LOCK_NB`) and
@@ -106,7 +106,7 @@ team) before changing anything.
 - **Labels:** state `needs-triage`, `ready-for-agent`, `ready-for-human`, `blocked`, `wontfix`; category `bug`,
   `enhancement`, `chore`, `epic`; size `size:S/M/L/XL`. See `docs/agents/triage-labels.md`.
 - **"file an idea"** or an unqualified **"file an issue"**: add an enriched row (the idea plus the context and
-  links available now) to the top of `## Ideas` in the [Idea Inbox](https://github.com/dividedby/sideload/issues/9)
+  links available now) to the top of `## Ideas` in the [Idea Inbox](https://github.com/dividedby/sideload/issues/1)
   (label `idea-inbox`, one per repo). Don't scope it yet. Capture and drain protocol:
   `docs/agents/idea-inbox.md`.
 - **"file a *tracked* issue"** or a plainly scoped bug: skip the Inbox and file a `needs-triage` issue directly.

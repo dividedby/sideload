@@ -466,7 +466,7 @@ All notable changes to this project are documented here. Format follows
   (owner decision 2026-10-23; build order in `docs/design.md` section 18). `AGENTS.md` replaces "leave the free account alone" with a narrow-use
   rule (the pinned existing identity, App IDs and 7-day profiles only for `io.github.dividedby.free.*`, never a new,
   revoked or exported certificate, never another bundle ID, mobile-safari-lab, atvloadly or the `atv` VM), documents
-  `$SIDELOAD_HOME/.op.lock` as the lock shared with mobile-safari-lab (dividedby/mobile-safari-lab#63, sideload #24),
+  `$SIDELOAD_HOME/.op.lock` as the lock shared with mobile-safari-lab (dividedby/mobile-safari-lab#63, sideload #2),
   updates the Apple TV section, and adds `provision`, `refresh`, `app remove`, `--register-device`,
   `device auto-refresh`, launchd bootstrap and the slot/App ID budgets to "Ask the owner first".
   `docs/design.md` drops "free teams are unsupported", adds the 2026-10-23 decisions to section 2, makes the guard
@@ -505,7 +505,7 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 - Issue conventions: `docs/agents/` (issue tracker, label convention, Idea Inbox protocol), the
-  `## Issues` section in `AGENTS.md`, and the Idea Inbox issue (#9).
+  `## Issues` section in `AGENTS.md`, and the Idea Inbox issue (#1).
 - Repo scaffolding: `.gitignore`, `package.json` (zero dependencies), CI workflow.
 - Secrets guard: `scripts/check-secrets.mjs` (`--staged` / `--all`) and a pre-commit hook that blocks
   certificates, keys, provisioning profiles, IPAs, device UDIDs (including IDs saved in `$SIDELOAD_HOME`)
