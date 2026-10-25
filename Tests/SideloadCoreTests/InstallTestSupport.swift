@@ -105,12 +105,35 @@ struct DataFaults: Sendable {
     var listFails = false
     /// `device info files` prints a document that is not a listing.
     var listMalformed = false
+    /// `device info files` exits 0 with a listing whose `info.outcome` is `failed`.
+    var listReportsFailed = false
     /// Device paths whose `copy from` fails.
     var copyFromFails: Set<String> = []
     /// Device paths whose `copy from` writes one byte too few (every time).
     var copyFromShort: Set<String> = []
     /// Device paths whose `copy to` fails.
     var copyToFails: Set<String> = []
+    /// Device paths whose `copy from` exits 0 but reports `info.outcome` of `failed` (and writes nothing).
+    var copyFromReportsFailed: Set<String> = []
+    /// Device paths whose `copy to` exits 0 but reports `info.outcome` of `failed` (and stores nothing).
+    var copyToReportsFailed: Set<String> = []
+    /// Device paths whose `copy from` ends as this result (nothing is written); `copy to` keyed by its device destination.
+    var copyFromResult: [String: RunResult] = [:]
+    var copyToResult: [String: RunResult] = [:]
+    /// Device paths whose `copy from` copies as usual, then exits 0 after writing exactly this document.
+    var copyFromDocument: [String: JSONValue] = [:]
+    /// Device paths whose `copy to` stores the file as usual, then exits 0 after writing exactly this document (keyed by destination).
+    var copyToDocument: [String: JSONValue] = [:]
+    /// Device paths whose `copy from` exits 0 with no document and leaves nothing.
+    var copyFromNothing: Set<String> = []
+    /// Device paths whose `copy from` leaves a folder at the destination and exits 0.
+    var copyFromLeavesFolder: Set<String> = []
+    /// Extra top-level keys of the listing document (they replace the usual ones, `info` included).
+    var listTopLevel: [String: JSONValue] = [:]
+    /// Directory rows the listing adds, marked by `metadata.isDirectory`, with nothing under them.
+    var listedDirectories: [String] = []
+    /// Device paths whose `copy from` exits 0 and reports `info.outcome` of `success` (and otherwise behaves as usual).
+    var copyFromReportsSuccess: Set<String> = []
     /// `copy to` reports success but nothing arrives (the relisting then disagrees).
     var copyToDrops = false
     /// The listing carries no sizes.
@@ -433,6 +456,10 @@ final class DeviceSimRunner: Runner {
                 return value
             }
             if faults.listFails || faults.listFailsOn.contains(n) { return RunResult(code: 1) }
+            if faults.listReportsFailed {
+                write(["info": ["outcome": "failed"], "result": ["files": []]], spec)
+                return RunResult()
+            }
             if faults.listMalformed {
                 write(["info": ["outcome": "success"], "result": ["files": "oops"]], spec)
                 return RunResult()
@@ -460,15 +487,33 @@ final class DeviceSimRunner: Runner {
                 ]
             }
             for dir in directories.sorted() { rows.append(row(dir, size: nil)) }
+            for dir in faults.listedDirectories {
+                rows.append([
+                    "name": .string(dir), "relativePath": .string(dir), "metadata": ["isDirectory": true], "resources": [:],
+                ])
+            }
             for (path, data) in current.sorted(by: { $0.key < $1.key }) {
                 rows.append(row(path, size: faults.noSizes ? nil : (faults.claimedSizes[path] ?? data.count)))
             }
-            write(["info": ["outcome": "success"], "result": ["files": .array(rows)]], spec)
+            var document: [String: JSONValue] = ["info": ["outcome": "success"], "result": ["files": .array(rows)]]
+            document.merge(faults.listTopLevel) { _, new in new }
+            write(.object(document), spec)
             return RunResult()
         case "device copy from":
             let source = flagValue("--source", spec)
             let destination = flagValue("--destination", spec)
             if faults.copyFromFails.contains(source) { return RunResult(code: 1) }
+            if let canned = faults.copyFromResult[source] { return canned }
+            if faults.copyFromNothing.contains(source) { return RunResult() }
+            if faults.copyFromLeavesFolder.contains(source) {
+                try? makeDirectories(destination, mode: 0o700)
+                return RunResult()
+            }
+            if faults.copyFromReportsFailed.contains(source) {
+                write(["info": ["outcome": "failed"]], spec)
+                return RunResult()
+            }
+            if faults.copyFromReportsSuccess.contains(source) { write(["info": ["outcome": "success"]], spec) }
             if let target = faults.copyFromSymlinks[source] {
                 try? makeDirectories(parentPath(destination), mode: 0o700)
                 return symlink(target, destination) == 0 ? RunResult() : RunResult(code: 1)
@@ -483,6 +528,7 @@ final class DeviceSimRunner: Runner {
                 try makeDirectories(parentPath(destination), mode: 0o700)
                 try Data(bytes).write(to: URL(fileURLWithPath: destination))
                 chmod(destination, 0o644)  // devicectl's own mode; backup tightens it
+                if let document = faults.copyFromDocument[source] { write(document, spec) }
             } catch {
                 return RunResult(code: 1)
             }
@@ -491,8 +537,14 @@ final class DeviceSimRunner: Runner {
             let source = flagValue("--source", spec)
             let destination = flagValue("--destination", spec)
             if faults.copyToFails.contains(destination) { return RunResult(code: 1) }
+            if let canned = faults.copyToResult[destination] { return canned }
+            if faults.copyToReportsFailed.contains(destination) {
+                write(["info": ["outcome": "failed"]], spec)
+                return RunResult()
+            }
             guard let data = try? Data(contentsOf: URL(fileURLWithPath: source)) else { return RunResult(code: 1) }
             if !faults.copyToDrops { store { $0[destination] = data } }
+            if let document = faults.copyToDocument[destination] { write(document, spec) }
             return RunResult()
         }
     }

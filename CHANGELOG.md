@@ -38,6 +38,14 @@ All notable changes to this project are documented here. Format follows
   either way and a rerun is safe. Only the newest finished backup is considered. New codes: `NO_PENDING_RESTORE`,
   `APP_NOT_INSTALLED`, `RESTORE_FAILED`. Counts and booleans only; the `DATA_RESTORE_*` warnings of `slot return` now name the
   command, with the `--device` and `--app` to retry, in their `fix`. `status` and the menu do not show a pending restore yet. `slot restore` itself has not been run on a device yet.
+- Per-reason failure counts for the app-data backup (dividedby/sideload#2; the lab's Stage 2 runs skipped 1 to 2 of 12 to 13 files
+  with no way to tell why). `slot lend`, `slot return` and `slot restore` gain `dataFailures` when `dataFilesFailed` is above 0: an object of the non-zero counts by
+  reason, absent when nothing failed, whose values always sum to `dataFilesFailed`. Reasons (fixed words, never a path, file name or
+  text from `devicectl`): `unsafePath`, `nameCollision`, `fileCap`, `sizeLimit`, `timeLimit`, `localError`, `notRegularFile`,
+  `sizeMismatch`, and for the `copy from` call `copyTimeout`, `copyDeviceLocked`, `copyDeviceNotConnected`, `copyNotRun`,
+  `copyNoResult`, `copyOther`, and for the restore also `notOnDevice` (pushed, but the relisting did not show it); the restore counts its refusals before the call as `unsafePath`, `localError` and `timeLimit` (the call's class is best effort: the locked and not-connected patterns are loose; `devicectl`'s numeric error codes
+  are not reported). The progress line gains the same counts: `app data backup: 10 file(s) saved, 3 failed (copyTimeout 2,
+  notRegularFile 1)` and `app data restore: ... failed (...)`. Additive: `dataBackedUp`, `dataFiles`, `dataFilesFailed` keep their meaning.
 - The backup manifest gains an optional `supersededAt`: `slot lend` marks every older, unrestored backup of the app superseded
   (whether or not the new lend saved a backup), so `slot restore` never pushes data from an earlier lend. Older manifests
   without the key still read. It gains an optional `uninstalledAt`, set wherever a snapshot shows the app off the device while the slot
@@ -529,6 +537,18 @@ All notable changes to this project are documented here. Format follows
   and `terminationStatus` on failure; `scripts/check.sh` also tees `swift test` to `$TMPDIR/sideload-swift-test.log`.
 
 ### Fixed
+- App-data backup and restore treated a `devicectl` call that exits 0 but reports a failure as a success. A call now fails
+  when its document is not an object, has a top-level `error`, has an `info` that is not an object, or has an `info.outcome`
+  other than `success`. A `copy from` that did so and left no file was taken for a folder (counted nowhere); one that left a
+  regular file of the right size was counted saved, and is now counted failed (the file is removed); a `copy to` that did so
+  was counted pushed and caught only if the relisting disagreed. Each is now a failed file (`dataFilesFailed`, and the
+  `DATA_BACKUP_*` / `DATA_RESTORE_*` warnings follow from it). A backup in which every copy fails this way is now
+  `DATA_BACKUP_FAILED` with no backup, not an empty complete one. A `copy from` that exits 0 and leaves nothing on this Mac
+  for a listed file is now a failed file too (`copyNoResult`), where it used to be counted nowhere. The listing calls run
+  the same check before `parseListing`, so a listing with a top-level `error` (a null one is none) or an `info` that is not
+  an object is now refused as well, where `parseListing` alone accepted it: the backup is `DATA_BACKUP_FAILED`, a restore
+  relisting is `DATA_RESTORE_UNVERIFIED`. An exit 0 with no document, or with neither `info.outcome` nor `error`, is still a
+  success (the callers check the file left, or relist). Counts only; no output field changes meaning.
 - The live free-slot count no longer counts TestFlight betas (mobile-safari-lab#63): `devicectl device info apps` marks them
   `builtByDeveloper` like free-team apps, so the owner's iPhone read `used: 8` and the filler install and every `slot return`
   would have stopped with `FREE_APP_LIMIT`. Other free-team apps are now found by one read-only `devicectl device profile list

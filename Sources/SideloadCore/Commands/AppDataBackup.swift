@@ -57,13 +57,79 @@ enum AppDataBackup {
         var uninstalledAt: Date?
     }
 
+    /// Why one file was not saved or not restored. A fixed set: the raw values are the `dataFailures` keys the lab reads and the
+    /// words in the progress line, so they carry no path, file name or content. Declared order is the print order.
+    enum FailReason: String, CaseIterable, Sendable {
+        /// The listing named a path that is not a safe relative path (backup), or the manifest did (restore).
+        case unsafePath
+        /// The listing named a path that collides with an earlier one (case, Unicode form, or file against folder).
+        case nameCollision
+        /// More files than `maxFiles`.
+        case fileCap
+        /// Over the 256 MiB cap (by the listing, or once copied), or skipped because the cap had been reached.
+        case sizeLimit
+        /// No allowance left for another call, or skipped because it had run out.
+        case timeLimit
+        /// Something on this Mac: the folder, the destination, the permissions, the hash, or (restore) the file changed since
+        /// the backup.
+        case localError
+        /// The copy left a link, a folder or another non-regular file at the destination.
+        case notRegularFile
+        /// The copied size differed from the listing on both tries.
+        case sizeMismatch
+        /// The `devicectl` call ran out of time, or its own `--timeout` fired.
+        case copyTimeout
+        /// The `devicectl` call reported a locked device.
+        case copyDeviceLocked
+        /// The `devicectl` call reported a device that is not connected.
+        case copyDeviceNotConnected
+        /// The call never ran: `devicectl` could not be started, the call threw, or the allowlist refused it.
+        case copyNotRun
+        /// The call reported success but left nothing on this Mac for a listed file (no file, no folder).
+        case copyNoResult
+        /// Any other failed call: a non-zero exit, a reported `failed` outcome, an output overflow, a signal kill.
+        case copyOther
+        /// Restore only: the push went through but the relisting did not show the file (or showed another size).
+        case notOnDevice
+    }
+
+    /// Counts per reason. The only way to count a failed file, so the counts always sum to `total`, which is `dataFilesFailed`.
+    struct Failures: Sendable, Equatable {
+        private var counts: [FailReason: Int] = [:]
+
+        var total: Int { counts.values.reduce(0, +) }
+
+        mutating func add(_ reason: FailReason, count: Int = 1) {
+            guard count > 0 else { return }
+            counts[reason, default: 0] += count
+        }
+
+        /// The non-zero counts in declared order.
+        var nonZero: [(reason: FailReason, count: Int)] {
+            FailReason.allCases.compactMap { reason in counts[reason].map { (reason, $0) } }
+        }
+
+        /// `dataFailures`: the non-zero counts by reason; nil when nothing failed.
+        var json: JSONValue? {
+            guard total > 0 else { return nil }
+            return .object(Dictionary(uniqueKeysWithValues: nonZero.map { ($0.reason.rawValue, JSONValue.number(Double($0.count))) }))
+        }
+
+        /// ` (copyTimeout 2, notRegularFile 1)` for a progress line; empty when nothing failed. Fixed words and counts only.
+        var summary: String {
+            total > 0 ? " (" + nonZero.map { "\($0.reason.rawValue) \($0.count)" }.joined(separator: ", ") + ")" : ""
+        }
+    }
+
     /// What a half did, as the lab reads it: counts and booleans, and warnings (codes, counts-only messages).
     struct Result: Sendable, Equatable {
         var done = false
         var files = 0
-        var failed = 0
+        var failures = Failures()
         var skipped = false
         var warnings: [JSONValue] = []
+
+        var failed: Int { failures.total }
     }
 
     /// `apps.<app>.backupData`: default true; anything but an explicit `false` backs up.
@@ -78,14 +144,17 @@ enum AppDataBackup {
             "dataFilesFailed": .number(Double(result.failed)),
         ]
         if result.skipped { fields["dataBackupSkipped"] = true }
+        if let failures = result.failures.json { fields["dataFailures"] = failures }
         return fields
     }
 
     static func restoreFields(_ result: Result) -> [String: JSONValue] {
-        [
+        var fields: [String: JSONValue] = [
             "dataRestored": .bool(result.done), "dataFilesRestored": .number(Double(result.files)),
             "dataFilesFailed": .number(Double(result.failed)),
         ]
+        if let failures = result.failures.json { fields["dataFailures"] = failures }
+        return fields
     }
 
     // MARK: budget
@@ -111,8 +180,31 @@ enum AppDataBackup {
         }
     }
 
+    /// Exit 0 is not enough: devicectl can exit 0 and write a document that reports a failure. A top-level `error` (a null one
+    /// is none), a document or `info` that is not an object, or an `info.outcome` other than `success` fails the call. Both
+    /// listing callers run this before `parseListing`, so such a listing is refused too. No document, or one with neither
+    /// `error` nor `info.outcome`, is a success: the callers check the file left, or relist.
     private static func callSucceeded(_ out: FreeDeviceCalls.Outcome) -> Bool {
-        out.code == 0 && !out.timedOut && !out.overflow && out.spawnError == nil
+        guard out.code == 0, !out.timedOut, !out.overflow, out.spawnError == nil else { return false }
+        guard let json = out.json else { return true }
+        guard case .object(let top) = json, top["error"] == nil || top["error"] == .null else { return false }
+        guard let info = top["info"] else { return true }
+        guard case .object(let fields) = info else { return false }
+        return fields["outcome"].map { $0 == .string("success") } ?? true
+    }
+
+    /// Why a copy call failed, as a fixed class and no text from the call. Best effort: the classifier's locked and
+    /// not-connected patterns are loose and read stderr, so those two can be mislabelled. An exit 0 that reported a failure has
+    /// no classifier code and is `copyOther`.
+    private static func copyClass(_ out: FreeDeviceCalls.Outcome, calls: FreeDeviceCalls) -> FailReason {
+        if out.spawnError != nil { return .copyNotRun }
+        if out.timedOut { return .copyTimeout }
+        switch calls.classify(.snapshot, out)?.code {
+        case "TIMEOUT": return .copyTimeout
+        case "DEVICE_LOCKED": return .copyDeviceLocked
+        case "DEVICE_NOT_CONNECTED": return .copyDeviceNotConnected
+        default: return .copyOther
+        }
     }
 
     // MARK: listing
@@ -168,17 +260,25 @@ enum AppDataBackup {
         DeviceCtl.isSafeDevicePath(path) && !path.contains("\\")
     }
 
-    /// The files worth copying, in the order they are copied, and how many entries were dropped as unusable. Cut down before any
+    struct Leaves {
+        var files: [DeviceFile]
+        /// Entries dropped for an unsafe path.
+        var unsafe = 0
+        /// Entries dropped for colliding with an earlier one.
+        var collisions = 0
+    }
+
+    /// The files worth copying, in the order they are copied, and how many entries were dropped as unsafe or colliding. Cut down before any
     /// filesystem or device call. Dropped and counted: an unsafe path, and a path that collides case-insensitively and
     /// Unicode-normalised with an earlier one (or with a directory); the first in copy order is kept. Skipped, not counted:
     /// directories (an entry that is the parent of another entry, or that `metadata` marks as one) and anything under
     /// `Library/Caches` or `tmp`. Order: `Library/Preferences` first (the sign-in lives there and must not be starved), then files
     /// whose size is known, then the rest; by path within each.
-    static func leaves(_ listing: [DeviceFile]) -> (files: [DeviceFile], dropped: Int) {
-        var dropped = 0
+    static func leaves(_ listing: [DeviceFile]) -> Leaves {
+        var unsafe = 0
         var safe: [DeviceFile] = []
         for entry in listing {
-            if isSafeEntryPath(entry.path) { safe.append(entry) } else { dropped += 1 }
+            if isSafeEntryPath(entry.path) { safe.append(entry) } else { unsafe += 1 }
         }
         var directories = Set<String>()
         var foldedDirectories = Set<String>()
@@ -199,15 +299,16 @@ enum AppDataBackup {
             .sorted { (rank($0), $0.path) < (rank($1), $1.path) }
         var seen = Set<String>()
         var kept: [DeviceFile] = []
+        var collisions = 0
         for file in ordered {
             let key = fold(file.path)
             if foldedDirectories.contains(key) || !seen.insert(key).inserted {
-                dropped += 1
+                collisions += 1
             } else {
                 kept.append(file)
             }
         }
-        return (kept, dropped)
+        return Leaves(files: kept, unsafe: unsafe, collisions: collisions)
     }
 
     /// `<base>/data/<rel>`, only when `rel` is a safe entry path and the result stays under `$SIDELOAD_HOME/backups/`.
@@ -366,47 +467,51 @@ enum AppDataBackup {
 
     private enum Copy {
         case copied(Entry)
-        case emptyDirectory
-        case failed
+        case failed(FailReason)
     }
 
     /// One file out of the device. A size that differs from the listing is retried once; anything else is failed.
     private static func copyOne(
         _ file: DeviceFile, to partial: String, calls: FreeDeviceCalls, budget: Budget, services: Services
     ) async throws -> Copy {
-        guard let destination = localPath(partial, file.path, services: services), budget.timeout(cap: copyTimeoutSec) != nil
-        else { return .failed }
+        guard let destination = localPath(partial, file.path, services: services) else { return .failed(.unsafePath) }
+        guard budget.timeout(cap: copyTimeoutSec) != nil else { return .failed(.timeLimit) }
         try secureDirectory(parentPath(destination), root: services.home.backups)
         var existing = stat()
-        if lstat(destination, &existing) == 0 || errno != ENOENT { return .failed }  // never write over, or through, anything there
-        for attempt in 0..<2 {
-            guard let timeout = budget.timeout(cap: copyTimeoutSec) else { return .failed }
+        if lstat(destination, &existing) == 0 || errno != ENOENT { return .failed(.localError) }  // never write over, or through, anything there
+        var attempt = 0
+        while true {  // every pass returns, or retries a short copy once
+            attempt += 1
+            guard let timeout = budget.timeout(cap: copyTimeoutSec) else { return .failed(.timeLimit) }
             let out = await calls.copyFrom(source: file.path, destination: destination, timeoutSec: timeout)
             guard callSucceeded(out) else {
                 discard(destination)
-                return .failed
+                return .failed(copyClass(out, calls: calls))
             }
             // What devicectl left is looked at without following it: only a regular file stays. A symlink (or a folder, or
             // anything else) is removed and counted failed; nothing here ever opens, chmods or writes through it.
             var st = stat()
-            guard lstat(destination, &st) == 0 else { return errno == ENOENT ? .emptyDirectory : .failed }
-            guard st.st_mode & S_IFMT == S_IFREG, restrictFile(destination) else {
+            guard lstat(destination, &st) == 0 else { return .failed(errno == ENOENT ? .copyNoResult : .localError) }
+            guard st.st_mode & S_IFMT == S_IFREG else {
                 discard(destination)
-                return .failed
+                return .failed(.notRegularFile)
+            }
+            guard restrictFile(destination) else {
+                discard(destination)
+                return .failed(.localError)
             }
             let size = Int(st.st_size)
             if let expected = file.size, expected != size {
                 discard(destination)
-                if attempt == 0 { continue }
-                return .failed
+                if attempt == 1 { continue }
+                return .failed(.sizeMismatch)
             }
             guard let digest = sha256(destination) else {
                 discard(destination)
-                return .failed
+                return .failed(.localError)
             }
             return .copied(Entry(path: file.path, size: size, sha256: digest))
         }
-        return .failed
     }
 
     /// Backs up the app's data container. Never throws and never blocks the lend: a failure is `done == false` plus a warning.
@@ -426,7 +531,7 @@ enum AppDataBackup {
                     "Check the free space and permissions of $SIDELOAD_HOME/backups; the app signs in again after the return.")
             ]
         }
-        services.log("app data backup: \(result.files) file(s) saved, \(result.failed) failed")
+        services.log("app data backup: \(result.files) file(s) saved, \(result.failed) failed\(result.failures.summary)")
         return result
     }
 
@@ -448,19 +553,22 @@ enum AppDataBackup {
         }
         let wanted = leaves(listing)
         var todo = Array(wanted.files.prefix(maxFiles))
-        var failed = wanted.dropped + (wanted.files.count - todo.count)
+        var failures = Failures()
+        failures.add(.unsafePath, count: wanted.unsafe)
+        failures.add(.nameCollision, count: wanted.collisions)
+        failures.add(.fileCap, count: wanted.files.count - todo.count)
         try secureDirectory(partial, root: services.home.backups)
         var entries: [Entry] = []
         var bytes = 0
-        var spent = false
+        var spent: FailReason?  // what ran out; the files skipped after it are counted as that
         while !todo.isEmpty {
             let file = todo.removeFirst()
-            if spent {
-                failed += 1
+            if let spent {
+                failures.add(spent)
                 continue
             }
             if let size = file.size, bytes + size > maxBytes {  // too big by the listing: not even asked for
-                failed += 1
+                failures.add(.sizeLimit)
                 continue
             }
             // One odd entry (a name over the length limit, say) costs only itself: it is counted failed and the rest goes on.
@@ -468,27 +576,27 @@ enum AppDataBackup {
             do {
                 copied = try await copyOne(file, to: partial, calls: calls, budget: budget, services: services)
             } catch {
-                copied = .failed
+                copied = .failed(.localError)
             }
             switch copied {
             case .copied(let entry):
                 bytes += entry.size
                 if bytes > maxBytes {
                     discard(partial + "/data/" + entry.path)
-                    failed += 1
-                    spent = true
+                    failures.add(.sizeLimit)
+                    spent = .sizeLimit
                 } else {
                     entries.append(entry)
                 }
-            case .emptyDirectory: break
-            case .failed:
-                failed += 1
-                if budget.left <= 0 { spent = true }
+            case .failed(let reason):
+                failures.add(reason)
+                if budget.left <= 0 { spent = .timeLimit }
             }
         }
+        let failed = failures.total
         if entries.isEmpty, failed > 0 {
             removeTree(partial)
-            result.failed = failed
+            result.failures = failures
             fail(
                 "None of the app's data files could be copied, so the lend goes ahead without a backup.",
                 "Unlock the device and keep it awake; the app signs in again after the return.")
@@ -502,7 +610,7 @@ enum AppDataBackup {
         if rename(partial, final) != 0 { throw ioError("rename") }
         result.done = true
         result.files = entries.count
-        result.failed = failed
+        result.failures = failures
         if failed > 0 {
             result.warnings = [
                 CanaryCommand.warning(
@@ -659,16 +767,33 @@ enum AppDataBackup {
         let budget = Budget(services.clock)
         let manifest = found.manifest
         var pushed: [Entry] = []
-        var failed = 0
+        var failures = Failures()
         var spent = false
         for entry in manifest.files {
             // Every part of the local path is checked without following links, so a link planted inside the backup cannot
-            // make the restore read (and push) a file from outside it.
-            guard !spent, let local = localPath(found.directory, entry.path, services: services),
-                isPlain(local, root: services.home.backups, regularFile: true), regularFileSize(local) == entry.size, sha256(local) == entry.sha256,
-                let timeout = budget.timeout(cap: copyTimeoutSec)
-            else {
-                failed += 1
+            // make the restore read (and push) a file from outside it. The checks run in this order; the first that fails
+            // names the reason.
+            var refusal: FailReason?
+            var local = ""
+            var timeout = 0
+            if spent {
+                refusal = .timeLimit
+            } else if let path = localPath(found.directory, entry.path, services: services) {
+                if !isPlain(path, root: services.home.backups, regularFile: true) || regularFileSize(path) != entry.size
+                    || sha256(path) != entry.sha256
+                {
+                    refusal = .localError
+                } else if let allowed = budget.timeout(cap: copyTimeoutSec) {
+                    local = path
+                    timeout = allowed
+                } else {
+                    refusal = .timeLimit
+                }
+            } else {
+                refusal = .unsafePath
+            }
+            if let refusal {
+                failures.add(refusal)
                 if budget.left <= 0 { spent = true }
                 continue
             }
@@ -676,16 +801,16 @@ enum AppDataBackup {
             if callSucceeded(out) {
                 pushed.append(entry)
             } else {
-                failed += 1
+                failures.add(copyClass(out, calls: calls))
                 if budget.left <= 0 { spent = true }
             }
         }
         result.files = pushed.count
-        result.failed = failed
+        result.failures = failures
         var verified = false
-        if failed == 0, manifest.files.isEmpty {
+        if failures.total == 0, manifest.files.isEmpty {
             verified = true  // nothing was saved, so there is nothing to push or compare
-        } else if failed == 0 {
+        } else if failures.total == 0 {
             if let timeout = budget.timeout(cap: listTimeoutSec) {
                 let out = await calls.listFiles(timeoutSec: timeout)
                 if callSucceeded(out), let listing = parseListing(out.json) {
@@ -695,7 +820,7 @@ enum AppDataBackup {
                         return size != nil && size != entry.size
                     }
                     result.files = pushed.count - missing.count
-                    result.failed = missing.count
+                    result.failures.add(.notOnDevice, count: missing.count)
                     verified = missing.isEmpty
                 }
             }
@@ -726,7 +851,7 @@ enum AppDataBackup {
                         "The app may ask to sign in again."))
             }
         }
-        services.log("app data restore: \(result.files) file(s) restored, \(result.failed) failed")
+        services.log("app data restore: \(result.files) file(s) restored, \(result.failed) failed\(result.failures.summary)")
         return result
     }
 }
