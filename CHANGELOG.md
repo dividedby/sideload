@@ -26,8 +26,23 @@ All notable changes to this project are documented here. Format follows
   `backups` path segment and AGENTS.md says so. The `DeviceCtl` allowlist gained exactly three argument shapes (free scope,
   `appDataContainer` for the scoped `<prefix>.free.*` app only, relative device paths, local paths under `backups/`), with a
   Sources scan test. **The restore (`copy to`) has not been run on a real device; the owner runs the first check** (sign in
-  to stremio-ios, lend, return, open the app and confirm it is still signed in). An owner-only `slot restore` for failed or
-  crashed restores is a later change.
+  to stremio-ios, lend, return, open the app and confirm it is still signed in). The owner-only `slot restore` for failed or
+  crashed restores is the next entry.
+- `slot restore --device <alias> [--app <app>] --yes` (docs/design.md section 18, "App data"), owner-only: the retry of an
+  app-data restore that `slot return` did not finish. `--app` defaults to the device's lendable app; `--udid` and `--to` are
+  `USAGE`. Not a slot operation: no ledger write, no install or uninstall. Order: usage, saved alias, app, `--yes`
+  (`CONFIRM_REQUIRED`), `.op.lock`, the marker and keychain, the gate (`SLOT_PENDING`), `ALREADY_LENT` when the app is lent,
+  the pending backup (a local read; `NO_PENDING_RESTORE` with `restored`, `superseded`, `unreadable` booleans), one app-list
+  snapshot that must list the app (`SNAPSHOT_FAILED`, `APP_NOT_INSTALLED`), then the same push, relist and compare as `return`
+  (one 120 s allowance). Success prints `dataRestored:true`, `dataFilesRestored`, `dataFilesFailed` (and warnings); anything
+  not fully verified is `RESTORE_FAILED` with `cause`, `dataRestored:false`, the counts and `kept:true`. The backup is kept
+  either way and a rerun is safe. Only the newest finished backup is considered. New codes: `NO_PENDING_RESTORE`,
+  `APP_NOT_INSTALLED`, `RESTORE_FAILED`. Counts and booleans only; the `DATA_RESTORE_*` warnings of `slot return` now name the
+  command in their `fix`. `status` and the menu do not show a pending restore yet. The restore is still untested on a real device.
+- The backup manifest gains an optional `supersededAt`: `slot lend` marks every older, unrestored backup of the app superseded
+  (whether or not the new lend saved a backup), so `slot restore` never pushes data from an earlier lend. Older manifests
+  without the key still read.
+- `slot` takes `--app` and `--yes` for `restore` only; `lend` and `return` answer `USAGE` if given either.
 - `refresh --device <d> [--app <a>] [--within 1-6 | --force] --yes` (docs/design.md section 18, build step 9, manual part), free team
   only and owner-run: renews the installs on one saved device that have `--within` days or fewer left (default 5; `--force` is
   6, the ceiling, since a renewal must move the expiry by more than 24 hours) by running the existing `provision`, `sign` and

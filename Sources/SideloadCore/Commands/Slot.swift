@@ -1,7 +1,7 @@
 import Foundation
 
 public struct SlotOptions: Sendable, Equatable {
-    /// `lend` or `return`.
+    /// `lend`, `return` or `restore`.
     public var sub: String?
     /// A saved device alias, or...
     public var device: String?
@@ -9,19 +9,27 @@ public struct SlotOptions: Sendable, Equatable {
     public var udid: String?
     /// Who the slot is lent to; only `lab`.
     public var to: String?
+    /// `restore` only: the app whose backup is pushed back (default: the device's lendable app).
+    public var app: String?
+    /// `restore` only: the owner's confirmation; agents must not pass it.
+    public var yes: Bool
 
-    public init(sub: String? = nil, device: String? = nil, udid: String? = nil, to: String? = nil) {
+    public init(
+        sub: String? = nil, device: String? = nil, udid: String? = nil, to: String? = nil, app: String? = nil, yes: Bool = false
+    ) {
         self.sub = sub
         self.device = device
         self.udid = udid
         self.to = to
+        self.app = app
+        self.yes = yes
     }
 }
 
 /// `slot lend --device <alias>|--udid <id> --to lab` and `slot return --device|--udid` (design section 18, agreed with
 /// mobile-safari-lab#63). The lab borrows the slot of the device's one owner-configured lendable app
 /// (`devices.<d>.lendableApp`): `lend` uninstalls it and records `lent`, `return` reinstalls it from the `freeSigned`
-/// build through the `install` path. No `--yes`: the lab runs these. Both take `.op.lock` themselves and settle the
+/// build through the `install` path. No `--yes`: the lab runs these (`restore`, the owner's retry of the app-data restore, is `SlotRestore`). Both take `.op.lock` themselves and settle the
 /// crash-safe marker first; a saved device only, free scope only. The slot is a record of the unified pending-operation
 /// model (`SlotRule`, `SlotBook`): a durable op is written before each device change, a device with an op in flight answers
 /// `SLOT_PENDING` to every mutating command, and one evidence rule settles it (the 27-cell table, docs/design.md section 18).
@@ -30,6 +38,8 @@ public enum SlotCommand {
     static let lab = "lab"
 
     public static func run(_ services: Services, _ options: SlotOptions) async -> Envelope {
+        // Owner-only and not a slot operation: it never reaches the lab's debug hook below.
+        if options.sub == "restore" { return await SlotRestore.run(services, options) }
         guard options.sub == "lend" || options.sub == "return" else {
             return .fail(
                 command, code: "USAGE", message: "Unknown slot subcommand \"\(printableCut(options.sub ?? ""))\".",
@@ -38,6 +48,11 @@ public enum SlotCommand {
         let lend = options.sub == "lend"
         let action = options.sub ?? ""
         do {
+            if options.app != nil || options.yes {
+                throw SideloadError(
+                    "USAGE", "slot \(action) does not take \(options.yes ? "--yes" : "--app").",
+                    fix: lend ? "sideload slot lend --device <alias> --to lab" : "sideload slot return --device <alias>")
+            }
             if lend {
                 guard options.to == lab else {
                     throw SideloadError("USAGE", "slot lend needs --to lab.", fix: "sideload slot lend --device <alias> --to lab")
@@ -114,7 +129,7 @@ public enum SlotCommand {
     }
     #endif
 
-    private static func fail(_ error: SideloadError, action: String, extra: [String: JSONValue] = [:]) -> Envelope {
+    static func fail(_ error: SideloadError, action: String, extra: [String: JSONValue] = [:]) -> Envelope {
         var data: [String: JSONValue] = ["action": .string(action)]
         data.merge(extra) { _, new in new }
         data.merge(error.data) { _, new in new }
@@ -249,6 +264,10 @@ public enum SlotCommand {
                     services, target: target, calls: calls, version: signed.record.version, lendSince: existing?.since ?? now)
             }
         }
+
+        // Backups of earlier lends that never got restored are marked superseded, whether or not this lend saved a new one (never
+        // a failure of the lend; a resumed lend keeps its own backup: same `since`).
+        AppDataBackup.supersedeOlder(services, target, than: existing?.since ?? now)
 
         // L7: the intent is durable before the uninstall.
         let removal = FreeRemoval(services: services, target: target)

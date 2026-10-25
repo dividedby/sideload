@@ -26,6 +26,7 @@ private func help() -> Envelope {
             "app remove --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> --yes",
             "slot lend --device <alias>|--udid <id> --to lab",
             "slot return --device <alias>|--udid <id>",
+            "slot restore --device <alias> [--app <apollo|stremio-ios|stremio-tvos|filler>] --yes",
             "export-cert --device <alias> [--profile <uuid>] [--out <dir>] [--copy-password] --yes",
             "ledger [refresh]",
             "portal [certificates|bundle-ids|devices|profiles] [--show-identifiers]",
@@ -47,7 +48,7 @@ private let refreshSpec = ArgSpec(values: ["device", "app", "within"], flags: ["
 // `--auto` and `--print-agent` are designed (design section 18) but not built; they parse only so they can say so.
 private let refreshDeferredFlags = ["auto", "print-agent"]
 private let appSpec = ArgSpec(values: ["app", "device"], flags: ["yes"])
-private let slotSpec = ArgSpec(values: ["device", "udid", "to"])
+private let slotSpec = ArgSpec(values: ["device", "udid", "to", "app"], flags: ["yes"])
 private let fetchSpec = ArgSpec(values: ["app", "version"], flags: ["approve"])
 private let portalSpec = ArgSpec(flags: ["show-identifiers"])
 // `status` v1 is read-only; the designed `--notify` and `--print-agent` parse only so they can say they are not built.
@@ -199,7 +200,7 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
             services,
             SlotOptions(
                 sub: parsed.positionals.first, device: parsed.values["device"], udid: parsed.values["udid"],
-                to: parsed.values["to"]))
+                to: parsed.values["to"], app: parsed.values["app"], yes: parsed.flags.contains("yes")))
     }
     if command == "inspect" { return await InspectCommand.run(services, InspectOptions(path: parsed.positionals.first)) }
     if command == "export-cert" {

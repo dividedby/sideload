@@ -14,7 +14,9 @@ import Foundation
 /// warning, and the caller goes on. The backup is read-only, so a crash leaves a `.partial` folder and an untouched device.
 /// A backup is tied to the lend that made it (`lendSince`, the `since` the slot record carries), so a return never restores
 /// a stale one. The restore only ever follows a confirmed install; a successful, verified restore marks the manifest
-/// (`restoredAt`) and is never repeated.
+/// (`restoredAt`) and is not repeated by the return. A restore that did not finish is retried by the owner with
+/// `sideload slot restore` (`SlotRestore`); a newer lend marks older unrestored backups `supersededAt`, so that retry never
+/// pushes data from an earlier lend.
 ///
 /// The restore (`device copy to`) has never been run on a real device, so whether the app is still signed in afterwards is
 /// unverified until the owner's first run (docs/design.md section 18); everything here is written to leave the backup in place
@@ -47,6 +49,9 @@ enum AppDataBackup {
         var complete: Bool
         var files: [Entry]
         var restoredAt: Date?
+        /// Set by a later `slot lend` that started a new lend of this app (design section 18): the backup belongs to an earlier
+        /// lend, so `slot restore` never pushes it. Absent in manifests written before it existed.
+        var supersededAt: Date?
     }
 
     /// What a half did, as the lab reads it: counts and booleans, and warnings (codes, counts-only messages).
@@ -522,12 +527,64 @@ enum AppDataBackup {
         return nil
     }
 
-    /// Restores the backup of this lend into the reinstalled app, file by file, then relists and compares. Never throws and
-    /// never fails the return: `done` is true only when every file was pushed and the relisting matched, and only then is
-    /// the manifest marked and the old backups pruned. No backup for this lend is simply `done == false` with no warning.
+    /// Restores the backup of this lend into the reinstalled app (`push`). Never throws and never fails the return. No backup
+    /// for this lend is simply `done == false` with no warning.
     static func restore(_ services: Services, target: FreeTarget, calls: FreeDeviceCalls, since: Date?) async -> Result {
+        guard let since, let found = candidate(services, target, since: since) else { return Result() }
+        return await push(services, target: target, calls: calls, found: found)
+    }
+
+    /// What `slot restore` finds: the newest finished backup when it is still waiting to be pushed, else why not (booleans only).
+    enum PendingBackup {
+        case found(directory: String, manifest: Manifest)
+        case none(restored: Bool, superseded: Bool, unreadable: Bool)
+    }
+
+    /// The newest finished backup folder of this device and app decides, and only it (an older one is never a fallback: it
+    /// belongs to an earlier lend). Same plain checks as `candidate`. Pending means a readable manifest for this app's bundle ID
+    /// with `restoredAt` and `supersededAt` both unset.
+    static func pending(_ services: Services, _ target: FreeTarget) -> PendingBackup {
+        let base = appDirectory(services, target)
+        let root = services.home.backups
+        var st = stat()
+        guard lstat(base, &st) == 0 else { return .none(restored: false, superseded: false, unreadable: false) }
+        guard isPlain(base, root: root, regularFile: false) else { return .none(restored: false, superseded: false, unreadable: true) }
+        guard let name = finished(base).first else { return .none(restored: false, superseded: false, unreadable: false) }
+        let directory = base + "/" + name
+        guard isPlain(directory, root: root, regularFile: false), isPlain(directory + "/manifest.json", root: root, regularFile: true),
+            let manifest = readManifest(in: directory), manifest.bundleId == target.bundleId
+        else { return .none(restored: false, superseded: false, unreadable: true) }
+        if manifest.restoredAt != nil { return .none(restored: true, superseded: false, unreadable: false) }
+        if manifest.supersededAt != nil { return .none(restored: false, superseded: true, unreadable: false) }
+        return .found(directory: directory, manifest: manifest)
+    }
+
+    /// Marks every finished, unrestored backup of an earlier lend (`lendSince` at least a second before `lendSince`) as
+    /// superseded, so `slot restore` can never push data older than the lend that replaced it. Never throws: an unreadable or
+    /// unwritable one is left as it is. The manifest is rewritten atomically, mode 0600, and no link is followed.
+    static func supersedeOlder(_ services: Services, _ target: FreeTarget, than lendSince: Date) {
+        let base = appDirectory(services, target)
+        let root = services.home.backups
+        guard isPlain(base, root: root, regularFile: false) else { return }
+        for name in finished(base) {
+            let directory = base + "/" + name
+            guard isPlain(directory, root: root, regularFile: false), isPlain(directory + "/manifest.json", root: root, regularFile: true),
+                var manifest = readManifest(in: directory), manifest.bundleId == target.bundleId,
+                manifest.restoredAt == nil, manifest.supersededAt == nil,
+                manifest.lendSince.timeIntervalSince(lendSince) <= -1
+            else { continue }
+            manifest.supersededAt = wholeSeconds(services.clock.now())
+            try? writeManifest(manifest, in: directory)
+        }
+    }
+
+    /// Pushes a found backup into the app's data container file by file, then relists and compares. `done` is true only when
+    /// every file was pushed and the relisting matched, and only then is the manifest marked and the old backups pruned. The
+    /// whole step shares one `Budget`. Safe to repeat: a push overwrites.
+    static func push(
+        _ services: Services, target: FreeTarget, calls: FreeDeviceCalls, found: (directory: String, manifest: Manifest)
+    ) async -> Result {
         var result = Result()
-        guard let since, let found = candidate(services, target, since: since) else { return result }
         let budget = Budget(services.clock)
         let manifest = found.manifest
         var pushed: [Entry] = []
@@ -576,7 +633,7 @@ enum AppDataBackup {
                     CanaryCommand.warning(
                         "DATA_RESTORE_UNVERIFIED",
                         "The app's data was copied back, but the device's file list could not be read to confirm it.",
-                        "Open the app and check it is signed in; the backup is kept."))
+                        "Open the app and check it is signed in; the backup is kept. The owner can retry: sideload slot restore --device \(target.alias) --yes."))
             }
         }
         if result.failed > 0 {
@@ -584,7 +641,7 @@ enum AppDataBackup {
                 CanaryCommand.warning(
                     "DATA_RESTORE_INCOMPLETE",
                     "\(result.failed) of \(manifest.files.count) data files were not restored (or did not verify).",
-                    "The backup is kept; the app may ask to sign in again."))
+                    "The backup is kept; the app may ask to sign in again. The owner can retry: sideload slot restore --device \(target.alias) --yes."))
         }
         if verified {
             result.done = true
