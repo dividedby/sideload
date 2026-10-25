@@ -117,6 +117,9 @@ struct DataFaults: Sendable {
     var copyFromReportsFailed: Set<String> = []
     /// Device paths whose `copy to` exits 0 but reports `info.outcome` of `failed` (and stores nothing).
     var copyToReportsFailed: Set<String> = []
+    /// Device paths whose `copy from` ends as this result (nothing is written); `copy to` keyed by its device destination.
+    var copyFromResult: [String: RunResult] = [:]
+    var copyToResult: [String: RunResult] = [:]
     /// Device paths whose `copy from` exits 0 and reports `info.outcome` of `success` (and otherwise behaves as usual).
     var copyFromReportsSuccess: Set<String> = []
     /// `copy to` reports success but nothing arrives (the relisting then disagrees).
@@ -481,6 +484,7 @@ final class DeviceSimRunner: Runner {
             let source = flagValue("--source", spec)
             let destination = flagValue("--destination", spec)
             if faults.copyFromFails.contains(source) { return RunResult(code: 1) }
+            if let canned = faults.copyFromResult[source] { return canned }
             if faults.copyFromReportsFailed.contains(source) {
                 write(["info": ["outcome": "failed"]], spec)
                 return RunResult()
@@ -508,6 +512,7 @@ final class DeviceSimRunner: Runner {
             let source = flagValue("--source", spec)
             let destination = flagValue("--destination", spec)
             if faults.copyToFails.contains(destination) { return RunResult(code: 1) }
+            if let canned = faults.copyToResult[destination] { return canned }
             if faults.copyToReportsFailed.contains(destination) {
                 write(["info": ["outcome": "failed"]], spec)
                 return RunResult()

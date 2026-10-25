@@ -829,3 +829,253 @@ struct AppDataBackupTests {
         #expect(AppDataBackup.parseListing(["result": ["files": []]]) == [])
     }
 }
+
+// MARK: failure reasons
+
+private func count(_ value: JSONValue?) -> Int? {
+    if case .number(let n)? = value { return Int(n) }
+    return nil
+}
+
+/// `dataFailures` as printed: reason -> count (empty when the key is absent).
+private func reasons(_ out: Envelope) -> [String: Int] {
+    guard case .object(let fields)? = json(out)["dataFailures"] else { return [:] }
+    return fields.compactMapValues { count($0) }
+}
+
+/// The invariant: the per-reason counts always sum to `dataFilesFailed`, and the key is present exactly when something failed.
+private func expectSums(_ out: Envelope, sourceLocation: SourceLocation = #_sourceLocation) {
+    let failed = count(json(out)["dataFilesFailed"]) ?? -1
+    #expect(reasons(out).values.reduce(0, +) == failed, "the reasons sum to dataFilesFailed", sourceLocation: sourceLocation)
+    #expect((json(out)["dataFailures"] != nil) == (failed > 0), "present only when a file failed", sourceLocation: sourceLocation)
+    #expect(reasons(out).values.allSatisfy { $0 > 0 }, "zero counts are omitted", sourceLocation: sourceLocation)
+}
+
+private func lendLogged(_ w: InstallWorld) async -> (out: Envelope, lines: [String]) {
+    let lines = Mutex<[String]>([])
+    var services = w.services
+    services.log = { line in lines.withLock { $0.append(line) } }
+    let out = await SlotCommand.run(services, SlotOptions(sub: "lend", device: "iphone", to: "lab"))
+    return (out, lines.withLock { $0 })
+}
+
+@Suite("app data failure reasons")
+struct AppDataFailureReasonTests {
+    @Test("Failures: counts by reason, omitted when zero, in declared order; the summary and the JSON carry fixed words and counts")
+    func failuresType() {
+        var failures = AppDataBackup.Failures()
+        #expect(failures.total == 0 && failures.json == nil && failures.summary == "")
+        failures.add(.copyOther, count: 0)
+        #expect(failures.total == 0 && failures.json == nil, "a zero count adds nothing")
+        failures.add(.notRegularFile)
+        failures.add(.copyTimeout, count: 2)
+        failures.add(.copyTimeout)
+        #expect(failures.total == 4)
+        #expect(failures.summary == " (notRegularFile 1, copyTimeout 3)", "declared order")
+        #expect(failures.nonZero.map(\.reason) == [.notRegularFile, .copyTimeout])
+        #expect(failures.json == ["notRegularFile": 1, "copyTimeout": 3])
+        let order = AppDataBackup.FailReason.allCases.map(\.rawValue)
+        #expect(Set(order).count == order.count && order.allSatisfy { $0.allSatisfy { $0.isLetter } }, "keys are plain words")
+        #expect(AppDataBackup.Result().failed == 0)
+    }
+
+    @Test("a call that fails is counted by class: other, locked, not connected, timeout (both kinds), not run, output overflow, signal")
+    func copyCallClasses() async throws {
+        let cases: [(String, RunResult, String)] = [
+            ("exit 1", RunResult(code: 1), "copyOther"),
+            ("locked", RunResult(code: 1, stderr: "ERROR: The device is locked. (com.apple.dt.CoreDeviceError error 1)"), "copyDeviceLocked"),
+            (
+                "not connected", RunResult(code: 1, stderr: "ERROR: The device is not connected. (com.apple.dt.CoreDeviceError error 2)"),
+                "copyDeviceNotConnected"
+            ),
+            (
+                "devicectl's own timeout", RunResult(code: 1, stderr: "ERROR: The operation timed out. (com.apple.dt.CoreDeviceError error 4)"),
+                "copyTimeout"
+            ),
+            ("the Runner's kill", RunResult(code: nil, timedOut: true), "copyTimeout"),
+            ("not run", RunResult(code: nil, spawnError: "ENOENT"), "copyNotRun"),
+            ("overflow", RunResult(code: nil, overflow: true), "copyOther"),
+            ("signal", RunResult(code: nil, signal: 9), "copyOther"),
+        ]
+        for (name, result, reason) in cases {
+            var faults = DataFaults()
+            faults.copyFromResult = [library: result]
+            try await withInstallWorld(script: script(faults), lendable: "stremio-ios", ledger: prepare) { w in
+                let (out, lines) = await lendLogged(w)
+                #expect(out.ok && json(out)["dataBackedUp"] == true && json(out)["dataFiles"] == 1, "\(name)")
+                #expect(json(out)["dataFilesFailed"] == 1 && reasons(out) == [reason: 1], "\(name): \(reasons(out))")
+                expectSums(out)
+                #expect(lines.contains("app data backup: 1 file(s) saved, 1 failed (\(reason) 1)"), "\(name): \(lines)")
+            }
+        }
+        // A call that exits 0 but reports a failed outcome is a failed call: copyOther, like a plain failure.
+        try await withInstallWorld(
+            script: script(DataFaults(copyFromReportsFailed: [library])), lendable: "stremio-ios", ledger: prepare
+        ) { w in
+            let out = await w.lend()
+            #expect(json(out)["dataFilesFailed"] == 1 && reasons(out) == ["copyOther": 1])
+            expectSums(out)
+        }
+    }
+
+    @Test("a result that is not a regular file, a size that never matches, and a folder that cannot be made are each counted on their own")
+    func localReasons() async throws {
+        // A link left at the destination.
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            let outside = w.paths.home + "/outside"
+            try makeDirectories(outside, mode: 0o755)
+            var faults = DataFaults()
+            faults.copyFromSymlinks = [library: outside]
+            w.runner.arm(script(faults))
+            let out = await w.lend()
+            #expect(json(out)["dataFiles"] == 1 && reasons(out) == ["notRegularFile": 1])
+            expectSums(out)
+        }
+        // Short on both tries (two calls for the file).
+        try await withInstallWorld(
+            script: script(DataFaults(copyFromShort: [library])), lendable: "stremio-ios", ledger: prepare
+        ) { w in
+            let out = await w.lend()
+            #expect(json(out)["dataFiles"] == 1 && reasons(out) == ["sizeMismatch": 1])
+            #expect(w.dataWords.filter { $0 == "device copy from" }.count == 3, "one call for the preferences, two for the short file")
+            expectSums(out)
+        }
+        // A name over the filesystem's limit: the folder cannot be made, which is a local error (the path itself is safe).
+        let tooLong = "Documents/" + String(repeating: "a", count: 300) + "/x.json"
+        var files = container
+        files[tooLong] = data("long")
+        try await withInstallWorld(script: script(files: files), lendable: "stremio-ios", ledger: prepare) { w in
+            let out = await w.lend()
+            #expect(json(out)["dataFiles"] == 2 && json(out)["dataFilesFailed"] == 1)
+            #expect(reasons(out) == ["localError": 1])
+            expectSums(out)
+        }
+    }
+
+    @Test("listing drops and caps are counted by reason: unsafe, collision, file cap, size by the listing")
+    func listingReasons() async throws {
+        // Unsafe paths only: a failed backup, three unsafe paths.
+        let hostile: [String: Data] = ["../x": data("a"), "/abs": data("b"), "a//b": data("c")]
+        try await withInstallWorld(script: script(files: hostile), lendable: "stremio-ios", ledger: prepare) { w in
+            let out = await w.lend()
+            #expect(json(out)["dataBackedUp"] == false && json(out)["dataFilesFailed"] == 3 && reasons(out) == ["unsafePath": 3])
+            expectSums(out)
+        }
+        // Names that collide.
+        var clash = container
+        clash["Documents/Case.json"] = data("1")
+        clash["Documents/case.json"] = data("2")
+        try await withInstallWorld(script: script(files: clash), lendable: "stremio-ios", ledger: prepare) { w in
+            let out = await w.lend()
+            #expect(json(out)["dataBackedUp"] == true && json(out)["dataFiles"] == 3 && reasons(out) == ["nameCollision": 1])
+            expectSums(out)
+        }
+        // More than the file cap.
+        var many: [String: Data] = [:]
+        for index in 0..<203 { many[String(format: "Documents/f%03d.json", index)] = Data([UInt8(index % 251)]) }
+        try await withInstallWorld(script: script(files: many), lendable: "stremio-ios", ledger: prepare) { w in
+            let out = await w.lend()
+            #expect(json(out)["dataFiles"] == 200 && reasons(out) == ["fileCap": 3])
+            expectSums(out)
+        }
+        // Too big by the listing.
+        var faults = DataFaults()
+        faults.claimedSizes = ["Documents/big.bin": 300 * 1024 * 1024]
+        var big = container
+        big["Documents/big.bin"] = data("small")
+        try await withInstallWorld(script: script(faults, files: big), lendable: "stremio-ios", ledger: prepare) { w in
+            let out = await w.lend()
+            #expect(json(out)["dataFiles"] == 2 && reasons(out) == ["sizeLimit": 1])
+            expectSums(out)
+        }
+    }
+
+    @Test("the byte cap reached by a copy counts that file and every file skipped after it as sizeLimit")
+    func sizeLimitAfterCopy() async throws {
+        var faults = DataFaults()
+        faults.noSizes = true  // the listing does not warn, so the cap is met only after the copy
+        var files = container
+        files["Documents/a-big.bin"] = Data(count: AppDataBackup.maxBytes + 1)
+        try await withInstallWorld(script: script(faults, files: files), lendable: "stremio-ios", ledger: prepare) { w in
+            let out = await w.lend()
+            // Preferences first and saved; the big file is over the cap once copied and removed; the last file is skipped.
+            #expect(json(out)["dataBackedUp"] == true && json(out)["dataFiles"] == 1)
+            #expect(reasons(out) == ["sizeLimit": 2], "\(reasons(out))")
+            expectSums(out)
+        }
+    }
+
+    @Test("a spent allowance counts every file not started as timeLimit; the INCOMPLETE and the nothing-saved paths both sum")
+    func timeLimitReasons() async throws {
+        var files: [String: Data] = [:]
+        for index in 1...4 { files["Documents/f\(index).json"] = data("\(index)") }
+        // Partial: one copy, three never started.
+        try await withInstallWorld(script: script(DataFaults(callTakes: 50), files: files), lendable: "stremio-ios", ledger: prepare) { w in
+            let out = await w.lend()
+            #expect(json(out)["dataFiles"] == 1 && reasons(out) == ["timeLimit": 3])
+            #expect(warningCodes(out) == ["DATA_BACKUP_INCOMPLETE"])
+            expectSums(out)
+        }
+        // Nothing saved: every copy hangs to the kill, the first two are timeouts, the rest never start.
+        var hang = DataFaults()
+        hang.copyHangs = true
+        var eight: [String: Data] = [:]
+        for index in 1...8 { eight["Documents/f\(index).json"] = data("\(index)") }
+        try await withInstallWorld(script: script(hang, files: eight), lendable: "stremio-ios", ledger: prepare) { w in
+            let out = await w.lend()
+            #expect(json(out)["dataBackedUp"] == false && warningCodes(out) == ["DATA_BACKUP_FAILED"])
+            #expect(reasons(out) == ["copyTimeout": 2, "timeLimit": 6], "\(reasons(out))")
+            expectSums(out)
+        }
+    }
+
+    @Test("a run with several causes sums them all; a clean run and a failed listing have no dataFailures")
+    func mixedAndClean() async throws {
+        var many: [String: Data] = [prefs: data("prefs")]
+        for index in 0..<203 { many[String(format: "Documents/f%03d.json", index)] = Data([UInt8(index % 251)]) }
+        try await withInstallWorld(script: script(files: many), lendable: "stremio-ios", ledger: prepare) { w in
+            let outside = w.paths.home + "/outside"
+            try makeDirectories(outside, mode: 0o755)
+            var faults = DataFaults()
+            faults.copyFromResult = ["Documents/f000.json": RunResult(code: 1)]
+            faults.copyFromSymlinks = ["Documents/f001.json": outside]
+            w.runner.arm(script(faults, files: many))
+            let (out, lines) = await lendLogged(w)
+            #expect(json(out)["dataBackedUp"] == true && json(out)["dataFiles"] == 198 && json(out)["dataFilesFailed"] == 6)
+            #expect(reasons(out) == ["fileCap": 4, "copyOther": 1, "notRegularFile": 1], "\(reasons(out))")
+            #expect(lines.contains("app data backup: 198 file(s) saved, 6 failed (fileCap 4, notRegularFile 1, copyOther 1)"), "\(lines)")
+            expectSums(out)
+        }
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            let (out, lines) = await lendLogged(w)
+            #expect(json(out)["dataFilesFailed"] == 0 && json(out)["dataFailures"] == nil)
+            #expect(lines.contains("app data backup: 2 file(s) saved, 0 failed"), "no parenthesis when nothing failed: \(lines)")
+            expectSums(out)
+        }
+        try await withInstallWorld(script: script(DataFaults(listFails: true)), lendable: "stremio-ios", ledger: prepare) { w in
+            let out = await w.lend()
+            #expect(json(out)["dataFilesFailed"] == 0 && json(out)["dataFailures"] == nil)
+            expectSums(out)
+        }
+    }
+
+    @Test("failure reasons leak nothing: fixed words and counts in the output, the log and the ledger")
+    func reasonsAreCountsOnly() async throws {
+        var faults = DataFaults()
+        faults.copyFromResult = [library: RunResult(code: 1, stderr: "ERROR: The device is locked: Documents/library-9b2e.json \(sentinel)")]
+        try await withInstallWorld(script: script(faults), lendable: "stremio-ios", ledger: prepare) { w in
+            let (out, lines) = await lendLogged(w)
+            #expect(reasons(out) == ["copyDeviceLocked": 1])
+            if case .object(let fields)? = json(out)["dataFailures"] {
+                #expect(fields.values.allSatisfy { if case .number = $0 { true } else { false } })
+            } else {
+                Issue.record("dataFailures is not an object")
+            }
+            var text = try out.printed().text + lines.joined(separator: "\n")
+            text += String(decoding: try Data(contentsOf: URL(fileURLWithPath: w.paths.ledger)), as: UTF8.self)
+            for secret in [sentinel, "library-9b2e", "Preferences", "Documents", "Library", "backups", "thumb"] {
+                #expect(!text.contains(secret), "\(secret) leaked")
+            }
+        }
+    }
+}
