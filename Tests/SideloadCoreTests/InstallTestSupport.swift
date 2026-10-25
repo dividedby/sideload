@@ -120,6 +120,10 @@ struct DataFaults: Sendable {
     /// Device paths whose `copy from` ends as this result (nothing is written); `copy to` keyed by its device destination.
     var copyFromResult: [String: RunResult] = [:]
     var copyToResult: [String: RunResult] = [:]
+    /// Device paths whose `copy from` exits 0 after writing exactly this document (nothing is copied).
+    var copyFromDocument: [String: JSONValue] = [:]
+    /// Device paths whose `copy from` writes the file, then exits 0 with a document that reports `failed`.
+    var copyFromFailsAfterWriting: Set<String> = []
     /// Device paths whose `copy from` exits 0 and reports `info.outcome` of `success` (and otherwise behaves as usual).
     var copyFromReportsSuccess: Set<String> = []
     /// `copy to` reports success but nothing arrives (the relisting then disagrees).
@@ -485,6 +489,10 @@ final class DeviceSimRunner: Runner {
             let destination = flagValue("--destination", spec)
             if faults.copyFromFails.contains(source) { return RunResult(code: 1) }
             if let canned = faults.copyFromResult[source] { return canned }
+            if let document = faults.copyFromDocument[source] {
+                write(document, spec)
+                return RunResult()
+            }
             if faults.copyFromReportsFailed.contains(source) {
                 write(["info": ["outcome": "failed"]], spec)
                 return RunResult()
@@ -504,6 +512,7 @@ final class DeviceSimRunner: Runner {
                 try makeDirectories(parentPath(destination), mode: 0o700)
                 try Data(bytes).write(to: URL(fileURLWithPath: destination))
                 chmod(destination, 0o644)  // devicectl's own mode; backup tightens it
+                if faults.copyFromFailsAfterWriting.contains(source) { write(["info": ["outcome": "failed"]], spec) }
             } catch {
                 return RunResult(code: 1)
             }

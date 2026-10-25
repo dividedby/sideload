@@ -178,15 +178,23 @@ enum AppDataBackup {
         }
     }
 
-    /// A call counts as done only when it exited 0 and its own report does not say otherwise: devicectl can exit 0 while the
-    /// JSON it wrote carries `info.outcome` of `failed` (or anything but `success`). No `info.outcome` at all is a success, as
-    /// before (the copy commands print no document in some versions); `parseListing` applies the same rule to a listing.
+    /// A call counts as done only when it exited 0 and the document it wrote does not say otherwise. devicectl can exit 0 while
+    /// that document reports a failure, so a document that is not an object, has a top-level `error`, has an `info` that is not
+    /// an object, or has an `info.outcome` other than `success` is a failed call. Every devicectl document under
+    /// `Tests/.../Fixtures` carries `info.outcome`, and a failure carries `error` as well. No document at all (nothing parseable
+    /// in the `--json-output` file) with exit 0, or one with neither `info.outcome` nor `error`, is still a success: nothing in
+    /// the code or the fixtures shows what a real `copy` writes, and the callers check the result themselves (`copyOne` looks at
+    /// the file it left, the restore relists). `parseListing` keeps its own `info.outcome` check; its callers run this first, and a
+    /// document with `error` and no `result.files` is not a listing anyway, so the two never disagree on a listing.
+    /// `FreeInstallClassifier` only knows `outcome == "failed"`; for the other shapes it reports no failure, and `copyClass`
+    /// then answers `copyOther`.
     private static func callSucceeded(_ out: FreeDeviceCalls.Outcome) -> Bool {
         guard out.code == 0, !out.timedOut, !out.overflow, out.spawnError == nil else { return false }
-        if case .object(let top)? = out.json, case .object(let info)? = top["info"], let outcome = info["outcome"] {
-            return outcome == .string("success")
-        }
-        return true
+        guard let json = out.json else { return true }
+        guard case .object(let top) = json, top["error"] == nil else { return false }
+        guard let info = top["info"] else { return true }
+        guard case .object(let fields) = info else { return false }
+        return fields["outcome"].map { $0 == .string("success") } ?? true
     }
 
     /// Why a copy call failed, as a fixed class and nothing else. The class is best effort: it comes from

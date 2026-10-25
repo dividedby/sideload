@@ -918,6 +918,49 @@ struct AppDataFailureReasonTests {
         }
     }
 
+    @Test("a document that reports a failure in any shape is a failed call; a file left behind is removed")
+    func reportedFailureShapes() async throws {
+        let failing: [(String, JSONValue)] = [
+            ("error and no info", ["error": ["code": 3002]]),
+            ("error beside a success outcome", ["info": ["outcome": "success"], "error": ["code": 3002]]),
+            ("info that is a string", ["info": "success"]),
+            ("info that is an array", ["info": []]),
+            ("an outcome that is not a string", ["info": ["outcome": 1]]),
+            ("another outcome", ["info": ["outcome": "partial"]]),
+            ("a document that is not an object", ["not", "an", "object"]),
+        ]
+        for (name, document) in failing {
+            var faults = DataFaults()
+            faults.copyFromDocument = [library: document]
+            try await withInstallWorld(script: script(faults), lendable: "stremio-ios", ledger: prepare) { w in
+                let out = await w.lend()
+                #expect(json(out)["dataFiles"] == 1 && json(out)["dataFilesFailed"] == 1, "\(name)")
+                #expect(reasons(out) == ["copyOther": 1], "\(name): \(reasons(out))")
+                expectSums(out)
+            }
+        }
+        // Not failures: no `error`, and no `info.outcome` to contradict the exit code.
+        let passing: [(String, JSONValue)] = [("an empty object", [:]), ("info without an outcome", ["info": [:]]), ("a result only", ["result": [:]])]
+        for (name, document) in passing {
+            var faults = DataFaults()
+            faults.copyFromDocument = [library: document]
+            try await withInstallWorld(script: script(faults), lendable: "stremio-ios", ledger: prepare) { w in
+                let out = await w.lend()
+                #expect(json(out)["dataFilesFailed"] == 0 && json(out)["dataFailures"] == nil, "\(name)")
+            }
+        }
+        // The file was left, whole and the right size, but devicectl said failed: not saved, and removed.
+        try await withInstallWorld(
+            script: script(DataFaults(copyFromFailsAfterWriting: [library])), lendable: "stremio-ios", ledger: prepare
+        ) { w in
+            let out = await w.lend()
+            #expect(json(out)["dataFiles"] == 1 && reasons(out) == ["copyOther": 1])
+            let manifest = try w.manifest(try #require(w.finishedBackups.first))
+            #expect(manifest.files.map(\.path) == [prefs] && !manifest.complete)
+            #expect(!FileManager.default.fileExists(atPath: "\(w.appBackups)/\(w.finishedBackups[0])/data/\(library)"))
+        }
+    }
+
     @Test("a result that is not a regular file, a size that never matches, and a folder that cannot be made are each counted on their own")
     func localReasons() async throws {
         // A link left at the destination.

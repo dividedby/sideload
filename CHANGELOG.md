@@ -537,12 +537,15 @@ All notable changes to this project are documented here. Format follows
   and `terminationStatus` on failure; `scripts/check.sh` also tees `swift test` to `$TMPDIR/sideload-swift-test.log`.
 
 ### Fixed
-- App-data backup and restore treated a `devicectl` call that exits 0 but reports `info.outcome` of `failed` (or anything
-  but `success`) as a success. A `copy from` that did so left no file and was taken for a folder (counted nowhere); a
-  `copy to` that did so was counted pushed and caught only if the relisting disagreed. Both now count as a failed file
-  (`dataFilesFailed`, and the `DATA_BACKUP_*` / `DATA_RESTORE_*` warnings follow from it). The listing call already refused
-  such a document in `parseListing`, so it is unchanged. An exit 0 with no `info.outcome` is still a success. Counts only;
-  no output field changes meaning.
+- App-data backup and restore treated a `devicectl` call that exits 0 but reports a failure as a success. A call now fails
+  when its document is not an object, has a top-level `error`, has an `info` that is not an object, or has an `info.outcome`
+  other than `success`. A `copy from` that did so and left no file was taken for a folder (counted nowhere); one that left a
+  regular file of the right size was counted saved, and is now counted failed (the file is removed); a `copy to` that did so
+  was counted pushed and caught only if the relisting disagreed. Each is now a failed file (`dataFilesFailed`, and the
+  `DATA_BACKUP_*` / `DATA_RESTORE_*` warnings follow from it). A backup in which every copy fails this way is now
+  `DATA_BACKUP_FAILED` with no backup, not an empty complete one. The listing call already refused a non-success
+  `info.outcome` in `parseListing`, so it is unchanged. An exit 0 with no document, or with neither `info.outcome` nor
+  `error`, is still a success (the callers check the file left, or relist). Counts only; no output field changes meaning.
 - The live free-slot count no longer counts TestFlight betas (mobile-safari-lab#63): `devicectl device info apps` marks them
   `builtByDeveloper` like free-team apps, so the owner's iPhone read `used: 8` and the filler install and every `slot return`
   would have stopped with `FREE_APP_LIMIT`. Other free-team apps are now found by one read-only `devicectl device profile list
