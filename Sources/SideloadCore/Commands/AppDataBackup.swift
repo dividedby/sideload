@@ -268,7 +268,7 @@ enum AppDataBackup {
         var collisions = 0
     }
 
-    /// The files worth copying, in the order they are copied, and how many entries were dropped as unusable. Cut down before any
+    /// The files worth copying, in the order they are copied, and how many entries were dropped as unsafe or colliding. Cut down before any
     /// filesystem or device call. Dropped and counted: an unsafe path, and a path that collides case-insensitively and
     /// Unicode-normalised with an earlier one (or with a directory); the first in copy order is kept. Skipped, not counted:
     /// directories (an entry that is the parent of another entry, or that `metadata` marks as one) and anything under
