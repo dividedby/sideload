@@ -255,19 +255,21 @@ public enum SlotCommand {
         let signed = try target.requireSigned(try services.ledgerStore.load(), home: services.home.home, now: now)
 
         // The app's data is saved before the intent and the uninstall (read-only, no slot operation, never a failure of the
-        // lend). The backup belongs to this lend: `since` is what `begin` records for it.
+        // lend). The backup belongs to this lend, whose `since` is what `begin` below keeps: the SETTLED record's (the settle
+        // above clears a lend it found undone, and `begin` then starts a new one at `now`), not the one read before it.
+        let lendSince = settled.after(app.rawValue)?.since ?? now
         var data = AppDataBackup.Result(skipped: true)
         if AppDataBackup.isEnabled(config, app: app) {
             data = AppDataBackup.Result()
             if s0.ids.contains(target.bundleId) {
                 data = await AppDataBackup.backup(
-                    services, target: target, calls: calls, version: signed.record.version, lendSince: existing?.since ?? now)
+                    services, target: target, calls: calls, version: signed.record.version, lendSince: lendSince)
             }
         }
 
         // Backups of earlier lends that never got restored are marked superseded, whether or not this lend saved a new one (never
         // a failure of the lend; a resumed lend keeps its own backup: same `since`).
-        AppDataBackup.supersedeOlder(services, target, than: existing?.since ?? now)
+        AppDataBackup.supersedeOlder(services, target, than: lendSince)
 
         // L7: the intent is durable before the uninstall.
         let removal = FreeRemoval(services: services, target: target)
@@ -289,7 +291,7 @@ public enum SlotCommand {
         let lendingFix = "Not lent yet: `sideload slot lend --device \(alias) --to lab` (or `slot return`) settles it from a fresh snapshot once the window is over, and the slot is not free meanwhile."
         switch confirmation.effect {
         case .absent:  // L8
-            AppDataBackup.markUninstalled(services, target, since: existing?.since ?? now)
+            AppDataBackup.markUninstalled(services, target, since: lendSince)
             let after = outcome.after ?? s0
             let delta = AppSnapshot.delta(from: s0, to: after)
             if delta.removed != [target.bundleId] || !delta.added.isEmpty {

@@ -317,9 +317,73 @@ struct SlotRestoreTests {
             let calls = w.xcrunCalls
             let out = await w.restore()
             #expect(out.errorCodes == ["NO_PENDING_RESTORE"])
-            #expect(json(out)["superseded"] == true && json(out)["restored"] == false && json(out)["unreadable"] == false)
+            #expect(json(out)["notUninstalled"] == true && json(out)["superseded"] == false)
+            #expect(json(out)["restored"] == false && json(out)["unreadable"] == false)
+            #expect(out.errors.first?.message.contains("later lend") == false, "the message does not blame a later lend")
             #expect(w.xcrunCalls == calls, "no snapshot and no push")
             #expect(w.pushes.isEmpty)
+        }
+    }
+
+    @Test("a backup with no uninstall mark (one from before the field) is reported as such, not as superseded")
+    func noMark() async throws {
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            try await w.lendAndFailedReturn()
+            let name = try #require(w.finishedBackups.last)
+            var old = try w.manifest(name)
+            old.uninstalledAt = nil
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            try encoder.encode(old).write(to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
+            let out = await w.restore()
+            #expect(out.errorCodes == ["NO_PENDING_RESTORE"])
+            #expect(json(out)["notUninstalled"] == true && json(out)["superseded"] == false)
+            #expect(out.errors.first?.message.contains("later lend") == false)
+            // A real supersede is still reported as one.
+            old.supersededAt = testNow
+            try encoder.encode(old).write(to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
+            let again = await w.restore()
+            #expect(json(again)["superseded"] == true && json(again)["notUninstalled"] == false)
+        }
+    }
+
+    @Test("a lend that settles an undone earlier lend takes its `since` from the settled record: the old backup is superseded, not marked")
+    func settledSince() async throws {
+        // Lend 1 backs up, its uninstall times out and the app (and its live data) stays on the device.
+        var first = script()
+        first.uninstallTimeoutRemoves = false
+        try await withInstallWorld(script: first, lendable: "stremio-ios", ledger: prepare) { w in
+            #expect(await w.lend().errorCodes == ["TIMEOUT"])
+            let b1 = try #require(w.finishedBackups.last)
+            #expect(w.runner.deviceApps.keys.contains(stremioId))
+            // The next day lend 2's settle finds the app present and undoes lend 1; its own backup cannot be made.
+            w.clock.advance(86_400)
+            w.runner.arm(script(faults { $0.listFails = true }))
+            let second = await w.lend()
+            #expect(second.ok, "\(second.errors)")
+            let manifest = try w.manifest(b1)
+            #expect(manifest.supersededAt != nil, "lend 2 has a new `since`, so lend 1's backup is older")
+            #expect(manifest.uninstalledAt == nil, "lend 1 never took the app off the device")
+            #expect(w.finishedBackups == [b1])
+            #expect(await w.giveBack().ok)
+            let pushes = w.pushes.count
+            let out = await w.restore()
+            #expect(out.errorCodes == ["NO_PENDING_RESTORE"] && json(out)["superseded"] == true)
+            #expect(w.pushes.count == pushes, "the old backup is never pushed over the newer data")
+        }
+    }
+
+    @Test("a backup folder whose listing fails is unreadable, not no backup")
+    func unlistable() async throws {
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            try await w.lendAndFailedReturn()
+            chmod(w.appBackups, 0)
+            defer { chmod(w.appBackups, 0o700) }
+            let calls = w.xcrunCalls
+            let out = await w.restore()
+            #expect(out.errorCodes == ["NO_PENDING_RESTORE"] && json(out)["unreadable"] == true)
+            #expect(json(out)["restored"] == false && json(out)["notUninstalled"] == false)
+            #expect(w.xcrunCalls == calls)
         }
     }
 

@@ -32,7 +32,7 @@ All notable changes to this project are documented here. Format follows
   app-data restore that `slot return` did not finish. `--app` defaults to the device's lendable app; `--udid` and `--to` are
   `USAGE`. Not a slot operation: no ledger write, no install or uninstall. Order: usage, saved alias, app, `--yes`
   (`CONFIRM_REQUIRED`), `.op.lock`, the marker and keychain, the gate (`SLOT_PENDING`), `ALREADY_LENT` when the app is lent,
-  the pending backup (a local read; `NO_PENDING_RESTORE` with `restored`, `superseded`, `unreadable` booleans), one app-list
+  the pending backup (a local read; `NO_PENDING_RESTORE` with `restored`, `superseded`, `unreadable`, `notUninstalled` booleans), one app-list
   snapshot that must list the app (`SNAPSHOT_FAILED`, `APP_NOT_INSTALLED`), then the same push, relist and compare as `return`
   (one 120 s allowance). Success prints `dataRestored:true`, `dataFilesRestored`, `dataFilesFailed` (and warnings); anything
   not fully verified is `RESTORE_FAILED` with `cause`, `dataRestored:false`, the counts and `kept:true`. The backup is kept
@@ -44,9 +44,11 @@ All notable changes to this project are documented here. Format follows
   without the key still read. It gains an optional `uninstalledAt`, set when the lend's uninstall is confirmed (or by the return
   that finds the app gone, before its push): `slot restore` pushes only a backup that has it, so a lend that saved a backup and
   then failed to uninstall (the app and its live data stay) can never be restored over newer data; such a backup answers
-  `NO_PENDING_RESTORE` with `superseded:true`. Backups from before the field are not restorable by `slot restore` (the return
+  `NO_PENDING_RESTORE` with `notUninstalled:true`. Backups from before the field are not restorable by `slot restore` (the return
   still restores its own lend's). A backup folder whose state cannot be read (any `lstat` failure but a missing folder) is
-  `unreadable`, not "no backup".
+  `unreadable`, not "no backup", and so is a folder whose listing fails. `slot lend` takes its `since` for the backup, the
+  supersede and the mark from the settled ledger record, not the one read before the settle (which could be a lend the settle
+  undid).
 - `slot` takes `--app` and `--yes` for `restore` only; `lend` and `return` answer `USAGE` if given either.
 - `refresh --device <d> [--app <a>] [--within 1-6 | --force] --yes` (docs/design.md section 18, build step 9, manual part), free team
   only and owner-run: renews the installs on one saved device that have `--within` days or fewer left (default 5; `--force` is

@@ -73,19 +73,31 @@ enum SlotRestore {
         switch AppDataBackup.pending(services, target) {
         case .found(let directory, let manifest):
             found = (directory, manifest)
-        case .none(let restored, let superseded, let unreadable):
-            let why =
-                restored
-                ? "The newest backup was already restored."
-                : superseded
-                    ? "The newest backup belongs to an earlier lend that a later lend replaced."
-                    : unreadable ? "The newest backup could not be read." : "There is no backup of this app on this Mac."
+        case .none(let restored, let superseded, let unreadable, let notUninstalled):
+            let why: String
+            let fix: String
+            if restored {
+                why = "The newest backup was already restored."
+                fix = "Nothing to do; if the app asks to sign in, the owner signs in again."
+            } else if superseded {
+                why = "The newest backup belongs to an earlier lend that a later lend replaced."
+                fix = "Nothing to do; if the app asks to sign in, the owner signs in again."
+            } else if notUninstalled {
+                why = "The newest backup is not marked as taken from an uninstalled app (its lend did not remove the app, or it predates the mark), so the app's data on the device may be newer."
+                fix = "Nothing to do; restoring it could overwrite newer data. If the app asks to sign in, the owner signs in again."
+            } else if unreadable {
+                why = "The newest backup could not be read."
+                fix = "The owner checks the backups folder in $SIDELOAD_HOME; the app signs in again otherwise."
+            } else {
+                why = "There is no backup of this app on this Mac."
+                fix = "Nothing to do; if the app asks to sign in, the owner signs in again."
+            }
             throw SideloadError(
-                "NO_PENDING_RESTORE", "\(why) Nothing is waiting to be restored.",
-                fix: unreadable
-                    ? "The owner checks the backups folder in $SIDELOAD_HOME; the app signs in again otherwise."
-                    : "Nothing to do; if the app asks to sign in, the owner signs in again.",
-                data: ["restored": .bool(restored), "superseded": .bool(superseded), "unreadable": .bool(unreadable)])
+                "NO_PENDING_RESTORE", "\(why) Nothing is waiting to be restored.", fix: fix,
+                data: [
+                    "restored": .bool(restored), "superseded": .bool(superseded), "unreadable": .bool(unreadable),
+                    "notUninstalled": .bool(notUninstalled),
+                ])
         }
 
         let calls = FreeDeviceCalls(services: services, alias: target.alias, bundleId: target.bundleId)

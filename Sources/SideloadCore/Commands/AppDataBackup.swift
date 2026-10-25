@@ -338,8 +338,11 @@ enum AppDataBackup {
 
     /// Finished backups of one app, newest first (a `.partial` folder is never one).
     private static func finished(_ directory: String) -> [String] {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []
-        return names.filter { !$0.hasSuffix(".partial") && !$0.hasPrefix(".") }.sorted(by: >)
+        finished((try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? [])
+    }
+
+    private static func finished(_ names: [String]) -> [String] {
+        names.filter { !$0.hasSuffix(".partial") && !$0.hasPrefix(".") }.sorted(by: >)
     }
 
     /// Keeps the newest `keep` backups of this device and app, and sweeps every `.partial` folder (the command holds
@@ -547,31 +550,34 @@ enum AppDataBackup {
     /// What `slot restore` finds: the newest finished backup when it is still waiting to be pushed, else why not (booleans only).
     enum PendingBackup {
         case found(directory: String, manifest: Manifest)
-        case none(restored: Bool, superseded: Bool, unreadable: Bool)
+        case none(restored: Bool, superseded: Bool, unreadable: Bool, notUninstalled: Bool)
+
+        static func nothing(
+            restored: Bool = false, superseded: Bool = false, unreadable: Bool = false, notUninstalled: Bool = false
+        ) -> PendingBackup {
+            .none(restored: restored, superseded: superseded, unreadable: unreadable, notUninstalled: notUninstalled)
+        }
     }
 
     /// The newest finished backup folder of this device and app decides, and only it (an older one is never a fallback: it
     /// belongs to an earlier lend). Same plain checks as `candidate`. Pending means a readable manifest for this app's bundle ID
-    /// with `restoredAt` and `supersededAt` both unset.
+    /// with `restoredAt` and `supersededAt` unset and `uninstalledAt` set. Anything that cannot be read is `unreadable`, never
+    /// "no backup": only a missing folder, or a folder with no finished backup in it, is that.
     static func pending(_ services: Services, _ target: FreeTarget) -> PendingBackup {
         let base = appDirectory(services, target)
         let root = services.home.backups
         var st = stat()
-        guard lstat(base, &st) == 0 else {
-            // Only a missing folder means no backup; any other failure (permissions, say) means it could not be read.
-            return .none(restored: false, superseded: false, unreadable: errno != ENOENT)
-        }
-        guard isPlain(base, root: root, regularFile: false) else { return .none(restored: false, superseded: false, unreadable: true) }
-        guard let name = finished(base).first else { return .none(restored: false, superseded: false, unreadable: false) }
+        guard lstat(base, &st) == 0 else { return .nothing(unreadable: errno != ENOENT) }
+        guard isPlain(base, root: root, regularFile: false) else { return .nothing(unreadable: true) }
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: base) else { return .nothing(unreadable: true) }
+        guard let name = finished(names).first else { return .nothing() }
         let directory = base + "/" + name
         guard isPlain(directory, root: root, regularFile: false), isPlain(directory + "/manifest.json", root: root, regularFile: true),
             let manifest = readManifest(in: directory), manifest.bundleId == target.bundleId
-        else { return .none(restored: false, superseded: false, unreadable: true) }
-        if manifest.restoredAt != nil { return .none(restored: true, superseded: false, unreadable: false) }
-        if manifest.supersededAt != nil || manifest.uninstalledAt == nil {
-            // Replaced by a later lend, or made by a lend that never took the app off the device: not data to push.
-            return .none(restored: false, superseded: true, unreadable: false)
-        }
+        else { return .nothing(unreadable: true) }
+        if manifest.restoredAt != nil { return .nothing(restored: true) }
+        if manifest.supersededAt != nil { return .nothing(superseded: true) }
+        if manifest.uninstalledAt == nil { return .nothing(notUninstalled: true) }  // its lend never took the app off the device
         return .found(directory: directory, manifest: manifest)
     }
 
