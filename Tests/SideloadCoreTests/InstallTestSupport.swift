@@ -117,6 +117,8 @@ struct DataFaults: Sendable {
     var noSizes = false
     /// Every data call takes this long on the clock the runner watches.
     var callTakes: TimeInterval = 0
+    /// Every copy hangs until the Runner kills it, `--timeout` + 15 s after it started (the worst case of the time cap).
+    var copyHangs = false
     /// The listing fails the n-th time it is asked (1-based), whatever else it does.
     var listFailsOn: Set<Int> = []
 }
@@ -405,6 +407,10 @@ final class DeviceSimRunner: Runner {
     /// `info files`, `copy from` and `copy to` against the simulated container of the named app.
     private func dataCall(_ spec: CommandSpec, _ faults: DataFaults) -> RunResult {
         if faults.callTakes > 0 { clock?.advance(faults.callTakes) }
+        if faults.copyHangs, Self.words(spec) != "device info files" {
+            clock?.advance(Double((Int(flagValue("--timeout", spec)) ?? 0) + 15))
+            return RunResult(code: nil, timedOut: true)
+        }
         let id = flagValue("--domain-identifier", spec)
         let seed = script.container
         func files() -> [String: Data] { containers.withLock { $0[id] ?? seed } }
@@ -430,6 +436,9 @@ final class DeviceSimRunner: Runner {
             var rows: [JSONValue] = []
             var directories = Set<String>()
             for path in current.keys {
+                // Parent rows only for well-formed paths (a hostile test path is listed as it is, without invented parents).
+                guard !path.hasPrefix("/"), !path.split(separator: "/", omittingEmptySubsequences: false).contains(where: { ["", ".", ".."].contains($0) })
+                else { continue }
                 var parts = path.split(separator: "/").dropLast()
                 while !parts.isEmpty {
                     directories.insert(parts.joined(separator: "/"))

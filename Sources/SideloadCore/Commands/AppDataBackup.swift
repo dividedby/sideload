@@ -17,6 +17,10 @@ enum AppDataBackup {
     static let totalBudgetSec = 120
     static let listTimeoutSec = 60
     static let copyTimeoutSec = 30
+    /// The Runner's extra time over a call's `--timeout` (`DeviceCtl.run`).
+    static let runnerGraceSec = 15
+    /// No call is started with a `--timeout` below this.
+    static let minCallSec = 5
     static let maxFiles = 200
     static let maxBytes = 256 * 1024 * 1024
     /// Backups kept per device and app.
@@ -83,10 +87,12 @@ enum AppDataBackup {
 
         var left: Int { Int(deadline.timeIntervalSince(clock.now()).rounded(.down)) }
 
-        /// The timeout for the next call, or nil when the allowance is spent.
+        /// The `--timeout` for the next call, or nil when it would be under `minCallSec`. The Runner kills a call only at
+        /// `timeout + runnerGraceSec`, so the grace comes off what is left: the step stays within `totalBudgetSec` of wall time
+        /// even when the last call hangs to the kill.
         func timeout(cap: Int) -> Int? {
-            let remaining = left
-            return remaining > 0 ? min(cap, remaining) : nil
+            let usable = left - AppDataBackup.runnerGraceSec
+            return usable >= AppDataBackup.minCallSec ? min(cap, usable) : nil
         }
     }
 
@@ -99,6 +105,8 @@ enum AppDataBackup {
     struct DeviceFile: Equatable {
         let path: String
         let size: Int?
+        /// `metadata` marks the entry as a directory (`isDirectory: true` or a `type` of `directory`).
+        var isDirectory = false
     }
 
     /// `result.files[]` as `devicectl device info files --recurse --json-output` prints it: `name`, `relativePath`, `metadata`
@@ -118,7 +126,12 @@ enum AppDataBackup {
                     if case .number(let value)? = metadata[key], value >= 0, value < 1e15 { size = Int(value) }
                 }
             }
-            files.append(DeviceFile(path: path, size: size))
+            var isDirectory = false
+            if case .object(let metadata)? = fields["metadata"] {
+                if metadata["isDirectory"] == .bool(true) { isDirectory = true }
+                if case .string(let kind)? = metadata["type"], kind.lowercased() == "directory" { isDirectory = true }
+            }
+            files.append(DeviceFile(path: path, size: size, isDirectory: isDirectory))
         }
         return files
     }
@@ -127,25 +140,49 @@ enum AppDataBackup {
         ["tmp", "Library/Caches"].contains { path == $0 || path.hasPrefix($0 + "/") }
     }
 
-    /// The files worth copying: leaves of the listing (a directory is not a file), outside `Library/Caches` and `tmp`, sorted.
+    /// A listing path that may become a local path: relative, plain parts, no NUL, no backslash (nothing else is looked at or
+    /// created for it). The `DeviceCtl` allowlist checks it again before a call.
+    static func isSafeEntryPath(_ path: String) -> Bool {
+        DeviceCtl.isSafeDevicePath(path) && !path.contains("\\")
+    }
+
+    /// The files worth copying, in the order they are copied. Dropped before any filesystem or device call: unsafe paths,
+    /// directories (an entry that is the parent of another entry, or that `metadata` marks as one), duplicates, and anything under
+    /// `Library/Caches` or `tmp`. Order: `Library/Preferences` first (the sign-in lives there and must not be starved), then
+    /// files whose size is known, then the rest; by path within each.
     static func leaves(_ listing: [DeviceFile]) -> [DeviceFile] {
+        let safe = listing.filter { isSafeEntryPath($0.path) }
         var directories = Set<String>()
-        for file in listing {
+        for file in safe {
             var parts = file.path.split(separator: "/", omittingEmptySubsequences: false).dropLast()
             while !parts.isEmpty {
                 directories.insert(parts.joined(separator: "/"))
                 parts = parts.dropLast()
             }
         }
+        func rank(_ file: DeviceFile) -> Int {
+            if file.path.hasPrefix("Library/Preferences/") { return 0 }
+            return file.size == nil ? 2 : 1
+        }
         var seen = Set<String>()
-        return listing.filter { !directories.contains($0.path) && !isSkipped($0.path) && seen.insert($0.path).inserted }
-            .sorted { $0.path < $1.path }
+        return safe.filter {
+            !$0.isDirectory && !directories.contains($0.path) && !isSkipped($0.path) && seen.insert($0.path).inserted
+        }.sorted { (rank($0), $0.path) < (rank($1), $1.path) }
+    }
+
+    /// `<base>/data/<rel>`, only when `rel` is a safe entry path and the result stays under `$SIDELOAD_HOME/backups/`.
+    private static func localPath(_ base: String, _ rel: String, services: Services) -> String? {
+        let path = base + "/data/" + rel
+        guard isSafeEntryPath(rel), DeviceCtl.isSafeBackupPath(path, backups: services.home.backups) else { return nil }
+        return path
     }
 
     // MARK: files
 
     private static func secureDirectory(_ path: String, services: Services) throws {
         let root = services.home.backups
+        // Nothing is created or chmodded unless the path is the backups folder or plainly inside it.
+        guard path == root || DeviceCtl.isSafeBackupPath(path, backups: root) else { throw ioError("path", EINVAL) }
         try makeDirectories(path, mode: 0o700)
         var current = path
         while current.count >= root.count {
@@ -244,7 +281,8 @@ enum AppDataBackup {
     private static func copyOne(
         _ file: DeviceFile, to partial: String, calls: FreeDeviceCalls, budget: Budget, services: Services
     ) async throws -> Copy {
-        let destination = partial + "/data/" + file.path
+        guard let destination = localPath(partial, file.path, services: services), budget.timeout(cap: copyTimeoutSec) != nil
+        else { return .failed }
         try secureDirectory(parentPath(destination), services: services)
         for attempt in 0..<2 {
             guard let timeout = budget.timeout(cap: copyTimeoutSec) else { return .failed }
@@ -390,8 +428,8 @@ enum AppDataBackup {
         var failed = 0
         var spent = false
         for entry in manifest.files {
-            let local = found.directory + "/data/" + entry.path
-            guard !spent, DeviceCtl.isSafeDevicePath(entry.path), regularFileSize(local) == entry.size, sha256(local) == entry.sha256,
+            guard !spent, let local = localPath(found.directory, entry.path, services: services),
+                regularFileSize(local) == entry.size, sha256(local) == entry.sha256,
                 let timeout = budget.timeout(cap: copyTimeoutSec)
             else {
                 failed += 1

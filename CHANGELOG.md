@@ -12,7 +12,7 @@ All notable changes to this project are documented here. Format follows
   in the source, the tests or the docs.
 - App-data backup on `slot lend` and restore on `slot return` (docs/design.md section 18, "App data"), Apple tools only
   (`devicectl device info files`, `copy from`, `copy to`). Before the durable intent and the uninstall, `lend` saves the lent
-  app's data container (not `Library/Caches` or `tmp`; at most 200 files, 256 MiB and 120 s) to
+  app's data container (files only, `Library/Preferences` first, not `Library/Caches` or `tmp`; at most 200 files, 256 MiB and 120 s of wall time, Runner grace included; unsafe listing paths are dropped before any filesystem call) to
   `$SIDELOAD_HOME/backups/<device>/<app>/<stamp>/` (directories 0700, files 0600, a manifest with SHA-256 hashes, tied to the
   lend by its `since`). After the confirmed install and before the success JSON, `return` pushes the backup of that lend back
   (re-hashed first, 120 s), relists and compares; only a full match marks it restored. Neither is a slot operation, the slot
