@@ -1079,3 +1079,146 @@ struct AppDataFailureReasonTests {
         }
     }
 }
+
+private func giveBackLogged(_ w: InstallWorld) async -> (out: Envelope, lines: [String]) {
+    let lines = Mutex<[String]>([])
+    var services = w.services
+    services.log = { line in lines.withLock { $0.append(line) } }
+    let out = await SlotCommand.run(services, SlotOptions(sub: "return", device: "iphone"))
+    return (out, lines.withLock { $0 })
+}
+
+@Suite("app data restore failure reasons")
+struct AppDataRestoreReasonTests {
+    @Test("a push that fails is counted by class, like a copy from, on the same keys")
+    func pushCallClasses() async throws {
+        let cases: [(String, RunResult, String)] = [
+            ("exit 1", RunResult(code: 1), "copyOther"),
+            ("locked", RunResult(code: 1, stderr: "ERROR: The device is locked. (com.apple.dt.CoreDeviceError error 1)"), "copyDeviceLocked"),
+            (
+                "not connected", RunResult(code: 1, stderr: "ERROR: The device is not connected. (com.apple.dt.CoreDeviceError error 2)"),
+                "copyDeviceNotConnected"
+            ),
+            ("the Runner's kill", RunResult(code: nil, timedOut: true), "copyTimeout"),
+            ("not run", RunResult(code: nil, spawnError: "ENOENT"), "copyNotRun"),
+        ]
+        for (name, result, reason) in cases {
+            var faults = DataFaults()
+            faults.copyToResult = [prefs: result]
+            try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+                #expect(await w.lend().ok)
+                w.runner.arm(script(faults))
+                let (out, lines) = await giveBackLogged(w)
+                #expect(out.ok && json(out)["dataRestored"] == false, "\(name)")
+                #expect(json(out)["dataFilesRestored"] == 1 && json(out)["dataFilesFailed"] == 1, "\(name)")
+                #expect(reasons(out) == [reason: 1], "\(name): \(reasons(out))")
+                expectSums(out)
+                #expect(lines.contains("app data restore: 1 file(s) restored, 1 failed (\(reason) 1)"), "\(name): \(lines)")
+            }
+        }
+        // Exit 0 with a failed outcome, and the plain failure the older test uses.
+        for faults in [DataFaults(copyToFails: [prefs]), DataFaults(copyToReportsFailed: [prefs])] {
+            try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+                #expect(await w.lend().ok)
+                w.runner.arm(script(faults))
+                let out = await w.giveBack()
+                #expect(json(out)["dataFilesFailed"] == 1 && reasons(out) == ["copyOther": 1])
+                expectSums(out)
+            }
+        }
+    }
+
+    @Test("a file changed on this Mac, and a manifest naming an unsafe path, are counted before any call")
+    func refusedBeforeTheCall() async throws {
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            #expect(await w.lend().ok)
+            let name = try #require(w.finishedBackups.first)
+            try Data("tampered".utf8).write(to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/data/\(library)"))
+            var manifest = try w.manifest(name)
+            manifest.files.append(AppDataBackup.Entry(path: "../../x", size: 1, sha256: "00"))
+            manifest.files.append(AppDataBackup.Entry(path: "/etc/hosts", size: 1, sha256: "00"))
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            try encoder.encode(manifest).write(to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
+            let out = await w.giveBack()
+            #expect(json(out)["dataFilesRestored"] == 1 && json(out)["dataFilesFailed"] == 3)
+            #expect(reasons(out) == ["localError": 1, "unsafePath": 2], "\(reasons(out))")
+            expectSums(out)
+        }
+    }
+
+    @Test("a push the device drops is notOnDevice, counted from the relisting")
+    func notOnDevice() async throws {
+        var drops = DataFaults()
+        drops.copyToDrops = true
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            #expect(await w.lend().ok)
+            w.runner.arm(script(drops))
+            let (out, lines) = await giveBackLogged(w)
+            #expect(json(out)["dataRestored"] == false && json(out)["dataFilesRestored"] == 0 && json(out)["dataFilesFailed"] == 2)
+            #expect(warningCodes(out) == ["DATA_RESTORE_INCOMPLETE"])
+            #expect(reasons(out) == ["notOnDevice": 2])
+            expectSums(out)
+            #expect(lines.contains("app data restore: 0 file(s) restored, 2 failed (notOnDevice 2)"), "\(lines)")
+        }
+    }
+
+    @Test("the UNVERIFIED path has no failed file and no dataFailures; a clean restore has none either")
+    func unverifiedAndClean() async throws {
+        var unreadable = DataFaults()
+        unreadable.listFailsOn = [2]  // the lend's listing is the first
+        try await withInstallWorld(script: script(unreadable), lendable: "stremio-ios", ledger: prepare) { w in
+            #expect(await w.lend().ok)
+            let out = await w.giveBack()
+            #expect(warningCodes(out) == ["DATA_RESTORE_UNVERIFIED"] && json(out)["dataFilesFailed"] == 0)
+            #expect(json(out)["dataFailures"] == nil)
+            expectSums(out)
+        }
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            #expect(await w.lend().ok)
+            let (out, lines) = await giveBackLogged(w)
+            #expect(json(out)["dataRestored"] == true && json(out)["dataFailures"] == nil)
+            #expect(lines.contains("app data restore: 2 file(s) restored, 0 failed"), "\(lines)")
+            expectSums(out)
+        }
+    }
+
+    @Test("a spent allowance: the pushes that hung are copyTimeout, the rest timeLimit, and the sum holds")
+    func restoreTimeLimit() async throws {
+        var files: [String: Data] = [:]
+        for index in 1...8 { files["Documents/f\(index).json"] = data("\(index)") }
+        var hang = DataFaults()
+        hang.copyHangs = true
+        try await withInstallWorld(script: script(files: files), lendable: "stremio-ios", ledger: prepare) { w in
+            #expect(await w.lend().ok)
+            w.runner.arm(script(hang, files: files))
+            let out = await w.giveBack()
+            #expect(json(out)["dataRestored"] == false && json(out)["dataFilesFailed"] == 8)
+            #expect(reasons(out) == ["copyTimeout": 2, "timeLimit": 6], "\(reasons(out))")
+            expectSums(out)
+        }
+    }
+
+    @Test("slot restore prints dataFailures in its RESTORE_FAILED data, and none on success")
+    func manualRestore() async throws {
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            #expect(await w.lend().ok)
+            var failing = DataFaults()
+            failing.copyToFails = [prefs]
+            w.runner.arm(script(failing))
+            #expect(json(await w.giveBack())["dataRestored"] == false)
+            var drops = DataFaults()
+            drops.copyToDrops = true
+            w.runner.arm(script(drops))
+            let failed = await SlotCommand.run(
+                w.services, SlotOptions(sub: "restore", device: "iphone", app: nil, yes: true))
+            #expect(failed.errorCodes == ["RESTORE_FAILED"])
+            #expect(reasons(failed) == ["notOnDevice": 1], "only the file the return could not push is missing: \(reasons(failed))")
+            expectSums(failed)
+            w.runner.arm(script())
+            let done = await SlotCommand.run(
+                w.services, SlotOptions(sub: "restore", device: "iphone", app: nil, yes: true))
+            #expect(done.ok && json(done)["dataRestored"] == true && json(done)["dataFailures"] == nil)
+        }
+    }
+}

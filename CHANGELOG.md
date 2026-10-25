@@ -39,13 +39,13 @@ All notable changes to this project are documented here. Format follows
   `APP_NOT_INSTALLED`, `RESTORE_FAILED`. Counts and booleans only; the `DATA_RESTORE_*` warnings of `slot return` now name the
   command, with the `--device` and `--app` to retry, in their `fix`. `status` and the menu do not show a pending restore yet. `slot restore` itself has not been run on a device yet.
 - Per-reason failure counts for the app-data backup (dividedby/sideload#2; the lab's Stage 2 runs skipped 1 to 2 of 12 to 13 files
-  with no way to tell why). `slot lend` gains `dataFailures` when `dataFilesFailed` is above 0: an object of the non-zero counts by
+  with no way to tell why). `slot lend`, `slot return` and `slot restore` gain `dataFailures` when `dataFilesFailed` is above 0: an object of the non-zero counts by
   reason, absent when nothing failed, whose values always sum to `dataFilesFailed`. Reasons (fixed words, never a path, file name or
   text from `devicectl`): `unsafePath`, `nameCollision`, `fileCap`, `sizeLimit`, `timeLimit`, `localError`, `notRegularFile`,
   `sizeMismatch`, and for the `copy from` call `copyTimeout`, `copyDeviceLocked`, `copyDeviceNotConnected`, `copyNotRun`,
-  `copyOther` (the call's class is best effort: the locked and not-connected patterns are loose; `devicectl`'s numeric error codes
+  `copyOther`, and for the restore also `notOnDevice` (pushed, but the relisting did not show it); the restore counts its refusals before the call as `unsafePath`, `localError` and `timeLimit` (the call's class is best effort: the locked and not-connected patterns are loose; `devicectl`'s numeric error codes
   are not reported). The progress line gains the same counts: `app data backup: 10 file(s) saved, 3 failed (copyTimeout 2,
-  notRegularFile 1)`. Additive: `dataBackedUp`, `dataFiles`, `dataFilesFailed` keep their meaning.
+  notRegularFile 1)` and `app data restore: ... failed (...)`. Additive: `dataBackedUp`, `dataFiles`, `dataFilesFailed` keep their meaning.
 - The backup manifest gains an optional `supersededAt`: `slot lend` marks every older, unrestored backup of the app superseded
   (whether or not the new lend saved a backup), so `slot restore` never pushes data from an earlier lend. Older manifests
   without the key still read. It gains an optional `uninstalledAt`, set wherever a snapshot shows the app off the device while the slot

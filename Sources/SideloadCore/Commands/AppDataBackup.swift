@@ -147,10 +147,12 @@ enum AppDataBackup {
     }
 
     static func restoreFields(_ result: Result) -> [String: JSONValue] {
-        [
+        var fields: [String: JSONValue] = [
             "dataRestored": .bool(result.done), "dataFilesRestored": .number(Double(result.files)),
             "dataFilesFailed": .number(Double(result.failed)),
         ]
+        if let failures = result.failures.json { fields["dataFailures"] = failures }
+        return fields
     }
 
     // MARK: budget
@@ -769,16 +771,33 @@ enum AppDataBackup {
         let budget = Budget(services.clock)
         let manifest = found.manifest
         var pushed: [Entry] = []
-        var failed = 0
+        var failures = Failures()
         var spent = false
         for entry in manifest.files {
             // Every part of the local path is checked without following links, so a link planted inside the backup cannot
-            // make the restore read (and push) a file from outside it.
-            guard !spent, let local = localPath(found.directory, entry.path, services: services),
-                isPlain(local, root: services.home.backups, regularFile: true), regularFileSize(local) == entry.size, sha256(local) == entry.sha256,
-                let timeout = budget.timeout(cap: copyTimeoutSec)
-            else {
-                failed += 1
+            // make the restore read (and push) a file from outside it. The checks run in this order; the first that fails
+            // names the reason.
+            var refusal: FailReason?
+            var local = ""
+            var timeout = 0
+            if spent {
+                refusal = .timeLimit
+            } else if let path = localPath(found.directory, entry.path, services: services) {
+                if !isPlain(path, root: services.home.backups, regularFile: true) || regularFileSize(path) != entry.size
+                    || sha256(path) != entry.sha256
+                {
+                    refusal = .localError
+                } else if let allowed = budget.timeout(cap: copyTimeoutSec) {
+                    local = path
+                    timeout = allowed
+                } else {
+                    refusal = .timeLimit
+                }
+            } else {
+                refusal = .unsafePath
+            }
+            if let refusal {
+                failures.add(refusal)
                 if budget.left <= 0 { spent = true }
                 continue
             }
@@ -786,16 +805,16 @@ enum AppDataBackup {
             if callSucceeded(out) {
                 pushed.append(entry)
             } else {
-                failed += 1
+                failures.add(copyClass(out, calls: calls))
                 if budget.left <= 0 { spent = true }
             }
         }
         result.files = pushed.count
-        result.failures.add(.copyOther, count: failed)
+        result.failures = failures
         var verified = false
-        if failed == 0, manifest.files.isEmpty {
+        if failures.total == 0, manifest.files.isEmpty {
             verified = true  // nothing was saved, so there is nothing to push or compare
-        } else if failed == 0 {
+        } else if failures.total == 0 {
             if let timeout = budget.timeout(cap: listTimeoutSec) {
                 let out = await calls.listFiles(timeoutSec: timeout)
                 if callSucceeded(out), let listing = parseListing(out.json) {
@@ -805,8 +824,9 @@ enum AppDataBackup {
                         return size != nil && size != entry.size
                     }
                     result.files = pushed.count - missing.count
-                    result.failures = Failures()
-                    result.failures.add(.copyOther, count: missing.count)
+                    var unseen = Failures()
+                    unseen.add(.notOnDevice, count: missing.count)
+                    result.failures = unseen
                     verified = missing.isEmpty
                 }
             }
@@ -837,7 +857,7 @@ enum AppDataBackup {
                         "The app may ask to sign in again."))
             }
         }
-        services.log("app data restore: \(result.files) file(s) restored, \(result.failed) failed")
+        services.log("app data restore: \(result.files) file(s) restored, \(result.failed) failed\(result.failures.summary)")
         return result
     }
 }
