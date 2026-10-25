@@ -627,6 +627,45 @@ struct AppDataBackupTests {
         #expect(keys.count == kept.count)
     }
 
+    @Test("the fold is a full case fold: sigma and final sigma are the same name")
+    func sigmaFold() {
+        func file(_ path: String) -> AppDataBackup.DeviceFile { AppDataBackup.DeviceFile(path: path, size: 1) }
+        let result = AppDataBackup.leaves([file("D/\u{391}\u{3A3}.json"), file("D/\u{3B1}\u{3C2}.json"), file("D/other.json")])
+        #expect(result.files.count == 2 && result.dropped == 1, "\(result.files.map(\.path))")
+    }
+
+    @Test("one entry that cannot be saved is counted failed and skipped; the good ones, preferences included, are kept")
+    func oneBadEntry() async throws {
+        let tooLong = "Documents/" + String(repeating: "a", count: 300) + "/x.json"  // a name over the filesystem's 255-byte limit
+        var files = container
+        files[tooLong] = data("long")
+        files["Documents/zzz-after.json"] = data("after")
+        try await withInstallWorld(script: script(files: files), lendable: "stremio-ios", ledger: prepare) { w in
+            let out = await w.lend()
+            #expect(out.ok && json(out)["freed"] == 1, "\(out.errors)")
+            #expect(json(out)["dataBackedUp"] == true && json(out)["dataFiles"] == 3 && json(out)["dataFilesFailed"] == 1)
+            #expect(warningCodes(out) == ["DATA_BACKUP_INCOMPLETE"])
+            let manifest = try w.manifest(try #require(w.finishedBackups.first))
+            #expect(manifest.files.map(\.path).sorted() == [library, prefs, "Documents/zzz-after.json"].sorted())
+            #expect(!manifest.complete)
+            let back = await w.giveBack()
+            #expect(json(back)["dataRestored"] == true && json(back)["dataFilesRestored"] == 3)
+        }
+    }
+
+    @Test("the per-call allowance is pinned to the Runner's real constants")
+    func graceIsPinned() {
+        // devicectl's own margin over `--timeout`, then the Runner's SIGTERM-to-SIGKILL grace, drain after the kill and reaping.
+        #expect(DeviceCtl.runnerMarginSec == 15)
+        #expect(PosixSpawnRunner.defaultGrace == .seconds(2))
+        #expect(PosixSpawnRunner.drainAfterKill == .seconds(1))
+        #expect(PosixSpawnRunner.defaultReapTimeout == .seconds(5))
+        #expect(PosixSpawnRunner.worstCaseOverrunSec == 8)
+        #expect(AppDataBackup.runnerGraceSec == 23)
+        #expect(AppDataBackup.runnerGraceSec == DeviceCtl.runnerMarginSec + PosixSpawnRunner.worstCaseOverrunSec)
+        #expect(AppDataBackup.totalBudgetSec == 120)
+    }
+
     @Test("a listing of nothing but unsafe paths is a failed backup with a warning, not an empty success")
     func onlyUnsafe() async throws {
         let hostile: [String: Data] = ["../x": data("a"), "/abs": data("b"), "a//b": data("c")]

@@ -5,8 +5,10 @@ import Foundation
 /// Lend-time backup and return-time restore of one free-team app's data container (design section 18, "App data").
 /// Apple tools only: `devicectl device info files` / `copy from` / `copy to` through `FreeDeviceCalls` and the `DeviceCtl`
 /// allowlist. Backups live in `$SIDELOAD_HOME/backups/<alias>/<app>/<stamp>/` (`manifest.json` + `data/<relative path>`),
-/// directories 0700 and files 0600. They hold session tokens: they are secrets-class, so no path, file name or content
-/// ever reaches the output, a log line, the ledger or the repo; the output carries counts and booleans only.
+/// directories 0700 and files 0600. They hold session tokens: they are secrets-class, so no content, and no path or file
+/// name, ever reaches the output, the progress lines, the ledger or the repo; those carry counts and booleans only. The one
+/// place file names do appear is the `devicectl` argv that `LoggingRunner` writes to `logs/commands.log`, like every
+/// subprocess, inside the 0700 home.
 ///
 /// Neither half is a slot operation and neither can fail a command: every outcome is data (`Result`), a failure becomes a
 /// warning, and the caller goes on. The backup is read-only, so a crash leaves a `.partial` folder and an untouched device.
@@ -139,7 +141,9 @@ enum AppDataBackup {
 
     /// The comparison key of a path: the filesystems behind `backups/` are case-insensitive and Unicode-normalising (APFS), so two
     /// paths with the same key are the same local name.
-    private static func fold(_ path: String) -> String { path.decomposedStringWithCanonicalMapping.lowercased() }
+    private static func fold(_ path: String) -> String {
+        path.decomposedStringWithCanonicalMapping.folding(options: .caseInsensitive, locale: nil).decomposedStringWithCanonicalMapping
+    }
 
     private static func isSkipped(_ path: String) -> Bool {
         let key = fold(path)
@@ -444,7 +448,14 @@ enum AppDataBackup {
                 failed += 1
                 continue
             }
-            switch try await copyOne(file, to: partial, calls: calls, budget: budget, services: services) {
+            // One odd entry (a name over the length limit, say) costs only itself: it is counted failed and the rest goes on.
+            let copied: Copy
+            do {
+                copied = try await copyOne(file, to: partial, calls: calls, budget: budget, services: services)
+            } catch {
+                copied = .failed
+            }
+            switch copied {
             case .copied(let entry):
                 bytes += entry.size
                 if bytes > maxBytes {
