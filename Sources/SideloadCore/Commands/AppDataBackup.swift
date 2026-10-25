@@ -85,6 +85,8 @@ enum AppDataBackup {
         case copyDeviceNotConnected
         /// The call never ran: `devicectl` could not be started, the call threw, or the allowlist refused it.
         case copyNotRun
+        /// The call reported success but left nothing on this Mac for a listed file (no file, no folder).
+        case copyNoResult
         /// Any other failed call: a non-zero exit, a reported `failed` outcome, an output overflow, a signal kill.
         case copyOther
         /// Restore only: the push went through but the relisting did not show the file (or showed another size).
@@ -178,29 +180,22 @@ enum AppDataBackup {
         }
     }
 
-    /// A call counts as done only when it exited 0 and the document it wrote does not say otherwise. devicectl can exit 0 while
-    /// that document reports a failure, so a document that is not an object, has a top-level `error`, has an `info` that is not
-    /// an object, or has an `info.outcome` other than `success` is a failed call. Every devicectl document under
-    /// `Tests/.../Fixtures` carries `info.outcome`, and a failure carries `error` as well. No document at all (nothing parseable
-    /// in the `--json-output` file) with exit 0, or one with neither `info.outcome` nor `error`, is still a success: nothing in
-    /// the code or the fixtures shows what a real `copy` writes, and the callers check the result themselves (`copyOne` looks at
-    /// the file it left, the restore relists). `parseListing` keeps its own `info.outcome` check; its callers run this first, and a
-    /// document with `error` and no `result.files` is not a listing anyway, so the two never disagree on a listing.
-    /// `FreeInstallClassifier` only knows `outcome == "failed"`; for the other shapes it reports no failure, and `copyClass`
-    /// then answers `copyOther`.
+    /// Exit 0 is not enough: devicectl can exit 0 and write a document that reports a failure. A top-level `error` (a null one
+    /// is none), a document or `info` that is not an object, or an `info.outcome` other than `success` fails the call. Both
+    /// listing callers run this before `parseListing`, so such a listing is refused too. No document, or one with neither
+    /// `error` nor `info.outcome`, is a success: the callers check the file left, or relist.
     private static func callSucceeded(_ out: FreeDeviceCalls.Outcome) -> Bool {
         guard out.code == 0, !out.timedOut, !out.overflow, out.spawnError == nil else { return false }
         guard let json = out.json else { return true }
-        guard case .object(let top) = json, top["error"] == nil else { return false }
+        guard case .object(let top) = json, top["error"] == nil || top["error"] == .null else { return false }
         guard let info = top["info"] else { return true }
         guard case .object(let fields) = info else { return false }
         return fields["outcome"].map { $0 == .string("success") } ?? true
     }
 
-    /// Why a copy call failed, as a fixed class and nothing else. The class is best effort: it comes from
-    /// `FreeInstallClassifier`, whose device-locked and not-connected patterns are loose and run over stderr, so a failure can
-    /// be put in the wrong one of the two (never leaked: no text from the call is kept). A call that never ran is `copyNotRun`;
-    /// the Runner's timeout and devicectl's own `--timeout` are `copyTimeout`; the rest, unclassified, is `copyOther`.
+    /// Why a copy call failed, as a fixed class and no text from the call. Best effort: the classifier's locked and
+    /// not-connected patterns are loose and read stderr, so those two can be mislabelled. An exit 0 that reported a failure has
+    /// no classifier code and is `copyOther`.
     private static func copyClass(_ out: FreeDeviceCalls.Outcome, calls: FreeDeviceCalls) -> FailReason {
         if out.spawnError != nil { return .copyNotRun }
         if out.timedOut { return .copyTimeout }
@@ -271,7 +266,6 @@ enum AppDataBackup {
         var unsafe = 0
         /// Entries dropped for colliding with an earlier one.
         var collisions = 0
-        var dropped: Int { unsafe + collisions }
     }
 
     /// The files worth copying, in the order they are copied, and how many entries were dropped as unusable. Cut down before any
@@ -473,7 +467,6 @@ enum AppDataBackup {
 
     private enum Copy {
         case copied(Entry)
-        case emptyDirectory
         case failed(FailReason)
     }
 
@@ -486,7 +479,9 @@ enum AppDataBackup {
         try secureDirectory(parentPath(destination), root: services.home.backups)
         var existing = stat()
         if lstat(destination, &existing) == 0 || errno != ENOENT { return .failed(.localError) }  // never write over, or through, anything there
-        for attempt in 0..<2 {
+        var attempt = 0
+        while true {  // every pass returns, or retries a short copy once
+            attempt += 1
             guard let timeout = budget.timeout(cap: copyTimeoutSec) else { return .failed(.timeLimit) }
             let out = await calls.copyFrom(source: file.path, destination: destination, timeoutSec: timeout)
             guard callSucceeded(out) else {
@@ -496,7 +491,7 @@ enum AppDataBackup {
             // What devicectl left is looked at without following it: only a regular file stays. A symlink (or a folder, or
             // anything else) is removed and counted failed; nothing here ever opens, chmods or writes through it.
             var st = stat()
-            guard lstat(destination, &st) == 0 else { return errno == ENOENT ? .emptyDirectory : .failed(.localError) }
+            guard lstat(destination, &st) == 0 else { return .failed(errno == ENOENT ? .copyNoResult : .localError) }
             guard st.st_mode & S_IFMT == S_IFREG else {
                 discard(destination)
                 return .failed(.notRegularFile)
@@ -508,7 +503,7 @@ enum AppDataBackup {
             let size = Int(st.st_size)
             if let expected = file.size, expected != size {
                 discard(destination)
-                if attempt == 0 { continue }
+                if attempt == 1 { continue }
                 return .failed(.sizeMismatch)
             }
             guard let digest = sha256(destination) else {
@@ -517,7 +512,6 @@ enum AppDataBackup {
             }
             return .copied(Entry(path: file.path, size: size, sha256: digest))
         }
-        return .failed(.localError)
     }
 
     /// Backs up the app's data container. Never throws and never blocks the lend: a failure is `done == false` plus a warning.
@@ -566,12 +560,11 @@ enum AppDataBackup {
         try secureDirectory(partial, root: services.home.backups)
         var entries: [Entry] = []
         var bytes = 0
-        var spent = false
-        var spentReason = FailReason.timeLimit  // what set `spent`; the files skipped after it are counted as that
+        var spent: FailReason?  // what ran out; the files skipped after it are counted as that
         while !todo.isEmpty {
             let file = todo.removeFirst()
-            if spent {
-                failures.add(spentReason)
+            if let spent {
+                failures.add(spent)
                 continue
             }
             if let size = file.size, bytes + size > maxBytes {  // too big by the listing: not even asked for
@@ -591,18 +584,13 @@ enum AppDataBackup {
                 if bytes > maxBytes {
                     discard(partial + "/data/" + entry.path)
                     failures.add(.sizeLimit)
-                    spent = true
-                    spentReason = .sizeLimit
+                    spent = .sizeLimit
                 } else {
                     entries.append(entry)
                 }
-            case .emptyDirectory: break
             case .failed(let reason):
                 failures.add(reason)
-                if budget.left <= 0 {
-                    spent = true
-                    spentReason = .timeLimit
-                }
+                if budget.left <= 0 { spent = .timeLimit }
             }
         }
         let failed = failures.total
@@ -832,9 +820,7 @@ enum AppDataBackup {
                         return size != nil && size != entry.size
                     }
                     result.files = pushed.count - missing.count
-                    var unseen = Failures()
-                    unseen.add(.notOnDevice, count: missing.count)
-                    result.failures = unseen
+                    result.failures.add(.notOnDevice, count: missing.count)
                     verified = missing.isEmpty
                 }
             }
