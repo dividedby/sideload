@@ -94,6 +94,31 @@ struct DeviceScript: Sendable {
     var otherTeamApps: Set<String> = []
     /// Free-team profiles whose app is not on the device (profiles outlive their app).
     var staleFreeProfiles: [String] = []
+    /// The data container every app on the device starts with: relative path to content (`DataFaults` breaks it).
+    var container: [String: Data] = [:]
+    var dataFaults = DataFaults()
+}
+
+/// How the app-data calls (`device info files`, `device copy from|to`) misbehave on the simulated device.
+struct DataFaults: Sendable {
+    /// `device info files` fails.
+    var listFails = false
+    /// `device info files` prints a document that is not a listing.
+    var listMalformed = false
+    /// Device paths whose `copy from` fails.
+    var copyFromFails: Set<String> = []
+    /// Device paths whose `copy from` writes one byte too few (every time).
+    var copyFromShort: Set<String> = []
+    /// Device paths whose `copy to` fails.
+    var copyToFails: Set<String> = []
+    /// `copy to` reports success but nothing arrives (the relisting then disagrees).
+    var copyToDrops = false
+    /// The listing carries no sizes.
+    var noSizes = false
+    /// Every data call takes this long on the clock the runner watches.
+    var callTakes: TimeInterval = 0
+    /// The listing fails the n-th time it is asked (1-based), whatever else it does.
+    var listFailsOn: Set<Int> = []
 }
 
 /// Every way a device op can end without a known result, as devicectl, the runner and the call chain produce them.
@@ -124,6 +149,9 @@ final class DeviceSimRunner: Runner {
     private let recorded = Mutex<[CommandSpec]>([])
     private let apps: Mutex<[String: Bool]>
     private let snapshots = Mutex(0)
+    private let listings = Mutex(0)
+    /// Each app's data container, by bundle ID; seeded from the script on first use, emptied by an uninstall.
+    private let containers = Mutex<[String: [String: Data]]>([:])
     private let armed: Mutex<DeviceScript>
     /// Operations that finish later, by the clock: (when, bundle ID, true for an install).
     private let deferred = Mutex<[(at: Date, id: String, install: Bool, copy: Date)]>([])
@@ -219,11 +247,26 @@ final class DeviceSimRunner: Runner {
         return apps.withLock { $0 }
     }
 
-    /// The devicectl subcommands in order: `info apps`, `install app`, `uninstall app`. The read-only `profile list` is left
-    /// out (see `profileCalls`) so these sequences keep showing the snapshot/op order.
+    /// The devicectl subcommands in order: `info apps`, `install app`, `uninstall app`. The read-only `profile list` and the
+    /// app-data calls are left out (see `profileCalls`, `dataCalls`) so these sequences keep showing the snapshot/op order.
     var deviceCalls: [String] {
-        calls.filter { $0.executable == "xcrun" && $0.args.first == "devicectl" }.map(Self.words).filter { $0 != "device profile list" }
+        calls.filter { $0.executable == "xcrun" && $0.args.first == "devicectl" }.map(Self.words)
+            .filter { $0 != "device profile list" && !Self.dataWords.contains($0) }
     }
+
+    static let dataWords: Set<String> = ["device info files", "device copy from", "device copy to"]
+
+    /// The app-data calls (`info files`, `copy from`, `copy to`), in order.
+    var dataCalls: [CommandSpec] { calls.filter { $0.executable == "xcrun" && Self.dataWords.contains(Self.words($0)) } }
+
+    /// The content of the data container of `id` on the device now.
+    func container(_ id: String) -> [String: Data] {
+        let seed = script.container
+        return containers.withLock { $0[id] ?? seed }
+    }
+
+    /// Changes the container behind sideload's back (an owner action: the app wrote something).
+    func setContainer(_ id: String, _ files: [String: Data]) { containers.withLock { $0[id] = files } }
 
     /// The argv of every `device profile list` call.
     var profileCalls: [CommandSpec] { calls.filter { $0.executable == "xcrun" && Self.words($0) == "device profile list" } }
@@ -345,10 +388,92 @@ final class DeviceSimRunner: Runner {
                 if !script.uninstallLeavesApp { state[id] = nil }
                 for gone in script.alsoRemovedOnUninstall { state[gone] = nil }
             }
+            containers.withLock { $0[id] = [:] }  // an uninstall deletes the app's data
             write(["info": ["outcome": "success"], "result": [:]], spec)
             return RunResult()
+        case "device info files", "device copy from", "device copy to":
+            return dataCall(spec, script.dataFaults)
         default:
             return RunResult(code: 1)
+        }
+    }
+
+    private func flagValue(_ flag: String, _ spec: CommandSpec) -> String {
+        spec.args.firstIndex(of: flag).map { spec.args[$0 + 1] } ?? ""
+    }
+
+    /// `info files`, `copy from` and `copy to` against the simulated container of the named app.
+    private func dataCall(_ spec: CommandSpec, _ faults: DataFaults) -> RunResult {
+        if faults.callTakes > 0 { clock?.advance(faults.callTakes) }
+        let id = flagValue("--domain-identifier", spec)
+        let seed = script.container
+        func files() -> [String: Data] { containers.withLock { $0[id] ?? seed } }
+        func store(_ change: (inout [String: Data]) -> Void) {
+            containers.withLock { state in
+                var current = state[id] ?? seed
+                change(&current)
+                state[id] = current
+            }
+        }
+        switch Self.words(spec) {
+        case "device info files":
+            let n = listings.withLock { value in
+                value += 1
+                return value
+            }
+            if faults.listFails || faults.listFailsOn.contains(n) { return RunResult(code: 1) }
+            if faults.listMalformed {
+                write(["info": ["outcome": "success"], "result": ["files": "oops"]], spec)
+                return RunResult()
+            }
+            let current = files()
+            var rows: [JSONValue] = []
+            var directories = Set<String>()
+            for path in current.keys {
+                var parts = path.split(separator: "/").dropLast()
+                while !parts.isEmpty {
+                    directories.insert(parts.joined(separator: "/"))
+                    parts = parts.dropLast()
+                }
+            }
+            // The shape devicectl prints: name, relativePath, metadata and resources; directories are entries too.
+            func row(_ path: String, size: Int?) -> JSONValue {
+                var metadata: [String: JSONValue] = [:]
+                if let size { metadata["size"] = .number(Double(size)) }
+                return [
+                    "name": .string(path.split(separator: "/").last.map(String.init) ?? path), "relativePath": .string(path),
+                    "metadata": .object(metadata), "resources": [:],
+                ]
+            }
+            for dir in directories.sorted() { rows.append(row(dir, size: nil)) }
+            for (path, data) in current.sorted(by: { $0.key < $1.key }) { rows.append(row(path, size: faults.noSizes ? nil : data.count)) }
+            write(["info": ["outcome": "success"], "result": ["files": .array(rows)]], spec)
+            return RunResult()
+        case "device copy from":
+            let source = flagValue("--source", spec)
+            let destination = flagValue("--destination", spec)
+            if faults.copyFromFails.contains(source) { return RunResult(code: 1) }
+            let current = files()
+            guard let data = current[source] else {
+                // A directory has nothing to copy; anything else is not there.
+                return current.keys.contains { $0.hasPrefix(source + "/") } ? RunResult() : RunResult(code: 1)
+            }
+            let bytes = faults.copyFromShort.contains(source) ? data.dropLast() : data
+            do {
+                try makeDirectories(parentPath(destination), mode: 0o700)
+                try Data(bytes).write(to: URL(fileURLWithPath: destination))
+                chmod(destination, 0o644)  // devicectl's own mode; backup tightens it
+            } catch {
+                return RunResult(code: 1)
+            }
+            return RunResult()
+        default:  // device copy to
+            let source = flagValue("--source", spec)
+            let destination = flagValue("--destination", spec)
+            if faults.copyToFails.contains(destination) { return RunResult(code: 1) }
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: source)) else { return RunResult(code: 1) }
+            if !faults.copyToDrops { store { $0[destination] = data } }
+            return RunResult()
         }
     }
 

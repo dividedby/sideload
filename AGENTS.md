@@ -50,6 +50,10 @@ team) before changing anything.
   never stdout, stderr, logs, the ledger, the kit or the repo. `ledger.json` holds no secrets.
 - `$SIDELOAD_HOME/asc/` (the App Store Connect API key `.p8` and `key.json`) is never read, opened, printed or
   copied by an agent. Tests generate throwaway P-256 keys at runtime.
+- App-data backups under `$SIDELOAD_HOME/backups/` (`slot lend` saves the lent app's data container) are secrets-class: they hold
+  session tokens. Directories 0700, files 0600; never print, log, put in JSON, the ledger or the repo, and agents never open,
+  read or copy them. Output carries counts and booleans only. `copy to` (the restore) is untested on a device until the owner
+  runs the first check.
 - The pre-commit hook (`.githooks/pre-commit` → `scripts/check-secrets.mjs --staged`) must stay enabled.
   `pnpm install` sets `core.hooksPath`. Never bypass it with `--no-verify`.
 

@@ -27,6 +27,9 @@ public struct Paths: Sendable, Equatable {
     /// Free-team development profiles `provision` keeps (`profiles/free/<app>/<device>/<uuid>.mobileprovision`, 0600;
     /// they contain device IDs). Created lazily, not part of `subdirectories`.
     public var freeProfiles: String { home + "/profiles/free" }
+    /// App-data backups (`backups/<alias>/<app>/<stamp>/`, dirs 0700, files 0600). They hold session tokens: secrets-class,
+    /// never printed, logged, in the ledger or the repo. Created lazily, not part of `subdirectories`.
+    public var backups: String { home + "/backups" }
     /// The runtime-generated profile-carrier project (`CarrierProject`) and its derived data, both under `builds/`.
     public var carrierProject: String { builds + "/carrier" }
     public var carrierDerivedData: String { builds + "/carrier-dd" }

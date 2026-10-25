@@ -36,7 +36,7 @@ const FORBIDDEN_EXTENSIONS = new Set([
   '.p12', '.pfx', '.mobileprovision', '.provisionprofile', '.ipa',
   '.key', '.pem', '.cer', '.der', '.certsigningrequest',
 ]);
-const FORBIDDEN_SEGMENTS = new Set(['.sideload', 'secrets', 'xcuserdata', 'deriveddata']);
+const FORBIDDEN_SEGMENTS = new Set(['.sideload', 'secrets', 'backups', 'xcuserdata', 'deriveddata']);
 const FORBIDDEN_SEGMENT_SUFFIXES = ['.app', '.xcarchive', '.dsym'];
 
 const PEM_KEY = /-----BEGIN (?:[A-Z ]*PRIVATE KEY|PGP PRIVATE KEY BLOCK)-----/;
