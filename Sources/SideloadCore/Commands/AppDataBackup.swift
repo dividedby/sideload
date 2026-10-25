@@ -17,8 +17,9 @@ enum AppDataBackup {
     static let totalBudgetSec = 120
     static let listTimeoutSec = 60
     static let copyTimeoutSec = 30
-    /// The Runner's extra time over a call's `--timeout` (`DeviceCtl.run`).
-    static let runnerGraceSec = 15
+    /// What one call can last past its `--timeout`, from the real constants: `DeviceCtl` gives the Runner `timeout + 15`, and the
+    /// Runner needs up to 8 s more to stop a child (SIGTERM-to-SIGKILL grace, drain, reaping).
+    static var runnerGraceSec: Int { DeviceCtl.runnerMarginSec + PosixSpawnRunner.worstCaseOverrunSec }
     /// No call is started with a `--timeout` below this.
     static let minCallSec = 5
     static let maxFiles = 200
@@ -136,8 +137,13 @@ enum AppDataBackup {
         return files
     }
 
+    /// The comparison key of a path: the filesystems behind `backups/` are case-insensitive and Unicode-normalising (APFS), so two
+    /// paths with the same key are the same local name.
+    private static func fold(_ path: String) -> String { path.decomposedStringWithCanonicalMapping.lowercased() }
+
     private static func isSkipped(_ path: String) -> Bool {
-        ["tmp", "Library/Caches"].contains { path == $0 || path.hasPrefix($0 + "/") }
+        let key = fold(path)
+        return ["tmp", "library/caches"].contains { key == $0 || key.hasPrefix($0 + "/") }
     }
 
     /// A listing path that may become a local path: relative, plain parts, no NUL, no backslash (nothing else is looked at or
@@ -146,17 +152,26 @@ enum AppDataBackup {
         DeviceCtl.isSafeDevicePath(path) && !path.contains("\\")
     }
 
-    /// The files worth copying, in the order they are copied. Dropped before any filesystem or device call: unsafe paths,
-    /// directories (an entry that is the parent of another entry, or that `metadata` marks as one), duplicates, and anything under
-    /// `Library/Caches` or `tmp`. Order: `Library/Preferences` first (the sign-in lives there and must not be starved), then
-    /// files whose size is known, then the rest; by path within each.
-    static func leaves(_ listing: [DeviceFile]) -> [DeviceFile] {
-        let safe = listing.filter { isSafeEntryPath($0.path) }
+    /// The files worth copying, in the order they are copied, and how many entries were dropped as unusable. Cut down before any
+    /// filesystem or device call. Dropped and counted: an unsafe path, and a path that collides case-insensitively and
+    /// Unicode-normalised with an earlier one (or with a directory); the first in copy order is kept. Skipped, not counted:
+    /// directories (an entry that is the parent of another entry, or that `metadata` marks as one) and anything under
+    /// `Library/Caches` or `tmp`. Order: `Library/Preferences` first (the sign-in lives there and must not be starved), then files
+    /// whose size is known, then the rest; by path within each.
+    static func leaves(_ listing: [DeviceFile]) -> (files: [DeviceFile], dropped: Int) {
+        var dropped = 0
+        var safe: [DeviceFile] = []
+        for entry in listing {
+            if isSafeEntryPath(entry.path) { safe.append(entry) } else { dropped += 1 }
+        }
         var directories = Set<String>()
+        var foldedDirectories = Set<String>()
         for file in safe {
             var parts = file.path.split(separator: "/", omittingEmptySubsequences: false).dropLast()
             while !parts.isEmpty {
-                directories.insert(parts.joined(separator: "/"))
+                let parent = parts.joined(separator: "/")
+                directories.insert(parent)
+                foldedDirectories.insert(fold(parent))
                 parts = parts.dropLast()
             }
         }
@@ -164,10 +179,19 @@ enum AppDataBackup {
             if file.path.hasPrefix("Library/Preferences/") { return 0 }
             return file.size == nil ? 2 : 1
         }
+        let ordered = safe.filter { !$0.isDirectory && !directories.contains($0.path) && !isSkipped($0.path) }
+            .sorted { (rank($0), $0.path) < (rank($1), $1.path) }
         var seen = Set<String>()
-        return safe.filter {
-            !$0.isDirectory && !directories.contains($0.path) && !isSkipped($0.path) && seen.insert($0.path).inserted
-        }.sorted { (rank($0), $0.path) < (rank($1), $1.path) }
+        var kept: [DeviceFile] = []
+        for file in ordered {
+            let key = fold(file.path)
+            if foldedDirectories.contains(key) || !seen.insert(key).inserted {
+                dropped += 1
+            } else {
+                kept.append(file)
+            }
+        }
+        return (kept, dropped)
     }
 
     /// `<base>/data/<rel>`, only when `rel` is a safe entry path and the result stays under `$SIDELOAD_HOME/backups/`.
@@ -179,17 +203,66 @@ enum AppDataBackup {
 
     // MARK: files
 
-    private static func secureDirectory(_ path: String, services: Services) throws {
-        let root = services.home.backups
-        // Nothing is created or chmodded unless the path is the backups folder or plainly inside it.
+    /// Makes `path` (the backups folder `root` or a path inside it) a chain of real, owned folders of mode 0700, one part at a
+    /// time, never following a link: each part is `lstat`ed, created with `mkdir` when missing, refused when it is a symlink or
+    /// anything but a folder of ours, and chmodded through a descriptor opened with `O_NOFOLLOW`. So a link planted in the tree
+    /// (or made by a case-insensitive name clash) can never redirect a folder creation or a chmod outside `root`.
+    static func secureDirectory(_ path: String, root: String) throws {
         guard path == root || DeviceCtl.isSafeBackupPath(path, backups: root) else { throw ioError("path", EINVAL) }
-        try makeDirectories(path, mode: 0o700)
-        var current = path
-        while current.count >= root.count {
-            if chmod(current, 0o700) != 0 { throw ioError("chmod") }
-            if current == root { break }
-            current = parentPath(current)
+        try makeDirectories(parentPath(root), mode: 0o700)
+        var current = root
+        try secureOne(current)
+        for part in path.dropFirst(root.count).split(separator: "/") {
+            current += "/" + part
+            try secureOne(current)
         }
+    }
+
+    private static func secureOne(_ directory: String) throws {
+        var st = stat()
+        if lstat(directory, &st) != 0 {
+            guard errno == ENOENT else { throw ioError("stat") }
+            if mkdir(directory, 0o700) != 0 && errno != EEXIST { throw ioError("mkdir") }
+            guard lstat(directory, &st) == 0 else { throw ioError("stat") }
+        }
+        guard st.st_mode & S_IFMT == S_IFDIR, st.st_uid == geteuid() else { throw ioError("folder check", EINVAL) }
+        let fd = open(directory, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+        guard fd >= 0 else { throw ioError("open") }
+        defer { close(fd) }
+        if fchmod(fd, 0o700) != 0 { throw ioError("chmod") }
+    }
+
+    /// Whether `path` (the folder `root` or a path inside it) exists with every part a real folder, not a symlink, and, when
+    /// `regularFile`, the last part a regular file. Nothing is followed.
+    static func isPlain(_ path: String, root: String, regularFile: Bool) -> Bool {
+        guard path == root || path.hasPrefix(root + "/") else { return false }
+        let parts = path.dropFirst(root.count).split(separator: "/", omittingEmptySubsequences: false).dropFirst()
+        var st = stat()
+        func check(_ item: String, last: Bool) -> Bool {
+            guard lstat(item, &st) == 0 else { return false }
+            return st.st_mode & S_IFMT == (last && regularFile ? S_IFREG : S_IFDIR)
+        }
+        var current = root
+        guard check(current, last: parts.isEmpty) else { return false }
+        for (index, part) in parts.enumerated() {
+            guard !part.isEmpty else { return false }
+            current += "/" + part
+            guard check(current, last: index == parts.count - 1) else { return false }
+        }
+        return true
+    }
+
+    /// Mode 0600 through a descriptor opened without following a link (the caller `lstat`ed a regular file).
+    private static func restrictFile(_ path: String) -> Bool {
+        let fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        return fchmod(fd, 0o600) == 0
+    }
+
+    /// Removes whatever is at `path` without following it (a symlink goes, its target stays).
+    private static func discard(_ path: String) {
+        if unlink(path) != 0 { try? FileManager.default.removeItem(atPath: path) }
     }
 
     private static func regularFileSize(_ path: String) -> Int? {
@@ -256,6 +329,7 @@ enum AppDataBackup {
     /// `.op.lock`, so none is in progress).
     static func prune(_ services: Services, _ target: FreeTarget) {
         let directory = appDirectory(services, target)
+        guard isPlain(directory, root: services.home.backups, regularFile: false) else { return }
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []
         for name in names where name.hasSuffix(".partial") { removeTree(directory + "/" + name) }
         for name in finished(directory).dropFirst(keep) { removeTree(directory + "/" + name) }
@@ -283,23 +357,32 @@ enum AppDataBackup {
     ) async throws -> Copy {
         guard let destination = localPath(partial, file.path, services: services), budget.timeout(cap: copyTimeoutSec) != nil
         else { return .failed }
-        try secureDirectory(parentPath(destination), services: services)
+        try secureDirectory(parentPath(destination), root: services.home.backups)
+        var existing = stat()
+        if lstat(destination, &existing) == 0 || errno != ENOENT { return .failed }  // never write over, or through, anything there
         for attempt in 0..<2 {
             guard let timeout = budget.timeout(cap: copyTimeoutSec) else { return .failed }
             let out = await calls.copyFrom(source: file.path, destination: destination, timeoutSec: timeout)
             guard callSucceeded(out) else {
-                unlink(destination)
+                discard(destination)
                 return .failed
             }
-            guard let size = regularFileSize(destination) else { return .emptyDirectory }
-            chmod(destination, 0o600)
+            // What devicectl left is looked at without following it: only a regular file stays. A symlink (or a folder, or
+            // anything else) is removed and counted failed; nothing here ever opens, chmods or writes through it.
+            var st = stat()
+            guard lstat(destination, &st) == 0 else { return errno == ENOENT ? .emptyDirectory : .failed }
+            guard st.st_mode & S_IFMT == S_IFREG, restrictFile(destination) else {
+                discard(destination)
+                return .failed
+            }
+            let size = Int(st.st_size)
             if let expected = file.size, expected != size {
-                unlink(destination)
+                discard(destination)
                 if attempt == 0 { continue }
                 return .failed
             }
             guard let digest = sha256(destination) else {
-                unlink(destination)
+                discard(destination)
                 return .failed
             }
             return .copied(Entry(path: file.path, size: size, sha256: digest))
@@ -345,9 +428,9 @@ enum AppDataBackup {
             return
         }
         let wanted = leaves(listing)
-        var todo = Array(wanted.prefix(maxFiles))
-        var failed = wanted.count - todo.count
-        try secureDirectory(partial, services: services)
+        var todo = Array(wanted.files.prefix(maxFiles))
+        var failed = wanted.dropped + (wanted.files.count - todo.count)
+        try secureDirectory(partial, root: services.home.backups)
         var entries: [Entry] = []
         var bytes = 0
         var spent = false
@@ -357,11 +440,15 @@ enum AppDataBackup {
                 failed += 1
                 continue
             }
+            if let size = file.size, bytes + size > maxBytes {  // too big by the listing: not even asked for
+                failed += 1
+                continue
+            }
             switch try await copyOne(file, to: partial, calls: calls, budget: budget, services: services) {
             case .copied(let entry):
                 bytes += entry.size
                 if bytes > maxBytes {
-                    unlink(partial + "/data/" + entry.path)
+                    discard(partial + "/data/" + entry.path)
                     failed += 1
                     spent = true
                 } else {
@@ -406,9 +493,13 @@ enum AppDataBackup {
     /// The newest backup made for this lend and not yet restored.
     private static func candidate(_ services: Services, _ target: FreeTarget, since: Date) -> (directory: String, manifest: Manifest)? {
         let base = appDirectory(services, target)
+        let root = services.home.backups
+        guard isPlain(base, root: root, regularFile: false) else { return nil }
         for name in finished(base) {
             let directory = base + "/" + name
-            guard let manifest = readManifest(in: directory), manifest.bundleId == target.bundleId,
+            guard isPlain(directory, root: root, regularFile: false),
+                isPlain(directory + "/manifest.json", root: root, regularFile: true),
+                let manifest = readManifest(in: directory), manifest.bundleId == target.bundleId,
                 abs(manifest.lendSince.timeIntervalSince(since)) < 1, manifest.restoredAt == nil
             else { continue }
             return (directory, manifest)
@@ -428,8 +519,10 @@ enum AppDataBackup {
         var failed = 0
         var spent = false
         for entry in manifest.files {
+            // Every part of the local path is checked without following links, so a link planted inside the backup cannot
+            // make the restore read (and push) a file from outside it.
             guard !spent, let local = localPath(found.directory, entry.path, services: services),
-                regularFileSize(local) == entry.size, sha256(local) == entry.sha256,
+                isPlain(local, root: services.home.backups, regularFile: true), regularFileSize(local) == entry.size, sha256(local) == entry.sha256,
                 let timeout = budget.timeout(cap: copyTimeoutSec)
             else {
                 failed += 1

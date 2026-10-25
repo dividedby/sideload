@@ -30,6 +30,9 @@ public struct DeviceCtl: Sendable {
         case free(bundleId: String)
     }
 
+    /// The Runner's timeout is the call's `--timeout` plus this, so devicectl's own timeout fires first.
+    public static let runnerMarginSec = 15
+
     private enum AppMutation {
         case install, uninstall, launch
     }
@@ -261,7 +264,7 @@ public struct DeviceCtl: Sendable {
         argv += ["--timeout", String(timeoutSec), "--json-output", jsonFile] + positional
 
         let res = await runner.run(
-            CommandSpec(executable: "xcrun", args: argv, timeout: .seconds(timeoutSec + 15)))
+            CommandSpec(executable: "xcrun", args: argv, timeout: .seconds(timeoutSec + Self.runnerMarginSec)))
         if res.overflow {
             throw SideloadError(
                 "OUTPUT_LIMIT", "devicectl produced more output than the safety limit; it was stopped.",

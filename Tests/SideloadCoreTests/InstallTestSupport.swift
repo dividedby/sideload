@@ -117,8 +117,13 @@ struct DataFaults: Sendable {
     var noSizes = false
     /// Every data call takes this long on the clock the runner watches.
     var callTakes: TimeInterval = 0
-    /// Every copy hangs until the Runner kills it, `--timeout` + 15 s after it started (the worst case of the time cap).
+    /// Every copy hangs until the Runner has killed it, as late as it can: `--timeout` + the Runner's margin + its worst-case
+    /// overrun (the worst case of the time cap).
     var copyHangs = false
+    /// Device paths whose `copy from` leaves a symlink at the destination, pointing at this (outside) folder, and reports success.
+    var copyFromSymlinks: [String: String] = [:]
+    /// Sizes the listing claims for some paths, whatever the content is.
+    var claimedSizes: [String: Int] = [:]
     /// The listing fails the n-th time it is asked (1-based), whatever else it does.
     var listFailsOn: Set<Int> = []
 }
@@ -408,7 +413,7 @@ final class DeviceSimRunner: Runner {
     private func dataCall(_ spec: CommandSpec, _ faults: DataFaults) -> RunResult {
         if faults.callTakes > 0 { clock?.advance(faults.callTakes) }
         if faults.copyHangs, Self.words(spec) != "device info files" {
-            clock?.advance(Double((Int(flagValue("--timeout", spec)) ?? 0) + 15))
+            clock?.advance(Double((Int(flagValue("--timeout", spec)) ?? 0) + AppDataBackup.runnerGraceSec))
             return RunResult(code: nil, timedOut: true)
         }
         let id = flagValue("--domain-identifier", spec)
@@ -455,13 +460,19 @@ final class DeviceSimRunner: Runner {
                 ]
             }
             for dir in directories.sorted() { rows.append(row(dir, size: nil)) }
-            for (path, data) in current.sorted(by: { $0.key < $1.key }) { rows.append(row(path, size: faults.noSizes ? nil : data.count)) }
+            for (path, data) in current.sorted(by: { $0.key < $1.key }) {
+                rows.append(row(path, size: faults.noSizes ? nil : (faults.claimedSizes[path] ?? data.count)))
+            }
             write(["info": ["outcome": "success"], "result": ["files": .array(rows)]], spec)
             return RunResult()
         case "device copy from":
             let source = flagValue("--source", spec)
             let destination = flagValue("--destination", spec)
             if faults.copyFromFails.contains(source) { return RunResult(code: 1) }
+            if let target = faults.copyFromSymlinks[source] {
+                try? makeDirectories(parentPath(destination), mode: 0o700)
+                return symlink(target, destination) == 0 ? RunResult() : RunResult(code: 1)
+            }
             let current = files()
             guard let data = current[source] else {
                 // A directory has nothing to copy; anything else is not there.

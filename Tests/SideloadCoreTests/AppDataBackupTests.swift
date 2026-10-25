@@ -198,13 +198,13 @@ struct AppDataBackupTests {
         try await withInstallWorld(script: script(DataFaults(callTakes: 50), files: files), lendable: "stremio-ios", ledger: prepare) { w in
             let out = await w.lend()
             #expect(out.ok && json(out)["freed"] == 1, "a spent allowance never blocks the lend")
-            // list 50 s (70 left); copy 1 gets 30 s (20 left); copy 2 gets what is left minus the Runner's 15 s grace (5 s);
-            // then no more calls: a call is not started with under 5 s.
-            #expect(json(out)["dataBackedUp"] == true && json(out)["dataFiles"] == 2 && json(out)["dataFilesFailed"] == 2)
+            // list 50 s (70 left); copy 1 gets 30 s (20 left); copy 2 would get 20 - 23 s (the Runner's margin and worst-case
+            // overrun) < 5 s, so it is not started.
+            #expect(json(out)["dataBackedUp"] == true && json(out)["dataFiles"] == 1 && json(out)["dataFilesFailed"] == 3)
             #expect(warningCodes(out) == ["DATA_BACKUP_INCOMPLETE"])
             let timeouts = w.runner.dataCalls.map { spec in spec.args[spec.args.firstIndex(of: "--timeout")! + 1] }
-            #expect(timeouts == ["60", "30", "5"])
-            #expect(w.dataWords.count == 3)
+            #expect(timeouts == ["60", "30"])
+            #expect(w.dataWords.count == 2)
         }
     }
 
@@ -455,7 +455,8 @@ struct AppDataBackupTests {
             let sources = w.runner.dataCalls.filter { DeviceSimRunner.words($0) == "device copy from" }
                 .map { $0.args[$0.args.firstIndex(of: "--source")! + 1] }
             #expect(sources.sorted() == ["...", "link -> /etc/passwd", "ok.json"], "\(sources)")
-            #expect(json(out)["dataFiles"] == 3 && json(out)["dataFilesFailed"] == 0)
+            #expect(json(out)["dataFiles"] == 3 && json(out)["dataFilesFailed"] == 9)
+            #expect(warningCodes(out) == ["DATA_BACKUP_INCOMPLETE"], "the dropped paths are counted failed")
             let manifest = try w.manifest(try #require(w.finishedBackups.first))
             #expect(manifest.files.map(\.path).sorted() == ["...", "link -> /etc/passwd", "ok.json"])
         }
@@ -497,7 +498,7 @@ struct AppDataBackupTests {
             #expect(elapsed <= 120, "took \(elapsed) s")
             #expect(json(out)["dataBackedUp"] == false && warningCodes(out) == ["DATA_BACKUP_FAILED"])
             let timeouts = w.runner.dataCalls.map { spec in spec.args[spec.args.firstIndex(of: "--timeout")! + 1] }
-            #expect(timeouts == ["60", "30", "30", "15"], "each call is cut to what is left minus the 15 s grace: \(timeouts)")
+            #expect(timeouts == ["60", "30", "30"], "each call is cut to what is left minus the Runner's worst-case overrun (23 s): \(timeouts)")
         }
     }
 
@@ -517,7 +518,7 @@ struct AppDataBackupTests {
             #expect(elapsed <= 120, "took \(elapsed) s")
             #expect(json(out)["dataRestored"] == false && json(out)["dataFilesFailed"] == 8)
             let pushed = w.runner.dataCalls.filter { DeviceSimRunner.words($0) == "device copy to" }
-            #expect(pushed.count == 3)
+            #expect(pushed.count == 2)
         }
     }
 
@@ -529,12 +530,151 @@ struct AppDataBackupTests {
         ]
         try await withInstallWorld(script: script(DataFaults(callTakes: 50), files: files), lendable: "stremio-ios", ledger: prepare) { w in
             let out = await w.lend()
-            #expect(out.ok && json(out)["dataFiles"] == 2 && json(out)["dataFilesFailed"] == 3)
+            #expect(out.ok && json(out)["dataFiles"] == 1 && json(out)["dataFilesFailed"] == 4)
             let sources = w.runner.dataCalls.filter { DeviceSimRunner.words($0) == "device copy from" }
                 .map { $0.args[$0.args.firstIndex(of: "--source")! + 1] }
-            #expect(sources == [prefs, "Documents/a.json"], "\(sources)")
+            #expect(sources == [prefs], "\(sources)")
             let manifest = try w.manifest(try #require(w.finishedBackups.first))
             #expect(manifest.files.map(\.path).contains(prefs))
+        }
+    }
+
+    // MARK: links, case-folding and size
+
+    private func symlinks(under root: String) -> [String] {
+        guard let walker = FileManager.default.enumerator(atPath: root) else { return [] }
+        return walker.compactMap { $0 as? String }.filter { name in
+            var st = stat()
+            return lstat(root + "/" + name, &st) == 0 && st.st_mode & S_IFMT == S_IFLNK
+        }
+    }
+
+    @Test("a symlink devicectl leaves in the tree is removed and counted failed; nothing outside backups/ is written or chmodded")
+    func copiedSymlink() async throws {
+        var faults = DataFaults()
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            let outside = w.paths.home + "/outside"
+            try makeDirectories(outside, mode: 0o755)
+            chmod(outside, 0o755)
+            try Data("keep".utf8).write(to: URL(fileURLWithPath: outside + "/keep.txt"))
+            faults.copyFromSymlinks = ["Documents/link.json": outside]
+            var files = container
+            files["Documents/link.json"] = data("link")
+            w.runner.arm(script(faults, files: files))
+            w.runner.setContainer(w.bundleId, files)
+            let out = await w.lend()
+            #expect(out.ok && json(out)["freed"] == 1, "\(out.errors)")
+            #expect(json(out)["dataFiles"] == 2 && json(out)["dataFilesFailed"] == 1)
+            #expect(warningCodes(out) == ["DATA_BACKUP_INCOMPLETE"])
+            #expect(modeOf(outside) == 0o755 && listing(outside) == ["keep.txt"], "nothing written or chmodded outside")
+            #expect(symlinks(under: w.paths.backups).isEmpty, "no link survives in the backup tree")
+            let manifest = try w.manifest(try #require(w.finishedBackups.first))
+            #expect(manifest.files.map(\.path).sorted() == [library, prefs].sorted())
+        }
+    }
+
+    @Test("folder creation walks every part without following links: a link or a file in the way is refused and nothing outside is touched")
+    func secureDirectoryRefusesLinks() throws {
+        let base = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: base) }
+        let root = base.path + "/backups"
+        let outside = base.path + "/outside"
+        try makeDirectories(root, mode: 0o700)
+        try makeDirectories(outside, mode: 0o755)
+        chmod(outside, 0o755)
+        #expect(symlink(outside, root + "/A") == 0)
+        FileManager.default.createFile(atPath: root + "/file", contents: Data("x".utf8))
+        // A link named `A` and a path through `A` (or, on a case-insensitive volume, through `a`).
+        for path in [root + "/A/x", root + "/A/x/y", root + "/file/x"] {
+            #expect(throws: (any Error).self, "\(path.dropFirst(base.path.count))") {
+                try AppDataBackup.secureDirectory(path, root: root)
+            }
+        }
+        // `a` is the link on a case-insensitive volume (refused) and a fresh folder on a case-sensitive one; either way the
+        // link's target is left alone.
+        try? AppDataBackup.secureDirectory(root + "/a/x", root: root)
+        #expect(modeOf(outside) == 0o755 && listing(outside).isEmpty, "the link's target was neither chmodded nor written")
+        // Paths outside the root, or with odd parts, are refused before anything is created.
+        for path in [base.path, base.path + "/other", root + "/../escape", root + "/a/../../escape"] {
+            #expect(throws: (any Error).self) { try AppDataBackup.secureDirectory(path, root: root) }
+        }
+        #expect(!FileManager.default.fileExists(atPath: base.path + "/escape") && !FileManager.default.fileExists(atPath: base.path + "/other"))
+        // The plain check agrees.
+        try AppDataBackup.secureDirectory(root + "/ok/deeper", root: root)
+        #expect(modeOf(root + "/ok/deeper") == 0o700 && modeOf(root + "/ok") == 0o700)
+        #expect(AppDataBackup.isPlain(root + "/ok/deeper", root: root, regularFile: false))
+        #expect(!AppDataBackup.isPlain(root + "/A", root: root, regularFile: false))
+        #expect(!AppDataBackup.isPlain(root + "/A/anything", root: root, regularFile: true))
+        #expect(!AppDataBackup.isPlain(root + "/file", root: root, regularFile: false))
+        #expect(AppDataBackup.isPlain(root + "/file", root: root, regularFile: true))
+    }
+
+    @Test("paths that collide case-insensitively or Unicode-normalised keep the first and count the rest as failed")
+    func collisions() {
+        func file(_ path: String) -> AppDataBackup.DeviceFile { AppDataBackup.DeviceFile(path: path, size: 1) }
+        let listed = [
+            file("Docs/X.json"), file("docs/x.json"), file("A"), file("a/x"), file("Cafe\u{301}.json"), file("Caf\u{e9}.json"), file("ok"),
+            file("/abs"), file("a/../b"),
+        ]
+        let result = AppDataBackup.leaves(listed)
+        let kept = result.files.map(\.path)
+        #expect(kept.count == 4, "\(kept)")
+        #expect(kept.contains("Docs/X.json") && kept.contains("a/x") && kept.contains("ok"))
+        #expect(!kept.contains("docs/x.json") && !kept.contains("A"), "`A` is the folder `a`, `docs/x.json` is `Docs/X.json`")
+        #expect(kept.filter { $0.hasPrefix("Caf") }.count == 1)
+        #expect(result.dropped == 5, "two unsafe, the case clash, the folder clash and one normalisation clash")
+        let keys = Set(kept.map { $0.decomposedStringWithCanonicalMapping.lowercased() })
+        #expect(keys.count == kept.count)
+    }
+
+    @Test("a listing of nothing but unsafe paths is a failed backup with a warning, not an empty success")
+    func onlyUnsafe() async throws {
+        let hostile: [String: Data] = ["../x": data("a"), "/abs": data("b"), "a//b": data("c")]
+        try await withInstallWorld(script: script(files: hostile), lendable: "stremio-ios", ledger: prepare) { w in
+            let out = await w.lend()
+            #expect(out.ok && json(out)["freed"] == 1)
+            #expect(json(out)["dataBackedUp"] == false && json(out)["dataFiles"] == 0 && json(out)["dataFilesFailed"] == 3)
+            #expect(warningCodes(out) == ["DATA_BACKUP_FAILED"])
+            #expect(w.backupNames.isEmpty)
+            #expect(w.runner.dataCalls.map { DeviceSimRunner.words($0) } == ["device info files"], "nothing was asked for")
+        }
+    }
+
+    @Test("a file the listing says is too big for the 256 MiB cap is not asked for; the rest is still saved")
+    func sizeCapBeforeCopy() async throws {
+        var faults = DataFaults()
+        faults.claimedSizes = ["Documents/big.bin": 300 * 1024 * 1024]
+        var files = container
+        files["Documents/big.bin"] = data("small")
+        try await withInstallWorld(script: script(faults, files: files), lendable: "stremio-ios", ledger: prepare) { w in
+            let out = await w.lend()
+            #expect(out.ok && json(out)["dataBackedUp"] == true)
+            #expect(json(out)["dataFiles"] == 2 && json(out)["dataFilesFailed"] == 1)
+            #expect(warningCodes(out) == ["DATA_BACKUP_INCOMPLETE"])
+            let sources = w.runner.dataCalls.filter { DeviceSimRunner.words($0) == "device copy from" }
+                .map { $0.args[$0.args.firstIndex(of: "--source")! + 1] }
+            #expect(!sources.contains("Documents/big.bin"))
+        }
+    }
+
+    @Test("the restore does not follow a link planted inside the backup: the file behind it is never read or pushed")
+    func restoreFollowsNoLinks() async throws {
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            #expect(await w.lend().ok)
+            let name = try #require(w.finishedBackups.first)
+            // Same name, same bytes, but reached through a link to a folder outside the backup.
+            let outside = w.paths.home + "/outside-docs"
+            try makeDirectories(outside + "/Documents", mode: 0o755)
+            try container[library]!.write(to: URL(fileURLWithPath: outside + "/" + library))
+            let docs = "\(w.appBackups)/\(name)/data/Documents"
+            try FileManager.default.removeItem(atPath: docs)
+            #expect(symlink(outside + "/Documents", docs) == 0)
+            let out = await w.giveBack()
+            #expect(out.ok && json(out)["reinstalled"] == true)
+            #expect(json(out)["dataRestored"] == false && json(out)["dataFilesRestored"] == 1 && json(out)["dataFilesFailed"] == 1)
+            let pushed = w.runner.dataCalls.filter { DeviceSimRunner.words($0) == "device copy to" }
+            #expect(pushed.count == 1 && !pushed.contains { $0.args.contains(library) }, "only the preferences went back")
+            #expect(w.runner.container(stremioId).keys.sorted() == [prefs])
         }
     }
 
@@ -555,10 +695,10 @@ struct AppDataBackupTests {
         ]
         let parsed = try #require(AppDataBackup.parseListing(files))
         #expect(
-            AppDataBackup.leaves(parsed).map(\.path)
+            AppDataBackup.leaves(parsed).files.map(\.path)
                 == ["Library/Preferences/p.plist", "Documents/a.json", "Empty", "Library/CachesX", "tmpfile"],
             "preferences first, sized files next; a directory marked by its metadata is not a file")
-        #expect(AppDataBackup.leaves(parsed).dropFirst().first?.size == 5)
+        #expect(AppDataBackup.leaves(parsed).files.dropFirst().first?.size == 5)
         #expect(AppDataBackup.parseListing(nil) == nil)
         #expect(AppDataBackup.parseListing(["result": ["files": [["relativePath": ""]]]]) == nil)
         #expect(AppDataBackup.parseListing(["result": ["files": [["name": "a"]]]]) == nil)
