@@ -160,6 +160,8 @@ struct SlotRestoreTests {
             #expect(printed["cause"] == "DATA_RESTORE_INCOMPLETE" && printed["dataRestored"] == false)
             #expect(printed["kept"] == true && printed["dataFilesFailed"] == 1, "only the file the return could not push is missing")
             #expect(warningCodes(dropped) == ["DATA_RESTORE_INCOMPLETE"])
+            let retryFix = json(dropped)["warnings"]?.array?.first?["fix"]?.string ?? ""
+            #expect(retryFix.contains("sideload slot restore --device iphone --app stremio-ios --yes"), "the retry names the app it used")
             #expect(try w.manifest(name).restoredAt == nil)
             // 2: the relisting cannot be read (the lend's, the return's and the first run's listings came before).
             let listings = w.runner.dataCalls.filter { DeviceSimRunner.words($0) == "device info files" }.count
@@ -300,6 +302,66 @@ struct SlotRestoreTests {
         }
     }
 
+    @Test("a link at the device's folder (to a real backup, to a folder without the app, or dangling) is unreadable, not no backup")
+    func linkedDeviceFolder() async throws {
+        for destination in ["real", "empty", "dangling"] {
+            try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+                try await w.lendAndFailedReturn()
+                let device = w.paths.backups + "/iphone"
+                let moved = w.paths.home + "/moved-iphone"
+                try FileManager.default.moveItem(atPath: device, toPath: moved)
+                let name = try #require(listing(moved + "/stremio-ios").first)
+                let manifestPath = "\(moved)/stremio-ios/\(name)/manifest.json"
+                let bytes = try Data(contentsOf: URL(fileURLWithPath: manifestPath))
+                let target: String
+                switch destination {
+                case "real": target = moved
+                case "empty":
+                    target = w.paths.home + "/empty-folder"
+                    try makeDirectories(target, mode: 0o700)
+                default: target = w.paths.home + "/does-not-exist"
+                }
+                try FileManager.default.createSymbolicLink(atPath: device, withDestinationPath: target)
+                let calls = w.xcrunCalls
+                let pushes = w.pushes.count
+                let out = await w.restore()
+                #expect(out.errorCodes == ["NO_PENDING_RESTORE"], "\(destination): \(out.errors)")
+                #expect(json(out)["unreadable"] == true, "\(destination)")
+                #expect(json(out)["restored"] == false && json(out)["superseded"] == false && json(out)["notUninstalled"] == false)
+                #expect(w.xcrunCalls == calls && w.pushes.count == pushes, "\(destination): no device call")
+                #expect(try Data(contentsOf: URL(fileURLWithPath: manifestPath)) == bytes, "nothing behind the link was touched")
+            }
+        }
+    }
+
+    @Test("a link, or an unreadable file, anywhere a manifest entry points into is unreadable before any device call")
+    func linkedData() async throws {
+        // data/, data/Library, and the entry's own file as a link; then a regular file that cannot be opened.
+        for linked in ["data", "data/Library", "data/" + prefs, "unopenable"] {
+            try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+                try await w.lendAndFailedReturn()
+                let name = try #require(w.finishedBackups.last)
+                let root = "\(w.appBackups)/\(name)"
+                if linked == "unopenable" {
+                    chmod(root + "/data/" + prefs, 0)
+                } else {
+                    let moved = w.paths.home + "/moved-data"
+                    try FileManager.default.moveItem(atPath: root + "/" + linked, toPath: moved)
+                    try FileManager.default.createSymbolicLink(atPath: root + "/" + linked, withDestinationPath: moved)
+                }
+                defer { if linked == "unopenable" { chmod(root + "/data/" + prefs, 0o600) } }
+                let calls = w.xcrunCalls
+                let pushes = w.pushes.count
+                let out = await w.restore()
+                #expect(out.errorCodes == ["NO_PENDING_RESTORE"], "\(linked): \(out.errors)")
+                #expect(json(out)["unreadable"] == true, "\(linked)")
+                #expect(json(out)["restored"] == false && json(out)["superseded"] == false && json(out)["notUninstalled"] == false)
+                #expect(w.xcrunCalls == calls && w.pushes.count == pushes, "\(linked): no snapshot and no push")
+                #expect(try w.manifest(name).restoredAt == nil)
+            }
+        }
+    }
+
     // MARK: a lend that never took the app off the device
 
     @Test("a backup whose lend's uninstall failed outright is never restorable: the app and its live data stayed")
@@ -339,11 +401,18 @@ struct SlotRestoreTests {
             #expect(out.errorCodes == ["NO_PENDING_RESTORE"])
             #expect(json(out)["notUninstalled"] == true && json(out)["superseded"] == false)
             #expect(out.errors.first?.message.contains("later lend") == false)
-            // A real supersede is still reported as one.
+            // A real supersede is reported too, and each boolean on its own: superseded and still unmarked.
             old.supersededAt = testNow
             try encoder.encode(old).write(to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
             let again = await w.restore()
-            #expect(json(again)["superseded"] == true && json(again)["notUninstalled"] == false)
+            #expect(json(again)["superseded"] == true && json(again)["notUninstalled"] == true)
+            #expect(json(again)["restored"] == false && json(again)["unreadable"] == false)
+            #expect(again.errors.first?.message.contains("later lend") == true, "the message names the most relevant reason")
+            // Superseded with the mark set: notUninstalled is false.
+            old.uninstalledAt = testNow
+            try encoder.encode(old).write(to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
+            let marked = await w.restore()
+            #expect(json(marked)["superseded"] == true && json(marked)["notUninstalled"] == false)
         }
     }
 
@@ -369,6 +438,7 @@ struct SlotRestoreTests {
             let pushes = w.pushes.count
             let out = await w.restore()
             #expect(out.errorCodes == ["NO_PENDING_RESTORE"] && json(out)["superseded"] == true)
+            #expect(json(out)["notUninstalled"] == true, "both hold, and both are reported")
             #expect(w.pushes.count == pushes, "the old backup is never pushed over the newer data")
         }
     }

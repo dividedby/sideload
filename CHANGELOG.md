@@ -38,15 +38,19 @@ All notable changes to this project are documented here. Format follows
   not fully verified is `RESTORE_FAILED` with `cause`, `dataRestored:false`, the counts and `kept:true`. The backup is kept
   either way and a rerun is safe. Only the newest finished backup is considered. New codes: `NO_PENDING_RESTORE`,
   `APP_NOT_INSTALLED`, `RESTORE_FAILED`. Counts and booleans only; the `DATA_RESTORE_*` warnings of `slot return` now name the
-  command in their `fix`. `status` and the menu do not show a pending restore yet. The restore is still untested on a real device.
+  command, with the `--device` and `--app` to retry, in their `fix`. `status` and the menu do not show a pending restore yet. The restore is still untested on a real device.
 - The backup manifest gains an optional `supersededAt`: `slot lend` marks every older, unrestored backup of the app superseded
   (whether or not the new lend saved a backup), so `slot restore` never pushes data from an earlier lend. Older manifests
   without the key still read. It gains an optional `uninstalledAt`, set when the lend's uninstall is confirmed (or by the return
   that finds the app gone, before its push): `slot restore` pushes only a backup that has it, so a lend that saved a backup and
   then failed to uninstall (the app and its live data stay) can never be restored over newer data; such a backup answers
   `NO_PENDING_RESTORE` with `notUninstalled:true`. Backups from before the field are not restorable by `slot restore` (the return
-  still restores its own lend's). A backup folder whose state cannot be read (any `lstat` failure but a missing folder) is
-  `unreadable`, not "no backup", and so is a folder whose listing fails. `slot lend` takes its `since` for the backup, the
+  still restores its own lend's). The `NO_PENDING_RESTORE` booleans are each set on their own (a superseded backup that also
+  lacks the mark reports both). Before any device call the folder chain is walked from the backups folder one part at a time
+  with `lstat`, and every manifest entry's local file must be a readable regular file under real folders: anything that
+  cannot be read, listed or `lstat`ed, or a link at any level (the device's or the app's folder, a backup folder, the
+  manifest, `data/` or any folder or file an entry points into, dangling or not), is `unreadable`, never "no backup", and
+  nothing behind it is followed. Only a real folder chain that stops at a missing part is "no backup". `slot lend` takes its `since` for the backup, the
   supersede and the mark from the settled ledger record, not the one read before the settle (which could be a lend the settle
   undid).
 - `slot` takes `--app` and `--yes` for `restore` only; `lend` and `return` answer `USAGE` if given either.

@@ -560,25 +560,68 @@ enum AppDataBackup {
     }
 
     /// The newest finished backup folder of this device and app decides, and only it (an older one is never a fallback: it
-    /// belongs to an earlier lend). Same plain checks as `candidate`. Pending means a readable manifest for this app's bundle ID
-    /// with `restoredAt` and `supersededAt` unset and `uninstalledAt` set. Anything that cannot be read is `unreadable`, never
-    /// "no backup": only a missing folder, or a folder with no finished backup in it, is that.
+    /// belongs to an earlier lend). Pending means a readable manifest for this app's bundle ID with `restoredAt` and
+    /// `supersededAt` unset and `uninstalledAt` set, and every file it lists a readable regular file under real folders. Each
+    /// boolean is set on its own. Nothing is followed: the folder chain is walked from `backups/` one part at a time with
+    /// `lstat`, and every manifest entry's local path is checked the same way before any device call. Anything that cannot be
+    /// read, listed or `lstat`ed, or that is a link at any level, is `unreadable`, never "no backup": only a real folder chain
+    /// that stops at a missing part, or an app folder with no finished backup in it, is that.
     static func pending(_ services: Services, _ target: FreeTarget) -> PendingBackup {
         let base = appDirectory(services, target)
         let root = services.home.backups
-        var st = stat()
-        guard lstat(base, &st) == 0 else { return .nothing(unreadable: errno != ENOENT) }
-        guard isPlain(base, root: root, regularFile: false) else { return .nothing(unreadable: true) }
+        switch walk(base, root: root) {
+        case .missing: return .nothing()
+        case .unreadable: return .nothing(unreadable: true)
+        case .plain: break
+        }
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: base) else { return .nothing(unreadable: true) }
         guard let name = finished(names).first else { return .nothing() }
         let directory = base + "/" + name
         guard isPlain(directory, root: root, regularFile: false), isPlain(directory + "/manifest.json", root: root, regularFile: true),
             let manifest = readManifest(in: directory), manifest.bundleId == target.bundleId
         else { return .nothing(unreadable: true) }
-        if manifest.restoredAt != nil { return .nothing(restored: true) }
-        if manifest.supersededAt != nil { return .nothing(superseded: true) }
-        if manifest.uninstalledAt == nil { return .nothing(notUninstalled: true) }  // its lend never took the app off the device
+        let readable = manifest.files.allSatisfy { entry in
+            guard let local = localPath(directory, entry.path, services: services) else { return false }
+            return isPlain(local, root: root, regularFile: true) && canOpen(local)
+        }
+        let restored = manifest.restoredAt != nil
+        let superseded = manifest.supersededAt != nil
+        let notUninstalled = manifest.uninstalledAt == nil  // its lend never took the app off the device (or predates the mark)
+        guard readable, !restored, !superseded, !notUninstalled else {
+            return .nothing(restored: restored, superseded: superseded, unreadable: !readable, notUninstalled: notUninstalled)
+        }
         return .found(directory: directory, manifest: manifest)
+    }
+
+    private enum Walk { case plain, missing, unreadable }
+
+    /// How the folder `path` (`root` or a path inside it) stands, walked from `root` one part at a time with `lstat`, never
+    /// following a link: every part a real folder (`plain`); real folders up to a part that does not exist (`missing`); anything
+    /// else, a link or a non-folder at any level or an `lstat` failure other than ENOENT (`unreadable`).
+    private static func walk(_ path: String, root: String) -> Walk {
+        guard path == root || path.hasPrefix(root + "/") else { return .unreadable }
+        let parts = path.dropFirst(root.count).split(separator: "/", omittingEmptySubsequences: false).dropFirst()
+        func check(_ item: String) -> Walk {
+            var st = stat()
+            guard lstat(item, &st) == 0 else { return errno == ENOENT ? .missing : .unreadable }
+            return st.st_mode & S_IFMT == S_IFDIR ? .plain : .unreadable
+        }
+        var current = root
+        var state = check(current)
+        for part in parts where state == .plain {
+            guard !part.isEmpty else { return .unreadable }
+            current += "/" + part
+            state = check(current)
+        }
+        return state
+    }
+
+    /// Whether the regular file at `path` opens for reading without following a link (the caller `lstat`ed it).
+    private static func canOpen(_ path: String) -> Bool {
+        let fd = open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { return false }
+        close(fd)
+        return true
     }
 
     /// Marks the finished backups made for the lend `since` (`lendSince` within a second) as having had their app taken off the
@@ -672,7 +715,7 @@ enum AppDataBackup {
                     CanaryCommand.warning(
                         "DATA_RESTORE_UNVERIFIED",
                         "The app's data was copied back, but the device's file list could not be read to confirm it.",
-                        "Open the app and check it is signed in; the backup is kept. The owner can retry: sideload slot restore --device \(target.alias) --yes."))
+                        "Open the app and check it is signed in; the backup is kept. The owner can retry: sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes."))
             }
         }
         if result.failed > 0 {
@@ -680,7 +723,7 @@ enum AppDataBackup {
                 CanaryCommand.warning(
                     "DATA_RESTORE_INCOMPLETE",
                     "\(result.failed) of \(manifest.files.count) data files were not restored (or did not verify).",
-                    "The backup is kept; the app may ask to sign in again. The owner can retry: sideload slot restore --device \(target.alias) --yes."))
+                    "The backup is kept; the app may ask to sign in again. The owner can retry: sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes."))
         }
         if verified {
             result.done = true

@@ -86,8 +86,8 @@ enum SlotRestore {
                 why = "The newest backup is not marked as taken from an uninstalled app (its lend did not remove the app, or it predates the mark), so the app's data on the device may be newer."
                 fix = "Nothing to do; restoring it could overwrite newer data. If the app asks to sign in, the owner signs in again."
             } else if unreadable {
-                why = "The newest backup could not be read."
-                fix = "The owner checks the backups folder in $SIDELOAD_HOME; the app signs in again otherwise."
+                why = "The newest saved data of this app could not be read, or part of it is a link (nothing behind a link is followed)."
+                fix = "The owner checks this app's saved data under $SIDELOAD_HOME (real folders and readable files only, no links); otherwise the app signs in again."
             } else {
                 why = "There is no backup of this app on this Mac."
                 fix = "Nothing to do; if the app asks to sign in, the owner signs in again."
