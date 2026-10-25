@@ -249,6 +249,109 @@ struct SlotRestoreTests {
         }
     }
 
+    @Test("a backup folder that cannot be read, or that is a link, is unreadable and nothing behind it is followed")
+    func unreadableFolders() async throws {
+        // lstat fails with something other than ENOENT: not "no backup".
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            try await w.lendAndFailedReturn()
+            let device = w.paths.backups + "/iphone"
+            chmod(device, 0)
+            defer { chmod(device, 0o700) }
+            let calls = w.xcrunCalls
+            let out = await w.restore()
+            #expect(out.errorCodes == ["NO_PENDING_RESTORE"])
+            #expect(json(out)["unreadable"] == true && json(out)["restored"] == false && json(out)["superseded"] == false)
+            #expect(w.xcrunCalls == calls)
+        }
+        // The newest backup folder is a symlink to a real, pending backup.
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            try await w.lendAndFailedReturn()
+            let real = try #require(w.finishedBackups.last)
+            let manifestPath = "\(w.appBackups)/\(real)/manifest.json"
+            let bytes = try Data(contentsOf: URL(fileURLWithPath: manifestPath))
+            try FileManager.default.createSymbolicLink(
+                atPath: w.appBackups + "/29990101T000000Z-aaaa", withDestinationPath: "\(w.appBackups)/\(real)")
+            let pushes = w.pushes.count
+            let calls = w.xcrunCalls
+            let out = await w.restore()
+            #expect(out.errorCodes == ["NO_PENDING_RESTORE"] && json(out)["unreadable"] == true)
+            #expect(w.xcrunCalls == calls && w.pushes.count == pushes)
+            #expect(try Data(contentsOf: URL(fileURLWithPath: manifestPath)) == bytes, "nothing behind the link was touched")
+        }
+        // The app's folder is a symlink to the real one.
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            try await w.lendAndFailedReturn()
+            let moved = w.paths.backups + "/iphone/elsewhere"
+            try FileManager.default.moveItem(atPath: w.appBackups, toPath: moved)
+            try FileManager.default.createSymbolicLink(atPath: w.appBackups, withDestinationPath: moved)
+            let name = try #require(listing(moved).first)
+            let manifestPath = "\(moved)/\(name)/manifest.json"
+            let bytes = try Data(contentsOf: URL(fileURLWithPath: manifestPath))
+            let calls = w.xcrunCalls
+            let out = await w.restore()
+            #expect(out.errorCodes == ["NO_PENDING_RESTORE"] && json(out)["unreadable"] == true)
+            #expect(w.xcrunCalls == calls)
+            #expect(try Data(contentsOf: URL(fileURLWithPath: manifestPath)) == bytes)
+            // Nor does a lend follow it to mark anything (backup and supersede both refuse the link).
+            let target = try FreeTarget.resolve(app: .stremioIOS, alias: "iphone", config: try w.config())
+            AppDataBackup.supersedeOlder(w.services, target, than: testNow.addingTimeInterval(60))
+            AppDataBackup.markUninstalled(w.services, target, since: testNow)
+            #expect(try Data(contentsOf: URL(fileURLWithPath: manifestPath)) == bytes)
+        }
+    }
+
+    // MARK: a lend that never took the app off the device
+
+    @Test("a backup whose lend's uninstall failed outright is never restorable: the app and its live data stayed")
+    func uninstallFailed() async throws {
+        let locked = try loadFixtureJSON("install-locked.json")
+        var failing = script()
+        failing.uninstallFailure = locked
+        try await withInstallWorld(script: failing, lendable: "stremio-ios", ledger: prepare) { w in
+            let lend = await w.lend()
+            #expect(!lend.ok, "\(lend.errors)")
+            #expect(w.runner.deviceApps.keys.contains(stremioId))
+            let name = try #require(w.finishedBackups.last)
+            let manifest = try w.manifest(name)
+            #expect(manifest.uninstalledAt == nil && manifest.restoredAt == nil && manifest.supersededAt == nil)
+            let calls = w.xcrunCalls
+            let out = await w.restore()
+            #expect(out.errorCodes == ["NO_PENDING_RESTORE"])
+            #expect(json(out)["superseded"] == true && json(out)["restored"] == false && json(out)["unreadable"] == false)
+            #expect(w.xcrunCalls == calls, "no snapshot and no push")
+            #expect(w.pushes.isEmpty)
+        }
+    }
+
+    @Test("the uninstall mark: set by a confirmed lend; set by the return that finds the app gone; a resumed lend keeps its backup")
+    func uninstallMark() async throws {
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            #expect(await w.lend().ok)
+            let name = try #require(w.finishedBackups.last)
+            #expect(try w.manifest(name).uninstalledAt == testNow, "marked at the confirmed uninstall")
+            // A manifest from before the field: the return that reinstalls the app records it before the push.
+            var old = try w.manifest(name)
+            old.uninstalledAt = nil
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            try encoder.encode(old).write(to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
+            w.runner.arm(script(faults { $0.copyToFails = [prefs] }))
+            #expect(json(await w.giveBack())["dataRestored"] == false)
+            #expect(try w.manifest(name).uninstalledAt == testNow)
+            w.runner.arm(script())
+            #expect(await w.restore().ok, "restorable after the return")
+        }
+        // A lend resumed with the same `since` neither supersedes nor un-marks its own backup.
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            #expect(await w.lend().ok)
+            let target = try FreeTarget.resolve(app: .stremioIOS, alias: "iphone", config: try w.config())
+            AppDataBackup.supersedeOlder(w.services, target, than: testNow)
+            AppDataBackup.markUninstalled(w.services, target, since: testNow)
+            let manifest = try w.manifest(try #require(w.finishedBackups.last))
+            #expect(manifest.supersededAt == nil && manifest.uninstalledAt == testNow)
+        }
+    }
+
     // MARK: staleness
 
     @Test("a later lend supersedes an earlier unrestored backup, even when it saved nothing: slot restore never pushes it")
@@ -340,7 +443,7 @@ struct SlotRestoreTests {
             unreadable.snapshotFailures = [1]
             w.runner.arm(unreadable)
             let failed = await w.restore()
-            #expect(failed.errorCodes.count == 1 && !failed.ok, "\(failed.errors)")
+            #expect(failed.errorCodes == ["SNAPSHOT_FAILED"], "\(failed.errors)")
             #expect(w.pushes.count == baseline, "no push without a snapshot")
             w.runner.arm(script())
             #expect(await w.remove().ok)

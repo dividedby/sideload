@@ -41,7 +41,12 @@ All notable changes to this project are documented here. Format follows
   command in their `fix`. `status` and the menu do not show a pending restore yet. The restore is still untested on a real device.
 - The backup manifest gains an optional `supersededAt`: `slot lend` marks every older, unrestored backup of the app superseded
   (whether or not the new lend saved a backup), so `slot restore` never pushes data from an earlier lend. Older manifests
-  without the key still read.
+  without the key still read. It gains an optional `uninstalledAt`, set when the lend's uninstall is confirmed (or by the return
+  that finds the app gone, before its push): `slot restore` pushes only a backup that has it, so a lend that saved a backup and
+  then failed to uninstall (the app and its live data stay) can never be restored over newer data; such a backup answers
+  `NO_PENDING_RESTORE` with `superseded:true`. Backups from before the field are not restorable by `slot restore` (the return
+  still restores its own lend's). A backup folder whose state cannot be read (any `lstat` failure but a missing folder) is
+  `unreadable`, not "no backup".
 - `slot` takes `--app` and `--yes` for `restore` only; `lend` and `return` answer `USAGE` if given either.
 - `refresh --device <d> [--app <a>] [--within 1-6 | --force] --yes` (docs/design.md section 18, build step 9, manual part), free team
   only and owner-run: renews the installs on one saved device that have `--within` days or fewer left (default 5; `--force` is

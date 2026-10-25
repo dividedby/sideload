@@ -52,6 +52,10 @@ enum AppDataBackup {
         /// Set by a later `slot lend` that started a new lend of this app (design section 18): the backup belongs to an earlier
         /// lend, so `slot restore` never pushes it. Absent in manifests written before it existed.
         var supersededAt: Date?
+        /// Set once the lend that made this backup is known to have taken the app off the device (the uninstall confirmed at the
+        /// lend, or the return that found the app gone). Until then the app's live data was never deleted, so the backup may be
+        /// older than it, and `slot restore` does not push it. Absent in manifests written before it existed.
+        var uninstalledAt: Date?
     }
 
     /// What a half did, as the lab reads it: counts and booleans, and warnings (codes, counts-only messages).
@@ -530,7 +534,13 @@ enum AppDataBackup {
     /// Restores the backup of this lend into the reinstalled app (`push`). Never throws and never fails the return. No backup
     /// for this lend is simply `done == false` with no warning.
     static func restore(_ services: Services, target: FreeTarget, calls: FreeDeviceCalls, since: Date?) async -> Result {
-        guard let since, let found = candidate(services, target, since: since) else { return Result() }
+        guard let since, var found = candidate(services, target, since: since) else { return Result() }
+        if found.manifest.uninstalledAt == nil {
+            // The return found the app gone and has just reinstalled it: the lend did take it off the device (its own uninstall
+            // result was uncertain). Recorded before the push so a failed push can be retried by `slot restore`.
+            found.manifest.uninstalledAt = wholeSeconds(services.clock.now())
+            try? writeManifest(found.manifest, in: found.directory)
+        }
         return await push(services, target: target, calls: calls, found: found)
     }
 
@@ -547,7 +557,10 @@ enum AppDataBackup {
         let base = appDirectory(services, target)
         let root = services.home.backups
         var st = stat()
-        guard lstat(base, &st) == 0 else { return .none(restored: false, superseded: false, unreadable: false) }
+        guard lstat(base, &st) == 0 else {
+            // Only a missing folder means no backup; any other failure (permissions, say) means it could not be read.
+            return .none(restored: false, superseded: false, unreadable: errno != ENOENT)
+        }
         guard isPlain(base, root: root, regularFile: false) else { return .none(restored: false, superseded: false, unreadable: true) }
         guard let name = finished(base).first else { return .none(restored: false, superseded: false, unreadable: false) }
         let directory = base + "/" + name
@@ -555,8 +568,28 @@ enum AppDataBackup {
             let manifest = readManifest(in: directory), manifest.bundleId == target.bundleId
         else { return .none(restored: false, superseded: false, unreadable: true) }
         if manifest.restoredAt != nil { return .none(restored: true, superseded: false, unreadable: false) }
-        if manifest.supersededAt != nil { return .none(restored: false, superseded: true, unreadable: false) }
+        if manifest.supersededAt != nil || manifest.uninstalledAt == nil {
+            // Replaced by a later lend, or made by a lend that never took the app off the device: not data to push.
+            return .none(restored: false, superseded: true, unreadable: false)
+        }
         return .found(directory: directory, manifest: manifest)
+    }
+
+    /// Marks the finished backups made for the lend `since` (`lendSince` within a second) as having had their app taken off the
+    /// device, so `slot restore` may push them. Called once the lend's uninstall is confirmed. Never throws; same plain checks.
+    static func markUninstalled(_ services: Services, _ target: FreeTarget, since: Date) {
+        let base = appDirectory(services, target)
+        let root = services.home.backups
+        guard isPlain(base, root: root, regularFile: false) else { return }
+        for name in finished(base) {
+            let directory = base + "/" + name
+            guard isPlain(directory, root: root, regularFile: false), isPlain(directory + "/manifest.json", root: root, regularFile: true),
+                var manifest = readManifest(in: directory), manifest.bundleId == target.bundleId, manifest.uninstalledAt == nil,
+                abs(manifest.lendSince.timeIntervalSince(since)) < 1
+            else { continue }
+            manifest.uninstalledAt = wholeSeconds(services.clock.now())
+            try? writeManifest(manifest, in: directory)
+        }
     }
 
     /// Marks every finished, unrestored backup of an earlier lend (`lendSince` at least a second before `lendSince`) as

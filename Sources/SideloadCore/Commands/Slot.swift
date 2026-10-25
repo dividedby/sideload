@@ -289,6 +289,7 @@ public enum SlotCommand {
         let lendingFix = "Not lent yet: `sideload slot lend --device \(alias) --to lab` (or `slot return`) settles it from a fresh snapshot once the window is over, and the slot is not free meanwhile."
         switch confirmation.effect {
         case .absent:  // L8
+            AppDataBackup.markUninstalled(services, target, since: existing?.since ?? now)
             let after = outcome.after ?? s0
             let delta = AppSnapshot.delta(from: s0, to: after)
             if delta.removed != [target.bundleId] || !delta.added.isEmpty {
