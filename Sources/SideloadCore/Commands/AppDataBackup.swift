@@ -111,8 +111,15 @@ enum AppDataBackup {
         }
     }
 
+    /// A call counts as done only when it exited 0 and its own report does not say otherwise: devicectl can exit 0 while the
+    /// JSON it wrote carries `info.outcome` of `failed` (or anything but `success`). No `info.outcome` at all is a success, as
+    /// before (the copy commands print no document in some versions); `parseListing` applies the same rule to a listing.
     private static func callSucceeded(_ out: FreeDeviceCalls.Outcome) -> Bool {
-        out.code == 0 && !out.timedOut && !out.overflow && out.spawnError == nil
+        guard out.code == 0, !out.timedOut, !out.overflow, out.spawnError == nil else { return false }
+        if case .object(let top)? = out.json, case .object(let info)? = top["info"], let outcome = info["outcome"] {
+            return outcome == .string("success")
+        }
+        return true
     }
 
     // MARK: listing

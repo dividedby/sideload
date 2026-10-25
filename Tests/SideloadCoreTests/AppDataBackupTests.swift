@@ -165,6 +165,48 @@ struct AppDataBackupTests {
         }
     }
 
+    @Test("a copy that exits 0 but reports a failed outcome is a failed copy, not a quiet empty file")
+    func copyFromReportedFailure() async throws {
+        // One file: counted failed, the rest kept, the backup incomplete; nothing is left at the destination.
+        try await withInstallWorld(
+            script: script(DataFaults(copyFromReportsFailed: [prefs])), lendable: "stremio-ios", ledger: prepare
+        ) { w in
+            let out = await w.lend()
+            #expect(out.ok && json(out)["dataBackedUp"] == true)
+            #expect(json(out)["dataFiles"] == 1 && json(out)["dataFilesFailed"] == 1)
+            #expect(warningCodes(out) == ["DATA_BACKUP_INCOMPLETE"])
+            let manifest = try w.manifest(try #require(w.finishedBackups.first))
+            #expect(!manifest.complete && manifest.files.map(\.path) == [library])
+        }
+        // Every file: no backup, as with exit code 1.
+        try await withInstallWorld(
+            script: script(DataFaults(copyFromReportsFailed: [prefs, library])), lendable: "stremio-ios", ledger: prepare
+        ) { w in
+            let out = await w.lend()
+            #expect(out.ok && json(out)["dataBackedUp"] == false && json(out)["dataFilesFailed"] == 2)
+            #expect(warningCodes(out) == ["DATA_BACKUP_FAILED"])
+            #expect(w.backupNames.isEmpty)
+        }
+        // A reported success is still a success.
+        try await withInstallWorld(
+            script: script(DataFaults(copyFromReportsSuccess: [prefs, library])), lendable: "stremio-ios", ledger: prepare
+        ) { w in
+            let out = await w.lend()
+            #expect(json(out)["dataBackedUp"] == true && json(out)["dataFiles"] == 2 && json(out)["dataFilesFailed"] == 0)
+            #expect(warningCodes(out).isEmpty)
+        }
+    }
+
+    @Test("a listing that exits 0 but reports a failed outcome is no listing")
+    func listReportedFailure() async throws {
+        try await withInstallWorld(script: script(DataFaults(listReportsFailed: true)), lendable: "stremio-ios", ledger: prepare) { w in
+            let out = await w.lend()
+            #expect(out.ok && json(out)["dataBackedUp"] == false && json(out)["dataFiles"] == 0)
+            #expect(warningCodes(out) == ["DATA_BACKUP_FAILED"])
+            #expect(w.backupNames.isEmpty, "never taken for an empty container")
+        }
+    }
+
     @Test("an empty container is a complete backup of nothing")
     func emptyContainer() async throws {
         try await withInstallWorld(script: script(files: [:]), lendable: "stremio-ios", ledger: prepare) { w in
@@ -286,6 +328,23 @@ struct AppDataBackupTests {
             let l5 = try w.ledger()
             #expect(l5.lent.isEmpty, "the slot model is untouched")
             #expect(w.runner.deviceApps.keys.contains(stremioId))
+        }
+    }
+
+    @Test("a push that exits 0 but reports a failed outcome is a failed push; the backup is kept")
+    func pushReportedFailure() async throws {
+        var faults = DataFaults()
+        faults.copyToReportsFailed = [prefs]
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            #expect(await w.lend().ok)
+            w.runner.arm(script(faults))
+            let out = await w.giveBack()
+            #expect(out.ok && json(out)["reinstalled"] == true, "\(out.errors)")
+            #expect(json(out)["dataRestored"] == false && json(out)["dataFilesRestored"] == 1 && json(out)["dataFilesFailed"] == 1)
+            #expect(warningCodes(out) == ["DATA_RESTORE_INCOMPLETE"])
+            #expect(w.runner.container(stremioId) == [library: container[library]!])
+            let manifest = try w.manifest(try #require(w.finishedBackups.first))
+            #expect(manifest.restoredAt == nil)
         }
     }
 

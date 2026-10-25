@@ -105,12 +105,20 @@ struct DataFaults: Sendable {
     var listFails = false
     /// `device info files` prints a document that is not a listing.
     var listMalformed = false
+    /// `device info files` exits 0 with a listing whose `info.outcome` is `failed`.
+    var listReportsFailed = false
     /// Device paths whose `copy from` fails.
     var copyFromFails: Set<String> = []
     /// Device paths whose `copy from` writes one byte too few (every time).
     var copyFromShort: Set<String> = []
     /// Device paths whose `copy to` fails.
     var copyToFails: Set<String> = []
+    /// Device paths whose `copy from` exits 0 but reports `info.outcome` of `failed` (and writes nothing).
+    var copyFromReportsFailed: Set<String> = []
+    /// Device paths whose `copy to` exits 0 but reports `info.outcome` of `failed` (and stores nothing).
+    var copyToReportsFailed: Set<String> = []
+    /// Device paths whose `copy from` exits 0 and reports `info.outcome` of `success` (and otherwise behaves as usual).
+    var copyFromReportsSuccess: Set<String> = []
     /// `copy to` reports success but nothing arrives (the relisting then disagrees).
     var copyToDrops = false
     /// The listing carries no sizes.
@@ -433,6 +441,10 @@ final class DeviceSimRunner: Runner {
                 return value
             }
             if faults.listFails || faults.listFailsOn.contains(n) { return RunResult(code: 1) }
+            if faults.listReportsFailed {
+                write(["info": ["outcome": "failed"], "result": ["files": []]], spec)
+                return RunResult()
+            }
             if faults.listMalformed {
                 write(["info": ["outcome": "success"], "result": ["files": "oops"]], spec)
                 return RunResult()
@@ -469,6 +481,11 @@ final class DeviceSimRunner: Runner {
             let source = flagValue("--source", spec)
             let destination = flagValue("--destination", spec)
             if faults.copyFromFails.contains(source) { return RunResult(code: 1) }
+            if faults.copyFromReportsFailed.contains(source) {
+                write(["info": ["outcome": "failed"]], spec)
+                return RunResult()
+            }
+            if faults.copyFromReportsSuccess.contains(source) { write(["info": ["outcome": "success"]], spec) }
             if let target = faults.copyFromSymlinks[source] {
                 try? makeDirectories(parentPath(destination), mode: 0o700)
                 return symlink(target, destination) == 0 ? RunResult() : RunResult(code: 1)
@@ -491,6 +508,10 @@ final class DeviceSimRunner: Runner {
             let source = flagValue("--source", spec)
             let destination = flagValue("--destination", spec)
             if faults.copyToFails.contains(destination) { return RunResult(code: 1) }
+            if faults.copyToReportsFailed.contains(destination) {
+                write(["info": ["outcome": "failed"]], spec)
+                return RunResult()
+            }
             guard let data = try? Data(contentsOf: URL(fileURLWithPath: source)) else { return RunResult(code: 1) }
             if !faults.copyToDrops { store { $0[destination] = data } }
             return RunResult()

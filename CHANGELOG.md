@@ -529,6 +529,12 @@ All notable changes to this project are documented here. Format follows
   and `terminationStatus` on failure; `scripts/check.sh` also tees `swift test` to `$TMPDIR/sideload-swift-test.log`.
 
 ### Fixed
+- App-data backup and restore treated a `devicectl` call that exits 0 but reports `info.outcome` of `failed` (or anything
+  but `success`) as a success. A `copy from` that did so left no file and was taken for a folder (counted nowhere); a
+  `copy to` that did so was counted pushed and caught only if the relisting disagreed. Both now count as a failed file
+  (`dataFilesFailed`, and the `DATA_BACKUP_*` / `DATA_RESTORE_*` warnings follow from it). The listing call already refused
+  such a document in `parseListing`, so it is unchanged. An exit 0 with no `info.outcome` is still a success. Counts only;
+  no output field changes meaning.
 - The live free-slot count no longer counts TestFlight betas (mobile-safari-lab#63): `devicectl device info apps` marks them
   `builtByDeveloper` like free-team apps, so the owner's iPhone read `used: 8` and the filler install and every `slot return`
   would have stopped with `FREE_APP_LIMIT`. Other free-team apps are now found by one read-only `devicectl device profile list
