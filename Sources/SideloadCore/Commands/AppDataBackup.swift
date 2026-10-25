@@ -516,21 +516,31 @@ enum AppDataBackup {
 
     // MARK: restore
 
+    /// The manifest of `directory` (a finished backup folder), only when the folder and the file are real, not links, and the
+    /// manifest reads and is for this app's bundle ID. Nothing is followed.
+    private static func trustedManifest(in directory: String, _ services: Services, _ target: FreeTarget) -> Manifest? {
+        let root = services.home.backups
+        guard isPlain(directory, root: root, regularFile: false), isPlain(directory + "/manifest.json", root: root, regularFile: true),
+            let manifest = readManifest(in: directory), manifest.bundleId == target.bundleId
+        else { return nil }
+        return manifest
+    }
+
+    /// Every finished backup of this app that passes the link-safe scan (a plain app folder, then per folder a plain folder and
+    /// manifest that reads for this bundle ID), newest first. A folder that fails any check is left out; callers add their own
+    /// predicate and write.
+    private static func manifests(_ services: Services, _ target: FreeTarget) -> [(directory: String, manifest: Manifest)] {
+        let base = appDirectory(services, target)
+        guard isPlain(base, root: services.home.backups, regularFile: false) else { return [] }
+        return finished(base).compactMap { name in
+            let directory = base + "/" + name
+            return trustedManifest(in: directory, services, target).map { (directory, $0) }
+        }
+    }
+
     /// The newest backup made for this lend and not yet restored.
     private static func candidate(_ services: Services, _ target: FreeTarget, since: Date) -> (directory: String, manifest: Manifest)? {
-        let base = appDirectory(services, target)
-        let root = services.home.backups
-        guard isPlain(base, root: root, regularFile: false) else { return nil }
-        for name in finished(base) {
-            let directory = base + "/" + name
-            guard isPlain(directory, root: root, regularFile: false),
-                isPlain(directory + "/manifest.json", root: root, regularFile: true),
-                let manifest = readManifest(in: directory), manifest.bundleId == target.bundleId,
-                abs(manifest.lendSince.timeIntervalSince(since)) < 1, manifest.restoredAt == nil
-            else { continue }
-            return (directory, manifest)
-        }
-        return nil
+        manifests(services, target).first { abs($0.manifest.lendSince.timeIntervalSince(since)) < 1 && $0.manifest.restoredAt == nil }
     }
 
     /// Restores the backup of this lend into the reinstalled app (`push`). Never throws and never fails the return. No backup
@@ -571,9 +581,7 @@ enum AppDataBackup {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: base) else { return .nothing(unreadable: true) }
         guard let name = finished(names).first else { return .nothing() }
         let directory = base + "/" + name
-        guard isPlain(directory, root: root, regularFile: false), isPlain(directory + "/manifest.json", root: root, regularFile: true),
-            let manifest = readManifest(in: directory), manifest.bundleId == target.bundleId
-        else { return .nothing(unreadable: true) }
+        guard let manifest = trustedManifest(in: directory, services, target) else { return .nothing(unreadable: true) }
         let readable = manifest.files.allSatisfy { entry in
             guard let local = localPath(directory, entry.path, services: services) else { return false }
             return isPlain(local, root: root, regularFile: true) && canOpen(local)
@@ -621,15 +629,9 @@ enum AppDataBackup {
     /// Marks the finished backups made for the lend `since` (`lendSince` within a second) as having had their app taken off the
     /// device, so `slot restore` may push them. Called once the lend's uninstall is confirmed. Never throws; same plain checks.
     static func markUninstalled(_ services: Services, _ target: FreeTarget, since: Date) {
-        let base = appDirectory(services, target)
-        let root = services.home.backups
-        guard isPlain(base, root: root, regularFile: false) else { return }
-        for name in finished(base) {
-            let directory = base + "/" + name
-            guard isPlain(directory, root: root, regularFile: false), isPlain(directory + "/manifest.json", root: root, regularFile: true),
-                var manifest = readManifest(in: directory), manifest.bundleId == target.bundleId, manifest.uninstalledAt == nil,
-                abs(manifest.lendSince.timeIntervalSince(since)) < 1
-            else { continue }
+        for (directory, found) in manifests(services, target)
+        where found.uninstalledAt == nil && abs(found.lendSince.timeIntervalSince(since)) < 1 {
+            var manifest = found
             manifest.uninstalledAt = wholeSeconds(services.clock.now())
             try? writeManifest(manifest, in: directory)
         }
@@ -639,16 +641,9 @@ enum AppDataBackup {
     /// superseded, so `slot restore` can never push data older than the lend that replaced it. Never throws: an unreadable or
     /// unwritable one is left as it is. The manifest is rewritten atomically, mode 0600, and no link is followed.
     static func supersedeOlder(_ services: Services, _ target: FreeTarget, than lendSince: Date) {
-        let base = appDirectory(services, target)
-        let root = services.home.backups
-        guard isPlain(base, root: root, regularFile: false) else { return }
-        for name in finished(base) {
-            let directory = base + "/" + name
-            guard isPlain(directory, root: root, regularFile: false), isPlain(directory + "/manifest.json", root: root, regularFile: true),
-                var manifest = readManifest(in: directory), manifest.bundleId == target.bundleId,
-                manifest.restoredAt == nil, manifest.supersededAt == nil,
-                manifest.lendSince.timeIntervalSince(lendSince) <= -1
-            else { continue }
+        for (directory, found) in manifests(services, target)
+        where found.restoredAt == nil && found.supersededAt == nil && found.lendSince.timeIntervalSince(lendSince) <= -1 {
+            var manifest = found
             manifest.supersededAt = wholeSeconds(services.clock.now())
             try? writeManifest(manifest, in: directory)
         }

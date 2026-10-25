@@ -29,10 +29,11 @@ public struct SlotOptions: Sendable, Equatable {
 /// `slot lend --device <alias>|--udid <id> --to lab` and `slot return --device|--udid` (design section 18, agreed with
 /// mobile-safari-lab#63). The lab borrows the slot of the device's one owner-configured lendable app
 /// (`devices.<d>.lendableApp`): `lend` uninstalls it and records `lent`, `return` reinstalls it from the `freeSigned`
-/// build through the `install` path. No `--yes`: the lab runs these (`restore`, the owner's retry of the app-data restore, is `SlotRestore`). Both take `.op.lock` themselves and settle the
-/// crash-safe marker first; a saved device only, free scope only. The slot is a record of the unified pending-operation
-/// model (`SlotRule`, `SlotBook`): a durable op is written before each device change, a device with an op in flight answers
-/// `SLOT_PENDING` to every mutating command, and one evidence rule settles it (the 27-cell table, docs/design.md section 18).
+/// build through the `install` path. No `--yes`: the lab runs these (`restore`, the owner's retry of the app-data
+/// restore, is `SlotRestore`). Both take `.op.lock` themselves and settle the crash-safe marker first; a saved device
+/// only, free scope only. The slot is a record of the unified pending-operation model (`SlotRule`, `SlotBook`): a
+/// durable op is written before each device change, a device with an op in flight answers `SLOT_PENDING` to every
+/// mutating command, and one evidence rule settles it (the 27-cell table, docs/design.md section 18).
 public enum SlotCommand {
     static let command = "slot"
     static let lab = "lab"
