@@ -1,0 +1,4 @@
+{
+  "info": { "outcome": "failed" },
+  "error": { "code": 3002, "domain": "com.apple.dt.CoreDeviceError", "userInfo": { "NSUnderlyingError": { "error": { "code": 0, "domain": "x", "userInfo": { "NSLocalizedDescription": { "string": "Install failed (0xe800801c)." } } } } } }
+}

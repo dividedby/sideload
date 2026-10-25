@@ -1,0 +1,22 @@
+{
+  "ok": false,
+  "command": "canary",
+  "status": "error",
+  "code": "BUILD_FAILED",
+  "reason": "xcodebuild failed: No profiles for the bundle were found",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": null,
+  "deviceRemoved": null,
+  "guard": "skipped",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [],
+  "errors": [
+    {
+      "code": "BUILD_FAILED",
+      "message": "xcodebuild failed: No profiles for the bundle were found",
+      "fix": "Check that Xcode holds the paid-team account (Settings > Accounts) and the device is registered, then retry."
+    }
+  ]
+}

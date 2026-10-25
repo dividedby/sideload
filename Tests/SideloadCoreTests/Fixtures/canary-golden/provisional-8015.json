@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "command": "canary",
+  "status": "blocked",
+  "code": "0xe8008015",
+  "reason": "Device did not recognise the provisioning profile.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": [],
+  "deviceRemoved": [],
+  "guard": "passed",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [],
+  "errors": []
+}

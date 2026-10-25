@@ -1,0 +1,1 @@
+{"app":"stremio-ios","bundleId":"io.github.dividedby.free.stremio","command":"provision","device":"iphone","errors":[{"code":"KEYCHAIN_LOCKED","fix":"Unlock the login keychain (open Keychain Access, or log in again) and retry.","message":"The keychain could not be read; it is probably locked."}],"ok":false}

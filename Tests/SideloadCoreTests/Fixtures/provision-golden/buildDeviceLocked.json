@@ -1,0 +1,1 @@
+{"app":"stremio-ios","bundleId":"io.github.dividedby.free.stremio","command":"provision","device":"iphone","errors":[{"code":"DEVICE_LOCKED","fix":"Unlock the device and retry.","message":"The device is locked."}],"ok":false}

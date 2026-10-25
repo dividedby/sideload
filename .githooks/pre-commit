@@ -1,0 +1,5 @@
+#!/bin/sh
+# Block commits that stage secrets. See scripts/check-secrets.mjs.
+root=$(git rev-parse --show-toplevel) || exit 1
+cd "$root" || exit 1
+exec node scripts/check-secrets.mjs --staged

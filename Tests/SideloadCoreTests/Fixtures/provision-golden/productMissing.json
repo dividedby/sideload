@@ -1,0 +1,1 @@
+{"app":"stremio-ios","bundleId":"io.github.dividedby.free.stremio","command":"provision","device":"iphone","errors":[{"code":"BUILD_PRODUCT_MISSING","fix":"Retry; if it repeats, open the carrier project in Xcode once.","message":"The build succeeded but Carrier.app was not found."}],"ok":false}

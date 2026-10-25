@@ -1,0 +1,10 @@
+{
+  "info": { "outcome": "failed" },
+  "error": {
+    "code": 3002,
+    "domain": "com.apple.dt.CoreDeviceError",
+    "userInfo": {
+      "NSLocalizedDescription": { "string": "The identity used to sign the executable is no longer valid. Please verify that your device's clock is properly set." }
+    }
+  }
+}

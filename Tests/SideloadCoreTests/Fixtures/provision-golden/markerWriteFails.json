@@ -1,0 +1,1 @@
+{"command":"provision","errors":[{"code":"IO_ERROR","fix":"Check the permissions and free space of $SIDELOAD_HOME.","message":"open lock file failed: Is a directory."}],"ok":false}

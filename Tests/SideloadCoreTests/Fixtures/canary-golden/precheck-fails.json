@@ -1,0 +1,43 @@
+{
+  "ok": false,
+  "command": "canary",
+  "status": "error",
+  "code": "PRECHECK_FAILED",
+  "reason": "Preflight failed: No Apple Development certificate for team 7AGMPUPP64 in the keychain.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": null,
+  "deviceRemoved": null,
+  "guard": "skipped",
+  "xcodeVersion": null,
+  "durationMs": 0,
+  "warnings": [],
+  "checks": [
+    {
+      "id": "cert",
+      "status": "fail",
+      "severity": "fail",
+      "message": "No Apple Development certificate for team 7AGMPUPP64 in the keychain.",
+      "fix": "In Xcode > Settings > Accounts > Manage Certificates, create an Apple Development certificate for the paid team (owner action)."
+    },
+    {
+      "id": "cert-other-team",
+      "status": "info",
+      "severity": "info",
+      "message": "other team, ignored (6ZU5Z6ZKK7, deny-listed)"
+    },
+    {
+      "id": "device",
+      "status": "ok",
+      "severity": "ok",
+      "message": "iphone: visible and paired."
+    }
+  ],
+  "errors": [
+    {
+      "code": "PRECHECK_FAILED",
+      "message": "Preflight failed: No Apple Development certificate for team 7AGMPUPP64 in the keychain.",
+      "fix": "Run `sideload doctor` and fix the failing checks."
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "name": "sideload",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.5.2",
+  "scripts": {
+    "test": "node --test test/check-secrets.test.mjs",
+    "check-secrets": "node scripts/check-secrets.mjs --staged",
+    "check-secrets:all": "node scripts/check-secrets.mjs --all",
+    "prepare": "git config core.hooksPath .githooks"
+  }
+}

@@ -1,0 +1,1 @@
+{"command":"provision","errors":[{"code":"IO_ERROR","fix":null,"message":"injected fault at finalLedgerWrite"}],"ok":false}

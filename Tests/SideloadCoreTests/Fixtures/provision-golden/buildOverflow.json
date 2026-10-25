@@ -1,0 +1,1 @@
+{"app":"stremio-ios","bundleId":"io.github.dividedby.free.stremio","command":"provision","device":"iphone","errors":[{"code":"OUTPUT_LIMIT","fix":"Retry; if it repeats, run the command by hand to see what is flooding the output.","message":"xcodebuild produced more output than the safety limit and was stopped."}],"ok":false}

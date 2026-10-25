@@ -1,0 +1,22 @@
+{
+  "ok": false,
+  "command": "canary",
+  "status": "error",
+  "code": "OUTPUT_LIMIT",
+  "reason": "xcodebuild produced more output than the safety limit and was stopped.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": null,
+  "deviceRemoved": null,
+  "guard": "skipped",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [],
+  "errors": [
+    {
+      "code": "OUTPUT_LIMIT",
+      "message": "xcodebuild produced more output than the safety limit and was stopped.",
+      "fix": "Retry; if it repeats, run the command by hand to see what is flooding the output."
+    }
+  ]
+}

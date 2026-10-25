@@ -1,0 +1,1 @@
+{"app":"stremio-ios","bundleId":"io.github.dividedby.free.stremio","command":"provision","device":"iphone","errors":[{"code":"DERIVED_DATA_NOT_CLEARED","fix":"Delete $SIDELOAD_HOME/builds/carrier-dd by hand (it is only a build cache) and retry. Nothing was built.","message":"The previous carrier build products could not be removed."}],"ok":false}

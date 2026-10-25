@@ -1,0 +1,1 @@
+{"app":"stremio-ios","appIdsLast7Days":0,"bundleId":"io.github.dividedby.free.stremio","command":"provision","device":"iphone","errors":[{"code":"FREE_APP_ID_LIMIT","fix":"Wait for the 7-day window to pass; the limit is shared with Xcode and the lab. Nothing was registered.","message":"Apple refused a new App ID: the free team's App ID limit is reached."}],"ok":false}

@@ -1,0 +1,1 @@
+{"app":"stremio-ios","bundleId":"io.github.dividedby.free.stremio","command":"provision","device":"iphone","errors":[{"code":"PROVISION_FAILED","fix":"Run `sideload doctor`; check that Xcode is installed and selected.","message":"xcodebuild could not be started."}],"logTail":"","ok":false}

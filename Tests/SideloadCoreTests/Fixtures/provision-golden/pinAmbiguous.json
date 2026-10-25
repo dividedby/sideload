@@ -1,0 +1,1 @@
+{"app":"stremio-ios","bundleId":"io.github.dividedby.free.stremio","command":"provision","device":"iphone","errors":[{"code":"FREE_IDENTITY_AMBIGUOUS","fix":"Leave exactly one valid free-team identity (owner action) and run provision again.","message":"There is not exactly one valid free-team identity to pin."}],"ok":false}

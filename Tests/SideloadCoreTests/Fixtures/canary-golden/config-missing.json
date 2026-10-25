@@ -1,0 +1,11 @@
+{
+  "ok": false,
+  "command": "canary",
+  "errors": [
+    {
+      "code": "CONFIG_MISSING",
+      "message": "bundleIdPrefix is missing or invalid in config.json.",
+      "fix": "Add \"bundleIdPrefix\": \"com.yourname\" to $SIDELOAD_HOME/config.json. It becomes portal-visible (App ID <prefix>.sideload.canary)."
+    }
+  ]
+}

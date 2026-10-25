@@ -1,0 +1,4 @@
+{
+  "info": { "outcome": "failed" },
+  "error": { "code": 3002, "domain": "com.apple.dt.CoreDeviceError", "userInfo": { "NSLocalizedDescription": { "string": "There is no space left on the device." } } }
+}

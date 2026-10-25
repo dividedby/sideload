@@ -1,0 +1,1 @@
+{"app":"stremio-ios","bundleId":"io.github.dividedby.free.stremio","command":"provision","device":"iphone","errors":[{"code":"PROVISION_FAILED","fix":"See `logTail`; open the carrier project in Xcode once to see the signing error.","message":"xcodebuild failed with exit code 65."}],"logTail":"noise\nerror: something odd happened","ok":false}

@@ -1,0 +1,18 @@
+{
+  "info": { "outcome": "failed" },
+  "error": {
+    "code": 3002,
+    "domain": "com.apple.dt.CoreDeviceError",
+    "userInfo": {
+      "NSUnderlyingError": {
+        "error": {
+          "code": 4000,
+          "domain": "wrapper",
+          "userInfo": {
+            "NSUnderlyingError": { "error": { "code": -402620392, "domain": "com.apple.dt.MobileDevice", "userInfo": {} } }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1 @@
+{"app":"stremio-ios","bundleId":"io.github.dividedby.free.stremio","command":"provision","device":"iphone","errors":[{"code":"ACCOUNT_NOT_SIGNED_IN","fix":"In Xcode > Settings > Accounts, sign in with the free Apple ID (owner action; sideload never takes a password), then retry.","message":"Xcode has no signed-in account for the free team."}],"ok":false}

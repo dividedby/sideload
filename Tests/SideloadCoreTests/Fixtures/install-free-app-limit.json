@@ -1,0 +1,25 @@
+{
+  "info": { "outcome": "failed" },
+  "error": {
+    "code": 3002,
+    "domain": "com.apple.dt.CoreDeviceError",
+    "userInfo": {
+      "NSLocalizedDescription": "Failed to install the app on the device.",
+      "NSUnderlyingError": {
+        "domain": "IXUserPresentableErrorDomain",
+        "code": 14,
+        "userInfo": {
+          "NSLocalizedRecoverySuggestion": "This device has reached the maximum number of installed apps using a free developer profile: {(\n    \"6ZU5Z6ZKK7.com.dividedby.msl-wda-6zu5.xctrunner\",\n    \"6ZU5Z6ZKK7.com.christianselig.apollo.6ZU5Z6ZKK7\",\n    \"6ZU5Z6ZKK7.com.SideStore.SideStore.6ZU5Z6ZKK7\"\n)}",
+          "NSUnderlyingError": {
+            "domain": "MIInstallerErrorDomain",
+            "code": 13,
+            "userInfo": {
+              "LegacyErrorString": "ApplicationVerificationFailed",
+              "LibMISErrorNumber": -402620383
+            }
+          }
+        }
+      }
+    }
+  }
+}

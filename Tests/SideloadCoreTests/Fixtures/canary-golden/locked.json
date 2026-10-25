@@ -1,0 +1,22 @@
+{
+  "ok": false,
+  "command": "canary",
+  "status": "error",
+  "code": "DEVICE_LOCKED",
+  "reason": "The device appears to be locked; unlock it and retry.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": [],
+  "deviceRemoved": [],
+  "guard": "passed",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [],
+  "errors": [
+    {
+      "code": "DEVICE_LOCKED",
+      "message": "The device appears to be locked; unlock it and retry.",
+      "fix": "Unlock the device and retry."
+    }
+  ]
+}

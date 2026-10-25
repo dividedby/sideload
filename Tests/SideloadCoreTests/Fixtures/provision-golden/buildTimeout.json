@@ -1,0 +1,1 @@
+{"app":"stremio-ios","bundleId":"io.github.dividedby.free.stremio","command":"provision","device":"iphone","errors":[{"code":"BUILD_TIMEOUT","fix":"Retry with the device connected and unlocked; if it repeats, open the carrier project in Xcode once.","message":"xcodebuild timed out."}],"ok":false}

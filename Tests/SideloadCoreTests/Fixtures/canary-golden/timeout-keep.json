@@ -1,0 +1,30 @@
+{
+  "ok": false,
+  "command": "canary",
+  "status": "error",
+  "code": "TIMEOUT",
+  "reason": "devicectl timed out.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": [
+    "com.example.sideload.canary"
+  ],
+  "deviceRemoved": [],
+  "guard": "passed",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [
+    {
+      "code": "unexpected-app-delta",
+      "message": "The device app list changed in a way the canary did not cause. Nothing was done about it.",
+      "fix": "Review `deviceDelta`; sideload never removes apps it did not install."
+    }
+  ],
+  "errors": [
+    {
+      "code": "TIMEOUT",
+      "message": "devicectl timed out.",
+      "fix": "Retry with the device unlocked and connected."
+    }
+  ]
+}

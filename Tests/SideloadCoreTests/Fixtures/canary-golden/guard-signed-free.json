@@ -1,0 +1,22 @@
+{
+  "ok": false,
+  "command": "canary",
+  "status": "error",
+  "code": "FREE_TEAM_SELECTED",
+  "reason": "The built app is signed by the deny-listed free team.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": null,
+  "deviceRemoved": null,
+  "guard": "failed:FREE_TEAM_SELECTED",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [],
+  "errors": [
+    {
+      "code": "FREE_TEAM_SELECTED",
+      "message": "The built app is signed by the deny-listed free team.",
+      "fix": "The build was signed by the free team. Nothing was installed; check DEVELOPMENT_TEAM resolves to 7AGMPUPP64."
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "ok": false,
+  "command": "canary",
+  "status": "error",
+  "code": "OUTPUT_LIMIT",
+  "reason": "devicectl produced more output than the safety limit; the install outcome is unknown.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": [],
+  "deviceRemoved": [],
+  "guard": "passed",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [
+    {
+      "code": "CANARY_REMOVED_AFTER_AMBIGUOUS_INSTALL",
+      "message": "The install reported \"OUTPUT_LIMIT\" but com.example.sideload.canary was present on the device; it was uninstalled.",
+      "fix": "No action needed."
+    }
+  ],
+  "errors": [
+    {
+      "code": "OUTPUT_LIMIT",
+      "message": "devicectl produced more output than the safety limit; the install outcome is unknown.",
+      "fix": "Retry; if it repeats, run the command by hand to see what is flooding the output."
+    }
+  ]
+}

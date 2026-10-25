@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "command": "canary",
+  "status": "working",
+  "code": "INSTALLED",
+  "reason": "Install succeeded; Apple has fixed the install block.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": null,
+  "deviceRemoved": null,
+  "guard": "passed",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [
+    {
+      "code": "SNAPSHOT_FAILED",
+      "message": "Could not list apps after the install.",
+      "fix": "Check the device manually."
+    }
+  ],
+  "errors": []
+}

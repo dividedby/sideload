@@ -1,0 +1,35 @@
+{
+  "info": { "outcome": "failed" },
+  "error": {
+    "code": 3002,
+    "domain": "com.apple.dt.CoreDeviceError",
+    "userInfo": {
+      "NSLocalizedDescription": { "string": "Failed to install the app on the device." },
+      "NSURL": { "string": "file:///fake/build/Canary.app/" },
+      "NSUnderlyingError": {
+        "error": {
+          "code": 14,
+          "domain": "IXUserPresentableErrorDomain",
+          "userInfo": {
+            "NSLocalizedDescription": { "string": "Unable to Install “Canary”" },
+            "NSLocalizedFailureReason": { "string": "This app cannot be installed because its integrity could not be verified." },
+            "NSLocalizedRecoverySuggestion": { "string": "Failed to verify code signature of /var/installd/Library/Caches/com.apple.mobile.installd.staging/temp.XXXXXX/extracted/Canary.app : 0xe8008018 (The identity used to sign the executable is no longer valid.)" },
+            "NSUnderlyingError": {
+              "error": {
+                "code": 13,
+                "domain": "MIInstallerErrorDomain",
+                "userInfo": {
+                  "FunctionName": { "string": "fake_function" },
+                  "LegacyErrorString": { "string": "ApplicationVerificationFailed" },
+                  "LibMISErrorNumber": { "uint": 18446744073306931000 },
+                  "NSLocalizedDescription": { "string": "Failed to verify code signature of /var/installd/Library/Caches/com.apple.mobile.installd.staging/temp.XXXXXX/extracted/Canary.app : 0xe8008018 (The identity used to sign the executable is no longer valid.)" },
+                  "SourceFileLine": { "uint": 123 }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+{
+  "info": { "outcome": "failed" },
+  "error": { "code": 4000, "domain": "com.apple.dt.CoreDeviceError", "userInfo": { "NSLocalizedDescription": { "string": "The device is not connected." } } }
+}

@@ -1,0 +1,11 @@
+{
+  "ok": false,
+  "command": "canary",
+  "errors": [
+    {
+      "code": "USAGE",
+      "message": "canary needs --device <alias>.",
+      "fix": "sideload canary --device iphone --yes"
+    }
+  ]
+}

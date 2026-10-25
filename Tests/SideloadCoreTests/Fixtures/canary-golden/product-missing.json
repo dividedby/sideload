@@ -1,0 +1,22 @@
+{
+  "ok": false,
+  "command": "canary",
+  "status": "error",
+  "code": "BUILD_PRODUCT_MISSING",
+  "reason": "The build succeeded but Canary.app was not found.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": null,
+  "deviceRemoved": null,
+  "guard": "skipped",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [],
+  "errors": [
+    {
+      "code": "BUILD_PRODUCT_MISSING",
+      "message": "The build succeeded but Canary.app was not found.",
+      "fix": "The build reported success but produced no app; retry."
+    }
+  ]
+}

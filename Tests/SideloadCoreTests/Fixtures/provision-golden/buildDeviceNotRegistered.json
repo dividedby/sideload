@@ -1,0 +1,1 @@
+{"app":"stremio-ios","bundleId":"io.github.dividedby.free.stremio","command":"provision","device":"iphone","errors":[{"code":"DEVICE_NOT_REGISTERED","fix":"The owner registers it once: sideload provision --app <app> --device <alias> --register-device --yes.","message":"The device is not registered with the free team (or not in the profile)."}],"ok":false}

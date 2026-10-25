@@ -1,0 +1,1 @@
+{"command":"provision","errors":[{"code":"DEVICE_NOT_SAVED","fix":"sideload device save --alias <alias> --match <device name> --platform ios|tvos --yes","message":"No saved device with alias \"nope\"."}],"ok":false}

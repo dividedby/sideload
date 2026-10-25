@@ -1,0 +1,22 @@
+{
+  "ok": false,
+  "command": "canary",
+  "status": "error",
+  "code": "SNAPSHOT_FAILED",
+  "reason": "Could not list apps on the device.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": null,
+  "deviceRemoved": null,
+  "guard": "skipped",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [],
+  "errors": [
+    {
+      "code": "SNAPSHOT_FAILED",
+      "message": "Could not list apps on the device.",
+      "fix": "Unlock the device, keep it connected, and retry."
+    }
+  ]
+}

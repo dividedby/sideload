@@ -1,0 +1,13 @@
+{
+  "ok": false,
+  "command": "canary",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "errors": [
+    {
+      "code": "CONFIRM_REQUIRED",
+      "message": "The canary has portal side effects: Xcode will create the App ID and a development profile for the canary bundle ID in the paid team, and may register this device. It then installs and removes the canary on the device.",
+      "fix": "The owner confirms by re-running with --yes. Agents must not pass --yes on their own."
+    }
+  ]
+}

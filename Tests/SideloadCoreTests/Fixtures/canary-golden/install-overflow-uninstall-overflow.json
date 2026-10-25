@@ -1,0 +1,35 @@
+{
+  "ok": false,
+  "command": "canary",
+  "status": "error",
+  "code": "OUTPUT_LIMIT",
+  "reason": "devicectl produced more output than the safety limit; the install outcome is unknown.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": [
+    "com.example.sideload.canary"
+  ],
+  "deviceRemoved": [],
+  "guard": "passed",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [
+    {
+      "code": "CANARY_LEFT_ON_DEVICE",
+      "message": "com.example.sideload.canary is on the device after an ambiguous install and uninstalling it failed.",
+      "fix": "Delete the Canary app from the device by hand."
+    },
+    {
+      "code": "unexpected-app-delta",
+      "message": "The device app list changed in a way the canary did not cause. Nothing was done about it.",
+      "fix": "Review `deviceDelta`; sideload never removes apps it did not install."
+    }
+  ],
+  "errors": [
+    {
+      "code": "OUTPUT_LIMIT",
+      "message": "devicectl produced more output than the safety limit; the install outcome is unknown.",
+      "fix": "Retry; if it repeats, run the command by hand to see what is flooding the output."
+    }
+  ]
+}

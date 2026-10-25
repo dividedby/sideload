@@ -1,0 +1,1 @@
+{"app":"stremio-ios","bundleId":"io.github.dividedby.free.stremio","check":"team","command":"provision","device":"iphone","errors":[{"code":"PROFILE_INVALID","fix":"Nothing was stored. Check the free account in Xcode and retry; the failed check is in `check`.","message":"The profile does not belong to the free team."}],"ok":false}

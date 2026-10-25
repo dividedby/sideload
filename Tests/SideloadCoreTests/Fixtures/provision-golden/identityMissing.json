@@ -1,0 +1,1 @@
+{"app":"stremio-ios","bundleId":"io.github.dividedby.free.stremio","command":"provision","device":"iphone","errors":[{"code":"FREE_IDENTITY_MISSING","fix":"Check Xcode > Settings > Accounts > Manage Certificates (owner action). sideload never creates a certificate.","message":"No valid free-team Apple Development identity is in the keychain."}],"ok":false}

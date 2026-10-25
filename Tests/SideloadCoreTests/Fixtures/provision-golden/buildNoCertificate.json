@@ -1,0 +1,1 @@
+{"app":"stremio-ios","bundleId":"io.github.dividedby.free.stremio","command":"provision","device":"iphone","errors":[{"code":"FREE_IDENTITY_MISSING","fix":"Check Xcode > Settings > Accounts > Manage Certificates (owner action). sideload never creates one.","message":"Xcode found no usable free-team signing certificate with its private key."}],"ok":false}

@@ -1,0 +1,22 @@
+{
+  "ok": false,
+  "command": "canary",
+  "status": "error",
+  "code": "DEVICE_NOT_IN_PROFILE",
+  "reason": "The device is not in the profile ProvisionedDevices list.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": null,
+  "deviceRemoved": null,
+  "guard": "failed:DEVICE_NOT_IN_PROFILE",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [],
+  "errors": [
+    {
+      "code": "DEVICE_NOT_IN_PROFILE",
+      "message": "The device is not in the profile ProvisionedDevices list.",
+      "fix": "The profile does not include this device. Register it in Xcode (build once from the IDE) and retry."
+    }
+  ]
+}

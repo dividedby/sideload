@@ -1,0 +1,4 @@
+{
+  "info": { "outcome": "failed" },
+  "error": { "code": 3002, "domain": "com.apple.dt.CoreDeviceError", "userInfo": { "NSLocalizedDescription": { "string": "The device is locked. Unlock it and try again." } } }
+}

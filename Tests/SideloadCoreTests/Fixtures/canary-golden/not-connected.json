@@ -1,0 +1,22 @@
+{
+  "ok": false,
+  "command": "canary",
+  "status": "error",
+  "code": "DEVICE_NOT_CONNECTED",
+  "reason": "The device is not connected or not reachable.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": [],
+  "deviceRemoved": [],
+  "guard": "passed",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [],
+  "errors": [
+    {
+      "code": "DEVICE_NOT_CONNECTED",
+      "message": "The device is not connected or not reachable.",
+      "fix": "Connect the device by USB and retry."
+    }
+  ]
+}

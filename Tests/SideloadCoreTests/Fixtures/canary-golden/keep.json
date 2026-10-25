@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "command": "canary",
+  "status": "working",
+  "code": "INSTALLED",
+  "reason": "Install succeeded; Apple has fixed the install block.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": [
+    "com.example.sideload.canary"
+  ],
+  "deviceRemoved": [],
+  "guard": "passed",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [],
+  "errors": []
+}

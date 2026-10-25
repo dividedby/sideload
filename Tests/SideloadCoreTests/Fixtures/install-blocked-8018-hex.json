@@ -1,0 +1,19 @@
+{
+  "info": { "outcome": "failed" },
+  "error": {
+    "code": 3002,
+    "domain": "com.apple.dt.CoreDeviceError",
+    "userInfo": {
+      "NSLocalizedDescription": { "string": "Failed to install the app on the device." },
+      "NSUnderlyingError": {
+        "error": {
+          "code": 3892346904,
+          "domain": "com.apple.dt.MobileDeviceErrorDomain",
+          "userInfo": {
+            "NSLocalizedDescription": { "string": "Could not install app (0xe8008018)." }
+          }
+        }
+      }
+    }
+  }
+}

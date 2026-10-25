@@ -1,0 +1,392 @@
+import CryptoKit
+import Darwin
+import Foundation
+import Synchronization
+
+public struct FetchOptions: Sendable, Equatable {
+    public var app: String?
+    /// The owner's approval of one version already in the manifest (design section 16). Agents must not pass it.
+    public var approve: Bool
+    /// The manifest version `--approve` applies to; required with `--approve`, not allowed without it.
+    public var version: String?
+
+    public init(app: String? = nil, approve: Bool = false, version: String? = nil) {
+        self.app = app
+        self.approve = approve
+        self.version = version
+    }
+}
+
+/// `fetch --app <app> [--approve]` (design section 8, approved sources). Without `--approve` it reads the
+/// source's metadata, downloads the one IPA it names over `Services.http`, checks our own SHA-256 against the
+/// publisher's, inspects the archive and records it in `manifest.json` as not approved. With `--approve` it
+/// re-checks the stored file and marks that version approved; it does no network. Holds `.op.lock` throughout.
+public enum FetchCommand {
+    static let command = "fetch"
+    static let downloadTimeout: TimeInterval = 900
+
+    public static func run(_ services: Services, _ options: FetchOptions) async -> Envelope {
+        await run(services, options, registry: .shared)
+    }
+
+    static func run(_ services: Services, _ options: FetchOptions, registry: ScratchRegistry) async -> Envelope {
+        do {
+            return .result(command, try await execute(services, options, registry: registry))
+        } catch {
+            return .from(error, command: command)
+        }
+    }
+
+    private static func execute(_ services: Services, _ options: FetchOptions, registry: ScratchRegistry) async throws -> [String: JSONValue] {
+        guard let app = options.app, !app.isEmpty else {
+            throw SideloadError(
+                "USAGE", "fetch needs --app.", fix: "sideload fetch --app <\(FetchCatalog.appNames.joined(separator: "|"))> [--approve --version <v>]")
+        }
+        if options.approve, options.version?.isEmpty != false {
+            throw SideloadError(
+                "USAGE", "--approve needs --version <v>, the exact version fetch reported.",
+                fix: "sideload fetch --app \(app) --approve --version <v>")
+        }
+        if !options.approve, options.version != nil {
+            throw SideloadError("USAGE", "--version only applies to --approve.", fix: "sideload fetch --app \(app) --approve --version <v>")
+        }
+        let source = try FetchCatalog.approved(app: app, config: try services.store.load())
+        let lock = try OperationLock.acquire(paths: services.home)
+        defer { lock.release() }
+        sweepStaleParts(in: services.home.tmp)
+        let run = FetchRun(services: services, source: source, registry: registry)
+        return options.approve ? try await run.approve(version: options.version ?? "") : try await run.download()
+    }
+
+    /// A `fetch-*` download folder (or a loose file of that name) left by a run that was killed. Safe to delete: the
+    /// operation lock means no other fetch is running.
+    private static func sweepStaleParts(in tmp: String) {
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: tmp)) ?? [] where name.hasPrefix("fetch-") {
+            _ = ScratchDirectory.removeTree(tmp + "/" + name)
+        }
+    }
+}
+
+private struct FetchRun {
+    let services: Services
+    let source: FetchSource
+    let registry: ScratchRegistry
+    var store: ManifestStore { ManifestStore(paths: services.home) }
+
+    // MARK: fetch
+
+    func download() async throws -> [String: JSONValue] {
+        var manifest = try store.load()
+        services.log("fetch: reading the \(source.app) metadata")
+        let asset = try SourceResolver.resolve(source, json: try await metadata())
+        guard DownloadPolicy.permits(asset.url, hosts: source.downloadHosts) else {
+            throw SideloadError(
+                "SOURCE_NOT_ALLOWED", "The download URL is not https on an allowed host for \(source.app).",
+                fix: "Allowed hosts: \(source.downloadHosts.sorted().joined(separator: ", ")).",
+                data: ["host": .string(printableCut(asset.url.host ?? ""))])
+        }
+
+        let prior = manifest.entry(app: asset.app, version: asset.version)
+        if let prior {
+            guard prior.upstreamDigest == asset.upstreamDigest else {
+                throw SideloadError(
+                    "VERSION_CONTENT_CHANGED", "The publisher now lists a different SHA-256 for \(asset.app) \(asset.version) than the one fetched before.",
+                    fix: "Treat this as a swapped file. Inspect it by hand; the owner removes the manifest entry and its folder to start over.")
+            }
+            if let stored = try? FileDigest.sha256(path: store.path(of: prior)), stored.hex == prior.sha256 {
+                services.log("fetch: \(asset.app) \(asset.version) is already stored")
+                return try await report(prior, downloaded: false, alreadyApproved: prior.approved)
+            }
+        }
+
+        // The partial file lives in a registered 0700 folder, so an interrupt removes it (the CLI's signal
+        // handler empties the registry and exits without running this function's cleanup).
+        let scratch = try ScratchDirectory.create(under: services.home.tmp, registry: registry, prefix: "fetch")
+        defer { scratch.remove() }
+        let part = scratch.path + "/download.part"
+        let sink = try DownloadSink(path: part, maxBytes: asset.size)
+        defer { sink.abort() }
+
+        services.log("fetch: downloading \(asset.fileName)")
+        let response: DownloadResponse
+        do {
+            let request = DownloadRequest(
+                url: asset.url, allowedHosts: source.downloadHosts, maxRedirects: FetchLimits.maxRedirects, maxBytes: asset.size,
+                timeout: FetchCommand.downloadTimeout)
+            response = try await services.http.download(request) { try sink.accept($0) }
+        } catch {
+            throw Self.map(error)
+        }
+        guard response.status == 200 else {
+            throw SideloadError(
+                "FETCH_HTTP_ERROR", "The download answered HTTP \(response.status).", fix: "Retry later.",
+                data: ["status": .number(Double(response.status))])
+        }
+        guard DownloadPolicy.permits(response.finalURL, hosts: source.downloadHosts) else {
+            throw Self.redirectRefused
+        }
+        let (digest, count) = try sink.finish()
+        // The source declared this size and it was the cap; a short body is as wrong as a long one.
+        guard count == asset.size else {
+            throw SideloadError(
+                "SIZE_MISMATCH", "The download is \(count) bytes but the source declared \(asset.size). The file was deleted.",
+                fix: "Retry; if it repeats, do not use this release.",
+                data: ["declared": .number(Double(asset.size)), "received": .number(Double(count))])
+        }
+        guard digest == asset.upstreamDigest else {
+            throw SideloadError(
+                "DIGEST_MISMATCH", "The downloaded file's SHA-256 does not match the publisher's. The file was deleted.",
+                fix: "Retry; if it repeats, do not use this release.",
+                data: ["expected": .string(asset.upstreamDigest), "actual": .string(digest)])
+        }
+
+        if registry.isClosed { throw SideloadError("CANCELLED", "fetch was interrupted.", fix: "Re-run the command.") }
+        services.log("fetch: inspecting the archive")
+        let inspected = try await inspect(path: part)
+
+        if registry.isClosed { throw SideloadError("CANCELLED", "fetch was interrupted.", fix: "Re-run the command.") }
+        let directory = "\(services.home.downloads)/\(asset.app)/\(asset.version)"
+        try makeDirectories(directory, mode: 0o700)
+        guard rename(part, directory + "/" + asset.fileName) == 0 else { throw ioError("rename") }
+
+        let keepApproval = prior?.sha256 == digest
+        let entry = ManifestEntry(
+            app: asset.app, version: asset.version, file: "\(asset.app)/\(asset.version)/\(asset.fileName)",
+            urlHost: asset.url.host ?? "", sha256: digest, upstreamDigest: asset.upstreamDigest, size: count,
+            fetchedAt: services.clock.now(), approved: keepApproval && prior?.approved == true,
+            approvedAt: keepApproval ? prior?.approvedAt : nil, build: asset.build ?? inspected.build,
+            declaredSize: asset.size, minOS: asset.minOS, inspectMinOS: inspected.minOS)
+        manifest.upsert(entry)
+        do {
+            try store.save(manifest)
+        } catch {
+            if prior == nil { unlink(directory + "/" + asset.fileName) }
+            throw error
+        }
+        return Self.data(entry, store: store, downloaded: true, alreadyApproved: false, inspected: inspected)
+    }
+
+    // MARK: approve
+
+    /// Marks exactly `version` of the app approved, after re-hashing the stored file against the manifest and
+    /// inspecting it again. No network.
+    func approve(version: String) async throws -> [String: JSONValue] {
+        var manifest = try store.load()
+        guard var entry = manifest.entry(app: source.app, version: version) else {
+            throw SideloadError(
+                "NOT_FETCHED", "Version \(printableCut(version)) of \(source.app) is not in the manifest, so there is nothing to approve.",
+                fix: "Run `sideload fetch --app \(source.app)`, then approve the version it reports: --approve --version <v>.")
+        }
+        let already = entry.approved
+        let inspected = try await verifiedInspection(of: entry)
+        if !already {
+            entry.approved = true
+            entry.approvedAt = services.clock.now()
+            manifest.upsert(entry)
+            try store.save(manifest)
+        }
+        return Self.data(entry, store: store, downloaded: false, alreadyApproved: already, inspected: inspected)
+    }
+
+    // MARK: shared
+
+    private func report(_ entry: ManifestEntry, downloaded: Bool, alreadyApproved: Bool) async throws -> [String: JSONValue] {
+        Self.data(entry, store: store, downloaded: downloaded, alreadyApproved: alreadyApproved, inspected: try await verifiedInspection(of: entry))
+    }
+
+    /// The stored file must still hash to the manifest's value; then it is inspected.
+    private func verifiedInspection(of entry: ManifestEntry) async throws -> Inspected {
+        let path = try store.path(of: entry)
+        guard let stored = try FileDigest.sha256(path: path) else {
+            throw SideloadError(
+                "IPA_MISSING", "The fetched file for \(entry.app) \(entry.version) is gone.",
+                fix: "Remove its manifest entry and run `sideload fetch --app \(entry.app)` again.")
+        }
+        guard stored.hex == entry.sha256 else {
+            throw SideloadError(
+                "DIGEST_MISMATCH", "The stored file no longer matches the manifest's SHA-256. Nothing was approved.",
+                fix: "Remove the file and its manifest entry, then fetch again.",
+                data: ["expected": .string(entry.sha256), "actual": .string(stored.hex)])
+        }
+        return try await inspect(path: path)
+    }
+
+    private func metadata() async throws -> Data {
+        let url = source.metadataURL
+        guard DownloadPolicy.permits(url, hosts: source.metadataHosts) else {
+            throw SideloadError(
+                "SOURCE_NOT_ALLOWED", "The metadata URL for \(source.app) is not on an allowed host.",
+                fix: "Allowed hosts: \(source.metadataHosts.sorted().joined(separator: ", ")).")
+        }
+        let response: HTTPResponse
+        do {
+            response = try await services.http.get(HTTPRequest(url: url))
+        } catch {
+            throw Self.map(error)
+        }
+        guard response.status == 200 else {
+            throw SideloadError(
+                "FETCH_HTTP_ERROR", "The metadata request answered HTTP \(response.status) (redirects are not followed).",
+                fix: "Retry later.", data: ["status": .number(Double(response.status))])
+        }
+        return response.body
+    }
+
+    struct Inspected {
+        var summary: JSONValue
+        var warnings: [JSONValue]
+        /// The app's `CFBundleVersion` and the Mach-O minimum OS, as `inspect` read them.
+        var build: String?
+        var minOS: String?
+    }
+
+    private func inspect(path: String) async throws -> Inspected {
+        let inspector = IPAInspector(
+            runner: services.runner, tmp: services.home.tmp, registry: registry, limits: InspectLimits(), log: services.log)
+        let report = try await inspector.inspect(path: path)
+        let app = report["app"]?.fields ?? [:]
+        return Inspected(
+            summary: Self.summarize(report), warnings: report["warnings"]?.list ?? [], build: app["build"]?.text,
+            minOS: app["minOS"]?.text)
+    }
+
+    /// What the owner needs to decide on `--approve`: bundle ID, version, platform and the extensions found.
+    static func summarize(_ report: [String: JSONValue]) -> JSONValue {
+        let app = report["app"]?.fields ?? [:]
+        var out: [String: JSONValue] = [:]
+        for key in ["bundleId", "name", "version", "build", "minOS", "platform", "deviceFamily"] { out[key] = app[key] ?? .null }
+        let extensions = (report["extensions"]?.list ?? []).map { item -> JSONValue in
+            let fields = item.fields ?? [:]
+            return .object(["path", "bundleId", "extensionPoint"].reduce(into: [:]) { $0[$1] = fields[$1] ?? .null })
+        }
+        out["extensions"] = .array(extensions)
+        out["extensionCount"] = .number(Double(extensions.count))
+        out["appGroups"] = report["appGroups"] ?? .array([])
+        out["hasEmbeddedProvision"] = report["hasEmbeddedProvision"] ?? .null
+        return .object(out)
+    }
+
+    private static func data(
+        _ entry: ManifestEntry, store: ManifestStore, downloaded: Bool, alreadyApproved: Bool, inspected: Inspected
+    ) -> [String: JSONValue] {
+        let stamp = ISO8601DateFormatter()
+        var out: [String: JSONValue] = [
+            "app": .string(entry.app), "version": .string(entry.version), "file": .string(entry.file),
+            "path": .string((try? store.path(of: entry)) ?? ""), "downloaded": .bool(downloaded),
+            "approved": .bool(entry.approved), "alreadyApproved": .bool(alreadyApproved), "sha256": .string(entry.sha256),
+            "upstreamDigest": .string(entry.upstreamDigest), "size": .number(Double(entry.size)), "urlHost": .string(entry.urlHost),
+            "build": entry.build.map(JSONValue.string) ?? .null,
+            "declaredSize": entry.declaredSize.map { .number(Double($0)) } ?? .null,
+            "minOS": entry.minOS.map(JSONValue.string) ?? .null,
+            "inspectMinOS": entry.inspectMinOS.map(JSONValue.string) ?? .null,
+            "fetchedAt": .string(stamp.string(from: entry.fetchedAt)), "inspect": inspected.summary,
+            "warnings": .array(inspected.warnings),
+        ]
+        if let at = entry.approvedAt { out["approvedAt"] = .string(stamp.string(from: at)) }
+        if !entry.approved { out["next"] = .string("Review `inspect`, then the owner runs: sideload fetch --app \(entry.app) --approve --version \(entry.version)") }
+        return out
+    }
+
+    // MARK: errors
+
+    private static var redirectRefused: SideloadError {
+        SideloadError(
+            "REDIRECT_NOT_ALLOWED", "The download was redirected to a URL that is not https on this source's allowed hosts.",
+            fix: "Nothing was kept. If the CDN moved, the owner reviews the new host before it is added to the catalog.")
+    }
+
+    private static func map(_ error: any Error) -> SideloadError {
+        if let known = error as? SideloadError { return known }
+        if error is CancellationError { return SideloadError("CANCELLED", "fetch was cancelled.", fix: "Re-run the command.") }
+        switch error as? HTTPTransportError {
+        case .redirectRefused: return redirectRefused
+        case .bodyTooLarge:
+            return SideloadError("DOWNLOAD_TOO_LARGE", "The download is larger than the size the source declared.", fix: "Nothing was kept.")
+        case .timedOut: return SideloadError("FETCH_TIMEOUT", "The request timed out.", fix: "Retry later.")
+        case .cancelled: return SideloadError("CANCELLED", "fetch was cancelled.", fix: "Re-run the command.")
+        case .disabled: return SideloadError("FETCH_NETWORK", "Network access is disabled in this build.", fix: "Use the live sideload binary.")
+        case .failed, nil: return SideloadError("FETCH_NETWORK", "The request failed.", fix: "Check the network and retry.")
+        }
+    }
+}
+
+/// Streams a body to a 0600 file while hashing it. Refuses to take more than `maxBytes`.
+private final class DownloadSink: Sendable {
+    private struct State {
+        var fd: Int32
+        var hasher = SHA256()
+        var count: Int64 = 0
+    }
+
+    private let state: Mutex<State>
+    private let maxBytes: Int64
+
+    init(path: String, maxBytes: Int64) throws {
+        let fd = open(path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        if fd < 0 { throw ioError("create download file") }
+        state = Mutex(State(fd: fd))
+        self.maxBytes = maxBytes
+    }
+
+    func accept(_ chunk: Data) throws {
+        try state.withLock { s in
+            guard s.fd >= 0 else { throw ioError("write", EBADF) }
+            s.count += Int64(chunk.count)
+            if s.count > maxBytes {
+                throw SideloadError("DOWNLOAD_TOO_LARGE", "The download is larger than the size the source declared.", fix: "Nothing was kept.")
+            }
+            s.hasher.update(data: chunk)
+            try chunk.withUnsafeBytes { raw in
+                var offset = 0
+                while offset < raw.count {
+                    let n = Darwin.write(s.fd, raw.baseAddress! + offset, raw.count - offset)
+                    if n < 0 {
+                        if errno == EINTR { continue }
+                        throw ioError("write")
+                    }
+                    offset += n
+                }
+            }
+        }
+    }
+
+    /// Flushes and closes; returns the SHA-256 (lowercase hex) and the byte count.
+    func finish() throws -> (digest: String, count: Int64) {
+        try state.withLock { s in
+            guard s.fd >= 0 else { throw ioError("close", EBADF) }
+            let synced = fsync(s.fd) == 0
+            let syncError = errno
+            let closed = close(s.fd) == 0
+            let closeError = errno
+            s.fd = -1
+            if !synced { throw ioError("fsync", syncError) }
+            if !closed { throw ioError("close", closeError) }
+            return (s.hasher.finalize().map { String(format: "%02x", $0) }.joined(), s.count)
+        }
+    }
+
+    /// Idempotent.
+    func abort() {
+        state.withLock { s in
+            if s.fd >= 0 { close(s.fd) }
+            s.fd = -1
+        }
+    }
+}
+
+private extension JSONValue {
+    var list: [JSONValue]? {
+        if case .array(let a) = self { return a }
+        return nil
+    }
+
+    var text: String? {
+        if case .string(let s) = self { return s }
+        return nil
+    }
+
+    var fields: [String: JSONValue]? {
+        if case .object(let o) = self { return o }
+        return nil
+    }
+}

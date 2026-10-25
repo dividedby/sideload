@@ -1,0 +1,4 @@
+{
+  "info": { "outcome": "success", "commandType": "device.install.application" },
+  "result": { "installedApplications": [ { "bundleID": "com.example.sideload.canary", "installationURL": "file:///private/var/containers/Bundle/Application/Canary.app/" } ] }
+}

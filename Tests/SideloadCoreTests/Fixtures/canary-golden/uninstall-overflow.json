@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "command": "canary",
+  "status": "working",
+  "code": "INSTALLED",
+  "reason": "Install succeeded; Apple has fixed the install block.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": [
+    "com.example.sideload.canary"
+  ],
+  "deviceRemoved": [],
+  "guard": "passed",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [
+    {
+      "code": "CANARY_LEFT_ON_DEVICE",
+      "message": "Uninstalling com.example.sideload.canary failed; the canary is still on the device.",
+      "fix": "Delete the Canary app from the device by hand."
+    },
+    {
+      "code": "unexpected-app-delta",
+      "message": "The device app list changed in a way the canary did not cause. Nothing was done about it.",
+      "fix": "Review `deviceDelta`; sideload never removes apps it did not install."
+    }
+  ],
+  "errors": []
+}

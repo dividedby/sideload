@@ -1,0 +1,11 @@
+{
+  "ok": false,
+  "command": "canary",
+  "errors": [
+    {
+      "code": "DEVICE_NOT_SAVED",
+      "message": "No saved device with alias \"ipad\".",
+      "fix": "sideload device save --alias <alias> --match <device name> --platform ios|tvos --yes"
+    }
+  ]
+}

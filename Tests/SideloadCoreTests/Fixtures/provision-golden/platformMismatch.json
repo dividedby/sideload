@@ -1,0 +1,1 @@
+{"app":"stremio-tvos","command":"provision","device":"iphone","errors":[{"code":"PLATFORM_MISMATCH","fix":"Use --device with a saved Apple TV (tvos).","message":"stremio-tvos needs a tvos device; the saved device is ios."}],"ok":false}

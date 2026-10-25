@@ -1,0 +1,22 @@
+{
+  "ok": false,
+  "command": "canary",
+  "status": "error",
+  "code": "WRONG_TEAM",
+  "reason": "The built app is signed by a different team than the locked one.",
+  "bundleId": "com.example.sideload.canary",
+  "device": "iphone",
+  "deviceDelta": null,
+  "deviceRemoved": null,
+  "guard": "failed:WRONG_TEAM",
+  "xcodeVersion": "27.0 (27A266a)",
+  "durationMs": 0,
+  "warnings": [],
+  "errors": [
+    {
+      "code": "WRONG_TEAM",
+      "message": "The built app is signed by a different team than the locked one.",
+      "fix": "The build was not signed by team 7AGMPUPP64. Nothing was installed."
+    }
+  ]
+}
