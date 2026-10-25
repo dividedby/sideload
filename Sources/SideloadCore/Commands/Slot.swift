@@ -237,7 +237,18 @@ public enum SlotCommand {
         }
 
         // L6: nothing is uninstalled that could not be put back: a valid signed build with an unexpired profile must exist.
-        _ = try target.requireSigned(try services.ledgerStore.load(), home: services.home.home, now: now)
+        let signed = try target.requireSigned(try services.ledgerStore.load(), home: services.home.home, now: now)
+
+        // The app's data is saved before the intent and the uninstall (read-only, no slot operation, never a failure of the
+        // lend). The backup belongs to this lend: `since` is what `begin` records for it.
+        var data = AppDataBackup.Result(skipped: true)
+        if AppDataBackup.isEnabled(config, app: app) {
+            data = AppDataBackup.Result()
+            if s0.ids.contains(target.bundleId) {
+                data = await AppDataBackup.backup(
+                    services, target: target, calls: calls, version: signed.record.version, lendSince: existing?.since ?? now)
+            }
+        }
 
         // L7: the intent is durable before the uninstall.
         let removal = FreeRemoval(services: services, target: target)
@@ -282,6 +293,8 @@ public enum SlotCommand {
                         "No other free-team app sideload knows of remains on this device, so the owner's developer trust may be cleared.",
                         "If an app later will not open, trust the developer again in Settings › General › VPN & Device Management."))
             }
+            out.merge(AppDataBackup.backupFields(data)) { _, new in new }
+            warnings += data.warnings
             if !warnings.isEmpty { out["warnings"] = .array(warnings) }
             return .result(command, out)
         case .present:  // L9: a definite failure and the app is still there; the lend is undone
@@ -425,14 +438,19 @@ public enum SlotCommand {
                     prefix: target.prefix, reserved: planned.reserved, outside: planned.usedOutside, profiles: planned.profiles
                 ).json(),
             ]
+            var warnings: [JSONValue] = []
             if outcome.result != .success, let failure = outcome.opFailure {
-                out["warnings"] = [
+                warnings.append(
                     CanaryCommand.warning(
                         "INSTALL_RESULT_UNCERTAIN",
                         "The install reported a failure (\(failure.code)) but the app is back on the device, so the return is recorded.",
-                        "No action needed.")
-                ]
+                        "No action needed."))
             }
+            // The app's data goes back before anything can launch the app; a failure is a warning, never RETURN_FAILED.
+            let restored = await AppDataBackup.restore(services, target: target, calls: calls, since: record.since)
+            out.merge(AppDataBackup.restoreFields(restored)) { _, new in new }
+            warnings += restored.warnings
+            if !warnings.isEmpty { out["warnings"] = .array(warnings) }
             return .result(command, out)
         case .absent:  // T8: a definite failure, the app is not there: still lent
             throw failed(

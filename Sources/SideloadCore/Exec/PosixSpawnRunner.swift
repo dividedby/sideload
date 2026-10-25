@@ -12,6 +12,16 @@ public struct PosixSpawnRunner: Runner {
     typealias Reap = @Sendable (pid_t, UnsafeMutablePointer<Int32>) -> pid_t
 
     static let defaultGrace: Duration = .seconds(2)
+    /// After SIGKILL, how long to keep waiting for EOF on pipes a daemonized grandchild may still hold.
+    static let drainAfterKill: Duration = .seconds(1)
+    /// How long to keep trying to reap the child after the final SIGKILL.
+    static let defaultReapTimeout: Duration = .seconds(5)
+
+    /// The most a run can last past its `CommandSpec.timeout`, whole seconds: the SIGTERM-to-SIGKILL grace, the drain after the
+    /// kill and the reaping. Callers that promise a wall-time cap add it to the timeout they set.
+    public static var worstCaseOverrunSec: Int {
+        Int((defaultGrace + drainAfterKill + defaultReapTimeout).components.seconds)
+    }
 
     private let children: LiveChildren
     private let grace: Duration
@@ -31,7 +41,7 @@ public struct PosixSpawnRunner: Runner {
         pipeFactory: @escaping @Sendable () -> (read: Int32, write: Int32)? = makePipe,
         afterSpawn: @escaping @Sendable () -> Void = {},
         reap: @escaping Reap = { waitpid($0, $1, WNOHANG) },
-        reapTimeout: Duration = .seconds(5)
+        reapTimeout: Duration = PosixSpawnRunner.defaultReapTimeout
     ) {
         self.children = children
         self.grace = grace
@@ -116,8 +126,7 @@ private struct Execution: Sendable {
     let reap: PosixSpawnRunner.Reap  // test seam: the non-blocking waitpid
     let reapTimeout: UInt64  // how long to keep trying to reap after the final SIGKILL
 
-    /// After SIGKILL, how long to keep waiting for EOF on pipes a daemonized grandchild may still hold.
-    static let drainAfterKill: UInt64 = 1_000_000_000
+    static let drainAfterKill: UInt64 = PosixSpawnRunner.drainAfterKill.nanoseconds
 
     func run() -> RunResult {
         // SIGPIPE from writing stdin to a child that exited early must not kill the host process.

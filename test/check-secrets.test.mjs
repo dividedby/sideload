@@ -103,6 +103,19 @@ describe('check-secrets', () => {
     assert.ok(rules(r).every((x) => x === 'forbidden-path'));
   });
 
+  it('blocks app-data backups (a backups/ folder holds session tokens)', async () => {
+    await put('backups/iphone/stremio-ios/20260101T000000Z/manifest.json', '{}');
+    await put('x/Backups/data/a', 'hi');
+    await git('add', '-A', '-f');
+    const r = await check();
+    assert.equal(r.code, 1);
+    assert.deepEqual(r.json.findings.map((f) => f.file).sort(), [
+      'backups/iphone/stremio-ios/20260101T000000Z/manifest.json',
+      'x/Backups/data/a',
+    ]);
+    assert.ok(rules(r).every((x) => x === 'forbidden-path'));
+  });
+
   it('blocks a PEM private key with a line number', async () => {
     const r = await stageAndCheck('a.txt', 'ok\n' + PEM_KEY);
     assert.equal(r.code, 1);

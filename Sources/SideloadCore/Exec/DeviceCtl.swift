@@ -10,6 +10,8 @@ import Foundation
 ///   no caller can reach such a subcommand without the check: in the `free` scope the bundle ID must be
 ///   `Config.isFreeBundleId` (and match the argv's own ID), in the `paid` scope a free-allowlisted ID is refused,
 ///   so labelling a free app as paid fails too. Both stop with `BUNDLE_ID_NOT_ALLOWED` before the subprocess.
+/// - App data (backup and restore) is reachable only through the three exact shapes of `requireAppDataCall`, in the free
+///   scope, for the scoped app's own `appDataContainer`, with relative device paths and local paths under `backups/`.
 /// - Output is read from the `--json-output` file only, which is deleted on every path.
 public struct DeviceCtl: Sendable {
     public struct Result: Sendable, Equatable {
@@ -27,6 +29,9 @@ public struct DeviceCtl: Sendable {
         case paid
         case free(bundleId: String)
     }
+
+    /// The Runner's timeout is the call's `--timeout` plus this, so devicectl's own timeout fires first.
+    public static let runnerMarginSec = 15
 
     private enum AppMutation {
         case install, uninstall, launch
@@ -93,6 +98,79 @@ public struct DeviceCtl: Sendable {
         }
     }
 
+    /// The only `--domain-type` an app-data call may name.
+    static let appDataDomain = "appDataContainer"
+
+    /// A device-side path in an app-data call: relative to the app's container, plain components only. No `..`, `.`, empty
+    /// component, NUL, absolute or dash-leading path (a leading "-" would read as a flag).
+    static func isSafeDevicePath(_ path: String) -> Bool {
+        !path.hasPrefix("/") && !path.hasPrefix("-") && hasPlainParts(path)
+    }
+
+    /// Non-empty, no NUL, and every `/`-separated part is a name: not empty, `.` or `..`.
+    private static func hasPlainParts(_ path: some StringProtocol) -> Bool {
+        !path.isEmpty && !path.unicodeScalars.contains("\0")
+            && path.split(separator: "/", omittingEmptySubsequences: false).allSatisfy { $0 != ".." && $0 != "." && !$0.isEmpty }
+    }
+
+    /// A local path in an app-data call: absolute, plain components, strictly under `$SIDELOAD_HOME/backups/`.
+    static func isSafeBackupPath(_ path: String, backups: String) -> Bool {
+        path.hasPrefix(backups + "/") && hasPlainParts(path.dropFirst(backups.count + 1))
+    }
+
+    /// App data is read and written through exactly three argument shapes, in the free scope, for the scoped app only
+    /// (`--device`, `--timeout` and `--json-output` are added by `run`; the order of the flags is free, but each appears once in
+    /// the `flag value` form, with no positional):
+    ///   `device info files`   `--domain-type appDataContainer --domain-identifier <id> --recurse`
+    ///   `device copy from`    `... --source <device path> --destination <local path under backups/>`
+    ///   `device copy to`      `... --source <local path under backups/> --destination <device path>`
+    /// `<id>` equals the scope's bundle ID, which must be a free-team ID. Anything else that names `copy` or `files` is refused.
+    private static func requireAppDataCall(
+        _ scope: Scope, normalized: [String], positional: [String], config: Config, backups: String
+    ) throws {
+        let refusal = notAllowed(
+            "Only the exact app-data shapes `device info files` and `device copy from|to` for the scoped free app are allowed.")
+        guard case .free(let bundleId) = scope, Config.isFreeBundleId(bundleId, prefix: config.bundleIdPrefix),
+            positional.isEmpty, normalized.count >= 3, normalized[0] == "device"
+        else { throw refusal }
+        // Per shape: the flags it must have (each exactly once), and for a copy which side is the device path.
+        let domain: Set<String> = ["--domain-type", "--domain-identifier"]
+        let required: Set<String>
+        var deviceFlag: String?
+        switch (normalized[1], normalized[2]) {
+        case ("info", "files"): required = domain.union(["--recurse"])
+        case ("copy", "from"):
+            required = domain.union(["--source", "--destination"])
+            deviceFlag = "--source"
+        case ("copy", "to"):
+            required = domain.union(["--source", "--destination"])
+            deviceFlag = "--destination"
+        default: throw refusal
+        }
+        var seen: [String: String] = [:]
+        var i = 3
+        while i < normalized.count {
+            let flag = normalized[i]
+            if flag == "--recurse" {
+                guard required.contains(flag), seen[flag] == nil else { throw refusal }
+                seen[flag] = ""
+                i += 1
+                continue
+            }
+            guard required.contains(flag), seen[flag] == nil, i + 1 < normalized.count else { throw refusal }
+            seen[flag] = normalized[i + 1]
+            i += 2
+        }
+        guard Set(seen.keys) == required, seen["--domain-type"] == appDataDomain, seen["--domain-identifier"] == bundleId
+        else { throw refusal }
+        if let deviceFlag {
+            let localFlag = deviceFlag == "--source" ? "--destination" : "--source"
+            guard let device = seen[deviceFlag], let local = seen[localFlag],
+                isSafeDevicePath(device), isSafeBackupPath(local, backups: backups)
+            else { throw refusal }
+        }
+    }
+
     private static func notAllowed(_ message: String) -> SideloadError {
         SideloadError(
             "BUNDLE_ID_NOT_ALLOWED", message,
@@ -100,13 +178,21 @@ public struct DeviceCtl: Sendable {
     }
 
     /// The allowlist hook. Runs before any subprocess.
-    private static func checkScope(_ scope: Scope, normalized: [String], positional: [String], config: Config) throws {
+    private static func checkScope(
+        _ scope: Scope, normalized: [String], positional: [String], config: Config, backups: String
+    ) throws {
         // A positional is appended after the flags, so one spelling a subcommand word could complete a split
         // subcommand (`["device"]` + `["uninstall","app",id]`). No positional may be one (a leading "-" is
         // already `INVALID_ARGUMENT` in `run`).
         let reserved: Set<String> = ["install", "uninstall", "launch", "app", "process", "remove", "validate", "profile", "profiles"]
         if positional.contains(where: { reserved.contains($0.lowercased()) }) {
             throw notAllowed("A positional argument may not be a devicectl subcommand word.")
+        }
+        let words = (normalized + positional).filter { !$0.hasPrefix("-") }.map { $0.lowercased() }
+        if words.contains("copy") || words.contains("files") {
+            // Checked whole, so it is also all that is checked (a device path may legitimately be named `install`).
+            try requireAppDataCall(scope, normalized: normalized, positional: positional, config: config, backups: backups)
+            return
         }
         try requireReadOnlyProfileCall(normalized, positional: positional)
         guard let mutation = try appMutation(normalized) else { return }  // list, info and the like name no app
@@ -156,7 +242,7 @@ public struct DeviceCtl: Sendable {
             i += 1
         }
         // Classify what devicectl will receive: `rest`, not the raw args, so `--device X` cannot split the subcommand.
-        try Self.checkScope(scope, normalized: rest, positional: positional, config: config)
+        try Self.checkScope(scope, normalized: rest, positional: positional, config: config, backups: paths.backups)
 
         var deviceID: String?
         if let deviceAlias {
@@ -181,7 +267,7 @@ public struct DeviceCtl: Sendable {
         argv += ["--timeout", String(timeoutSec), "--json-output", jsonFile] + positional
 
         let res = await runner.run(
-            CommandSpec(executable: "xcrun", args: argv, timeout: .seconds(timeoutSec + 15)))
+            CommandSpec(executable: "xcrun", args: argv, timeout: .seconds(timeoutSec + Self.runnerMarginSec)))
         if res.overflow {
             throw SideloadError(
                 "OUTPUT_LIMIT", "devicectl produced more output than the safety limit; it was stopped.",

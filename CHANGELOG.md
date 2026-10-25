@@ -10,6 +10,24 @@ All notable changes to this project are documented here. Format follows
   `appleCase` field and `evidence.txt` carry it as a string; when unset, or not 6 to 20 digits, `appleCase` is null. A rewrite
   of `config.json` keeps the key as it was written (an integer stays an integer, a string a string). The case number is no longer
   in the source, the tests or the docs.
+- App-data backup on `slot lend` and restore on `slot return` (docs/design.md section 18, "App data"), Apple tools only
+  (`devicectl device info files`, `copy from`, `copy to`). Before the durable intent and the uninstall, `lend` saves the lent
+  app's data container (files only, `Library/Preferences` first, not `Library/Caches` or `tmp`; at most 200 files, 256 MiB and 120 s of wall time, Runner grace included; unsafe or colliding listing paths are dropped and counted failed before any filesystem call; no link is ever followed or left in a backup) to
+  `$SIDELOAD_HOME/backups/<device>/<app>/<stamp>/` (directories 0700, files 0600, a manifest with SHA-256 hashes, tied to the
+  lend by its `since`). After the confirmed install and before the success JSON, `return` pushes the backup of that lend back
+  (re-hashed first, 120 s), relists and compares; only a full match marks it restored. Neither is a slot operation, the slot
+  model is unchanged, and neither can fail the command: a lend that cannot back up proceeds with `dataBackedUp:false` and a
+  `DATA_BACKUP_FAILED` / `DATA_BACKUP_INCOMPLETE` warning, a failed restore is a `DATA_RESTORE_INCOMPLETE` /
+  `DATA_RESTORE_UNVERIFIED` / `DATA_RESTORE_PARTIAL_BACKUP` warning with the backup kept. The newest 2 backups are kept per
+  device and app. `apps.<app>.backupData` (default true) turns it off per app. The lab contract only grows: `lend` gains
+  `dataBackedUp`, `dataFiles`, `dataFilesFailed` (and `dataBackupSkipped`), `return` gains `dataRestored`,
+  `dataFilesRestored`, `dataFilesFailed` (counts and booleans, never a path or file name); the new codes are warnings only.
+  Allow the lab up to about 2 more minutes per call. Backups are secrets-class (session tokens): `check-secrets` refuses a
+  `backups` path segment and AGENTS.md says so. The `DeviceCtl` allowlist gained exactly three argument shapes (free scope,
+  `appDataContainer` for the scoped `<prefix>.free.*` app only, relative device paths, local paths under `backups/`), with a
+  Sources scan test. **The restore (`copy to`) has not been run on a real device; the owner runs the first check** (sign in
+  to stremio-ios, lend, return, open the app and confirm it is still signed in). An owner-only `slot restore` for failed or
+  crashed restores is a later change.
 - `refresh --device <d> [--app <a>] [--within 1-6 | --force] --yes` (docs/design.md section 18, build step 9, manual part), free team
   only and owner-run: renews the installs on one saved device that have `--within` days or fewer left (default 5; `--force` is
   6, the ceiling, since a renewal must move the expiry by more than 24 hours) by running the existing `provision`, `sign` and

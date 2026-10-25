@@ -228,6 +228,42 @@ struct FreeDeviceCalls: Sendable {
         return FreeTeamProfiles.parse(out.json)
     }
 
+    // MARK: app data (backup and restore; `AppDataBackup` is the only caller)
+
+    /// A device call that never throws: a refusal or any other failure comes back as an outcome with no exit code and a
+    /// spawn error, so the caller (backup, restore) counts it and goes on.
+    private func quietCall(_ args: [String], timeoutSec: Int) async -> Outcome {
+        do {
+            return try await call(args, timeoutSec: timeoutSec)
+        } catch {
+            return Outcome(spawnError: "CALL_FAILED")
+        }
+    }
+
+    private var appDataFlags: [String] {
+        ["--domain-type", DeviceCtl.appDataDomain, "--domain-identifier", bundleId]
+    }
+
+    /// `devicectl device info files --domain-type appDataContainer --domain-identifier <id> --recurse`.
+    func listFiles(timeoutSec: Int) async -> Outcome {
+        await quietCall(["device", "info", "files"] + appDataFlags + ["--recurse"], timeoutSec: timeoutSec)
+    }
+
+    /// `devicectl device copy from ...`: one file out of the app's data container into `destination` (under `backups/`).
+    func copyFrom(source: String, destination: String, timeoutSec: Int) async -> Outcome {
+        await copy("from", source: source, destination: destination, timeoutSec: timeoutSec)
+    }
+
+    /// `devicectl device copy to ...`: one file from `source` (under `backups/`) into the app's data container.
+    func copyTo(source: String, destination: String, timeoutSec: Int) async -> Outcome {
+        await copy("to", source: source, destination: destination, timeoutSec: timeoutSec)
+    }
+
+    private func copy(_ direction: String, source: String, destination: String, timeoutSec: Int) async -> Outcome {
+        await quietCall(
+            ["device", "copy", direction] + appDataFlags + ["--source", source, "--destination", destination], timeoutSec: timeoutSec)
+    }
+
     /// One snapshot read as data: the callers that already changed (or may have changed) the device need the failure as data,
     /// not as a throw that skips their durable bookkeeping. `takenAt` is the clock read BEFORE `device info apps` starts
     /// (the evidence rule of `SlotRule` compares it with an op's window).
