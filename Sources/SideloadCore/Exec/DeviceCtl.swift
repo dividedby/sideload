@@ -104,16 +104,18 @@ public struct DeviceCtl: Sendable {
     /// A device-side path in an app-data call: relative to the app's container, plain components only. No `..`, `.`, empty
     /// component, NUL, absolute or dash-leading path (a leading "-" would read as a flag).
     static func isSafeDevicePath(_ path: String) -> Bool {
-        guard !path.isEmpty, !path.hasPrefix("/"), !path.hasPrefix("-"), !path.unicodeScalars.contains("\0") else { return false }
-        return path.split(separator: "/", omittingEmptySubsequences: false).allSatisfy { $0 != ".." && $0 != "." && !$0.isEmpty }
+        !path.hasPrefix("/") && !path.hasPrefix("-") && hasPlainParts(path)
+    }
+
+    /// Non-empty, no NUL, and every `/`-separated part is a name: not empty, `.` or `..`.
+    private static func hasPlainParts(_ path: some StringProtocol) -> Bool {
+        !path.isEmpty && !path.unicodeScalars.contains("\0")
+            && path.split(separator: "/", omittingEmptySubsequences: false).allSatisfy { $0 != ".." && $0 != "." && !$0.isEmpty }
     }
 
     /// A local path in an app-data call: absolute, plain components, strictly under `$SIDELOAD_HOME/backups/`.
     static func isSafeBackupPath(_ path: String, backups: String) -> Bool {
-        guard path.hasPrefix(backups + "/"), !path.unicodeScalars.contains("\0") else { return false }
-        let rest = path.dropFirst(backups.count + 1)
-        return !rest.isEmpty
-            && rest.split(separator: "/", omittingEmptySubsequences: false).allSatisfy { $0 != ".." && $0 != "." && !$0.isEmpty }
+        path.hasPrefix(backups + "/") && hasPlainParts(path.dropFirst(backups.count + 1))
     }
 
     /// App data is read and written through exactly three argument shapes, in the free scope, for the scoped app only
@@ -131,12 +133,18 @@ public struct DeviceCtl: Sendable {
         guard case .free(let bundleId) = scope, Config.isFreeBundleId(bundleId, prefix: config.bundleIdPrefix),
             positional.isEmpty, normalized.count >= 3, normalized[0] == "device"
         else { throw refusal }
-        enum Shape { case list, from, to }
-        let shape: Shape
+        // Per shape: the flags it must have (each exactly once), and for a copy which side is the device path.
+        let domain: Set<String> = ["--domain-type", "--domain-identifier"]
+        let required: Set<String>
+        var deviceFlag: String?
         switch (normalized[1], normalized[2]) {
-        case ("info", "files"): shape = .list
-        case ("copy", "from"): shape = .from
-        case ("copy", "to"): shape = .to
+        case ("info", "files"): required = domain.union(["--recurse"])
+        case ("copy", "from"):
+            required = domain.union(["--source", "--destination"])
+            deviceFlag = "--source"
+        case ("copy", "to"):
+            required = domain.union(["--source", "--destination"])
+            deviceFlag = "--destination"
         default: throw refusal
         }
         var seen: [String: String] = [:]
@@ -144,27 +152,22 @@ public struct DeviceCtl: Sendable {
         while i < normalized.count {
             let flag = normalized[i]
             if flag == "--recurse" {
-                guard seen[flag] == nil else { throw refusal }
+                guard required.contains(flag), seen[flag] == nil else { throw refusal }
                 seen[flag] = ""
                 i += 1
                 continue
             }
-            guard ["--domain-type", "--domain-identifier", "--source", "--destination"].contains(flag), seen[flag] == nil,
-                i + 1 < normalized.count
-            else { throw refusal }
+            guard required.contains(flag), seen[flag] == nil, i + 1 < normalized.count else { throw refusal }
             seen[flag] = normalized[i + 1]
             i += 2
         }
-        guard seen["--domain-type"] == appDataDomain, seen["--domain-identifier"] == bundleId else { throw refusal }
-        switch shape {
-        case .list:
-            guard seen.keys.sorted() == ["--domain-identifier", "--domain-type", "--recurse"] else { throw refusal }
-        case .from, .to:
-            guard seen.keys.sorted() == ["--destination", "--domain-identifier", "--domain-type", "--source"],
-                let source = seen["--source"], let destination = seen["--destination"]
+        guard Set(seen.keys) == required, seen["--domain-type"] == appDataDomain, seen["--domain-identifier"] == bundleId
+        else { throw refusal }
+        if let deviceFlag {
+            let localFlag = deviceFlag == "--source" ? "--destination" : "--source"
+            guard let device = seen[deviceFlag], let local = seen[localFlag],
+                isSafeDevicePath(device), isSafeBackupPath(local, backups: backups)
             else { throw refusal }
-            let (device, local) = shape == .from ? (source, destination) : (destination, source)
-            guard isSafeDevicePath(device), isSafeBackupPath(local, backups: backups) else { throw refusal }
         }
     }
 
@@ -181,7 +184,7 @@ public struct DeviceCtl: Sendable {
         // A positional is appended after the flags, so one spelling a subcommand word could complete a split
         // subcommand (`["device"]` + `["uninstall","app",id]`). No positional may be one (a leading "-" is
         // already `INVALID_ARGUMENT` in `run`).
-        let reserved: Set<String> = ["install", "uninstall", "launch", "app", "process", "copy", "files", "remove", "validate", "profile", "profiles"]
+        let reserved: Set<String> = ["install", "uninstall", "launch", "app", "process", "remove", "validate", "profile", "profiles"]
         if positional.contains(where: { reserved.contains($0.lowercased()) }) {
             throw notAllowed("A positional argument may not be a devicectl subcommand word.")
         }

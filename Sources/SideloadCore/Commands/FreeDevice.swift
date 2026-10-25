@@ -251,14 +251,17 @@ struct FreeDeviceCalls: Sendable {
 
     /// `devicectl device copy from ...`: one file out of the app's data container into `destination` (under `backups/`).
     func copyFrom(source: String, destination: String, timeoutSec: Int) async -> Outcome {
-        await quietCall(
-            ["device", "copy", "from"] + appDataFlags + ["--source", source, "--destination", destination], timeoutSec: timeoutSec)
+        await copy("from", source: source, destination: destination, timeoutSec: timeoutSec)
     }
 
     /// `devicectl device copy to ...`: one file from `source` (under `backups/`) into the app's data container.
     func copyTo(source: String, destination: String, timeoutSec: Int) async -> Outcome {
+        await copy("to", source: source, destination: destination, timeoutSec: timeoutSec)
+    }
+
+    private func copy(_ direction: String, source: String, destination: String, timeoutSec: Int) async -> Outcome {
         await quietCall(
-            ["device", "copy", "to"] + appDataFlags + ["--source", source, "--destination", destination], timeoutSec: timeoutSec)
+            ["device", "copy", direction] + appDataFlags + ["--source", source, "--destination", destination], timeoutSec: timeoutSec)
     }
 
     /// One snapshot read as data: the callers that already changed (or may have changed) the device need the failure as data,

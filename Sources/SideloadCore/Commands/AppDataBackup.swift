@@ -15,12 +15,16 @@ import Foundation
 /// A backup is tied to the lend that made it (`lendSince`, the `since` the slot record carries), so a return never restores
 /// a stale one. The restore only ever follows a confirmed install; a successful, verified restore marks the manifest
 /// (`restoredAt`) and is never repeated.
+///
+/// The restore (`device copy to`) has never been run on a real device, so whether the app is still signed in afterwards is
+/// unverified until the owner's first run (docs/design.md section 18); everything here is written to leave the backup in place
+/// when the restore does not work.
 enum AppDataBackup {
     static let totalBudgetSec = 120
     static let listTimeoutSec = 60
     static let copyTimeoutSec = 30
-    /// What one call can last past its `--timeout`, from the real constants: `DeviceCtl` gives the Runner `timeout + 15`, and the
-    /// Runner needs up to 8 s more to stop a child (SIGTERM-to-SIGKILL grace, drain, reaping).
+    /// What one call can last past its `--timeout`, from the real constants: `DeviceCtl.runnerMarginSec` (the Runner's own timeout
+    /// is the `--timeout` plus it) and `PosixSpawnRunner.worstCaseOverrunSec` (the Runner's time to stop a child after that).
     static var runnerGraceSec: Int { DeviceCtl.runnerMarginSec + PosixSpawnRunner.worstCaseOverrunSec }
     /// No call is started with a `--timeout` below this.
     static let minCallSec = 5

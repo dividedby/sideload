@@ -653,6 +653,31 @@ struct AppDataBackupTests {
         }
     }
 
+    @Test("the tvOS app on the Apple TV goes through the same backup and restore path")
+    func tvOS() async throws {
+        let tvId = carrierPrefix + ".free." + ProvisionApp.stremioTVOS.suffix
+        let tvPrefs = "Library/Preferences/\(tvId).plist"
+        let files: [String: Data] = [tvPrefs: data("tv prefs"), "Documents/addons.json": data("tv addons"), "Library/Caches/x": data("c")]
+        var tvScript = DeviceScript(initial: [tvId: true])
+        tvScript.container = files
+        try await withInstallWorld(app: .stremioTVOS, script: tvScript, ledger: { $0.installs = [installRecord(.stremioTVOS, alias: "appletv")] }) { w in
+            try await w.store.update { $0.devices["appletv"]?.lendableApp = "stremio-tvos" }
+            let lend = await w.slot("lend", device: "appletv", to: "lab")
+            #expect(lend.ok, "\(lend.errors)")
+            #expect(json(lend)["dataBackedUp"] == true && json(lend)["dataFiles"] == 2 && json(lend)["dataFilesFailed"] == 0)
+            let folder = w.paths.backups + "/appletv/stremio-tvos"
+            #expect(listing(folder).count == 1 && modeOf(folder) == 0o700)
+            #expect(w.runner.container(tvId).isEmpty, "the uninstall deleted the app's data")
+            let back = await w.slot("return", device: "appletv")
+            #expect(back.ok, "\(back.errors)")
+            #expect(json(back)["dataRestored"] == true && json(back)["dataFilesRestored"] == 2)
+            #expect(w.runner.container(tvId).keys.sorted() == ["Documents/addons.json", tvPrefs].sorted())
+            for spec in w.runner.dataCalls {
+                #expect(spec.args[spec.args.firstIndex(of: "--domain-identifier")! + 1] == tvId)
+            }
+        }
+    }
+
     @Test("the per-call allowance is pinned to the Runner's real constants")
     func graceIsPinned() {
         // devicectl's own margin over `--timeout`, then the Runner's SIGTERM-to-SIGKILL grace, drain after the kill and reaping.
