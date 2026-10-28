@@ -18,10 +18,12 @@ public enum StatusState: String, Sendable, Equatable {
     }
 }
 
-/// `status` v1 (design sections 8, 11 and 12): the menu bar snapshot gathered from local files only, with no
+/// `status` v1 (design sections 8, 11, 12 and 18): the menu bar snapshot gathered from local files only, with no
 /// subprocess, keychain, device, portal or network use and no lock. A missing or unreadable source is a warning
 /// and an empty section, never a failure. Device visibility needs `devicectl`, so it is always `unknown` here
-/// and the app fills it from `device list`.
+/// and the app fills it from `device list`. Free installs on saved devices join `items` (kind `install`, the 3 and 1 day
+/// levels) and `installs`, and warn once due; a pending app-data restore is a warning too. The app-data backups are
+/// secrets-class: only their manifests are read (`PendingRestores`), and only aliases and app names are printed.
 public enum StatusCommand {
     static let command = "status"
 
@@ -70,8 +72,10 @@ public enum StatusCommand {
         var devices: [JSONValue] = []
         var apps: [JSONValue] = []
         var slotDevices: [JSONValue] = []
+        var loadedConfig: Config?
         do {
             let config = try services.store.load()
+            loadedConfig = config
             slotDevices = Self.slotDevices(config: config, ledger: ledgerRead, readable: ledgerReadable, now: now)
             apps = config.apps.keys.sorted().map { .string($0) }
             // A device without IDs is its own warning; the apps above still count.
@@ -112,6 +116,28 @@ public enum StatusCommand {
                     "`sideload slot lend --device \(printableAlias(entry.device)) --to lab` or `sideload slot return --device \(printableAlias(entry.device))` settles it with a fresh device snapshot."))
         }
 
+        // Free installs: only with both the ledger and the config read (the config says which devices are still saved).
+        var installs: JSONValue = .null
+        var pendingRestores: JSONValue = .null
+        if ledgerReadable, let config = loadedConfig {
+            let saved = Set(config.devices.keys)
+            items = (items + ExpiryItems.installs(projected, devices: saved, now: now))
+                .sorted { ($0.notAfter, $0.name) < ($1.notAfter, $1.name) }
+            let present = projected.installs.filter { $0.present && saved.contains($0.device) }
+                .sorted { ($0.profileExpires, $0.id) < ($1.profileExpires, $1.id) }
+            installs = .array(
+                present.map { Self.install($0, autoRefresh: config.devices[$0.device]?.autoRefresh ?? false, now: now) })
+            for install in present {
+                if let w = Self.expiryWarning(install, now: now) { warnings.append(w) }
+            }
+            let pending = PendingRestores.find(services, config: config, ledger: ledgerRead, now: now)
+            pendingRestores = .array(pending.map { ["device": .string($0.device), "app": .string($0.app)] })
+            for entry in pending {
+                let e = PendingRestores.warning(entry)
+                warnings.append(warning(e.code, e.message, e.fix))
+            }
+        }
+
         let state = StatusState.worst(canaryStatus: canaryStatus, items: items)
         return .result(
             command,
@@ -126,6 +152,8 @@ public enum StatusCommand {
                 "lent": ledgerReadable ? .array(lent) : .null,
                 "slots": ["devices": .array(slotDevices), "appIdsLast7Days": appIdsLast7Days],
                 "appIdsLast7Days": appIdsLast7Days,
+                "installs": installs,
+                "pendingRestores": pendingRestores,
                 "warnings": .array(warnings),
             ])
     }
@@ -160,6 +188,40 @@ public enum StatusCommand {
                 "apps": .array(view.apps.map { .string($0) }), "lent": lent, "pending": .bool(view.pending),
                 "retryAfter": view.retryAfter.map { .number(Double($0)) } ?? .null, "unknown": false,
             ]
+        }
+    }
+
+    /// One free install on a saved device: its expiry and the refresh bookkeeping `refresh` keeps on the record.
+    /// `autoRefresh` is the device's opt-in (the automatic mode itself is not built).
+    static func install(_ install: LedgerInstall, autoRefresh: Bool, now: Date) -> JSONValue {
+        let (days, level) = FreeInstallExpiry.assess(expires: install.profileExpires, now: now)
+        return [
+            "id": .string(install.id), "device": .string(install.device), "app": .string(install.app),
+            "notAfter": .string(LedgerDates.string(install.profileExpires)), "daysLeft": .number(Double(days)),
+            "level": .string(level.rawValue), "autoRefresh": .bool(autoRefresh),
+            "lastResult": install.refresh.lastResult.map(JSONValue.string) ?? .null,
+            "nextEligible": install.refresh.nextEligible.map { .string(LedgerDates.string($0)) } ?? .null,
+            "suspended": .bool(install.refresh.suspended),
+        ]
+    }
+
+    /// `INSTALL_EXPIRING` at 3 days or fewer (1 day or fewer is `critical` in `items`), `INSTALL_EXPIRED` once expired,
+    /// nil while `ok`. The fix is the owner's manual `refresh` of that app on that device.
+    static func expiryWarning(_ install: LedgerInstall, now: Date) -> JSONValue? {
+        let (days, level) = FreeInstallExpiry.assess(expires: install.profileExpires, now: now)
+        let device = printableAlias(install.device)
+        let fix = "The owner runs `sideload refresh --device \(device) --app \(install.app) --yes`."
+        switch level {
+        case .ok:
+            return nil
+        case .expired:
+            return warning(
+                "INSTALL_EXPIRED", "The signing of \(install.app) on device \"\(device)\" has expired, so the app no longer opens.",
+                fix)
+        case .warn, .critical:
+            let left = days < 1 ? "less than a day" : days == 1 ? "1 day" : "\(days) days"
+            return warning(
+                "INSTALL_EXPIRING", "The signing of \(install.app) on device \"\(device)\" ends in \(left) (\(level.rawValue)).", fix)
         }
     }
 

@@ -707,6 +707,89 @@ struct SlotRestoreTests {
         }
     }
 
+    // MARK: status and the menu (the pending-restore warning)
+
+    @Test("status and the menu flag a restore that is waiting, never while the app is lent, and drop it once restored")
+    func statusFlag() async throws {
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            func pending() throws -> (JSONValue, String) {
+                let out = StatusCommand.run(w.services)
+                return (json(out), try out.printed().text)
+            }
+            func notices() -> [String] {
+                guard case .ready(let inputs) = MenuLoader.loadLocal(w.services) else { return ["not ready"] }
+                return inputs.notices.map(\.code)
+            }
+            var (printed, _) = try pending()
+            #expect(printed["pendingRestores"] == [] && notices() == [])
+            // Lent: the backup is the return's to restore, not a pending one.
+            #expect(await w.lend().ok)
+            (printed, _) = try pending()
+            #expect(printed["pendingRestores"] == [] && notices() == [])
+            #expect(!(printed["warnings"]?.array ?? []).contains { $0["code"] == "DATA_RESTORE_PENDING" })
+            // A return whose restore failed leaves it waiting, once the return's own push can no longer be running: the slot is
+            // recorded returned before the push, and status takes no lock.
+            w.runner.arm(script(faults { $0.copyToFails = [prefs] }))
+            #expect(json(await w.giveBack())["dataRestored"] == false)
+            (printed, _) = try pending()
+            #expect(printed["pendingRestores"] == [] && notices() == [], "inside the window the return may still be pushing")
+            w.clock.advance(PendingRestores.settleWindow)
+            let calls = w.runner.calls.count
+            let text: String
+            (printed, text) = try pending()
+            #expect(printed["pendingRestores"] == [["device": "iphone", "app": "stremio-ios"]])
+            let warning = try #require(printed["warnings"]?.array?.first { $0["code"] == "DATA_RESTORE_PENDING" })
+            #expect(warning["fix"] == "The owner runs `sideload slot restore --device iphone --app stremio-ios --yes`.")
+            #expect(printed["state"] != "critical", "a pending restore is a warning, not an expiry state")
+            #expect(notices() == ["DATA_RESTORE_PENDING"])
+            #expect(w.runner.calls.count == calls, "status and the menu's local load run no subprocess")
+            for secret in [sentinel, prefs, library, "Preferences", w.paths.backups, "manifest"] {
+                #expect(!text.contains(secret), "status printed \(secret)")
+            }
+            // Restored: nothing waits.
+            w.runner.arm(script())
+            #expect(await w.restore().ok)
+            (printed, _) = try pending()
+            #expect(printed["pendingRestores"] == [] && notices() == [])
+        }
+    }
+
+    @Test("an operation inside its window on any slot of the device hides the flag, exactly while slot restore's gate refuses")
+    func statusDeviceBusy() async throws {
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            try await w.lendAndFailedReturn()
+            w.clock.advance(PendingRestores.settleWindow)
+            #expect(json(StatusCommand.run(w.services))["pendingRestores"] == [["device": "iphone", "app": "stremio-ios"]])
+            try await LedgerStore(paths: w.paths).update { ledger in
+                ledger.slots.append(
+                    LedgerSlot(
+                        device: "iphone", app: "apollo", presence: .absent,
+                        op: LedgerSlotOp(kind: .install, by: .install, startedAt: w.clock.now(), window: 600)))
+            }
+            #expect(json(StatusCommand.run(w.services))["pendingRestores"] == [])
+            #expect(await w.restore().errorCodes == ["SLOT_PENDING"], "slot restore refuses it too")
+            // Past its window the op no longer gates slot restore, so it no longer hides the flag either.
+            w.clock.advance(TimeInterval(SlotRule.window(.install) + 1))
+            #expect(json(StatusCommand.run(w.services))["pendingRestores"] == [["device": "iphone", "app": "stremio-ios"]])
+        }
+    }
+
+    @Test("a backup kept by a lend that never removed the app is not flagged (slot restore would refuse it too)")
+    func statusIgnoresUnmarked() async throws {
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            try await w.lendAndFailedReturn()
+            let name = try #require(w.finishedBackups.last)
+            var manifest = try w.manifest(name)
+            manifest.uninstalledAt = nil
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            try encoder.encode(manifest).write(to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
+            w.clock.advance(PendingRestores.settleWindow)
+            #expect(json(StatusCommand.run(w.services))["pendingRestores"] == [])
+            #expect(await w.restore().errorCodes == ["NO_PENDING_RESTORE"])
+        }
+    }
+
     // MARK: the lab's debug hook
 
     #if DEBUG
