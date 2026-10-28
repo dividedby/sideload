@@ -62,11 +62,14 @@ team) before changing anything.
 - Deleting anything from the keychain or the developer portal.
 - Installing anything system-wide, or anything that needs root/elevated privileges.
 - Pairing changes, atvloadly changes, and any new download source.
-- Running `canary`, `provision`, `sign`, `install` or `refresh` (any mode) on a real device (they change the portal
-  and/or the device), and `app remove` (it uninstalls one managed install to free a slot; owner-only, allowlisted
+- Running `canary`, `provision`, `sign`, `install` or `refresh` (any mode) on a real device, from the CLI or from the menu
+  bar app's buttons (they change the portal and/or the device), and `app remove` (it uninstalls one managed install to free a slot; owner-only, allowlisted
   to `io.github.dividedby.free.*`, `--yes` is the owner's), and `slot restore` (the owner's retry of an app-data restore: it
   pushes a saved backup into the app on the device; owner-only, `--yes` is the owner's, and it takes `--device <alias>`, never
   `--udid`).
+- The menu bar app's action buttons (Renew…, Install, Remove, Lendable and the confirm that follows them). They are owner
+  clicks: the confirm click is the owner's `--yes`, and agents never click them, never run the built app and never drive it
+  (no computer-use clicks, no UI scripting), exactly as for the commands behind them.
 - `device lendable` (it chooses which app the lab may borrow the slot of). `slot lend` and `slot return` are run by
   mobile-safari-lab with no `--yes`; agents never run them against a real device, and they take `.op.lock`, accept
   `--udid` only for a saved device and never print it.
