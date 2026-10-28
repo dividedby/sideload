@@ -163,17 +163,17 @@ struct RunnerTests {
     // MARK: Timeout and group kill
 
     @Test("timeout: SIGTERM to the group, then a final group SIGKILL after reaping, once each")
-    func timeoutSignals() async {
+    func timeoutSignals() async throws {
         let h = Harness()
-        let clock = ContinuousClock()
-        let start = clock.now
-        let r = await h.run(spec("sleep.sh", timeout: .milliseconds(150)))
+        let timeout: Duration = .milliseconds(150)
+        let r = await h.run(spec("sleep.sh", timeout: timeout))
         #expect(r.timedOut)
         #expect(!r.overflow)
         #expect(r.signal == SIGTERM)
         #expect(h.log.signals == [SIGTERM, SIGKILL])
         #expect(h.log.groups.count == 1)
-        #expect(clock.now - start < .seconds(30), "bounded, far below any hang")
+        let toTerm = try #require(h.log.sent(SIGTERM)) - (try #require(h.spawned.at))
+        #expect(toTerm >= timeout && toTerm < timeout + runnerSlack, "SIGTERM at the timeout, took \(toTerm)")
     }
 
     @Test("sends no signals when the child finishes in time")
@@ -205,42 +205,50 @@ struct RunnerTests {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let ready = dir.appendingPathComponent("ready").path
-        let h = Harness(grace: .milliseconds(300))
-        let clock = ContinuousClock()
-        let start = clock.now
+        let grace: Duration = .milliseconds(300)
+        let h = Harness(grace: grace)
         // Generous timeout: the fixture must have installed its trap before SIGTERM arrives.
-        let r = await h.run(spec("ignore-term.sh", [ready], timeout: .seconds(2)))
-        let elapsed = clock.now - start
+        let timeout: Duration = .seconds(2)
+        let r = await h.run(spec("ignore-term.sh", [ready], timeout: timeout))
         #expect(FileManager.default.fileExists(atPath: ready), "fixture never started")
         #expect(r.timedOut)
         #expect(r.signal == SIGKILL)
         #expect(h.log.signals == [SIGTERM, SIGKILL])
-        #expect(elapsed >= .milliseconds(2250), "SIGKILL must wait for the grace period")
-        #expect(elapsed < .seconds(30), "bounded, far below any hang")
+        let term = try #require(h.log.sent(SIGTERM))
+        let toTerm = term - (try #require(h.spawned.at))
+        let toKill = try #require(h.log.sent(SIGKILL)) - term
+        #expect(toTerm >= timeout && toTerm < timeout + runnerSlack, "SIGTERM at the timeout, took \(toTerm)")
+        #expect(toKill >= grace, "SIGKILL must wait for the grace period")
+        #expect(toKill < grace + runnerSlack, "SIGKILL right after the grace period, took \(toKill)")
     }
 
     @Test("a child that cannot be reaped after SIGKILL: the run still returns, status unknown, registry clean")
-    func unreapableChildDoesNotHangTheRun() async {
-        let seen = Mutex<pid_t>(0)
+    func unreapableChildDoesNotHangTheRun() async throws {
+        let seen = Mutex<(pid: pid_t, at: ContinuousClock.Instant?)>((0, nil))
         let children = LiveChildren()
+        let log = SignalLog()
+        let reapTimeout: Duration = .milliseconds(200)
         // The seam never reports the child as reaped, like a child stuck in an uninterruptible state.
         let runner = PosixSpawnRunner(
-            children: children, grace: .milliseconds(100), signalGroup: { killpg($0, $1) },
+            children: children, grace: .milliseconds(100), signalGroup: log.send,
             reap: { pid, _ in
-                seen.withLock { $0 = pid }
+                seen.withLock { $0 = (pid, .now) }
                 return 0
             },
-            reapTimeout: .milliseconds(200))
-        let clock = ContinuousClock()
-        let start = clock.now
+            reapTimeout: reapTimeout)
         let r = await runner.run(spec("sleep.sh", timeout: .milliseconds(200)))
-        #expect(clock.now - start < .seconds(30), "bounded, far below any hang")
+        // After the SIGKILL the runner drains the pipes, then stops trying to reap once its reap timeout passes.
+        let lastReap = try #require(seen.withLock { $0.at })
+        let afterKill = lastReap - (try #require(log.sent(SIGKILL)))
+        #expect(
+            afterKill < PosixSpawnRunner.drainAfterKill + reapTimeout + runnerSlack,
+            "gave up reaping \(afterKill) after the SIGKILL")
         #expect(r.timedOut)
         #expect(r.code == nil && r.signal == nil)
         #expect(children.isEmpty)
         // The real child was killed; reap it so the test leaves no zombie.
         var status: Int32 = 0
-        let pid = seen.withLock { $0 }
+        let pid = seen.withLock { $0.pid }
         #expect(pid > 0)
         #expect(waitpid(pid, &status, 0) == pid)
     }
@@ -273,28 +281,35 @@ struct RunnerTests {
     }
 
     @Test("overflow: a real child that ignores SIGTERM is capped and killed promptly")
-    func overflowIgnoringTerm() async {
-        let clock = ContinuousClock()
-        let start = clock.now
-        let r = await Harness().run(spec("flood-ignore-term.sh", timeout: .seconds(20), max: 100_000))
+    func overflowIgnoringTerm() async throws {
+        let grace: Duration = .milliseconds(300)
+        let h = Harness(grace: grace)
+        let r = await h.run(spec("flood-ignore-term.sh", timeout: .seconds(20), max: 100_000))
         #expect(r.overflow)
-        #expect(!r.timedOut)
+        // timedOut is set only when the deadline passes before any escalation, so this is the cap, not the timeout.
+        #expect(!r.timedOut, "stopped by the cap, not by the 20 s timeout")
         #expect(r.stdout.utf8.count + r.stderr.utf8.count <= 100_000)
-        #expect(clock.now - start < .seconds(15), "stopped by the cap, not by the 20 s timeout")
+        // The fixture outlives SIGTERM and its closed pipes, so only the runner's SIGKILL ends it.
+        #expect(r.signal == SIGKILL)
+        #expect(h.log.signals == [SIGTERM, SIGKILL])
+        let term = try #require(h.log.sent(SIGTERM))
+        let toKill = try #require(h.log.sent(SIGKILL)) - term
+        #expect(toKill >= grace, "SIGKILL must wait for the grace period")
+        #expect(toKill < grace + runnerSlack, "SIGKILL right after the grace period, took \(toKill)")
     }
 
     // MARK: Cancellation
 
     @Test("cancellation escalates immediately: SIGTERM now, final group SIGKILL, long before the timeout")
-    func cancellation() async {
+    func cancellation() async throws {
         let h = Harness()
-        let clock = ContinuousClock()
         let task = Task { await h.runner.run(spec("sleep.sh", timeout: .seconds(60))) }
         #expect(await eventually { h.children.count == 1 }, "child never registered")
-        let start = clock.now
+        let cancelled = ContinuousClock.now
         task.cancel()
         let r = await task.value
-        #expect(clock.now - start < .seconds(30), "long before the 60 s timeout")
+        let toTerm = try #require(h.log.sent(SIGTERM)) - cancelled
+        #expect(toTerm < runnerSlack, "SIGTERM on cancel, long before the 60 s timeout; took \(toTerm)")
         #expect(r.signal == SIGTERM)
         #expect(!r.timedOut && !r.overflow)
         #expect(h.log.signals == [SIGTERM, SIGKILL])
@@ -306,18 +321,21 @@ struct RunnerTests {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let ready = dir.appendingPathComponent("ready").path
-        let h = Harness(grace: .milliseconds(300))
-        let clock = ContinuousClock()
+        let grace: Duration = .milliseconds(300)
+        let h = Harness(grace: grace)
         let task = Task { await h.runner.run(spec("ignore-term.sh", [ready], timeout: .seconds(60))) }
         #expect(await eventually { FileManager.default.fileExists(atPath: ready) }, "fixture never started")
-        let start = clock.now
+        let cancelled = ContinuousClock.now
         task.cancel()
         let r = await task.value
-        let elapsed = clock.now - start
         #expect(r.signal == SIGKILL)
         #expect(h.log.signals == [SIGTERM, SIGKILL])
-        #expect(elapsed >= .milliseconds(250), "SIGKILL must wait for the grace period")
-        #expect(elapsed < .seconds(30), "long before the 60 s timeout")
+        let term = try #require(h.log.sent(SIGTERM))
+        let toTerm = term - cancelled
+        let toKill = try #require(h.log.sent(SIGKILL)) - term
+        #expect(toTerm < runnerSlack, "SIGTERM on cancel, long before the 60 s timeout; took \(toTerm)")
+        #expect(toKill >= grace, "SIGKILL must wait for the grace period")
+        #expect(toKill < grace + runnerSlack, "SIGKILL right after the grace period, took \(toKill)")
         #expect(h.children.isEmpty)
     }
 

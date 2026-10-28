@@ -550,6 +550,14 @@ All notable changes to this project are documented here. Format follows
   and `terminationStatus` on failure; `scripts/check.sh` also tees `swift test` to `$TMPDIR/sideload-swift-test.log`.
 
 ### Fixed
+- `RunnerTests` timing checks no longer fail on a loaded machine. They timed the whole `await run`, which also counts how long
+  the test task waits to be resumed; under load (Spotlight at 100% CPU) the overflow test took 16 to 22 s against a 15 s bound.
+  Instrumented under load, the runner had sent its last signal 57 ms after the spawn, and the test task resumed 11 s later.
+  The timing checks now compare marks taken on the runner's own thread (the spawn and each signal sent), bounded by the
+  timeout or grace period plus a 5 s slack. The overflow test also proves more than before: its fixture used to die of SIGPIPE
+  when the runner closed its pipes, so it passed even with the grace-period SIGKILL removed. The fixture now ignores SIGTERM
+  and SIGPIPE and keeps running, and the test checks the child ended by SIGKILL, sent one grace period after SIGTERM. Tests
+  only; the runner is unchanged.
 - App-data backup and restore treated a `devicectl` call that exits 0 but reports a failure as a success. A call now fails
   when its document is not an object, has a top-level `error`, has an `info` that is not an object, or has an `info.outcome`
   other than `success`. A `copy from` that did so and left no file was taken for a folder (counted nowhere); one that left a
