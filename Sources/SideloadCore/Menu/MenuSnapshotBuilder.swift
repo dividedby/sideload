@@ -75,7 +75,7 @@ public enum MenuSnapshotBuilder {
             soonest = min(soonest ?? .distantFuture, expiry(of: signed, in: ledger))
             items.append(
                 ExpiryItem(
-                    kind: .profile, name: "\(signed.app) @ \(signed.device)", notAfter: expiry(of: signed, in: ledger),
+                    kind: .install, name: "\(signed.app) @ \(signed.device)", notAfter: expiry(of: signed, in: ledger),
                     daysLeft: days, level: level))
         }
         let state = StatusState.worst(canaryStatus: inputs.canaryStatus, items: items)

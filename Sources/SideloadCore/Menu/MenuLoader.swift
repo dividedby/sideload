@@ -1,10 +1,11 @@
 import Foundation
 
-/// Reads what the panel shows (design section 12). Local files first (instant), then one `devicectl list devices`
+/// Reads what the panel shows (design section 12). Local files first (instant: the config, the ledger, the canary log and
+/// the app-data backups' manifests for the pending-restore notice), then one `devicectl list devices`
 /// (about 1 to 2 s) for visibility and transport. Nothing here writes, locks, or touches the keychain, the portal or
 /// the network; there are no timers: the app calls it at launch, when the panel opens and on "Check status now".
 public enum MenuLoader {
-    /// The part of the snapshot that comes from `config.json`, `ledger.json` and `logs/canary.jsonl`.
+    /// The part of the snapshot that comes from `config.json`, `ledger.json`, `logs/canary.jsonl` and the backup manifests.
     public enum Local: Sendable {
         case ready(MenuInputs)
         case firstRun(MenuIssue)
@@ -45,6 +46,12 @@ public enum MenuLoader {
         } catch {
             ledgerReadable = false
             notices.append(MenuIssue(error))
+        }
+        // The same pending-restore warning `status` prints; an unreadable ledger says nothing about which apps are lent.
+        if ledgerReadable {
+            for entry in PendingRestores.find(services, config: config, ledger: ledger, now: services.clock.now()) {
+                notices.append(MenuIssue(PendingRestores.warning(entry)))
+            }
         }
         return .ready(
             MenuInputs(

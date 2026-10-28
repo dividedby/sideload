@@ -46,6 +46,19 @@ All notable changes to this project are documented here. Format follows
   `copyNoResult`, `copyOther`, and for the restore also `notOnDevice` (pushed, but the relisting did not show it); the restore counts its refusals before the call as `unsafePath`, `localError` and `timeLimit` (the call's class is best effort: the locked and not-connected patterns are loose; `devicectl`'s numeric error codes
   are not reported). The progress line gains the same counts: `app data backup: 10 file(s) saved, 3 failed (copyTimeout 2,
   notRegularFile 1)` and `app data restore: ... failed (...)`. Additive: `dataBackedUp`, `dataFiles`, `dataFilesFailed` keep their meaning.
+- `status` free-install expiry and pending restores (docs/design.md section 18, build step 8 without `--notify`). `items` gains one
+  `kind: install` item (`<app> @ <device>`) per free install recorded on a device still saved in config, at its profile's expiry,
+  with the free levels (`warn` at 3 days or fewer, `critical` at 1 or fewer, then `expired`), so `state` follows them; `ledger`
+  still prints the paid items only. New `installs` (`{id,device,app,notAfter,daysLeft,level,autoRefresh,lastResult,nextEligible,suspended}`)
+  and `pendingRestores` (`[{device,app}]`: a backup `slot restore` would push, never while the app is lent or the device has an
+  operation inside its window, nor within 5 minutes of the slot's last snapshot, because `slot return` records the slot before it
+  pushes the data), both null when the ledger or the config cannot be read. New warnings: `INSTALL_EXPIRING` and
+  `INSTALL_EXPIRED` (fix: the owner's `refresh --device <d> --app <a> --yes`) and `DATA_RESTORE_PENDING` (fix: the owner's
+  `slot restore --device <d> --app <a> --yes`; it does not change `state`). The menu bar app shows the pending-restore warning as
+  a notice. `status` now also reads the backups' manifests (no lock, no subprocess, no write; the saved data is never read and
+  output is aliases, app names, dates and counts only). Additive for the lab: no existing field changed meaning, but free installs now feed `state`:
+  it can be `warn` or `critical` from one, and with no canary run a healthy one makes it `ok` (not `unknown`), so `ok` no
+  longer implies a working canary; read `canary.last` for that.
 - The backup manifest gains an optional `supersededAt`: `slot lend` marks every older, unrestored backup of the app superseded
   (whether or not the new lend saved a backup), so `slot restore` never pushes data from an earlier lend. Older manifests
   without the key still read. It gains an optional `uninstalledAt`, set wherever a snapshot shows the app off the device while the slot

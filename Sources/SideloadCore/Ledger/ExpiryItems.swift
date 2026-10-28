@@ -7,11 +7,11 @@ public struct ExpiryItem: Sendable, Equatable {
     }
 
     public enum Kind: String, Sendable, Equatable {
-        case certificate, profile
+        case certificate, profile, install
     }
 
     public var kind: Kind
-    /// `cert <fp8>` or `profile …<last 4 of the UUID>`: never a full ID or a name.
+    /// `cert <fp8>`, `profile …<last 4 of the UUID>` or `<app> @ <device alias>`: never a full ID or a name.
     public var name: String
     public var notAfter: Date
     /// Whole days left, rounded down; negative once expired.
@@ -55,6 +55,26 @@ public enum ExpiryItems {
                     daysLeft: days, level: level))
         }
         return items.sorted { ($0.notAfter, $0.name) < ($1.notAfter, $1.name) }
+    }
+
+    /// One item per free-team install recorded present on a saved device (`devices`, the config's aliases; a retired
+    /// device's records are ignored), at the install's `profileExpires` with the section 18 thresholds of
+    /// `FreeInstallExpiry`. Soonest first. `ledger` keeps listing the paid items only.
+    public static func installs(_ ledger: Ledger, devices: Set<String>, now: Date) -> [ExpiryItem] {
+        presentInstalls(ledger, devices: devices)
+            .map { install in
+                let (days, level) = FreeInstallExpiry.assess(expires: install.profileExpires, now: now)
+                return ExpiryItem(
+                    kind: .install, name: "\(install.app) @ \(install.device)", notAfter: install.profileExpires,
+                    daysLeft: days, level: level)
+            }
+            .sorted { ($0.notAfter, $0.name) < ($1.notAfter, $1.name) }
+    }
+
+    /// The free installs `status` shows: recorded present, on a device still saved in config. Soonest expiry first.
+    static func presentInstalls(_ ledger: Ledger, devices: Set<String>) -> [LedgerInstall] {
+        ledger.installs.filter { $0.present && devices.contains($0.device) }
+            .sorted { ($0.profileExpires, $0.id) < ($1.profileExpires, $1.id) }
     }
 }
 
