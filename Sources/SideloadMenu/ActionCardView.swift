@@ -110,7 +110,11 @@ private struct LineView: View {
                 Text(line.text).foregroundStyle(line.tone.color)
                 Spacer()
                 if let retry = line.retry {
-                    Button("Retry") { model.request(retry) }.buttonStyle(.link)
+                    let availability = model.retryAvailability(retry)
+                    Button("Retry") { model.request(retry) }
+                        .buttonStyle(.link)
+                        .disabled(!availability.isEnabled)
+                        .help(availability.reason ?? "")
                 }
             }
             .font(.callout)

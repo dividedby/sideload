@@ -16,7 +16,8 @@ All notable changes to this project are documented here. Format follows
   app's Renew; Remove needs an installed row; the lendable setting is off while the device has a lent or pending row.
   Quitting with an action running cancels it, then kills its children. New: `MenuActions`, `MenuActionOutcome`,
   `MenuActionRunner`, `MenuActionState`, `MenuAppsCache.invalidate`, `AppsRead.shows`, `AppPresence.isLive`; the snapshot
-  carries the facts the rules need. The menu icon is `renewing` while a Renew from the menu runs.
+  carries the facts the rules need. "All apps" lists exactly the apps `refresh` would touch and is off
+  unless all of them are available. The menu icon is `renewing` while a Renew from the menu runs.
 - `RefreshPolicy.Result.cancelled`: when the menu's Cancel stops a `refresh` run (the task is cancelled and a step
   fails), the app's result is `INTERRUPTED`, the attempt is given back and no failure, backoff or suspension is recorded
   (`lastResult: skipped`, `lastCode: INTERRUPTED`). The CLI is unchanged: signals still stop its process.

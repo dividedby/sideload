@@ -283,6 +283,13 @@ public struct MenuRenewMenu: Sendable, Equatable {
     public var items: [Item]
 }
 
+/// One app a Renew of "All apps" would touch: what `refresh` itself selects for the device (`RefreshPolicy.decide`).
+public struct MenuRefreshTarget: Sendable, Equatable {
+    public var app: String
+    /// The app is lent: provisioned and signed, not installed.
+    public var lent: Bool
+}
+
 /// What the device's own app list said, for the card's actions (they need a successful read).
 public enum MenuLiveRead: Sendable, Equatable {
     /// Not asked, or the device is not visible.
@@ -317,6 +324,10 @@ public struct MenuDeviceCard: Sendable, Equatable, Identifiable {
     public var slotsKnown: Bool
     /// The app the lab may borrow the slot of (`device lendable`); nil for none.
     public var lendableApp: String?
+    /// Every app `refresh --force` would touch on this device, in its order (soonest expiry first), from the same facts and
+    /// rules it uses. Includes an installed app with its signed copy fresh, which `refresh` reinstalls to record it, and an
+    /// app that is due but cannot be reached right now: "All apps" lists exactly this set.
+    public var refreshSet: [MenuRefreshTarget]
     /// An app on the card has a device operation in flight (or ended unknown).
     public var hasPending: Bool
     /// What the device's app list said, while the device is visible.

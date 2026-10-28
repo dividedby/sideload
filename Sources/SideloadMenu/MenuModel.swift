@@ -174,6 +174,21 @@ final class MenuModel {
         return MenuActions.availability(action, in: snapshot, now: services.clock.now())
     }
 
+    /// A result's Retry, against the panel as it is now (it goes through the confirm, which checks again).
+    func retryAvailability(_ action: MenuAction) -> MenuAvailability {
+        guard case .loaded(let snapshot) = panel else { return .disabled("Panel not loaded") }
+        return availability(action, in: snapshot)
+    }
+
+    /// Cancels a running action and waits up to `grace` for it to wind down.
+    func cancelAndWait(grace: Duration) async {
+        cancelAction()
+        let deadline = ContinuousClock.now + grace
+        while actionBusy, ContinuousClock.now < deadline {
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+    }
+
     func offers(for row: MenuAppRow, on card: MenuDeviceCard, in snapshot: MenuSnapshot) -> [MenuOffer] {
         MenuActions.rowOffers(row, card: card, snapshot: snapshot, now: services.clock.now()).map { offer in
             var offer = offer

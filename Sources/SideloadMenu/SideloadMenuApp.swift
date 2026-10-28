@@ -36,6 +36,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// How long a cancelled action gets to return before its children are killed.
     private static let quitGrace: Duration = .seconds(3)
+    /// The same for SIGTERM and SIGHUP, which a service manager follows with SIGKILL soon.
+    private static let signalGrace: Duration = .seconds(1)
 
     private var signalSources: [any DispatchSourceSignal] = []
 
@@ -45,8 +47,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             signal(signo, SIG_IGN)
             let source = DispatchSource.makeSignalSource(signal: signo, queue: .main)
             source.setEventHandler {
-                LiveChildren.shared.killAll(SIGKILL, closing: true)
-                exit(128 + signo)
+                // Cancel the action first (the runner kills its child on cancel), give it a moment, then kill what is
+                // left and exit.
+                Task { @MainActor in
+                    await Self.model?.cancelAndWait(grace: Self.signalGrace)
+                    LiveChildren.shared.killAll(SIGKILL, closing: true)
+                    exit(128 + signo)
+                }
             }
             source.resume()
             return source
@@ -55,12 +62,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model = Self.model, model.actionBusy else { return .terminateNow }
-        model.cancelAction()
         Task {
-            let deadline = ContinuousClock.now + Self.quitGrace
-            while model.actionBusy, ContinuousClock.now < deadline {
-                try? await Task.sleep(for: .milliseconds(50))
-            }
+            await model.cancelAndWait(grace: Self.quitGrace)
             LiveChildren.shared.killAll(SIGKILL, closing: true)
             NSApplication.shared.reply(toApplicationShouldTerminate: true)
         }

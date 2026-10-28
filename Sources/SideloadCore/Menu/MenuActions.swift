@@ -118,22 +118,31 @@ public enum MenuActions {
         }
     }
 
+    /// "All apps" is `refresh --force` with no app, which touches `card.refreshSet`: every one of them must be available, or
+    /// the confirm would promise less than the run does. One app is available when it is in that set and reachable.
     private static func renew(_ app: String?, card: MenuDeviceCard, now: Date) -> MenuAvailability {
         guard let app else {
-            let each = card.renew.items.compactMap(\.app).map { renew($0, card: card, now: now) }
-            if each.contains(.enabled) { return .enabled }
-            return .disabled(each.compactMap(\.reason).first ?? "No apps to renew")
+            guard !card.refreshSet.isEmpty else {
+                return .disabled(card.renew.items.contains { $0.app != nil } ? notDue : "No apps to renew")
+            }
+            for member in card.refreshSet {
+                let each = renew(member.app, card: card, now: now)
+                if !each.isEnabled { return each }
+            }
+            return .enabled
         }
-        guard let row = card.apps.first(where: { $0.app == app }) else { return .disabled("Not on \(card.alias)") }
-        if row.presence == .lent {
+        let member = card.refreshSet.first { $0.app == app }
+        let row = card.apps.first { $0.app == app }
+        if row?.presence == .lent {
             // A lent app is provisioned and signed without the device.
-            guard let signed = row.signedExpires else { return .disabled("No signed build") }
-            return signed.timeIntervalSince(now) <= renewWindow ? .enabled : .disabled(notDue)
+            guard row?.signedExpires != nil else { return .disabled("No signed build") }
+            return member != nil ? .enabled : .disabled(notDue)
         }
+        if row == nil, member == nil { return .disabled("Not on \(card.alias)") }
         if let stop = deviceStop(card: card) { return stop }
+        guard let row else { return .disabled("Not on \(card.alias)") }
         guard row.presence == .installed else { return .disabled(why(row.presence)) }
-        guard let expires = row.expires else { return .disabled("No expiry known") }
-        return expires.timeIntervalSince(now) <= renewWindow ? .enabled : .disabled(notDue)
+        return member != nil ? .enabled : .disabled(notDue)
     }
 
     static let notDue = "renewable at \(renewWindowDays) d left"
@@ -227,10 +236,8 @@ public enum MenuActions {
 
     private static func renewPrompt(_ app: String?, card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date) -> MenuPrompt {
         let alias = card.alias
-        let qualifying = (app.map { [$0] } ?? card.renew.items.compactMap(\.app)).filter {
-            renew($0, card: card, now: now).isEnabled
-        }
-        let lent = Set(card.apps.filter { $0.presence == .lent }.map(\.app))
+        let qualifying = app.map { [$0] } ?? card.refreshSet.map(\.app)
+        let lent = Set(card.refreshSet.filter(\.lent).map(\.app)).union(card.apps.filter { $0.presence == .lent }.map(\.app))
         var lines: [String] = []
         if app == nil {
             lines.append("Re-signs and reinstalls on \(alias):")

@@ -248,8 +248,30 @@ public enum MenuSnapshotBuilder {
             renew: MenuRenewMenu(
                 items: [MenuRenewMenu.Item(title: "All apps", detail: "\(renewItems.count)", due: false, app: nil)] + renewItems),
             platform: saved.platform, slotsKnown: known, lendableApp: saved.lendableApp,
+            refreshSet: refreshSet(alias: alias, saved: saved, projected: projected, prefix: prefix, read: read, now: now),
             hasPending: rows.contains { $0.presence == .pending }, liveRead: liveRead(presence: presence, probe: probe))
         return DeviceBuild(card: card, expiring: expiring, renewFailed: renewFailed)
+    }
+
+    /// The apps `refresh --force` selects for the device, by its own `RefreshPolicy.decide` over the same ledger (migrated)
+    /// and, when there is one, the live read; without a read the device's word is unknown, as when `refresh` cannot read it.
+    private static func refreshSet(
+        alias: String, saved: SavedDevice, projected: Ledger, prefix: String?, read: AppsRead?, now: Date
+    ) -> [MenuRefreshTarget] {
+        var chosen: [(expires: Date, target: MenuRefreshTarget)] = []
+        for app in ProvisionApp.allCases where app.devicePlatform == saved.platform {
+            let key = "\(alias)/\(app.rawValue)"
+            let subject = RefreshPolicy.Subject(
+                app: app, install: projected.installs.first { $0.id == key },
+                signed: projected.freeSigned.first { $0.id == key }, profile: projected.freeProfiles.first { $0.id == key },
+                lent: projected.slots.contains { $0.id == key && $0.lentTo != nil })
+            var presence = RefreshPolicy.Presence.unknown
+            if let read, let id = app.freeBundleId(prefix: prefix) { presence = read.shows(id) ? .present : .absent }
+            guard case .renew(let target) = RefreshPolicy.decide(subject, now: now, within: RefreshPolicy.maxWithin, presence: presence)
+            else { continue }
+            chosen.append((target.expires, MenuRefreshTarget(app: app.rawValue, lent: target.lent)))
+        }
+        return chosen.sorted { ($0.expires, $0.target.app) < ($1.expires, $1.target.app) }.map(\.target)
     }
 
     private static func liveRead(presence: MenuPresence, probe: DeviceAppsProbe?) -> MenuLiveRead {
