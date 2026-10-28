@@ -206,8 +206,8 @@ struct FreeDeviceCalls: Sendable {
     }
 
     /// `devicectl device info apps`, parsed. A failure is classified (`DEVICE_LOCKED`, ...), else `SNAPSHOT_FAILED`.
-    func snapshot() async throws -> AppSnapshot {
-        let out = try await call(["device", "info", "apps"], timeoutSec: 60)
+    func snapshot(timeoutSec: Int = 60) async throws -> AppSnapshot {
+        let out = try await call(["device", "info", "apps"], timeoutSec: timeoutSec)
         if let failure = classify(.snapshot, out) { throw failure.error }
         guard let snapshot = AppSnapshot.parse(out.json) else {
             throw SideloadError(
@@ -273,10 +273,10 @@ struct FreeDeviceCalls: Sendable {
         let takenAt: Date
     }
 
-    func trySnapshot() async -> SnapshotRead {
+    func trySnapshot(timeoutSec: Int = 60) async -> SnapshotRead {
         let takenAt = services.clock.now()
         do {
-            return SnapshotRead(snapshot: try await snapshot(), error: nil, takenAt: takenAt)
+            return SnapshotRead(snapshot: try await snapshot(timeoutSec: timeoutSec), error: nil, takenAt: takenAt)
         } catch {
             return SnapshotRead(
                 snapshot: nil,

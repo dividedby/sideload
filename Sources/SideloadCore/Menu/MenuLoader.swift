@@ -2,8 +2,9 @@ import Foundation
 
 /// Reads what the panel shows (design section 12). Local files first (instant: the config, the ledger, the canary log and
 /// the app-data backups' manifests for the pending-restore notice), then one `devicectl list devices`
-/// (about 1 to 2 s) for visibility and transport. Nothing here writes, locks, or touches the keychain, the portal or
-/// the network; there are no timers: the app calls it at launch, when the panel opens and on "Check status now".
+/// (about 1 to 2 s) for visibility and transport, then one `device info apps` per visible device. Nothing here writes, locks,
+/// or touches the keychain, the portal or the network; there are no timers: the app calls it at launch, when the panel
+/// opens and on "Check status now".
 public enum MenuLoader {
     /// The part of the snapshot that comes from `config.json`, `ledger.json`, `logs/canary.jsonl` and the backup manifests.
     public enum Local: Sendable {
@@ -70,14 +71,82 @@ public enum MenuLoader {
         }
     }
 
-    public static func panel(_ local: Local, probe: DeviceProbe) -> MenuPanel {
+    /// The saved devices that `devicectl list devices` shows as paired and reachable: the ones worth a `device info apps`.
+    /// Sorted, so reads happen in a stable order.
+    public static func visibleAliases(_ config: Config, probe: DeviceProbe) -> [String] {
+        config.devices.keys.sorted().filter { alias in
+            config.devices[alias].map { MenuSnapshotBuilder.presence(of: $0, probe: probe).isVisible } ?? false
+        }
+    }
+
+    /// One read-only `devicectl device info apps` on a saved device (about 1 to 3 s, at most 15 s), through `DeviceCtl`.
+    /// It takes no lock and writes nothing: no ledger, no config, no profile read. The call names the `apollo` free ID only
+    /// because `FreeDeviceCalls` carries one; `info apps` is not an app mutation and the ID is never sent. A failed, locked
+    /// or timed-out read keeps its error code and never looks like an empty device.
+    public static func readApps(_ services: Services, alias: String) async -> DeviceAppsProbe {
+        guard let prefix = (try? services.store.load())?.bundleIdPrefix, CanaryCommand.isValidPrefix(prefix) else {
+            return .failed(code: "CONFIG_MISSING", takenAt: services.clock.now())
+        }
+        let calls = FreeDeviceCalls(services: services, alias: alias, bundleId: prefix + ".free." + ProvisionApp.apollo.suffix)
+        let read = await calls.trySnapshot(timeoutSec: 15)
+        if let snapshot = read.snapshot { return .read(snapshot, takenAt: read.takenAt) }
+        return .failed(code: read.error?.code ?? "SNAPSHOT_FAILED", takenAt: read.takenAt)
+    }
+
+    /// `apps` holds what was read per alias; a missing key means the device was not asked.
+    public static func panel(_ local: Local, probe: DeviceProbe, apps: [String: DeviceAppsProbe] = [:]) -> MenuPanel {
         switch local {
         case .firstRun(let issue): return MenuPanel.firstRun(issue)
         case .failed(let issue): return MenuPanel.failed(issue)
         case .ready(var inputs):
             inputs.probe = probe
+            inputs.deviceApps = apps
             return .loaded(MenuSnapshotBuilder.build(inputs))
         }
+    }
+}
+
+/// What one `devicectl device info apps` read of a saved device came to. The snapshot stays in memory (the app IDs on the
+/// device are never printed, logged or kept in the panel's values).
+public enum DeviceAppsProbe: Sendable, Equatable {
+    /// The read is running.
+    case checking
+    /// `takenAt` is the clock before the call started (the evidence rule of `SlotRule` compares it with an op's window).
+    case read(AppSnapshot, takenAt: Date)
+    /// Only the error code is kept (`DEVICE_LOCKED`, `TIMEOUT`, ...), at the time of the attempt.
+    case failed(code: String, takenAt: Date)
+
+    /// When the read was attempted; nil while it runs.
+    public var takenAt: Date? {
+        switch self {
+        case .checking: nil
+        case .read(_, let at), .failed(_, let at): at
+        }
+    }
+}
+
+/// Which saved devices the panel reads and when (design section 12): at launch, on "Check status now", and on a panel open
+/// only when the last attempt is older than `maxAge`. A failed attempt counts as an attempt, so a locked device is not
+/// retried at every open. Plain values; the view model owns one.
+public struct MenuAppsCache: Sendable, Equatable {
+    public static let maxAge: TimeInterval = 300
+
+    public private(set) var entries: [String: DeviceAppsProbe] = [:]
+
+    public init() {}
+
+    public func needsRead(_ alias: String, force: Bool, now: Date) -> Bool {
+        if force { return true }
+        guard let taken = entries[alias]?.takenAt else { return true }
+        // A clock that moved back counts as stale.
+        return now.timeIntervalSince(taken) >= Self.maxAge || taken > now
+    }
+
+    public mutating func set(_ alias: String, _ probe: DeviceAppsProbe) { entries[alias] = probe }
+
+    /// Devices that are no longer visible are forgotten: their next appearance is read afresh.
+    public mutating func retain(_ aliases: [String]) {
+        entries = entries.filter { aliases.contains($0.key) }
     }
 }
 

@@ -18,34 +18,27 @@ private func signed(
 private func config(
     reserved: [String: Int] = [:], auto: Set<String> = [], devices: [String] = ["iphone"]
 ) -> Config {
-    var saved: [String: SavedDevice] = [:]
-    for (i, alias) in devices.enumerated() {
-        saved[alias] = SavedDevice(
-            udid: savedUdid("\(i + 1)"), coreDeviceId: savedCoreId("\(i + 1)"),
-            platform: alias == "appletv" ? "tvos" : "ios", name: "Robin's \(alias)", autoRefresh: auto.contains(alias),
-            freeSlotsReserved: reserved[alias] ?? 0)
-    }
-    return Config(devices: saved)
+    menuConfig(reserved: reserved, auto: auto, devices: devices)
 }
 
 private func listed(
     _ seed: String = "1", link: String = "disconnected", transport: DeviceTransport = .network, paired: Bool = true,
     lastSeen: Date? = nil
 ) -> ListedDevice {
-    ListedDevice(
-        name: "Robin's Secret Phone", udid: savedUdid(seed), coreDeviceId: savedCoreId(seed), platform: "ios",
-        paired: paired, link: link, transport: transport, lastConnection: lastSeen)
+    menuListed(seed, link: link, transport: transport, paired: paired, lastSeen: lastSeen)
 }
 
 private func build(
     config: Config = config(), ledger: Ledger = Ledger(), canary: String? = nil, probe: DeviceProbe = .listed([listed()]),
     autoRefreshAvailable: Bool = false, ledgerReadable: Bool = true
 ) -> MenuSnapshot {
-    MenuSnapshotBuilder.build(
-        MenuInputs(
-            now: testNow, canaryStatus: canary, config: config, ledger: ledger, probe: probe,
-            ledgerReadable: ledgerReadable, autoRefreshAvailable: autoRefreshAvailable))
+    menuBuild(
+        config: config, ledger: ledger, canary: canary, probe: probe, autoRefreshAvailable: autoRefreshAvailable,
+        ledgerReadable: ledgerReadable)
 }
+
+/// The ledger after `install` put these apps on devices (an `installs[]` record and a present slot each).
+private func installed(_ apps: (device: String, app: String, days: Double)...) -> Ledger { menuLedger(apps) }
 
 @Suite("menu: free install expiry")
 struct FreeInstallExpiryTests {
@@ -100,9 +93,9 @@ struct FreeInstallExpiryTests {
 
 @Suite("menu: snapshot")
 struct MenuSnapshotTests {
-    @Test("an app is present when freeSigned has it, with no installs[] record; rows carry days, bar and tone")
-    func manualInstallShows() {
-        let snapshot = build(ledger: Ledger(freeSigned: [signed("iphone", "apollo", days: 6.5), signed("iphone", "stremio-ios", days: 2.2)]))
+    @Test("an app is on the card when installs[] has it; rows carry days, bar and tone")
+    func installShows() {
+        let snapshot = build(ledger: installed(("iphone", "apollo", 6.5), ("iphone", "stremio-ios", 2.2)))
         let card = snapshot.devices[0]
         #expect(snapshot.showsApps)
         #expect(card.apps.map(\.name) == ["Apollo", "Stremio"])
@@ -111,6 +104,15 @@ struct MenuSnapshotTests {
         #expect(card.apps[1].daysLabel == "2 d · due")
         #expect(card.apps[1].barTone == .due)
         #expect(card.apps[1].textTone == .due)
+        #expect(card.apps.allSatisfy { $0.presence == .unconfirmed && $0.showsBar && $0.failure == nil })
+    }
+
+    @Test("a signed app alone is not an install: without a live read it has no row")
+    func freeSignedAloneHasNoRow() {
+        let snapshot = build(ledger: Ledger(freeSigned: [signed("iphone", "apollo", days: 6.5)]))
+        #expect(snapshot.devices[0].apps.isEmpty)
+        #expect(!snapshot.showsApps)
+        #expect(snapshot.icon == .unknown)
         #expect(snapshot.strip.freeInUse)
     }
 
@@ -121,14 +123,28 @@ struct MenuSnapshotTests {
         #expect(!snapshot.strip.freeInUse)
     }
 
-    @Test("a stored profile with the same UUID is used; a newer one that is not installed does not move the date")
+    @Test("a hand-installed app: a stored profile with the same UUID is used; a newer one that is not installed does not move the date")
     func profileRecordMatching() {
         let entry = signed("iphone", "apollo", days: 2, uuid: "A")
-        let other = LedgerFreeProfile(
-            id: "iphone/apollo", device: "iphone", deviceTail: "…0001", app: "apollo", bundleId: entry.bundleId,
-            profileUuid: "B", created: nil, expires: daysFromNow(7), certFp8: "12345678", file: "x")
-        let snapshot = build(ledger: Ledger(freeProfiles: [other], freeSigned: [entry]))
+        func profile(_ uuid: String, days: Double) -> LedgerFreeProfile {
+            LedgerFreeProfile(
+                id: "iphone/apollo", device: "iphone", deviceTail: "…0001", app: "apollo", bundleId: entry.bundleId,
+                profileUuid: uuid, created: nil, expires: daysFromNow(days), certFp8: "12345678", file: "x")
+        }
+        let apps = ["iphone": DeviceAppsProbe.read(menuSnapshot([entry.bundleId]), takenAt: testNow)]
+        let newer = menuBuild(ledger: Ledger(freeProfiles: [profile("B", days: 7)], freeSigned: [entry]), apps: apps)
+        #expect(newer.devices[0].apps[0].daysLeft == 2)
+        let same = menuBuild(ledger: Ledger(freeProfiles: [profile("A", days: 3)], freeSigned: [entry]), apps: apps)
+        #expect(same.devices[0].apps[0].daysLeft == 3)
+    }
+
+    @Test("an installs[] record's date is not moved by a newer freeSigned build that is not installed")
+    func installsDateWins() {
+        var ledger = installed(("iphone", "apollo", 2))
+        ledger.freeSigned = [signed("iphone", "apollo", days: 7)]
+        let snapshot = build(ledger: ledger)
         #expect(snapshot.devices[0].apps[0].daysLeft == 2)
+        #expect(abs(snapshot.icon.fraction - 2.0 / 7.0) < 1e-9)
     }
 
     @Test("slot counting: 3 minus installed apps minus reserved, never below zero; labels read N free slot(s)")
@@ -187,25 +203,26 @@ struct MenuSnapshotTests {
 
     @Test("reserved slots are grey rows, never in the Renew menu")
     func reservedRows() {
-        let one = build(config: config(reserved: ["iphone": 1]), ledger: Ledger(freeSigned: [signed("iphone", "apollo", days: 5)]))
+        let one = build(config: config(reserved: ["iphone": 1]), ledger: installed(("iphone", "apollo", 5)))
         #expect(one.devices[0].reservedSlots == ["Reserved slot"])
         #expect(one.devices[0].renew.items.map(\.title) == ["All apps", "Apollo"])
         let two = build(config: config(reserved: ["iphone": 2]))
         #expect(two.devices[0].reservedSlots == ["Reserved slot (1)", "Reserved slot (2)"])
     }
 
-    @Test("Renew… is visible but disabled in v1, with the tooltip; All apps shows the count")
+    @Test("Renew… is visible but disabled, with the tooltip; All apps shows the count")
     func renewDisabled() {
-        let card = build(ledger: Ledger(freeSigned: [signed("iphone", "apollo", days: 5), signed("iphone", "stremio-ios", days: 1)])).devices[0]
+        let card = build(ledger: installed(("iphone", "apollo", 5), ("iphone", "stremio-ios", 1))).devices[0]
         #expect(!card.renew.enabled)
-        #expect(card.renew.tooltip == "Renewal arrives with refresh")
+        #expect(card.renew.tooltip == MenuSnapshotBuilder.renewDisabledTooltip)
+        #expect(card.renew.tooltip?.contains("sideload refresh") == true)
         #expect(card.renew.items.first == MenuRenewMenu.Item(title: "All apps", detail: "2", due: false))
         #expect(card.renew.items.last?.due == true)
     }
 
     @Test("a visible device shows its transport and a filled dot; v1 shows no auto-renew text at all")
     func visibleDevice() {
-        let ledger = Ledger(freeSigned: [signed("iphone", "apollo", days: 5)])
+        let ledger = installed(("iphone", "apollo", 5))
         let wifi = build(ledger: ledger, probe: .listed([listed(transport: .network)])).devices[0]
         #expect(wifi.connectionLabel == "Wi-Fi")
         #expect(wifi.dotFilled)
@@ -217,7 +234,7 @@ struct MenuSnapshotTests {
 
     @Test("with refresh available, Auto-renew off is the only per-row exception, for a device not opted in")
     func autoRenewException() {
-        let ledger = Ledger(freeSigned: [signed("iphone", "apollo", days: 5)])
+        let ledger = installed(("iphone", "apollo", 5))
         let off = build(ledger: ledger, autoRefreshAvailable: true).devices[0]
         #expect(off.apps[0].exception == "Auto-renew off")
         let on = build(config: config(auto: ["iphone"]), ledger: ledger, autoRefreshAvailable: true).devices[0]
@@ -228,7 +245,7 @@ struct MenuSnapshotTests {
 
     @Test("an offline device shows one line and no per-row text; the dot is hollow")
     func offlineCollapse() {
-        let ledger = Ledger(freeSigned: [signed("iphone", "apollo", days: 4), signed("iphone", "stremio-ios", days: 4)])
+        let ledger = installed(("iphone", "apollo", 4), ("iphone", "stremio-ios", 4))
         let seen = testNow.addingTimeInterval(-3 * 3_600)
         let probe = DeviceProbe.listed([listed(link: "unavailable", lastSeen: seen)])
         let off = build(config: config(auto: ["iphone"]), ledger: ledger, probe: probe).devices[0]
@@ -247,7 +264,7 @@ struct MenuSnapshotTests {
 
     @Test("with refresh available, the offline line says whether it renews when back")
     func offlineLineWithRefresh() {
-        let ledger = Ledger(freeSigned: [signed("iphone", "apollo", days: 4)])
+        let ledger = installed(("iphone", "apollo", 4))
         let probe = DeviceProbe.listed([listed(link: "unavailable", lastSeen: testNow.addingTimeInterval(-3 * 3_600))])
         let opted = build(config: config(auto: ["iphone"]), ledger: ledger, probe: probe, autoRefreshAvailable: true).devices[0]
         #expect(opted.offlineNote == "Seen 3 h ago · renews when back on Wi-Fi or USB")
@@ -258,7 +275,7 @@ struct MenuSnapshotTests {
 
     @Test("checking and failed probes are never shown as offline")
     func probeStates() {
-        let ledger = Ledger(freeSigned: [signed("iphone", "apollo", days: 4)])
+        let ledger = installed(("iphone", "apollo", 4))
         let checking = build(ledger: ledger, probe: .checking)
         #expect(checking.checkingDevices)
         #expect(checking.devices[0].connectionLabel == "checking…")
@@ -285,7 +302,7 @@ struct MenuSnapshotTests {
 
     @Test("the strip reads from the canary and the cert kit Export is hidden only while blocked")
     func stripAndExport() {
-        let blocked = build(ledger: Ledger(freeSigned: [signed("iphone", "apollo", days: 5)]), canary: "blocked")
+        let blocked = build(ledger: installed(("iphone", "apollo", 5)), canary: "blocked")
         #expect(blocked.strip.line == "Free account in use · Paid account blocked")
         #expect(!blocked.showsCertKitExport)
         let working = build(canary: "working")
@@ -297,7 +314,7 @@ struct MenuSnapshotTests {
 
 @Suite("menu: paid-side state")
 struct MenuStateTests {
-    private let fresh = Ledger(freeSigned: [signed("iphone", "apollo", days: 6)])
+    private let fresh = installed(("iphone", "apollo", 6))
 
     @Test("blocked canary with healthy apps is blocked; working is ok; no data is unknown")
     func baseStates() {
@@ -310,17 +327,17 @@ struct MenuStateTests {
 
     @Test("expiry outranks blocked; the worst app wins; expired is critical")
     func worstWins() {
-        let due = Ledger(freeSigned: [signed("iphone", "apollo", days: 6), signed("iphone", "stremio-ios", days: 3)])
+        let due = installed(("iphone", "apollo", 6), ("iphone", "stremio-ios", 3))
         #expect(build(ledger: due, canary: "blocked").state == .warn)
-        let critical = Ledger(freeSigned: [signed("iphone", "apollo", days: 3), signed("iphone", "stremio-ios", days: 0.5)])
+        let critical = installed(("iphone", "apollo", 3), ("iphone", "stremio-ios", 0.5))
         #expect(build(ledger: critical, canary: "blocked").state == .critical)
-        let expired = Ledger(freeSigned: [signed("iphone", "apollo", days: -1)])
+        let expired = installed(("iphone", "apollo", -1))
         #expect(build(ledger: expired, canary: "working").state == .critical)
     }
 
     @Test("an app on an offline device still counts toward the icon")
     func offlineStillCounts() {
-        let due = Ledger(freeSigned: [signed("iphone", "apollo", days: 2)])
+        let due = installed(("iphone", "apollo", 2))
         #expect(build(ledger: due, probe: .listed([])).state == .warn)
     }
 
@@ -340,7 +357,7 @@ struct MenuIconTests {
         renewFailed: Bool = false
     ) -> MenuIcon {
         var ledger = extra ?? Ledger()
-        if let days { ledger.freeSigned.append(signed("iphone", "apollo", days: days)) }
+        if let days { ledger = menuLedger([("iphone", "apollo", days)], base: ledger) }
         return MenuSnapshotBuilder.build(
             MenuInputs(
                 now: testNow, canaryStatus: canary, config: config(), ledger: ledger, probe: .listed([listed()]),
@@ -365,10 +382,7 @@ struct MenuIconTests {
 
     @Test("the ring is the soonest app across every device")
     func soonestAcrossDevices() {
-        let ledger = Ledger(freeSigned: [
-            signed("iphone", "apollo", days: 6), signed("appletv", "stremio-tvos", days: 2),
-            signed("iphone", "stremio-ios", days: 4),
-        ])
+        let ledger = installed(("iphone", "apollo", 6), ("appletv", "stremio-tvos", 2), ("iphone", "stremio-ios", 4))
         let made = MenuSnapshotBuilder.build(
             MenuInputs(
                 now: testNow, canaryStatus: "blocked", config: config(devices: ["iphone", "appletv"]), ledger: ledger,
@@ -380,7 +394,7 @@ struct MenuIconTests {
 
     @Test("an app whose device is no longer saved does not count")
     func unsavedDevice() {
-        let ledger = Ledger(freeSigned: [signed("gone", "apollo", days: 0.5)])
+        let ledger = installed(("gone", "apollo", 0.5))
         #expect(icon(6, ledger: ledger).state == .ok)
     }
 
@@ -501,7 +515,7 @@ struct MenuIconTests {
 struct MenuRedactionTests {
     @Test("a snapshot carries no UDID, CoreDevice ID, device name or identity name")
     func nothingIdentifying() {
-        let ledger = Ledger(freeSigned: [signed("iphone", "apollo", days: 2)])
+        let ledger = installed(("iphone", "apollo", 2))
         let off = build(config: config(), ledger: ledger, probe: .listed([listed(link: "unavailable", lastSeen: testNow)]))
         let on = build(config: config(), ledger: ledger, probe: .listed([listed()]))
         for snapshot in [off, on] {

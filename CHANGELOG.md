@@ -5,6 +5,30 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Menu bar: the Apps card checks each visible device live. After `devicectl list devices`, the app runs one read-only
+  `device info apps` per visible saved device (15 s timeout, one device after the other; no lock, no profile read, nothing
+  written), at launch, on Check status now, and on a panel open only when the last attempt is 5 minutes old (a failed
+  attempt counts, so a locked device is not retried at every open). A row is installed, "Signed · not installed" (recorded
+  but gone from the device: no bar, out of the ring and the slot count), "Lent to lab", "Change in progress", or the
+  ledger's countdown when the device could not be read; a card whose device could not be read says why once ("Couldn't
+  check apps (device locked) · showing last known"). An app sideload did not install but signed shows once the device lists
+  it. New: `MenuLoader.readApps`, `visibleAliases`, `DeviceAppsProbe`, `MenuAppsCache`, `AppPresence`.
+- Menu bar: a failed last renewal (`installs[].refresh.lastResult == "failed"`) shows "Renewal failed · CODE" in red under
+  the row and sets the icon's renew-failed badge.
+
+### Changed
+
+- Menu bar: the Apps card, the ring and the status colour now come from `installs[]` and `slots[]`, not `freeSigned`; the
+  expiry is the install's `profileExpires`, so a newer signed build that is not installed no longer moves it. An app with
+  only a `freeSigned` record and no live read has no row. Free slots with a live read follow what `install` counts (the
+  device's managed apps, the reserve, lent and pending records); without one, a signed app counts only while no slot
+  record exists for it, so an app removed with `app remove` stops holding a slot. The disabled Renew… tooltip points at
+  `sideload refresh`.
+- `ExpiryItems.item(_:now:)` is shared by `status` and the menu; `FreeDeviceCalls.snapshot` and `trySnapshot` take a
+  `timeoutSec` (default 60).
+
 ## [0.2.0] - 2026-10-28
 
 The free team (6ZU5Z6ZKK7) as an interim route: `provision`, `sign`, `install`, `refresh` (manual) and `app remove`;

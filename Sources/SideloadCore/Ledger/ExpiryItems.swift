@@ -62,13 +62,16 @@ public enum ExpiryItems {
     /// `FreeInstallExpiry`. Soonest first. `ledger` keeps listing the paid items only.
     public static func installs(_ ledger: Ledger, devices: Set<String>, now: Date) -> [ExpiryItem] {
         presentInstalls(ledger, devices: devices)
-            .map { install in
-                let (days, level) = FreeInstallExpiry.assess(expires: install.profileExpires, now: now)
-                return ExpiryItem(
-                    kind: .install, name: "\(install.app) @ \(install.device)", notAfter: install.profileExpires,
-                    daysLeft: days, level: level)
-            }
+            .map { item($0, now: now) }
             .sorted { ($0.notAfter, $0.name) < ($1.notAfter, $1.name) }
+    }
+
+    /// The item for one free install at its `profileExpires`; `status` and the menu share it.
+    static func item(_ install: LedgerInstall, now: Date) -> ExpiryItem {
+        let (days, level) = FreeInstallExpiry.assess(expires: install.profileExpires, now: now)
+        return ExpiryItem(
+            kind: .install, name: "\(install.app) @ \(install.device)", notAfter: install.profileExpires, daysLeft: days,
+            level: level)
     }
 
     /// The free installs `status` shows: recorded present, on a device still saved in config. Soonest expiry first.
