@@ -240,6 +240,9 @@ struct MenuModelActionTests {
         w.model.cancelAction()
         try await Task.sleep(for: .milliseconds(100))
         #expect(w.model.actionBusy)
+        // A dismissed result still leaves the post-result work for the shutdown to cancel.
+        w.model.dismiss()
+        #expect(w.model.actionState == .idle && w.model.actionBusy)
         w.model.cancelForShutdown()
         try await until { !w.model.actionBusy }
         #expect(w.gate.calls.last == "postEmit cancelled=true")

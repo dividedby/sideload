@@ -68,7 +68,8 @@ public enum MenuActionRunner {
             return MenuActions.ledgerUnreadable
         }
         // Only a lend or an op still inside its window can collide with the lab; an op past its window is what the panel
-        // already settled from a live read, so it does not refuse a confirm the panel offered.
+        // already settled from a live read. A lent record the panel settled from a live read still refuses here (it holds
+        // until a command writes the settled record): that errs on the lab's side.
         let now = services.clock.now()
         let busy = SlotRule.migrated(ledger, now: now).slots.contains { slot in
             slot.device == device && (slot.lentTo != nil || slot.op.map { SlotRule.remaining($0, now: now) != nil } == true)
