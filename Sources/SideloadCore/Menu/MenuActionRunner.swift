@@ -67,8 +67,11 @@ public enum MenuActionRunner {
         } catch {
             return MenuActions.ledgerUnreadable
         }
-        let busy = SlotRule.migrated(ledger, now: services.clock.now()).slots.contains {
-            $0.device == device && ($0.lentTo != nil || $0.op != nil)
+        // Only a lend or an op still inside its window can collide with the lab; an op past its window is what the panel
+        // already settled from a live read, so it does not refuse a confirm the panel offered.
+        let now = services.clock.now()
+        let busy = SlotRule.migrated(ledger, now: now).slots.contains { slot in
+            slot.device == device && (slot.lentTo != nil || slot.op.map { SlotRule.remaining($0, now: now) != nil } == true)
         }
         return busy ? MenuActions.lentOrChanging(device) : nil
     }

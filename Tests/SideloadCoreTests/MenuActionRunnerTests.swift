@@ -153,6 +153,15 @@ struct MenuActionRunnerTests {
         }
         #expect(pending.log.isEmpty && pending.outcomes.first?.issues.first?.message == MenuActions.lentOrChanging("iphone"))
 
+        let stale = try await lendableRun(setting) {
+            $0.slots = [
+                LedgerSlot(
+                    device: "iphone", app: "apollo", presence: .unknown,
+                    op: LedgerSlotOp(kind: .install, by: .install, startedAt: testNow.addingTimeInterval(-3_600), window: 600))
+            ]
+        }
+        #expect(stale.log.count == 1 && stale.outcomes.map(\.kind) == [.done])
+
         let other = try await lendableRun(setting) {
             $0.slots = [LedgerSlot(device: "ipad", app: "apollo", presence: .absent, lentTo: "lab", since: testNow)]
         }
