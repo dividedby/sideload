@@ -9,13 +9,14 @@ All notable changes to this project are documented here. Format follows
 
 The free team (6ZU5Z6ZKK7) as an interim route: `provision`, `sign`, `install`, `refresh` (manual) and `app remove`;
 slots lent to mobile-safari-lab with app-data backup and restore; the paid team's ledger, portal audit and `export-cert`;
-`inspect` and `fetch`; `status` and the `SideloadMenu` menu bar app. The lab-facing JSON changed only by addition; the
-one change in meaning is that `status`'s `state` now also follows free installs, so `ok` no longer implies a working
-canary (read `canary.last` for that).
+`inspect` and `fetch`; `status` and the `SideloadMenu` menu bar app. The entries that touch the lab-facing JSON add
+fields; the free-slot counts and some app-data backup and restore results changed as Fixed describes, and the one change
+in meaning is that `status`'s `state` now also follows free installs, so `ok` no longer implies a working canary (read
+`canary.last` for that).
 
-Not yet run on a real device or the real Mac through these commands (owner-run, see README): `export-cert`, `provision`
-(spike S2), `sign` and `install` (spike S4), `refresh` (spike S5) and `slot restore`. The restore that `slot return` does
-was checked live on 2026-10-25 (below).
+Not yet run on a real device or the real Mac through these commands (owner-run, see README; the spikes are in
+`docs/design.md` section 18): `export-cert`, `provision` (spike S2), `sign` and `install` (spike S4), `refresh` (spike S5)
+and `slot restore`. The restore that `slot return` does was checked live on 2026-10-25 (below).
 
 ### Added
 
