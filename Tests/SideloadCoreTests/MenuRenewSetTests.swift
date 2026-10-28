@@ -21,6 +21,9 @@ private struct Fixture {
     var expected: [String]
     /// What "All apps" must be.
     var all: MenuAvailability
+    /// The panel holds a read taken before the ledger last learned about the app (a lab `slot return` inside the cache
+    /// window): it shows the app absent, while `refresh`'s own fresh snapshot (`device`) shows it.
+    var staleRead = false
 }
 
 private func fixtures() -> [Fixture] {
@@ -80,6 +83,16 @@ private func fixtures() -> [Fixture] {
         Fixture(
             name: "unreadable device, installed due", ledger: menuLedger([("iphone", "apollo", 1)]), device: nil,
             expected: ["apollo"], all: .disabled("Connect iphone over Wi-Fi or USB")))
+
+    // The reviewer's fixture: the cached read predates the slot's seenAt, so the row is unconfirmed and says nothing about
+    // the app; refresh reads the device afresh and finds it.
+    var returned = menuLedger([("iphone", "apollo", 3)])
+    returned.slots[0].seenAt = testNow
+    SlotRule.project(&returned)
+    list.append(
+        Fixture(
+            name: "cached read older than the slot record, refresh's own snapshot shows the app", ledger: returned,
+            device: [apollo], expected: ["apollo"], all: .disabled("Not confirmed on the device"), staleRead: true))
     return list
 }
 
@@ -87,6 +100,10 @@ private func fixtures() -> [Fixture] {
 struct MenuRenewSetTests {
     private func snapshot(_ fixture: Fixture) -> MenuSnapshot {
         guard let ids = fixture.device else { return menuBuild(ledger: fixture.ledger, probe: .listed([])) }
+        if fixture.staleRead {
+            let old = testNow.addingTimeInterval(-120)
+            return menuBuild(ledger: fixture.ledger, apps: ["iphone": .read(menuSnapshot([]), takenAt: old)])
+        }
         return menuBuild(ledger: fixture.ledger, apps: ["iphone": .read(menuSnapshot(ids), takenAt: testNow)])
     }
 

@@ -51,10 +51,6 @@ struct MenuActionRunnerTests {
         let log = Log()
         let cases: [(MenuAction, String)] = [
             (
-                .renew(device: "iphone", app: nil),
-                "refresh \(RefreshOptions(device: "iphone", app: nil, within: nil, force: true, yes: true))"
-            ),
-            (
                 .renew(device: "iphone", app: "apollo"),
                 "refresh \(RefreshOptions(device: "iphone", app: "apollo", within: nil, force: true, yes: true))"
             ),
@@ -84,7 +80,7 @@ struct MenuActionRunnerTests {
         let log = Log()
         let work = steps(log) { $0.postEmit.add { log.add("postEmit") } }
         await MenuActionRunner.perform(
-            .renew(device: "iphone", app: nil), services: services(), steps: work, isCancelled: { false }
+            .renew(device: "iphone", app: "apollo"), services: services(), steps: work, isCancelled: { false }
         ) { outcome in
             log.add("deliver \(outcome.kind)")
         }
@@ -97,7 +93,7 @@ struct MenuActionRunnerTests {
         let first = steps(log, ok: false) { $0.postEmit.add { log.add("postEmit-from-first") } }
         let kinds = Mutex<[MenuActionOutcome.Kind]>([])
         await MenuActionRunner.perform(
-            .renew(device: "iphone", app: nil), services: services(), steps: first, isCancelled: { true }
+            .renew(device: "iphone", app: "apollo"), services: services(), steps: first, isCancelled: { true }
         ) { outcome in
             kinds.withLock { $0.append(outcome.kind) }
         }
@@ -138,7 +134,7 @@ struct MenuActionRunnerTests {
             return .fail("refresh", code: "SIGNING_FAILED", message: "killed")
         }
         let task = Task {
-            await MenuActionRunner.perform(.renew(device: "iphone", app: nil), services: services(), steps: cancelling) { outcome in
+            await MenuActionRunner.perform(.renew(device: "iphone", app: "apollo"), services: services(), steps: cancelling) { outcome in
                 kinds.withLock { $0.append(outcome.kind) }
             }
         }

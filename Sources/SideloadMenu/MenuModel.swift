@@ -110,11 +110,20 @@ final class MenuModel {
 
     /// The owner's click on the confirm button. The action is checked again against the panel as it is now.
     func confirm() {
-        guard actionTask == nil, case .confirming(let action, _) = actionState else { return }
-        guard case .loaded(let snapshot) = panel,
-            let prompt = MenuActions.prompt(for: action, in: snapshot, now: services.clock.now())
-        else {
-            actionState = .idle
+        guard actionTask == nil, case .confirming(let action, let shown) = actionState else { return }
+        guard case .loaded(let snapshot) = panel else {
+            actionState = .finished(.notRun("The panel is not loaded."))
+            return
+        }
+        // Only what the owner saw may run: the confirm is worked out again from the panel as it is now.
+        let now = services.clock.now()
+        guard let prompt = MenuActions.prompt(for: action, in: snapshot, now: now) else {
+            let reason = MenuActions.availability(action, in: snapshot, now: now).reason ?? "It is no longer available."
+            actionState = .finished(.notRun(reason))
+            return
+        }
+        guard prompt == shown else {
+            actionState = .confirming(action, prompt)
             return
         }
         // A load in flight must not write over the action's state or store a read cut short by it.
@@ -125,7 +134,7 @@ final class MenuModel {
         actionState = .running(label: prompt.runningLabel, cancellable: MenuActions.cancellable(action), cancelling: false)
         if case .renew = action { repaint(renewing: true) }
         actionTask = Task { [services, steps] in
-            await MenuActionRunner.perform(action, services: services, steps: steps) { outcome in
+            await MenuActionRunner.perform(action, renewApps: prompt.apps, services: services, steps: steps) { outcome in
                 await self.deliver(outcome)
             }
             finishAction(action)

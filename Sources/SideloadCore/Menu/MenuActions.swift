@@ -40,6 +40,9 @@ public struct MenuPrompt: Sendable, Equatable {
     public var destructive: Bool
     /// What the card says while the action runs ("Renewing Stremio on iphone…").
     public var runningLabel: String
+    /// The apps a Renew runs, in order: the one app, or every app the confirm lists for "All apps". The run uses exactly
+    /// this list, never what `refresh` would select by itself. Empty for the other actions.
+    public var apps: [String]
 }
 
 /// One button a row offers.
@@ -267,7 +270,8 @@ public enum MenuActions {
         return MenuPrompt(
             title: name.map { "Renew \($0) on \(alias)" } ?? "Renew all apps on \(alias)", lines: lines,
             confirmLabel: app == nil ? "Renew all" : "Renew", destructive: false,
-            runningLabel: name.map { "Renewing \($0) on \(alias)…" } ?? "Renewing all apps on \(alias)…")
+            runningLabel: name.map { "Renewing \($0) on \(alias)…" } ?? "Renewing all apps on \(alias)…",
+            apps: qualifying)
     }
 
     private static func installPrompt(_ app: String, card: MenuDeviceCard) -> MenuPrompt {
@@ -286,7 +290,7 @@ public enum MenuActions {
         return MenuPrompt(
             title: update ? "Install update of \(name) on \(alias)" : "Install \(name) on \(alias)", lines: lines,
             confirmLabel: update ? "Install update" : "Install", destructive: false,
-            runningLabel: "Installing \(name) on \(alias)…")
+            runningLabel: "Installing \(name) on \(alias)…", apps: [])
     }
 
     private static func removePrompt(_ app: String, card: MenuDeviceCard) -> MenuPrompt {
@@ -300,7 +304,7 @@ public enum MenuActions {
         lines.append(keychain)
         return MenuPrompt(
             title: "Remove \(name) from \(alias)", lines: lines, confirmLabel: "Remove", destructive: true,
-            runningLabel: "Removing \(name) from \(alias)…")
+            runningLabel: "Removing \(name) from \(alias)…", apps: [])
     }
 
     private static func lendablePrompt(_ app: String?, card: MenuDeviceCard) -> MenuPrompt {
@@ -309,12 +313,12 @@ public enum MenuActions {
             return MenuPrompt(
                 title: "Stop lending on \(alias)",
                 lines: ["Setting only: the lab may not borrow a slot on \(alias)"], confirmLabel: "Stop lending",
-                destructive: false, runningLabel: "Saving…")
+                destructive: false, runningLabel: "Saving…", apps: [])
         }
         let name = MenuFormat.appName(app)
         return MenuPrompt(
             title: "Make \(name) lendable on \(alias)",
             lines: ["Setting only: the lab may uninstall \(name) and put it back"], confirmLabel: "Make lendable",
-            destructive: false, runningLabel: "Saving…")
+            destructive: false, runningLabel: "Saving…", apps: [])
     }
 }

@@ -266,7 +266,12 @@ public enum MenuSnapshotBuilder {
                 signed: projected.freeSigned.first { $0.id == key }, profile: projected.freeProfiles.first { $0.id == key },
                 lent: projected.slots.contains { $0.id == key && $0.lentTo != nil })
             var presence = RefreshPolicy.Presence.unknown
-            if let read, let id = app.freeBundleId(prefix: prefix) { presence = read.shows(id) ? .present : .absent }
+            // A read the ledger has overtaken says nothing about the app (its row is unconfirmed), like `refresh`'s own
+            // snapshot would not be that read.
+            let slot = projected.slots.first { $0.id == key }
+            if let read, let id = app.freeBundleId(prefix: prefix), slot.map({ usable($0, takenAt: read.takenAt) }) ?? true {
+                presence = read.shows(id) ? .present : .absent
+            }
             guard case .renew(let target) = RefreshPolicy.decide(subject, now: now, within: RefreshPolicy.maxWithin, presence: presence)
             else { continue }
             chosen.append((target.expires, MenuRefreshTarget(app: app.rawValue, lent: target.lent)))

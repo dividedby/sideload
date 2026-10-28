@@ -75,6 +75,20 @@ public struct MenuActionOutcome: Sendable, Equatable {
         }
     }
 
+    /// The action was not run because it was no longer available when the owner confirmed.
+    public static func notRun(_ reason: String) -> MenuActionOutcome {
+        MenuActionOutcome(
+            kind: .failed, headline: "Not run", lines: [], issues: [MenuIssue(code: "NOT_RUN", message: reason)], notes: [])
+    }
+
+    init(kind: Kind, headline: String, lines: [MenuResultLine], issues: [MenuIssue], notes: [String]) {
+        self.kind = kind
+        self.headline = headline
+        self.lines = lines
+        self.issues = issues
+        self.notes = notes
+    }
+
     // MARK: refresh
 
     private mutating func readRenew(_ app: String?, alias: String, envelope: Envelope, action: MenuAction) {

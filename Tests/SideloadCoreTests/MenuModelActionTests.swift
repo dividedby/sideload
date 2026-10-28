@@ -218,6 +218,74 @@ struct MenuModelActionTests {
         await w.model.loadTask?.value
     }
 
+    @Test("All apps runs one refresh per app the confirm lists, never an open-ended one")
+    func allPerListedApp() async throws {
+        let w = try await loadedWorld(held: false)
+        defer { try? FileManager.default.removeItem(at: w.dir) }
+        let all = MenuAction.renew(device: "iphone", app: nil)
+        w.model.request(all)
+        guard case .confirming(_, let prompt) = w.model.actionState else {
+            Issue.record("expected the confirm, got \(w.model.actionState)")
+            return
+        }
+        #expect(prompt.apps == ["apollo"])
+        w.model.confirm()
+        try await until { !w.model.actionBusy }
+        await w.model.loadTask?.value
+        #expect(w.gate.calls == ["refresh iphone apollo force=true yes=true"])
+    }
+
+    @Test("confirm() runs only what the owner saw: a changed confirm is shown again instead of run, an identical one runs")
+    func confirmRechecks() async throws {
+        let w = try await loadedWorld(held: false)
+        defer { try? FileManager.default.removeItem(at: w.dir) }
+        w.model.request(renew)
+        guard case .confirming(_, let shown) = w.model.actionState else {
+            Issue.record("expected the confirm")
+            return
+        }
+        // The App ID count in the confirm changes while it is open.
+        let paths = Paths(home: w.dir.path)
+        var ledger = menuLedger([("iphone", "apollo", 5.5)])
+        ledger.freeAppIds = [LedgerFreeAppId(bundleId: menuBundleId("apollo"), epochStart: testNow.addingTimeInterval(-3_600))]
+        try await seed(paths, config: menuConfig(), ledger: ledger)
+        w.model.reload(force: true)
+        await w.model.loadTask?.value
+        w.model.confirm()
+        guard case .confirming(_, let again) = w.model.actionState else {
+            Issue.record("expected the confirm again, got \(w.model.actionState)")
+            return
+        }
+        #expect(again != shown && again.lines.contains { $0.contains("1 of 10 used") })
+        #expect(w.gate.calls.isEmpty && !w.model.actionBusy)
+
+        // Confirmed as shown now, it runs.
+        w.model.confirm()
+        try await until { !w.model.actionBusy }
+        await w.model.loadTask?.value
+        #expect(w.gate.calls == ["refresh iphone apollo force=true yes=true"])
+    }
+
+    @Test("an action that became unavailable is not run: the reason is shown")
+    func confirmUnavailable() async throws {
+        let w = try await loadedWorld(held: false)
+        defer { try? FileManager.default.removeItem(at: w.dir) }
+        w.model.request(renew)
+        let paths = Paths(home: w.dir.path)
+        var ledger = menuLedger([("iphone", "apollo", 5.5)])
+        ledger.freeSuspended = LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow, addedFp8: ["aaaaaaaa"], removedFp8: [])
+        try await seed(paths, config: menuConfig(), ledger: ledger)
+        w.model.reload(force: true)
+        await w.model.loadTask?.value
+        w.model.confirm()
+        guard case .finished(let outcome) = w.model.actionState else {
+            Issue.record("expected the reason, got \(w.model.actionState)")
+            return
+        }
+        #expect(outcome.headline == "Not run" && outcome.issues.first?.message == "Free certificate changed")
+        #expect(w.gate.calls.isEmpty && !w.model.actionBusy)
+    }
+
     @Test("a setting is not cancellable, and Cancel with nothing running does nothing")
     func lendableNotCancellable() async throws {
         let w = try await loadedWorld()
