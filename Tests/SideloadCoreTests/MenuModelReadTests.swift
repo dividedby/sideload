@@ -7,7 +7,7 @@ import Testing
 
 /// Answers like `menuDeviceScript`, but each `device info apps` call takes a moment, so two overlapping calls show up in
 /// `maxInFlight`. Records the saved CoreDevice ID each call was addressed to, in order.
-private final class SlowDeviceRunner: Runner {
+final class SlowDeviceRunner: Runner {
     private struct State {
         var inFlight = 0
         var maxInFlight = 0
@@ -54,7 +54,7 @@ private final class SlowDeviceRunner: Runner {
     }
 }
 
-private func seed(_ paths: Paths, config: Config, ledger: Ledger) async throws {
+func seed(_ paths: Paths, config: Config, ledger: Ledger) async throws {
     try await ConfigStore(paths: paths).update { $0 = config }
     try await LedgerStore(paths: paths).update { $0 = ledger }
 }

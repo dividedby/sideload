@@ -417,7 +417,14 @@ private struct RefreshRun {
         if let failure {
             result.code = failure.code
             result.failure = failure.naming(app)
-            outcome = failure.code == "OPERATION_IN_PROGRESS" && done == 0 ? .busy : .failed(code: failure.code)
+            if Task.isCancelled {
+                // The menu's Cancel (the CLI is stopped by signals instead): a step that died with the task is not a failure
+                // of the app, so it is neither counted nor backed off.
+                result.code = "INTERRUPTED"
+                outcome = .cancelled
+            } else {
+                outcome = failure.code == "OPERATION_IN_PROGRESS" && done == 0 ? .busy : .failed(code: failure.code)
+            }
         } else {
             result.status = baseline.lent ? .renewedNotInstalled : .renewed
             outcome = baseline.lent ? .renewedNotInstalled : .refreshed

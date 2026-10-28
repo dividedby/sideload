@@ -243,6 +243,16 @@ struct RefreshPolicyTests {
         #expect(busy.consecutiveFailures == 0 && busy.nextEligible == nil)
         refresh = RefreshPolicy.counting(refresh, now: testNow, timeZone: utc)
         #expect(RefreshPolicy.applying(.busy, to: refresh, now: testNow, timeZone: utc).attemptsByDay == [day: 1])
+
+        // The menu's Cancel gives the attempt back too, but records INTERRUPTED and leaves the failure counters alone.
+        let failedBefore = RefreshPolicy.applying(.failed(code: "DEVICE_LOCKED"), to: refresh, now: testNow, timeZone: utc)
+        let cancelled = RefreshPolicy.applying(.cancelled, to: failedBefore, now: testNow, timeZone: utc)
+        #expect(cancelled.attemptsByDay == [day: 1] && cancelled.lastResult == "skipped" && cancelled.lastCode == "INTERRUPTED")
+        #expect(cancelled.consecutiveFailures == failedBefore.consecutiveFailures)
+        #expect(cancelled.nextEligible == failedBefore.nextEligible && cancelled.suspended == failedBefore.suspended)
+        let once = RefreshPolicy.counting(LedgerInstallRefresh(), now: testNow, timeZone: utc)
+        let first = RefreshPolicy.applying(.cancelled, to: once, now: testNow, timeZone: utc)
+        #expect(first.attemptsByDay.isEmpty && first.consecutiveFailures == 0 && first.nextEligible == nil)
     }
 
     @Test("fatal codes stop the run, the others do not; device availability is neither")

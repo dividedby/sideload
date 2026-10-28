@@ -201,9 +201,11 @@ enum RefreshPolicy {
         case failed(code: String)
         /// Nothing went wrong and nothing was done: a busy lock. Not an attempt and not a failure.
         case busy
+        /// The menu's Cancel stopped the run on this app. Like `busy`: the attempt is given back and no failure is recorded.
+        case cancelled
     }
 
-    /// The refresh fields after an attempt. `busy` gives the attempt back and records the skip; a failure counts and backs
+    /// The refresh fields after an attempt. `busy` and `cancelled` give the attempt back and record the skip; a failure counts and backs
     /// off; a permanent failure suspends; a success clears all of it.
     static func applying(
         _ result: Result, to refresh: LedgerInstallRefresh, now: Date, timeZone: TimeZone
@@ -222,13 +224,13 @@ enum RefreshPolicy {
             next.consecutiveFailures += 1
             next.nextEligible = nextEligible(failures: next.consecutiveFailures, now: now)
             if permanentCodes.contains(code) { next.suspended = true }
-        case .busy:
+        case .busy, .cancelled:
             let today = dayKey(now, timeZone: timeZone)
             if let count = next.attemptsByDay[today] {
                 if count <= 1 { next.attemptsByDay[today] = nil } else { next.attemptsByDay[today] = count - 1 }
             }
             next.lastResult = "skipped"
-            next.lastCode = "OPERATION_IN_PROGRESS"
+            next.lastCode = result == .busy ? "OPERATION_IN_PROGRESS" : "INTERRUPTED"
         }
         return next
     }

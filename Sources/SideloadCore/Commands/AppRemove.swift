@@ -53,8 +53,13 @@ struct FreeRemoval: Sendable {
     /// known free-team signer (WebDriverAgent, SideStore). The reserve and unflagged developer-signed apps do not count:
     /// this errs on the side of warning.
     func lastFreeApp(before: AppSnapshot) -> Bool {
-        let managedOthers = before.managedIds(prefix: target.prefix).filter { $0 != target.bundleId }.count
-        let signers = before.ids.filter { !Config.isFreeBundleId($0, prefix: target.prefix) && FreeTeamSigner.label(of: $0) != nil }.count
+        Self.isLastFreeApp(bundleId: target.bundleId, in: before, prefix: target.prefix)
+    }
+
+    /// The same rule without a target, for the menu's confirm text.
+    static func isLastFreeApp(bundleId: String, in snapshot: AppSnapshot, prefix: String?) -> Bool {
+        let managedOthers = snapshot.managedIds(prefix: prefix).filter { $0 != bundleId }.count
+        let signers = snapshot.ids.filter { !Config.isFreeBundleId($0, prefix: prefix) && FreeTeamSigner.label(of: $0) != nil }.count
         return managedOthers + signers == 0
     }
 }

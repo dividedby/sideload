@@ -23,7 +23,7 @@ public struct MenuInputs: Sendable {
     /// Whether `refresh` exists. False in v1: auto-renew state is then not shown at all (no per-row exception, no
     /// "renews when back" wording). When it ships, the app sets this true and the exception renders.
     public var autoRefreshAvailable: Bool
-    /// A renewal is running. Nothing sets it yet: the menu does not run `refresh`.
+    /// A renewal started from the menu is running.
     public var renewing: Bool
     /// A renewal failed: OR-ed with what the builder derives from the installs' last refresh result.
     public var renewFailed: Bool
@@ -53,8 +53,6 @@ public struct MenuInputs: Sendable {
 public enum MenuSnapshotBuilder {
     /// The free team allows 3 apps per device (design section 18).
     public static let slotLimit = 3
-
-    public static let renewDisabledTooltip = "Not wired yet: renew with `sideload refresh` in a terminal"
 
     /// One card with the expiry items of the rows that are in the ring.
     private struct DeviceBuild {
@@ -102,7 +100,13 @@ public enum MenuSnapshotBuilder {
             strip: MenuStrip(
                 freeInUse: !ledger.freeSigned.isEmpty || !ledger.freeProfiles.isEmpty || !ledger.installs.isEmpty, paid: paid),
             devices: cards, showsApps: cards.contains { !$0.apps.isEmpty }, showsCertKitExport: paid != .blocked,
-            checkingDevices: inputs.probe == .checking, checkingApps: checkingApps, notices: inputs.notices)
+            checkingDevices: inputs.probe == .checking, checkingApps: checkingApps, notices: inputs.notices,
+            ledgerReadable: inputs.ledgerReadable, appIds: appIds(inputs), suspended: ledger.freeSuspended != nil)
+    }
+
+    private static func appIds(_ inputs: MenuInputs) -> MenuAppIds? {
+        guard inputs.ledgerReadable, let reserved = try? inputs.config.freeTeamReservedAppIds() else { return nil }
+        return MenuAppIds(recent: FreeAppIdBudget.live(inputs.ledger.freeAppIds, now: inputs.now).count, reserved: reserved)
     }
 
     /// The expiry of a hand-installed app: the signed app's embedded profile. When `provision` has since stored a profile
@@ -176,8 +180,9 @@ public enum MenuSnapshotBuilder {
         var renewFailed = false
         for candidate in candidates.sorted(by: { ($0.app, $0.install?.id ?? "") < ($1.app, $1.install?.id ?? "") }) {
             let state = classify(candidate, alias: alias, read: read, reading: reading)
-            let live = [.installed, .unconfirmed, .checking, .pending].contains(state)
+            let live = state.isLive
             let expires = candidate.install?.profileExpires ?? candidate.signed.map { expiry(of: $0, in: ledger) }
+            let signedBuild = ledger.freeSigned.first { $0.id == "\(alias)/\(candidate.app)" }
             // In the ring, the strip and the Renew items: what is, or may be, on the device and has a date. A pending
             // row needs an install date (an `installs[]` record); an app that is not installed or is lent has no countdown.
             let dated = live ? expires : nil
@@ -186,13 +191,27 @@ public enum MenuSnapshotBuilder {
             // `skipped` and `renewed-not-installed` are not failures. Only a code of the plain shape is shown.
             var failure: String?
             if live, let refresh = candidate.install?.refresh, refresh.lastResult == "failed" {
-                failure = "Renewal failed"
-                if let code = refresh.lastCode, code.wholeMatch(of: /[A-Z0-9_]+/) != nil { failure! += " · " + code }
+                var text = "Renewal failed"
+                if let code = refresh.lastCode, code.wholeMatch(of: /[A-Z0-9_]+/) != nil { text += " · " + code }
+                failure = text
                 renewFailed = true
             }
             // Auto-renew shows only as an exception, once refresh exists. An offline device says its state once on the card.
             let exception = inputs.autoRefreshAvailable && !offline && !saved.autoRefresh && dated != nil ? "Auto-renew off" : nil
-            let built = row(candidate, state: state, alias: alias, expires: dated, failure: failure, exception: exception, now: now)
+            var built = row(candidate, state: state, alias: alias, expires: dated, failure: failure, exception: exception, now: now)
+            built.expires = dated
+            built.recorded = candidate.install != nil
+            built.signedExpires = signedBuild?.profileExpires
+            if let install = candidate.install, let signedBuild {
+                // A different profile that outlives the installed one by more than a day, and is not expired itself.
+                built.newerSigned =
+                    signedBuild.profileUuid != install.profileUuid
+                    && signedBuild.profileExpires > install.profileExpires.addingTimeInterval(FreeInstallExpiry.secondsPerDay)
+                    && signedBuild.profileExpires > now
+            }
+            if state == .installed, let read, let id = candidate.bundleId {
+                built.removalClearsTrust = FreeRemoval.isLastFreeApp(bundleId: id, in: read.snapshot, prefix: prefix)
+            }
             rows.append(built)
             if let dated {
                 let item =
@@ -201,7 +220,11 @@ public enum MenuSnapshotBuilder {
                         kind: .install, name: "\(candidate.app) @ \(alias)", notAfter: dated, daysLeft: built.daysLeft,
                         level: built.level)
                 expiring.append(item)
-                renewItems.append(MenuRenewMenu.Item(title: built.name, detail: nil, due: built.level != .ok))
+                renewItems.append(MenuRenewMenu.Item(title: built.name, detail: nil, due: built.level != .ok, app: candidate.app))
+            } else if state == .lent, let signedBuild {
+                // A lent app is renewed without the device (provision and sign; `slot return` puts the copy back).
+                let level = FreeInstallExpiry.assess(expires: signedBuild.profileExpires, now: now).level
+                renewItems.append(MenuRenewMenu.Item(title: built.name, detail: nil, due: level != .ok, app: candidate.app))
             }
         }
 
@@ -223,9 +246,20 @@ public enum MenuSnapshotBuilder {
             appsNote: appsNote(failedCode: failedCode, rows: rows, readOverRows: read != nil, presence: presence),
             apps: rows, reservedSlots: reservedRows,
             renew: MenuRenewMenu(
-                enabled: false, tooltip: renewDisabledTooltip,
-                items: [MenuRenewMenu.Item(title: "All apps", detail: "\(renewItems.count)", due: false)] + renewItems))
+                items: [MenuRenewMenu.Item(title: "All apps", detail: "\(renewItems.count)", due: false, app: nil)] + renewItems),
+            platform: saved.platform, slotsKnown: known, lendableApp: saved.lendableApp,
+            hasPending: rows.contains { $0.presence == .pending }, liveRead: liveRead(presence: presence, probe: probe))
         return DeviceBuild(card: card, expiring: expiring, renewFailed: renewFailed)
+    }
+
+    private static func liveRead(presence: MenuPresence, probe: DeviceAppsProbe?) -> MenuLiveRead {
+        guard presence.isVisible else { return .none }
+        switch probe {
+        case .read?: return .read
+        case .failed?: return .failed
+        case .checking?: return .checking
+        case nil: return .none
+        }
     }
 
     /// The rows of a device: what `install` recorded as present (the slot record decides presence, not `freeSigned`, which
@@ -249,7 +283,7 @@ public enum MenuSnapshotBuilder {
                     slot: slot))
         }
         if let read {
-            for signed in ledger.freeSigned where signed.device == alias && read.snapshot.ids.contains(signed.bundleId) {
+            for signed in ledger.freeSigned where signed.device == alias && read.shows(signed.bundleId) {
                 if candidates.contains(where: { $0.app == signed.app || $0.bundleId == signed.bundleId }) { continue }
                 // A slot record (an absent one after `app remove`) is newer than a read taken before it was written.
                 let slot = slots.first { $0.app == signed.app }
@@ -295,7 +329,7 @@ public enum MenuSnapshotBuilder {
     private static func classify(_ candidate: Candidate, alias: String, read: AppsRead?, reading: Bool) -> AppPresence {
         let slot = candidate.slot ?? LedgerSlot(device: alias, app: candidate.app, presence: .unknown)
         if let read, let id = candidate.bundleId, usable(slot, takenAt: read.takenAt) {
-            let present = read.snapshot.ids.contains(id)
+            let present = read.shows(id)
             let settled = SlotRule.settle(slot, present: present, takenAt: read.takenAt)
             if settled.op != nil { return .pending }
             if settled.lentTo != nil { return .lent }
@@ -315,9 +349,10 @@ public enum MenuSnapshotBuilder {
         var level = ExpiryItem.Level.ok
         if let expires { (days, level) = FreeInstallExpiry.assess(expires: expires, now: now) }
         var row = MenuAppRow(
-            id: "\(alias)/\(candidate.app)", name: MenuFormat.appName(candidate.app), presence: state, daysLeft: days,
-            level: level, daysLabel: "", barFraction: 0, barTone: .neutral, textTone: .neutral, showsBar: false,
-            exception: exception, failure: failure)
+            id: "\(alias)/\(candidate.app)", app: candidate.app, name: MenuFormat.appName(candidate.app), presence: state,
+            daysLeft: days, level: level, daysLabel: "", barFraction: 0, barTone: .neutral, textTone: .neutral, showsBar: false,
+            exception: exception, failure: failure, expires: nil, recorded: candidate.install != nil, signedExpires: nil,
+            newerSigned: false, removalClearsTrust: false)
         switch state {
         case .installed, .unconfirmed:
             guard let expires else {
@@ -350,7 +385,7 @@ public enum MenuSnapshotBuilder {
             for slot in slots {
                 let install = projected.installs.first { $0.id == slot.id }
                 let id = bundleId(of: slot.app, recorded: install?.bundleId, prefix: prefix)
-                let shown = id.map { read.snapshot.ids.contains($0) } ?? false
+                let shown = id.map { read.shows($0) } ?? false
                 let settled = usable(slot, takenAt: read.takenAt) ? SlotRule.settle(slot, present: shown, takenAt: read.takenAt) : slot
                 guard SlotRule.used(settled), !shown else { continue }
                 if settled.lentTo != nil { outside.lent += 1 } else { outside.pending += 1 }

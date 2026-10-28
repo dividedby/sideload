@@ -82,9 +82,9 @@ public enum MenuLoader {
     /// One read-only `devicectl device info apps` on a saved device (about 1 to 3 s, at most 15 s), through `DeviceCtl`.
     /// It takes no lock and writes nothing: no ledger, no config, no profile read. The call names the `apollo` free ID only
     /// because `FreeDeviceCalls` carries one; `info apps` is not an app mutation and the ID is never sent. A failed, locked
-    /// or timed-out read keeps its error code and never looks like an empty device.
-    public static func readApps(_ services: Services, alias: String) async -> DeviceAppsProbe {
-        let prefix = (try? services.store.load())?.bundleIdPrefix
+    /// or timed-out read keeps its error code and never looks like an empty device. `prefix` is the loaded config's
+    /// `bundleIdPrefix`, so the read does not load the config a second time.
+    public static func readApps(_ services: Services, alias: String, prefix: String?) async -> DeviceAppsProbe {
         guard let bundleId = ProvisionApp.apollo.freeBundleId(prefix: prefix) else {
             return .failed(code: "CONFIG_MISSING", takenAt: services.clock.now())
         }
@@ -96,18 +96,22 @@ public enum MenuLoader {
 
     /// The first paint of a load: the freshly read local files over what the last load learned (the device list and the
     /// cached app reads), so rows change only when a new answer differs. Only a launch with nothing known says "checking…".
-    public static func firstPaint(_ local: Local, cache: MenuAppsCache) -> MenuPanel {
-        panel(local, probe: cache.lastProbe ?? .checking, apps: cache.entries)
+    public static func firstPaint(_ local: Local, cache: MenuAppsCache, renewing: Bool = false) -> MenuPanel {
+        panel(local, probe: cache.lastProbe ?? .checking, apps: cache.entries, renewing: renewing)
     }
 
-    /// `apps` holds what was read per alias; a missing key means the device was not asked.
-    public static func panel(_ local: Local, probe: DeviceProbe, apps: [String: DeviceAppsProbe] = [:]) -> MenuPanel {
+    /// `apps` holds what was read per alias; a missing key means the device was not asked. `renewing` is a Renew started
+    /// from the menu that is still running: the icon says so (`MenuIcon.State.renewing`), and only then.
+    public static func panel(
+        _ local: Local, probe: DeviceProbe, apps: [String: DeviceAppsProbe] = [:], renewing: Bool = false
+    ) -> MenuPanel {
         switch local {
         case .firstRun(let issue): return MenuPanel.firstRun(issue)
         case .failed(let issue): return MenuPanel.failed(issue)
         case .ready(var inputs):
             inputs.probe = probe
             inputs.deviceApps = apps
+            inputs.renewing = renewing
             return .loaded(MenuSnapshotBuilder.build(inputs))
         }
     }
@@ -142,6 +146,9 @@ public enum DeviceAppsProbe: Sendable, Equatable {
 struct AppsRead {
     let snapshot: AppSnapshot
     let takenAt: Date
+
+    /// Whether the device showed this bundle ID.
+    func shows(_ bundleId: String) -> Bool { snapshot.ids.contains(bundleId) }
 }
 
 /// Which saved devices the panel reads and when (design section 12): at launch, on "Check status now", and on a panel open
@@ -166,6 +173,9 @@ public struct MenuAppsCache: Sendable, Equatable {
     }
 
     public mutating func set(_ alias: String, _ probe: DeviceAppsProbe) { entries[alias] = probe }
+
+    /// Forgets what was read of one device (an action changed it): its next load reads it afresh.
+    public mutating func invalidate(_ alias: String) { entries[alias] = nil }
 
     /// Devices that are no longer visible are forgotten: their next appearance is read afresh.
     public mutating func retain(_ aliases: [String]) {

@@ -350,6 +350,13 @@ struct MenuPresenceRingTests {
         #expect(abs(snapshot.icon.fraction - 6.0 / 7.0) < 1e-9)
         #expect(snapshot.state == .ok)
         #expect(snapshot.devices[0].renew.items.map(\.title) == ["All apps", "Stremio"])
+        // A lent app joins the Renew items once it has a signed build: it is re-signed without the device.
+        var signedLent = ledger
+        signedLent.freeSigned = [menuSigned("iphone", "filler", days: 2)]
+        let renewable = menuBuild(ledger: signedLent, canary: "working", apps: read)
+        #expect(renewable.devices[0].renew.items.compactMap(\.app) == ["filler", "stremio-ios"])
+        #expect(renewable.devices[0].renew.items.first?.detail == "2")
+        #expect(renewable.icon.state == .ok, "a lent app's signed build never drives the ring")
         // Without the read, the apollo record still counts: it may be on the device.
         let unread = menuBuild(ledger: ledger, canary: "working", probe: .failed)
         #expect(unread.icon.state == .critical)
@@ -503,7 +510,7 @@ struct MenuReadAppsTests {
                 let config = try Data(contentsOf: URL(fileURLWithPath: paths.config))
                 let ledger = try Data(contentsOf: URL(fileURLWithPath: paths.ledger))
 
-                let probe = await MenuLoader.readApps(services, alias: "iphone")
+                let probe = await MenuLoader.readApps(services, alias: "iphone", prefix: menuPrefix)
 
                 guard case .read(let snapshot, let takenAt) = probe else {
                     Issue.record("expected a read, got \(probe)")
@@ -537,7 +544,7 @@ struct MenuReadAppsTests {
         for (reply, code) in cases {
             try await fixture(
                 { _, services, runner in
-                    let probe = await MenuLoader.readApps(services, alias: "iphone")
+                    let probe = await MenuLoader.readApps(services, alias: "iphone", prefix: menuPrefix)
                     #expect(probe == .failed(code: code, takenAt: testNow), "\(code)")
                     #expect(runner.calls.count == 1)
                 }, apps: { _ in reply })
@@ -545,7 +552,7 @@ struct MenuReadAppsTests {
         // A complete empty list is an empty device, which is different.
         try await fixture(
             { _, services, _ in
-                guard case .read(let snapshot, _) = await MenuLoader.readApps(services, alias: "iphone") else {
+                guard case .read(let snapshot, _) = await MenuLoader.readApps(services, alias: "iphone", prefix: menuPrefix) else {
                     Issue.record("expected a read")
                     return
                 }
@@ -559,7 +566,7 @@ struct MenuReadAppsTests {
             let runner = FakeRunner(menuDeviceScript(devices: nil, apps: { _ in .apps([]) }))
             let services = Services(
                 runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow), keychain: FakeKeychain(), home: paths)
-            #expect(await MenuLoader.readApps(services, alias: "iphone") == .failed(code: "CONFIG_MISSING", takenAt: testNow))
+            #expect(await MenuLoader.readApps(services, alias: "iphone", prefix: nil) == .failed(code: "CONFIG_MISSING", takenAt: testNow))
             #expect(runner.calls.isEmpty)
         }
     }
@@ -568,7 +575,7 @@ struct MenuReadAppsTests {
     func unsavedAlias() async throws {
         try await fixture(
             { _, services, runner in
-                guard case .failed = await MenuLoader.readApps(services, alias: "nobody") else {
+                guard case .failed = await MenuLoader.readApps(services, alias: "nobody", prefix: menuPrefix) else {
                     Issue.record("expected a failure")
                     return
                 }
