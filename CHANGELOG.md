@@ -7,14 +7,33 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
+- Menu bar actions: Renew… (All apps or one app, Retry on a failed renewal), Install and Install update, Remove and
+  "Lendable: <App>" now run from the panel. Each opens an inline confirm that names the device alias and the app and
+  states the effect (slots, App IDs, the keychain prompt); the confirm button is the owner's `--yes`. A running action
+  shows Cancel (not for the lendable setting) and turns the other controls off; the result is done, failed (code,
+  message and fix per app, with Retry), busy (the lock was held) or cancelled, and the device is then read again at
+  once. A disabled control says why. Renew and Install need a visible device with a successful live read, except a lent
+  app's Renew; Remove needs an installed row; the lendable setting is off while the device has a lent or pending row.
+  Quitting with an action running cancels it (also during the command's post-result work), then kills its children;
+  the result card shows an install's `warnings[]` as notes, and the lendable setting re-reads the ledger just before it
+  runs and is not run while the device has a lent or pending slot. New: `MenuActions`, `MenuActionOutcome`,
+  `MenuActionRunner`, `MenuActionState`, `MenuAppsCache.invalidate`, `AppsRead.shows`, `AppPresence.isLive`; the snapshot
+  carries the facts the rules need. "All apps" lists the available apps `refresh` would select, names each one it
+  leaves out and why, and is off only when none is available; it runs one `refresh --app` per listed app (stopping on a fatal
+  error or a busy lock), so it cannot touch an app the confirm did not list, and the confirm click runs only the confirm that was shown (a changed
+  one is shown again). The menu icon is `renewing` while a Renew from the menu runs.
+- `RefreshPolicy.Result.cancelled`: when the menu's Cancel stops a `refresh` run (the task is cancelled and a step
+  fails with a code the cancellation can explain), the app's result is `INTERRUPTED`, the attempt is given back and no failure, backoff or suspension is recorded
+  (`lastResult: skipped`, `lastCode: INTERRUPTED`). The CLI is unchanged: signals still stop its process.
 - Menu bar: the Apps card checks each visible device live. After `devicectl list devices`, the app runs one read-only
   `device info apps` per visible saved device (15 s timeout, one device after the other; no lock, no profile read, nothing
   written), at launch, on Check status now, and on a panel open only when the last attempt is 5 minutes old (a failed
   attempt counts, so a locked device is not retried at every open). A row is installed, "Signed · not installed" (recorded
   but gone from the device: no bar, out of the ring and the slot count), "Lent to lab", "Change in progress", or the
   ledger's countdown when the device could not be read; a card whose device could not be read says why once ("Couldn't
-  check apps (device locked) · showing last known"). An app sideload did not install but signed shows once the device lists
-  it. New: `MenuLoader.readApps`, `visibleAliases`, `DeviceAppsProbe`, `MenuAppsCache`, `AppPresence`.
+  check apps (device locked) · showing last known"). A signed app (`freeSigned`) with no other record shows once the device lists
+  it (installed by hand) and, once a read at least as new as its slot record confirms it absent, as "Signed · not installed"
+  (for instance after `app remove`), with an Install offer; with no usable read it has no row. New: `MenuLoader.readApps`, `visibleAliases`, `DeviceAppsProbe`, `MenuAppsCache`, `AppPresence`.
 - Menu bar: a failed last renewal (`installs[].refresh.lastResult == "failed"`) shows "Renewal failed · CODE" in red under
   the row and sets the icon's renew-failed badge.
 
@@ -22,10 +41,10 @@ All notable changes to this project are documented here. Format follows
 
 - Menu bar: the Apps card, the ring and the status colour now come from `installs[]` and `slots[]`, not `freeSigned`; the
   expiry is the install's `profileExpires`, so a newer signed build that is not installed no longer moves it. An app with
-  only a `freeSigned` record and no live read has no row. Free slots with a live read follow what `install` counts (the
+  only a `freeSigned` record and no usable live read has no row. Free slots with a live read follow what `install` counts (the
   device's managed apps, the reserve, lent and pending records); without one, a signed app counts only while no slot
-  record exists for it, so an app removed with `app remove` stops holding a slot. The disabled Renew… tooltip points at
-  `sideload refresh`.
+  record exists for it, so an app removed with `app remove` stops holding a slot. The Renew… menu is wired to `refresh` (see Added).
+- `MenuLoader.readApps` takes the loaded config's `bundleIdPrefix` instead of reading the config again.
 - `ExpiryItems.item(_:now:)` is shared by `status` and the menu; `FreeDeviceCalls.snapshot` and `trySnapshot` take a
   `timeoutSec` (default 60).
 

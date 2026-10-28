@@ -108,9 +108,14 @@ left, a time-left bar, free slots, Wi-Fi/USB/offline; read from the ledger's `in
 the device's app list, so an app that is gone shows "Signed · not installed", a lent one "Lent to lab", and a failed renewal a
 red "Renewal failed · CODE") and a countdown-ring icon: the ring is the time left of the soonest free install
 over its 7 days (label colour; orange when due at 3 days or fewer; red at 1 day or fewer; a dashed red ring with a cross when
-expired; a red "!" when the free certificate changed; a dashed grey "?" with no data). v1 is read-only plus safe actions: Check status
-now, Run doctor (shown inline), Settings… (opens `~/.sideload/config.json`), Open ~/.sideload and Quit. "Renew…" and the
-cert kit Export are visible but disabled (the menu does not call `refresh` yet). A pending app-data restore shows as an orange notice with the owner's `slot restore` command. Light and dark follow the system.
+expired; a red "!" when the free certificate changed; a dashed grey "?" with no data; a blue arc while a Renew runs). Check status
+now, Run doctor (shown inline), Settings… (opens `~/.sideload/config.json`), Open ~/.sideload and Quit need no confirm. The
+actions are Renew… (All apps or one app, and Retry on a failed renewal), Install (a signed app the device does not show, or
+Install update for a newer signed build), Remove and "Lendable: <App>". Each opens an inline confirm that says what it will do
+(slots, App IDs, the keychain prompt); the confirm button is the owner's `--yes`, and only then does the app run the same
+in-process command as the CLI. A running action shows Cancel; the result lists each app with its code, message and fix and a
+Retry, or says the lock was busy. A disabled control says why ("Connect iphone over Wi-Fi or USB", "renewable at 6 d left",
+"No free slot: remove an app first"). The cert kit Export stays disabled. A pending app-data restore shows as an orange notice with the owner's `slot restore` command. Light and dark follow the system.
 
 The live check is one read-only `devicectl device info apps` per visible device, at launch, on Check status now, and on a panel
 open only when the last attempt is 5 minutes old; it takes no lock and writes nothing (`docs/design.md` section 12). When a device

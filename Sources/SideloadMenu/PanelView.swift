@@ -63,7 +63,7 @@ struct PanelView: View {
         case .firstRun(let issue):
             IssueView(title: "Welcome to sideload", issue: issue)
         case .loaded(let snapshot):
-            LoadedView(snapshot: snapshot)
+            LoadedView(snapshot: snapshot, model: model)
         }
     }
 }
@@ -89,8 +89,10 @@ struct IssueView: View {
 
 struct LoadedView: View {
     var snapshot: MenuSnapshot
+    var model: MenuModel
 
     var body: some View {
+        ActionCardView(model: model)
         StripView(strip: snapshot.strip)
         ForEach(Array(snapshot.notices.enumerated()), id: \.offset) { _, notice in
             Text("\(notice.message) \(notice.fix ?? "")")
@@ -99,11 +101,12 @@ struct LoadedView: View {
         if snapshot.showsApps {
             HStack(alignment: .firstTextBaseline) {
                 Text("Apps").font(.caption).fontWeight(.semibold).foregroundStyle(.secondary)
+                if snapshot.checkingApps { ProgressView().controlSize(.mini) }
                 Spacer()
                 Text("signing lasts \(FreeInstallExpiry.windowDays) days").font(.caption).foregroundStyle(.secondary)
             }
             ForEach(snapshot.devices) { device in
-                DeviceCardView(device: device)
+                DeviceCardView(device: device, snapshot: snapshot, model: model)
             }
         }
         if snapshot.showsCertKitExport {

@@ -52,6 +52,20 @@ struct AppRemoveTests {
         }
     }
 
+    @Test("the static rule the menu's confirm uses: same answer as the command, for a given bundle ID and snapshot")
+    func isLastFreeAppStatic() {
+        let prefix = menuPrefix
+        func last(_ ids: [String], of id: String = stremioId) -> Bool {
+            FreeRemoval.isLastFreeApp(bundleId: id, in: menuSnapshot(ids), prefix: prefix)
+        }
+        #expect(last([stremioId]))
+        #expect(!last([stremioId, apolloId]))
+        #expect(!last([stremioId, wdaId]))
+        #expect(!last([stremioId, sideStoreId]))
+        #expect(last([stremioId, "com.example.devbuild"]))
+        #expect(last([stremioId, "com.apple.mobilesafari"]))
+    }
+
     @Test("no warning while another app that keeps the trust remains: ours, WebDriverAgent or SideStore")
     func notTheLast() async throws {
         try await withInstallWorld(script: DeviceScript(initial: [stremioId: true, apolloId: true])) { w in

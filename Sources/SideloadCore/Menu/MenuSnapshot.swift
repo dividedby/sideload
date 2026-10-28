@@ -69,7 +69,7 @@ public struct MenuIcon: Sendable, Equatable {
     ///     `warn` is due, `critical` (which includes expired) is critical, anything else is unknown. The paid state
     ///     never drives the icon while free installs exist.
     ///   - certChanged: the ledger's `freeSuspended` is set.
-    ///   - renewing: nothing sets it yet (the menu does not run `refresh`).
+    ///   - renewing: a Renew from the menu is running (`MenuLoader.panel(renewing:)`).
     ///   - renewFailed: an install's last refresh failed (the builder derives it from the rows).
     public static func make(
         soonest: Date?, now: Date, paid: StatusState, certChanged: Bool, renewing: Bool = false,
@@ -205,11 +205,21 @@ public enum AppPresence: String, Sendable, Equatable {
     case unconfirmed
     /// The device is being read right now.
     case checking
+
+    /// What is, or may be, on the device: the rows that count in the ring, the Renew items and the failure line.
+    public var isLive: Bool {
+        switch self {
+        case .installed, .unconfirmed, .checking, .pending: true
+        case .notInstalled, .lent: false
+        }
+    }
 }
 
 /// One app on a device's card.
 public struct MenuAppRow: Sendable, Equatable, Identifiable {
     public var id: String
+    /// The app key the commands take ("stremio-ios").
+    public var app: String
     public var name: String
     public var presence: AppPresence
     public var daysLeft: Int
@@ -227,6 +237,19 @@ public struct MenuAppRow: Sendable, Equatable, Identifiable {
     public var exception: String?
     /// "Renewal failed · REFRESH_X" from the install's last refresh result; drawn red under the row. nil otherwise.
     public var failure: String?
+    /// The exact expiry behind the countdown (`installs[]`, or the signed app's profile for a hand-installed one); nil
+    /// for a row without a countdown.
+    public var expires: Date?
+    /// There is an `installs[]` record (false: installed by hand).
+    public var recorded: Bool
+    /// The expiry of the signed build `sign` left for this app on this device (`freeSigned`); nil when none.
+    public var signedExpires: Date?
+    /// The signed build is a different, longer-lived profile than the installed one (more than a day later, not expired):
+    /// installing it is an update. Always false without an `installs[]` record.
+    public var newerSigned: Bool
+    /// Removing the app takes the developer trust with it (`AppCommand`'s LAST_FREE_APP_REMOVED rule). Set only for an
+    /// installed row on a live read.
+    public var removalClearsTrust: Bool
 }
 
 /// How a saved device shows up right now.
@@ -244,19 +267,37 @@ public enum MenuPresence: Sendable, Equatable {
     }
 }
 
-/// The "Renew…" menu. Disabled: the menu does not call `refresh` yet. Lists the rows with a countdown.
+/// The "Renew…" menu's items: the rows with a countdown, and a lent app that has a signed build. Whether each is
+/// available is `MenuActions.availability`.
 public struct MenuRenewMenu: Sendable, Equatable {
     public struct Item: Sendable, Equatable {
         public var title: String
         /// The count for "All apps".
         public var detail: String?
         public var due: Bool
+        /// The app key; nil for "All apps".
+        public var app: String?
     }
 
-    public var enabled: Bool
-    public var tooltip: String?
     /// "All apps" first, then one item per app; reserved slots are never listed.
     public var items: [Item]
+}
+
+/// One app a Renew of "All apps" would touch: what `refresh` itself selects for the device (`RefreshPolicy.decide`).
+public struct MenuRefreshTarget: Sendable, Equatable {
+    public var app: String
+    /// The app is lent: provisioned and signed, not installed.
+    public var lent: Bool
+}
+
+/// What the device's own app list said, for the card's actions (they need a successful read).
+public enum MenuLiveRead: Sendable, Equatable {
+    /// Not asked, or the device is not visible.
+    case none
+    case checking
+    /// Locked, timed out or unreadable.
+    case failed
+    case read
 }
 
 public struct MenuDeviceCard: Sendable, Equatable, Identifiable {
@@ -277,9 +318,32 @@ public struct MenuDeviceCard: Sendable, Equatable, Identifiable {
     /// Grey rows for slots the owner reserved for apps sideload does not manage.
     public var reservedSlots: [String]
     public var renew: MenuRenewMenu
+    /// The saved device's `platform` ("ios", "tvos"); nil when not recorded.
+    public var platform: String?
+    /// `freeSlots` is a real count (the ledger is readable and the stored reserve is in range).
+    public var slotsKnown: Bool
+    /// The app the lab may borrow the slot of (`device lendable`); nil for none.
+    public var lendableApp: String?
+    /// Every app `refresh --force` would touch on this device, in its order (soonest expiry first), from the same facts and
+    /// rules it uses. Includes an installed app with its signed copy fresh, which `refresh` reinstalls to record it, and an
+    /// app that is due but cannot be reached right now: "All apps" lists exactly this set.
+    public var refreshSet: [MenuRefreshTarget]
+    /// An app on the card has a device operation in flight (or ended unknown).
+    public var hasPending: Bool
+    /// What the device's app list said, while the device is visible.
+    public var liveRead: MenuLiveRead
+
+    /// The row of one app, by its app key.
+    public func row(for app: String) -> MenuAppRow? { apps.first { $0.app == app } }
 
     /// The status dot is filled when the device is visible, hollow otherwise.
     public var dotFilled: Bool { presence.isVisible }
+}
+
+/// The free team's App ID budget as the confirm text states it ("3 of 10 used in 7 days, 4 reserved").
+public struct MenuAppIds: Sendable, Equatable {
+    public var recent: Int
+    public var reserved: Int
 }
 
 /// Everything the loaded panel draws.
@@ -301,9 +365,15 @@ public struct MenuSnapshot: Sendable, Equatable {
     public var checkingApps: Bool
     /// Unreadable sources (an invalid ledger or canary log); the rest of the panel still draws.
     public var notices: [MenuIssue]
+    /// `ledger.json` could be read; the free actions are off while it cannot.
+    public var ledgerReadable: Bool
+    /// The free team's App ID count; nil when the ledger or the stored `freeTeam.reservedAppIds` cannot be read.
+    public var appIds: MenuAppIds?
+    /// The free identity set changed (`icon.state == .certChanged`): the free actions stop.
+    public var suspended: Bool
 }
 
-/// The panel's states (design section 12). `running` does not exist in v1: every mutating action is disabled.
+/// The panel's states (design section 12). An action's own states (confirm, running, result) are `MenuActionState`.
 public enum MenuPanel: Sendable, Equatable {
     case loading
     case loaded(MenuSnapshot)

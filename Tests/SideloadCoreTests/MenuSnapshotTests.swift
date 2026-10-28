@@ -210,13 +210,11 @@ struct MenuSnapshotTests {
         #expect(two.devices[0].reservedSlots == ["Reserved slot (1)", "Reserved slot (2)"])
     }
 
-    @Test("Renew… is visible but disabled, with the tooltip; All apps shows the count")
-    func renewDisabled() {
+    @Test("the Renew items carry the app key; All apps shows the count and has none")
+    func renewItems() {
         let card = build(ledger: installed(("iphone", "apollo", 5), ("iphone", "stremio-ios", 1))).devices[0]
-        #expect(!card.renew.enabled)
-        #expect(card.renew.tooltip == MenuSnapshotBuilder.renewDisabledTooltip)
-        #expect(card.renew.tooltip?.contains("sideload refresh") == true)
-        #expect(card.renew.items.first == MenuRenewMenu.Item(title: "All apps", detail: "2", due: false))
+        #expect(card.renew.items.first == MenuRenewMenu.Item(title: "All apps", detail: "2", due: false, app: nil))
+        #expect(card.renew.items.map(\.app) == [nil, "apollo", "stremio-ios"])
         #expect(card.renew.items.last?.due == true)
     }
 
