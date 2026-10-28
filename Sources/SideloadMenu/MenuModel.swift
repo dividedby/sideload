@@ -178,8 +178,7 @@ final class MenuModel {
         request(action)
         if case .confirming = actionState { return }
         // The panel moved on while the fetch ran (a device went away, a slot was taken): say why, and read the device again.
-        let reason = panelSnapshot.flatMap { MenuActions.availability(action, in: $0, now: services.clock.now()).reason }
-        actionState = .finished(.notRun(reason ?? "It is no longer available."))
+        actionState = .finished(.notRun(MenuActions.blockedReason(action, in: panelSnapshot, now: services.clock.now())))
         apps.invalidate(action.device)
         repaint(renewing: false)
         lastLoadFinished = nil

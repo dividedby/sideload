@@ -313,6 +313,8 @@ struct MenuAddRunTests {
         let ran = try await run(approve, script: script)
         #expect(ran.calls == ["approve apollo 3.9.0", provisionCall, signCall])
         #expect(ran.outcomes[0].kind == .failed && ran.outcomes[0].lines.last?.issue?.code == "SIGNED_BUILD_MISMATCH")
+        // Neither Add app (off for a signed row) nor Install (it would install that build) is offered.
+        #expect(ran.outcomes[0].lines.allSatisfy { $0.retry == nil })
 
         var other = Script()
         other.signs = signedBuild(prefix: "00000000")

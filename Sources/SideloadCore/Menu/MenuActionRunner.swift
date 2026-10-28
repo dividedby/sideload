@@ -216,7 +216,7 @@ public enum MenuActionRunner {
                     .sign,
                     .init(
                         code: "SIGNED_BUILD_MISMATCH", message: "The signed build is not the version you approved. Nothing was installed.",
-                        fix: "Add the app again."))
+                        fix: "Don't install this build. Re-sign with `sideload sign --app \(app) --device \(device) --yes` (it signs the newest approved version), then use Install."))
             }
             record(.sign, status)
         } catch {

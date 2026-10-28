@@ -327,9 +327,12 @@ public struct MenuActionOutcome: Sendable, Equatable {
             return
         }
         // Approval done: the retry's confirm says so. Past sign the row is "Signed · not installed" and Add app is off for it,
-        // so the retry is Install, through its own confirm.
-        var retry = action
-        if steps.done[.sign] != nil {
+        // so the retry is Install, through its own confirm. A signed build that is not the approved one gets no retry: Add
+        // app is off for its row and Install would put that build on the device.
+        var retry: MenuAction? = action
+        if envelope.errors.first?.code == "SIGNED_BUILD_MISMATCH" {
+            retry = nil
+        } else if steps.done[.sign] != nil {
             retry = .install(device: alias, app: app)
         } else if steps.done[.approve] != nil, !fetched.alreadyApproved {
             var approved = fetched

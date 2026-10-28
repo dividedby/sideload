@@ -347,9 +347,14 @@ public enum MenuActions {
         case blocked(String)
     }
 
+    /// Why an action that cannot be confirmed now is not run.
+    public static func blockedReason(_ action: MenuAction, in snapshot: MenuSnapshot?, now: Date) -> String {
+        snapshot.flatMap { availability(action, in: $0, now: now).reason } ?? "It is no longer available."
+    }
+
     public static func reconfirm(_ action: MenuAction, shown: MenuPrompt, in snapshot: MenuSnapshot, now: Date) -> Reconfirm {
         guard let current = prompt(for: action, in: snapshot, now: now) else {
-            return .blocked(availability(action, in: snapshot, now: now).reason ?? "It is no longer available.")
+            return .blocked(blockedReason(action, in: snapshot, now: now))
         }
         return current == shown ? .run(current) : .show(current)
     }
