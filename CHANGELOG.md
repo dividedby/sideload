@@ -39,6 +39,15 @@ All notable changes to this project are documented here. Format follows
 
 ### Changed
 
+- `fetch` downloads without `.op.lock` and takes it only to record the verified file (and for `--approve`, which holds it
+  throughout), so a long download no longer blocks the lab or another command. Each run keeps a `live.lock` flock in its
+  `tmp/fetch-XXXXXX/` folder; the sweep (now lock-free, in every fetch) removes a folder only when it is older than 60 s by
+  real file time and its lock is free or missing, and removes a `staged-*` file after 24 hours. At commit the manifest is
+  reloaded, so two fetches no longer lose each other's entry, and a version another fetch recorded first is returned as
+  `downloaded:false` with its approval. A busy lock at commit is still `OPERATION_IN_PROGRESS` (never waited on), but the
+  verified file is kept as `tmp/staged-<sha256>.ipa` (0600) for 24 hours and the re-run claims it instead of downloading
+  again (it is hashed again first). CLI flags and the envelope are unchanged. New: `FileLock.tryAcquireExisting`,
+  `FileLock.isLinked`.
 - Menu bar: the Apps card, the ring and the status colour now come from `installs[]` and `slots[]`, not `freeSigned`; the
   expiry is the install's `profileExpires`, so a newer signed build that is not installed no longer moves it. An app with
   only a `freeSigned` record and no usable live read has no row. Free slots with a live read follow what `install` counts (the

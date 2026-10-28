@@ -1,5 +1,6 @@
-/// Design section 9, mechanism 3: `canary`, `sign`, `install`, `export-cert` and `fetch` hold a non-blocking
-/// exclusive `flock` on `.op.lock` for their whole run. A second concurrent run gets `OPERATION_IN_PROGRESS`
+/// Design section 9, mechanism 3: `canary`, `sign`, `install`, `export-cert` and `fetch --approve` hold a
+/// non-blocking exclusive `flock` on `.op.lock` for their whole run; `fetch` without `--approve` downloads without
+/// it and takes it only to record the verified file. A second concurrent run gets `OPERATION_IN_PROGRESS`
 /// instead of racing portal state or derived data. Released by `release()`, on deinit, and by the kernel
 /// if the process dies.
 public final class OperationLock: Sendable {

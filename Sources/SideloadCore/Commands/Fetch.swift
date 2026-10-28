@@ -20,7 +20,10 @@ public struct FetchOptions: Sendable, Equatable {
 /// `fetch --app <app> [--approve]` (design section 8, approved sources). Without `--approve` it reads the
 /// source's metadata, downloads the one IPA it names over `Services.http`, checks our own SHA-256 against the
 /// publisher's, inspects the archive and records it in `manifest.json` as not approved. With `--approve` it
-/// re-checks the stored file and marks that version approved; it does no network. Holds `.op.lock` throughout.
+/// re-checks the stored file and marks that version approved; it does no network. The download runs without
+/// `.op.lock` (it can take minutes and the lock is shared with the lab); the lock is taken only to record the
+/// verified file, and for the whole of `--approve`. A busy lock at that point keeps the verified file as a staged
+/// file for the re-run, so the bytes are not downloaded twice.
 public enum FetchCommand {
     static let command = "fetch"
     static let downloadTimeout: TimeInterval = 900
@@ -51,19 +54,77 @@ public enum FetchCommand {
             throw SideloadError("USAGE", "--version only applies to --approve.", fix: "sideload fetch --app \(app) --approve --version <v>")
         }
         let source = try FetchCatalog.approved(app: app, config: try services.store.load())
+        sweepStale(in: services.home.tmp)
+        let run = FetchRun(services: services, source: source, registry: registry)
+        guard options.approve else { return try await run.download() }
         let lock = try OperationLock.acquire(paths: services.home)
         defer { lock.release() }
-        sweepStaleParts(in: services.home.tmp)
-        let run = FetchRun(services: services, source: source, registry: registry)
-        return options.approve ? try await run.approve(version: options.version ?? "") : try await run.download()
+        return try await run.approve(version: options.version ?? "")
     }
 
-    /// A `fetch-*` download folder (or a loose file of that name) left by a run that was killed. Safe to delete: the
-    /// operation lock means no other fetch is running.
-    private static func sweepStaleParts(in tmp: String) {
-        for name in (try? FileManager.default.contentsOfDirectory(atPath: tmp)) ?? [] where name.hasPrefix("fetch-") {
-            _ = ScratchDirectory.removeTree(tmp + "/" + name)
+    /// Entries younger than this are never swept: a folder is made before its liveness lock is taken.
+    static let sweepGrace: TimeInterval = 60
+    static let stagedLifetime: TimeInterval = 24 * 3600
+    static let stagedPrefix = "staged-"
+
+    /// What a killed run left in `tmp/`, with no `.op.lock`. A `fetch-*` folder is live while its `live.lock` is
+    /// held (the kernel drops the lock when the process dies); one whose lock can be taken, or that has none, is
+    /// stale. Age is real file time against real time (`time(nil)`), never `Services.clock`, which tests fix and
+    /// which would make a running download look stale. A `staged-*` file is a verified download waiting for a
+    /// re-run and goes after 24 hours. `now` is injectable for the unit test.
+    static func sweepStale(in tmp: String, now: time_t = time(nil)) {
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: tmp)) ?? [] {
+            let isStaged = name.hasPrefix(stagedPrefix)
+            guard isStaged || name.hasPrefix("fetch-") else { continue }
+            let path = tmp + "/" + name
+            var st = stat()
+            guard lstat(path, &st) == 0 else { continue }
+            let age = TimeInterval(now - st.st_mtimespec.tv_sec)
+            if isStaged {
+                if age > stagedLifetime { _ = ScratchDirectory.removeTree(path) }
+                continue
+            }
+            guard age >= sweepGrace else { continue }
+            guard st.st_mode & S_IFMT == S_IFDIR else {
+                _ = ScratchDirectory.removeTree(path)
+                continue
+            }
+            switch try? FileLock.tryAcquireExisting(path: path + "/live.lock") {
+            case .missing: _ = ScratchDirectory.removeTree(path)
+            case .acquired(let lock):
+                unlink(path + "/live.lock")
+                _ = ScratchDirectory.removeTree(path)
+                lock.release()
+            case .held, nil: break
+            }
         }
+    }
+}
+
+/// A `fetch-XXXXXX` folder plus the `live.lock` flock that tells a sweep this run is alive.
+private struct FetchScratch {
+    let directory: ScratchDirectory
+    private let lock: FileLock
+    var path: String { directory.path }
+
+    static func create(under tmp: String, registry: ScratchRegistry) throws -> FetchScratch {
+        let directory = try ScratchDirectory.create(under: tmp, registry: registry, prefix: "fetch")
+        do {
+            // Unlinked by a sweep between mkdtemp and here (or the lock file already taken): not ours to use.
+            guard let lock = try FileLock.tryAcquire(path: directory.path + "/live.lock"), lock.isLinked else {
+                throw SideloadError("CANCELLED", "fetch was interrupted.", fix: "Re-run the command.")
+            }
+            return FetchScratch(directory: directory, lock: lock)
+        } catch {
+            directory.remove()
+            throw error
+        }
+    }
+
+    /// Removes the tree, then lets go of the lock.
+    func remove() {
+        directory.remove()
+        lock.release()
     }
 }
 
@@ -76,7 +137,7 @@ private struct FetchRun {
     // MARK: fetch
 
     func download() async throws -> [String: JSONValue] {
-        var manifest = try store.load()
+        let manifest = try store.load()
         services.log("fetch: reading the \(source.app) metadata")
         let asset = try SourceResolver.resolve(source, json: try await metadata())
         guard DownloadPolicy.permits(asset.url, hosts: source.downloadHosts) else {
@@ -88,11 +149,7 @@ private struct FetchRun {
 
         let prior = manifest.entry(app: asset.app, version: asset.version)
         if let prior {
-            guard prior.upstreamDigest == asset.upstreamDigest else {
-                throw SideloadError(
-                    "VERSION_CONTENT_CHANGED", "The publisher now lists a different SHA-256 for \(asset.app) \(asset.version) than the one fetched before.",
-                    fix: "Treat this as a swapped file. Inspect it by hand; the owner removes the manifest entry and its folder to start over.")
-            }
+            guard prior.upstreamDigest == asset.upstreamDigest else { throw Self.contentChanged(asset) }
             if let stored = try? FileDigest.sha256(path: store.path(of: prior)), stored.hex == prior.sha256 {
                 services.log("fetch: \(asset.app) \(asset.version) is already stored")
                 return try await report(prior, downloaded: false, alreadyApproved: prior.approved)
@@ -101,9 +158,33 @@ private struct FetchRun {
 
         // The partial file lives in a registered 0700 folder, so an interrupt removes it (the CLI's signal
         // handler empties the registry and exits without running this function's cleanup).
-        let scratch = try ScratchDirectory.create(under: services.home.tmp, registry: registry, prefix: "fetch")
+        let scratch = try FetchScratch.create(under: services.home.tmp, registry: registry)
         defer { scratch.remove() }
         let part = scratch.path + "/download.part"
+
+        let verified: (digest: String, count: Int64)
+        if let staged = claimStaged(asset, into: part) {
+            verified = staged
+        } else {
+            verified = try await downloadBody(asset, to: part)
+        }
+        let (digest, count) = verified
+
+        try checkNotCancelled()
+        services.log("fetch: inspecting the archive")
+        let inspected = try await inspect(path: part)
+
+        return try commit(asset, part: part, digest: digest, count: count, inspected: inspected)
+    }
+
+    private func checkNotCancelled() throws {
+        if registry.isClosed || Task.isCancelled {
+            throw SideloadError("CANCELLED", "fetch was interrupted.", fix: "Re-run the command.")
+        }
+    }
+
+    /// Streams the body into `part`, then checks the byte count and our SHA-256 against what the source declared.
+    private func downloadBody(_ asset: ResolvedAsset, to part: String) async throws -> (digest: String, count: Int64) {
         let sink = try DownloadSink(path: part, maxBytes: asset.size)
         defer { sink.abort() }
 
@@ -139,12 +220,58 @@ private struct FetchRun {
                 fix: "Retry; if it repeats, do not use this release.",
                 data: ["expected": .string(asset.upstreamDigest), "actual": .string(digest)])
         }
+        return (digest, count)
+    }
 
-        if registry.isClosed { throw SideloadError("CANCELLED", "fetch was interrupted.", fix: "Re-run the command.") }
-        services.log("fetch: inspecting the archive")
-        let inspected = try await inspect(path: part)
+    private static func stagedPath(_ digest: String, tmp: String) -> String {
+        tmp + "/" + FetchCommand.stagedPrefix + digest + ".ipa"
+    }
 
-        if registry.isClosed { throw SideloadError("CANCELLED", "fetch was interrupted.", fix: "Re-run the command.") }
+    /// Takes the verified file an earlier run staged when the lock was busy. The rename is atomic, so a sweep or a
+    /// second re-run cannot also have it (the loser gets ENOENT and downloads). The bytes are hashed again, without
+    /// following a link, because the staged name is only a claim; anything that does not match is deleted.
+    private func claimStaged(_ asset: ResolvedAsset, into part: String) -> (digest: String, count: Int64)? {
+        guard asset.upstreamDigest.utf8.count == 64, asset.upstreamDigest.utf8.allSatisfy({ ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x61 && $0 <= 0x66) })
+        else { return nil }
+        guard rename(Self.stagedPath(asset.upstreamDigest, tmp: services.home.tmp), part) == 0 else { return nil }
+        if let stored = try? FileDigest.sha256(path: part), stored.hex == asset.upstreamDigest, stored.size == asset.size {
+            services.log("fetch: using the verified download kept from an earlier run")
+            return (stored.hex, stored.size)
+        }
+        _ = ScratchDirectory.removeTree(part)
+        return nil
+    }
+
+    /// The short critical section: under `.op.lock`, reload the manifest, re-check the version, move the file into
+    /// the store and save. No awaits. A busy lock keeps the verified file staged for the re-run instead.
+    private func commit(
+        _ asset: ResolvedAsset, part: String, digest: String, count: Int64, inspected: Inspected
+    ) throws -> [String: JSONValue] {
+        try checkNotCancelled()
+        let lock: OperationLock
+        do {
+            lock = try OperationLock.acquire(paths: services.home)
+        } catch let busy as SideloadError where busy.code == "OPERATION_IN_PROGRESS" {
+            let staged = rename(part, Self.stagedPath(digest, tmp: services.home.tmp)) == 0
+            throw SideloadError(
+                busy.code, busy.message,
+                fix: staged
+                    ? "Re-run `sideload fetch --app \(asset.app)` when it finishes; the verified download is kept for 24 h and is not downloaded again."
+                    : busy.fix)
+        }
+        defer { lock.release() }
+
+        var manifest = try store.load()
+        let prior = manifest.entry(app: asset.app, version: asset.version)
+        if let prior {
+            guard prior.upstreamDigest == asset.upstreamDigest else { throw Self.contentChanged(asset) }
+            // Another fetch recorded this version while ours downloaded: keep theirs.
+            if let stored = try? FileDigest.sha256(path: store.path(of: prior)), stored.hex == prior.sha256 {
+                services.log("fetch: \(asset.app) \(asset.version) was stored by another run")
+                return Self.data(prior, store: store, downloaded: false, alreadyApproved: prior.approved, inspected: inspected)
+            }
+        }
+
         let directory = "\(services.home.downloads)/\(asset.app)/\(asset.version)"
         try makeDirectories(directory, mode: 0o700)
         guard rename(part, directory + "/" + asset.fileName) == 0 else { throw ioError("rename") }
@@ -288,6 +415,12 @@ private struct FetchRun {
     }
 
     // MARK: errors
+
+    private static func contentChanged(_ asset: ResolvedAsset) -> SideloadError {
+        SideloadError(
+            "VERSION_CONTENT_CHANGED", "The publisher now lists a different SHA-256 for \(asset.app) \(asset.version) than the one fetched before.",
+            fix: "Treat this as a swapped file. Inspect it by hand; the owner removes the manifest entry and its folder to start over.")
+    }
 
     private static var redirectRefused: SideloadError {
         SideloadError(

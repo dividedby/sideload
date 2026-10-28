@@ -26,7 +26,7 @@ team) before changing anything.
   and a lab run never sign at the same time. Take it before touching that team's identity or profiles. A busy
   lock means a manual run reports `OPERATION_IN_PROGRESS` and auto-refresh logs a skip; never wait on it or
   delete the file. The lock is a BSD `flock` (`LOCK_EX|LOCK_NB`) and
-  the only ordering mechanism with the lab: don't probe for its processes (no `pgrep`).
+  the only ordering mechanism with the lab: don't probe for its processes (no `pgrep`). `fetch` downloads without it; it takes it to record a verified file and for `--approve`.
 
 ## Apple TV
 

@@ -1,4 +1,5 @@
 import CryptoKit
+import Darwin
 import Foundation
 import Synchronization
 import Testing
@@ -196,6 +197,69 @@ func partFiles(_ paths: Paths) -> [String] {
     listing(paths.tmp).filter { $0.hasPrefix("fetch-") }
 }
 
+func stagedFiles(_ paths: Paths) -> [String] {
+    listing(paths.tmp).filter { $0.hasPrefix("staged-") }
+}
+
+/// Sets a file's times `seconds` before the real current time. The sweep reads real mtimes against real time.
+func backdate(_ path: String, by seconds: Int) {
+    let stamp = timeval(tv_sec: time(nil) - seconds, tv_usec: 0)
+    var times = [stamp, stamp]
+    #expect(utimes(path, &times) == 0)
+}
+
+/// The operation lock is free: nothing in the command left it held.
+func expectLockFree(_ paths: Paths, sourceLocation: SourceLocation = #_sourceLocation) {
+    do {
+        try OperationLock.acquire(paths: paths).release()
+    } catch {
+        Issue.record("the operation lock is still held: \(error)", sourceLocation: sourceLocation)
+    }
+}
+
 func scratchFolders(_ paths: Paths) -> [String] {
     listing(paths.tmp).filter { $0.hasPrefix("inspect-") }
+}
+
+// MARK: gated downloads
+
+/// Serves the metadata, delivers one chunk of the body, then waits to be released.
+final class GatedTransport: HTTPTransport {
+    let metadata: [String: Data]
+    let first: Data
+    let rest: Data
+    private let started: AsyncStream<Void>.Continuation
+    let startedStream: AsyncStream<Void>
+    private let gate: AsyncStream<Void>
+    private let release: AsyncStream<Void>.Continuation
+
+    init(metadata: [String: Data], first: Data, rest: Data) {
+        self.metadata = metadata
+        self.first = first
+        self.rest = rest
+        (startedStream, started) = AsyncStream.makeStream(of: Void.self)
+        (gate, release) = AsyncStream.makeStream(of: Void.self)
+    }
+
+    func letGo() { release.yield() }
+
+    func get(_ request: HTTPRequest) async throws -> HTTPResponse {
+        HTTPResponse(status: 200, body: metadata[request.url.absoluteString] ?? Data())
+    }
+
+    func download(_ request: DownloadRequest, sink: @Sendable (Data) throws -> Void) async throws -> DownloadResponse {
+        try sink(first)
+        started.yield()
+        for await _ in gate { break }
+        try sink(rest)
+        return DownloadResponse(status: 200, finalURL: request.url, byteCount: Int64(first.count + rest.count))
+    }
+}
+
+/// The Apollo release for `ipa`, delivered in two halves with the gap between them under the test's control.
+func gatedApollo(_ ipa: Data, version: String = "3.9.0") -> GatedTransport {
+    let name = "Apollo-Reborn-\(version)-GLASS-NOEXTENSIONS.ipa"
+    let json = releaseJSON(tag: "v1.15.11_\(version)", assets: [ReleaseAsset(name: name, size: ipa.count, digest: "sha256:" + sha256Hex(ipa))])
+    let split = ipa.count / 2
+    return GatedTransport(metadata: [apolloAPI: json], first: ipa.prefix(split), rest: ipa.dropFirst(split))
 }
