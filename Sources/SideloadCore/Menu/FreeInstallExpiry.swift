@@ -74,6 +74,14 @@ enum MenuFormat {
         return app.prefix(1).uppercased() + app.dropFirst()
     }
 
+    /// "45.2 MB": decimal units, one decimal.
+    static func size(_ bytes: Int64) -> String {
+        let value = Double(bytes)
+        if value >= 1e9 { return String(format: "%.1f GB", value / 1e9) }
+        if value >= 1e6 { return String(format: "%.1f MB", value / 1e6) }
+        return String(format: "%.1f KB", value / 1e3)
+    }
+
     static func slots(_ n: Int) -> String {
         switch n {
         case ...0: "no free slots"

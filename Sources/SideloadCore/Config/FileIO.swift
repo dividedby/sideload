@@ -161,6 +161,38 @@ final class FileLock: Sendable {
         return FileLock(fd: fd)
     }
 
+    enum Existing {
+        case missing
+        case held
+        case acquired(FileLock)
+    }
+
+    /// `tryAcquire` for a lock file that must already exist: never creates it, so a sweep that finds none learns
+    /// the owner is gone (or never got that far). A symlink is an error, not a lock.
+    static func tryAcquireExisting(path: String) throws -> Existing {
+        let fd = open(path, O_RDWR | O_CLOEXEC | O_NOFOLLOW)
+        if fd < 0 {
+            if errno == ENOENT { return .missing }
+            throw ioError("open lock file")
+        }
+        while flock(fd, LOCK_EX | LOCK_NB) != 0 {
+            let code = errno
+            if code == EINTR { continue }
+            close(fd)
+            if code == EWOULDBLOCK { return .held }
+            throw ioError("lock", code)
+        }
+        return .acquired(FileLock(fd: fd))
+    }
+
+    /// False once the lock file has been unlinked (a sweep removed it between our create and our lock).
+    var isLinked: Bool {
+        fd.withLock { value in
+            var st = stat()
+            return value >= 0 && fstat(value, &st) == 0 && st.st_nlink > 0
+        }
+    }
+
     /// Retries `tryAcquire` every `retryInterval` until `timeout`, then `BUSY`. `name` is the state file the lock
     /// guards (`config`, `ledger`), used in the messages. Cancellation while waiting is `CANCELLED`.
     static func acquire(

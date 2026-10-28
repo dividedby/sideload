@@ -236,6 +236,39 @@ struct SignApolloTests {
     }
 }
 
+@Suite("sign: a chosen version")
+struct SignVersionTests {
+    @Test("SignOptions.version signs exactly that version even when a newer one is approved; nil keeps the newest")
+    func chosenVersion() async throws {
+        try await withSignWorld(app: .apollo, manifest: .newerApproved) { w in
+            let newest = await w.run()
+            #expect(newest.ok, "\(newest.errors)")
+            #expect(newest.data["version"] == .string(w.app.version))
+
+            let chosen = await w.run(version: "1.0.0")
+            #expect(chosen.ok, "\(chosen.errors)")
+            #expect(chosen.data["version"] == "1.0.0")
+            let signed = try w.ledger().freeSigned.first { $0.id == w.key }
+            #expect(signed?.version == "1.0.0")
+            // A version that was asked for is not the "newest approved" one, so there is nothing to warn about.
+            #expect(!warningCodes(chosen).contains("NEWER_VERSION_NOT_APPROVED"))
+        }
+    }
+
+    @Test("a version that is not approved, or not fetched, is NOT_APPROVED and nothing is signed")
+    func notApproved() async throws {
+        try await withSignWorld(app: .apollo, manifest: .newerUnapproved) { w in
+            for version in [w.app.version, "9.9.9"] {
+                let out = await w.run(version: version)
+                #expect(out.errors.first?.code == "NOT_APPROVED", "\(version)")
+            }
+            #expect(w.runner.signingArgs.isEmpty)
+            let signed = try w.ledger().freeSigned
+            #expect(signed.isEmpty)
+        }
+    }
+}
+
 @Suite("sign: every kind of extension")
 struct SignStripEverythingTests {
     @Test("a nested appex, Extensions/ and a Watch app with its own appex are all removed and the result verifies")

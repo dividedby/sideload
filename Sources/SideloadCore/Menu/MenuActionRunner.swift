@@ -7,6 +7,10 @@ public struct MenuActionSteps: Sendable {
     public var install: @Sendable (Services, InstallOptions) async -> Envelope = { await InstallCommand.run($0, $1) }
     public var remove: @Sendable (Services, AppOptions) async -> Envelope = { await AppCommand.run($0, $1) }
     public var lendable: @Sendable (Services, DeviceOptions) async -> Envelope = { await DeviceCommand.run($0, $1) }
+    /// Add app: `fetch` (stage 1, and `--approve --version` in stage 2), then `provision`, `sign` and `install`.
+    public var fetch: @Sendable (Services, FetchOptions) async -> Envelope = { await FetchCommand.run($0, $1) }
+    public var provision: @Sendable (Services, ProvisionOptions) async -> Envelope = { await ProvisionCommand.run($0, $1) }
+    public var sign: @Sendable (Services, SignOptions) async -> Envelope = { await SignCommand.run($0, $1) }
 
     public init() {}
 }
@@ -43,6 +47,15 @@ public enum MenuActionRunner {
             envelope = await steps.install(services, InstallOptions(app: app, device: device, yes: true))
         case .remove(let device, let app):
             envelope = await steps.remove(services, AppOptions(sub: "remove", app: app, device: device, yes: true))
+        case .addFetch(_, let app):
+            envelope = await steps.fetch(services, FetchOptions(app: app))
+        case .addApprove(let device, let app, let fetched):
+            if let reason = addStop(app: app, fetched: fetched, services: services) {
+                await deliver(.notRun(reason))
+                return
+            }
+            envelope = await addEach(
+                app, device: device, fetched: fetched, services: services, steps: steps, isCancelled: isCancelled)
         case .lendable(let device, let app):
             // `device lendable` takes no `.op.lock`, so a lab `slot lend` can land after the panel was drawn: the ledger is
             // read again here, and the setting is not written while the device has a lent or pending slot.
@@ -75,6 +88,149 @@ public enum MenuActionRunner {
             slot.device == device && (slot.lentTo != nil || slot.op.map { SlotRule.remaining($0, now: now) != nil } == true)
         }
         return busy ? MenuActions.lentOrChanging(device) : nil
+    }
+
+    /// The steps of the second Add app confirm, in order.
+    enum AddStep: String, CaseIterable, Sendable {
+        case approve, provision, sign, install
+
+        var title: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
+
+        func text(skipped: Bool, appIdNew: Bool) -> String {
+            switch self {
+            case .approve: skipped ? "Already approved" : "Approved"
+            case .provision: skipped ? "Profile still fresh" : appIdNew ? "Profile ready · new App ID" : "Profile ready"
+            case .sign: skipped ? "Signed build is current" : "Signed"
+            case .install: "Installed"
+            }
+        }
+    }
+
+    /// A profile with this many days left or more is used as it is: `provision` within 24 h of the last one answers
+    /// `PROFILE_NOT_RENEWED`, and `refresh` renews at 6 days.
+    static let freshProfileDays = Double(RefreshPolicy.maxWithin)
+
+    /// Why the approval must not run: the manifest as it is on disk has no such entry, or its file is not the one the owner
+    /// saw (a different SHA-256). Nil when it matches.
+    static func addStop(app: String, fetched: MenuFetched, services: Services) -> String? {
+        let manifest: Manifest
+        do {
+            manifest = try ManifestStore(paths: services.home).load()
+        } catch {
+            return "The fetched file could not be checked. Fetch it again."
+        }
+        guard let entry = manifest.entry(app: app, version: fetched.version) else {
+            return "\(MenuFormat.appName(app)) \(fetched.version) is no longer fetched. Fetch it again."
+        }
+        guard entry.sha256 == fetched.sha256 else { return "The fetched file changed since you reviewed it. Fetch it again." }
+        return nil
+    }
+
+    /// Add app, stage 2: approve exactly the confirmed version, then only the steps still needed, then install, folded into one
+    /// `add`-shaped envelope with a status per step. Each command takes `.op.lock` itself, so the lab can interleave between
+    /// steps. A step that is already done (a profile with 6 days or more left, a signed build for this version and profile) is
+    /// skipped, so a run that stopped halfway resumes. Stops between steps when cancelled, and on the first failure.
+    private static func addEach(
+        _ app: String, device: String, fetched: MenuFetched, services: Services, steps: MenuActionSteps,
+        isCancelled: @Sendable () -> Bool
+    ) async -> Envelope {
+        var results: [JSONValue] = []
+        var warnings: [JSONValue] = []
+        var appIdNew: Bool?
+        var installStarted = false
+        func record(_ step: AddStep, _ status: String) { results.append(["step": .string(step.rawValue), "status": .string(status)]) }
+        func finish(_ failed: AddStep? = nil, _ error: Envelope.Entry? = nil) -> Envelope {
+            if let failed { record(failed, "failed") }
+            var data: [String: JSONValue] = [
+                "device": .string(device), "app": .string(app), "version": .string(fetched.version),
+                "steps": .array(results), "warnings": .array(warnings),
+            ]
+            if let appIdNew { data["appIdNew"] = .bool(appIdNew) }
+            if installStarted { data["installStarted"] = true }
+            return Envelope(ok: failed == nil, command: "add", data: data, errors: error.map { [$0] } ?? [])
+        }
+        func stop(_ step: AddStep, _ envelope: Envelope) -> Envelope {
+            finish(step, envelope.errors.first ?? .init(code: "INTERNAL_ERROR", message: "\(step.rawValue) failed.", fix: nil))
+        }
+        func interrupted(_ step: AddStep) -> Envelope? {
+            guard isCancelled() else { return nil }
+            return finish(step, .init(code: "INTERRUPTED", message: "The run was interrupted.", fix: nil))
+        }
+        let id = "\(device)/\(app)"
+        let loadLedger = { () -> Ledger in try services.ledgerStore.load() }
+
+        // 1. Approve this exact version (offline: it re-hashes and inspects the stored file).
+        let approved = await steps.fetch(services, FetchOptions(app: app, approve: true, version: fetched.version))
+        guard approved.ok else { return stop(.approve, approved) }
+        guard approved.data["sha256"] == .string(fetched.sha256) else {
+            return finish(
+                .approve,
+                .init(
+                    code: "DIGEST_MISMATCH", message: "The approved file is not the one you reviewed. Nothing was signed.",
+                    fix: "Fetch it again and review the SHA-256."))
+        }
+        record(.approve, approved.data["alreadyApproved"] == .bool(true) ? "skipped" : "done")
+
+        // 2. Provision, unless a stored profile is still fresh.
+        if let stopped = interrupted(.provision) { return stopped }
+        do {
+            let ledger = try loadLedger()
+            let fresh = ledger.freeProfiles.first { $0.id == id }.map {
+                $0.expires.timeIntervalSince(services.clock.now()) >= freshProfileDays * 86_400
+            }
+            if fresh == true {
+                record(.provision, "skipped")
+            } else {
+                var envelope = await steps.provision(services, ProvisionOptions(app: app, device: device, yes: true))
+                // Like `refresh`: only a profile that did not move is retried, once, with the renewal of our own cached copy.
+                if !envelope.ok, envelope.errors.first?.code == "PROFILE_NOT_RENEWED" {
+                    envelope = await steps.provision(services, ProvisionOptions(app: app, device: device, renew: true, yes: true))
+                }
+                guard envelope.ok else { return stop(.provision, envelope) }
+                if case .bool(let isNew)? = envelope.data["appIdNew"] { appIdNew = isNew }
+                record(.provision, "done")
+            }
+        } catch {
+            return stop(.provision, .from(error, command: "add"))
+        }
+
+        // 3. Sign exactly this version, unless the signed build already is this version on the stored profile.
+        if let stopped = interrupted(.sign) { return stopped }
+        do {
+            let ledger = try loadLedger()
+            let prefix = String(fetched.sha256.prefix(8))
+            let current = ledger.freeSigned.first { $0.id == id }.map { signed in
+                signed.version == fetched.version && signed.sha256Prefix == prefix
+                    && signed.profileUuid == ledger.freeProfiles.first { $0.id == id }?.profileUuid
+            }
+            var status = "skipped"
+            if current != true {
+                let envelope = await steps.sign(services, SignOptions(app: app, device: device, yes: true, version: fetched.version))
+                guard envelope.ok else { return stop(.sign, envelope) }
+                status = "done"
+            }
+            // `install` puts whatever `freeSigned` holds on the device: it must be what the owner approved.
+            let after = try loadLedger().freeSigned.first { $0.id == id }
+            guard after?.version == fetched.version, after?.sha256Prefix == prefix else {
+                return finish(
+                    .sign,
+                    .init(
+                        code: "SIGNED_BUILD_MISMATCH", message: "The signed build is not the version you approved. Nothing was installed.",
+                        fix: "Don't install this build. Re-sign with `sideload sign --app \(app) --device \(device) --yes` (it signs the newest approved version), then use Install."))
+            }
+            record(.sign, status)
+        } catch {
+            return stop(.sign, .from(error, command: "add"))
+        }
+
+        // 4. Install.
+        if let stopped = interrupted(.install) { return stopped }
+        installStarted = true
+        let installed = await steps.install(services, InstallOptions(app: app, device: device, yes: true))
+        guard installed.ok else { return stop(.install, installed) }
+        if case .array(let more)? = installed.data["warnings"] { warnings += more }
+        record(.install, "done")
+        return finish()
     }
 
     /// "All apps": one `refresh --app X --force` per listed app, in order, folded into one `refresh`-shaped envelope. Like

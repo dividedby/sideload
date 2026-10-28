@@ -6,11 +6,15 @@ public struct SignOptions: Sendable, Equatable {
     public var device: String?
     /// Owner confirmation; agents must not pass it (signing uses the free certificate's private key).
     public var yes: Bool
+    /// Core-only (no CLI flag): sign exactly this fetched, approved version instead of the newest approved one. The menu's
+    /// Add app sets it so a newer approved version never replaces the one the owner confirmed. Nil is today's behaviour.
+    public var version: String?
 
-    public init(app: String? = nil, device: String? = nil, yes: Bool = false) {
+    public init(app: String? = nil, device: String? = nil, yes: Bool = false, version: String? = nil) {
         self.app = app
         self.device = device
         self.yes = yes
+        self.version = version
     }
 }
 
@@ -100,7 +104,7 @@ public enum SignCommand {
         defer { lock.release() }
         let run = SignRun(
             services: services, registry: registry, config: config, prefix: prefix, app: app, alias: alias, device: device,
-            udid: udid, bundleId: bundleId, hooks: hooks)
+            udid: udid, bundleId: bundleId, version: options.version, hooks: hooks)
         return await run.execute()
     }
 }
@@ -192,12 +196,15 @@ private struct SignRun {
     let udid: String
     let bundleId: String
     let now: Date
+    /// The one version to sign; nil signs the newest approved one.
+    let version: String?
     let hooks: SignHooks
 
     init(
         services: Services, registry: ScratchRegistry, config: Config, prefix: String, app: ProvisionApp, alias: String,
-        device: ResolvedDevice, udid: String, bundleId: String, hooks: SignHooks
+        device: ResolvedDevice, udid: String, bundleId: String, version: String?, hooks: SignHooks
     ) {
+        self.version = version
         self.hooks = hooks
         self.services = services
         self.registry = registry
@@ -297,7 +304,12 @@ private struct SignRun {
         let manifestStore = ManifestStore(paths: services.home)
         let manifest = try manifestStore.load()
         let entries = manifest.entries.filter { $0.app == app.rawValue }
-        guard let entry = entries.filter(\.approved).max(by: Self.older) else {
+        if let version, !entries.contains(where: { $0.version == version && $0.approved }) {
+            return fail(
+                "NOT_APPROVED", "Version \(printableCut(version)) of \(app.rawValue) is not fetched and approved, so it is not signed.",
+                "Fetch it and the owner approves it with --approve --version <v>.")
+        }
+        guard let entry = entries.filter({ $0.approved && (version == nil || $0.version == version) }).max(by: Self.older) else {
             return fail(
                 "NOT_APPROVED",
                 entries.isEmpty
@@ -308,7 +320,7 @@ private struct SignRun {
                     : "Review `sideload fetch --app \(app.rawValue)`, then the owner runs: sideload fetch --app \(app.rawValue) --approve --version <v>.")
         }
         var warnings: [JSONValue] = []
-        if entries.contains(where: { !$0.approved && $0.fetchedAt > entry.fetchedAt }) {
+        if version == nil, entries.contains(where: { !$0.approved && $0.fetchedAt > entry.fetchedAt }) {
             warnings.append(
                 CanaryCommand.warning(
                     "NEWER_VERSION_NOT_APPROVED",

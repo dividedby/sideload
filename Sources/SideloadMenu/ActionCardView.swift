@@ -37,9 +37,14 @@ private struct ConfirmView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(prompt.title).fontWeight(.semibold)
-            ForEach(Array(prompt.lines.enumerated()), id: \.offset) { _, line in
-                Text(line).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(prompt.title).fontWeight(.semibold).fixedSize(horizontal: false, vertical: true)
+            ForEach(Array(prompt.lines.enumerated()), id: \.offset) { index, line in
+                if prompt.monospacedLines.contains(index) {
+                    Text(line).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
+                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(line).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
             }
             HStack {
                 Spacer()

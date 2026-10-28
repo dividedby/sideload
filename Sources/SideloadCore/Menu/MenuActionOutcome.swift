@@ -28,6 +28,8 @@ public struct MenuActionOutcome: Sendable, Equatable {
     /// Failures that belong to no app line (the command stopped before it began).
     public var issues: [MenuIssue]
     public var notes: [String]
+    /// Set on a successful Add app fetch: the model opens this second confirm at once instead of showing a result.
+    public var proceed: MenuAction?
 
     public static let busyHeadline = "Busy — another sideload or lab run is signing. Try again."
     static let cancelNote = "A stopped build leaves a marker the next free command settles."
@@ -42,6 +44,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
         lines = []
         issues = []
         notes = []
+        proceed = nil
         switch action {
         case .renew(_, let app): readRenew(app, alias: alias, envelope: envelope, action: action)
         case .install(_, let app):
@@ -60,6 +63,8 @@ public struct MenuActionOutcome: Sendable, Equatable {
             readSingle(
                 envelope, action: action, app: app ?? "",
                 done: name.map { "\($0) is lendable on \(alias)" } ?? "Lending is off on \(alias)", failed: "Setting not saved")
+        case .addFetch(_, let app): readFetch(app, alias: alias, envelope: envelope, action: action, cancelled: cancelled)
+        case .addApprove(_, let app, let fetched): readAdd(app, fetched: fetched, alias: alias, envelope: envelope, action: action)
         }
         // A run that finished cleanly despite the click lost nothing, so it is reported as done.
         if cancelled, !envelope.ok {
@@ -69,6 +74,12 @@ public struct MenuActionOutcome: Sendable, Equatable {
             notes = [Self.cancelNote]
             switch action {
             case .install, .remove: notes.append(Self.deviceNote)
+            case .addFetch: notes = ["Nothing was signed or installed."]
+            case .addApprove:
+                let steps = Self.addSteps(envelope)
+                // Only an install that started may have finished on the device.
+                if steps.installStarted { notes.append(Self.deviceNote) }
+                if !steps.done.isEmpty { notes.append(Self.addKeptNote) }
             default: break
             }
             // What finished before the stop stays visible; what was cut short is not a failure to retry.
@@ -82,12 +93,13 @@ public struct MenuActionOutcome: Sendable, Equatable {
             kind: .failed, headline: "Not run", lines: [], issues: [MenuIssue(code: "NOT_RUN", message: reason)], notes: [])
     }
 
-    init(kind: Kind, headline: String, lines: [MenuResultLine], issues: [MenuIssue], notes: [String]) {
+    init(kind: Kind, headline: String, lines: [MenuResultLine], issues: [MenuIssue], notes: [String], proceed: MenuAction? = nil) {
         self.kind = kind
         self.headline = headline
         self.lines = lines
         self.issues = issues
         self.notes = notes
+        self.proceed = proceed
     }
 
     // MARK: refresh
@@ -232,6 +244,126 @@ public struct MenuActionOutcome: Sendable, Equatable {
             notes.append(Redactor.redactPatterns(message))
         }
         return notes
+    }
+
+    // MARK: add app
+
+    static let addKeptNote = "Steps already done are kept; Add app again resumes where this stopped."
+
+    /// Stage 1: the fetched version's facts for the second confirm. No result card on success.
+    private mutating func readFetch(_ app: String, alias: String, envelope: Envelope, action: MenuAction, cancelled: Bool) {
+        guard envelope.ok else {
+            readSingle(envelope, action: action, app: app, done: "", failed: "Fetch failed")
+            return
+        }
+        guard let fetched = Self.fetched(envelope) else {
+            kind = .failed
+            headline = "Fetch failed"
+            issues = [MenuIssue(code: "INTERNAL_ERROR", message: "fetch did not report the version it stored.")]
+            lines = [line(app, MenuFormat.appName(app), .failed, "Not completed", retry: action)]
+            return
+        }
+        kind = .done
+        if cancelled {
+            // A Cancel that arrived too late to stop the download is still the owner's: no second confirm opens, and the card
+            // says nothing was approved. The next Add app reuses the stored file.
+            headline = "Fetched \(MenuFormat.appName(app)) \(fetched.version) · not approved"
+            notes = ["Choose Add app again to approve and install."]
+        } else {
+            headline = "Fetched \(MenuFormat.appName(app)) \(fetched.version)"
+            proceed = .addApprove(device: alias, app: app, fetched: fetched)
+        }
+    }
+
+    private static func fetched(_ envelope: Envelope) -> MenuFetched? {
+        guard case .string(let version)? = envelope.data["version"], !version.isEmpty,
+            case .string(let sha256)? = envelope.data["sha256"], case .number(let size)? = envelope.data["size"]
+        else { return nil }
+        func text(_ key: String) -> String? {
+            if case .string(let value)? = envelope.data[key] { return value }
+            return nil
+        }
+        var extensions = 0
+        if case .object(let inspect)? = envelope.data["inspect"], case .number(let count)? = inspect["extensionCount"] {
+            extensions = Int(count)
+        }
+        return MenuFetched(
+            version: version, build: text("build"), sha256: sha256, size: Int64(size),
+            minOS: OSVersion.strictest([text("minOS"), text("inspectMinOS")]), extensionCount: extensions,
+            alreadyApproved: envelope.data["alreadyApproved"] == .bool(true))
+    }
+
+    struct AddSteps {
+        var done: [MenuActionRunner.AddStep: String] = [:]
+        var failed: MenuActionRunner.AddStep?
+        var appIdNew = false
+        /// `install` was called (a cancel before it never reached the device).
+        var installStarted = false
+    }
+
+    /// The per-step status the runner folded into the add envelope: step -> "done" or "skipped"; the step that failed.
+    static func addSteps(_ envelope: Envelope) -> AddSteps {
+        var result = AddSteps()
+        if case .array(let items)? = envelope.data["steps"] {
+            for case .object(let item) in items {
+                guard case .string(let name)? = item["step"], let step = MenuActionRunner.AddStep(rawValue: name),
+                    case .string(let status)? = item["status"]
+                else { continue }
+                if status == "failed" { result.failed = step } else { result.done[step] = status }
+            }
+        }
+        result.appIdNew = envelope.data["appIdNew"] == .bool(true)
+        result.installStarted = envelope.data["installStarted"] == .bool(true)
+        return result
+    }
+
+    /// Stage 2: one line per step that ran or was skipped, as the run's own record of what is now done.
+    private mutating func readAdd(_ app: String, fetched: MenuFetched, alias: String, envelope: Envelope, action: MenuAction) {
+        let name = MenuFormat.appName(app)
+        let steps = Self.addSteps(envelope)
+        // Busy before anything was approved changed nothing: the plain busy card. Later it is a stop with partial state.
+        if !envelope.ok, steps.failed == .approve, envelope.errors.first?.code == "OPERATION_IN_PROGRESS" {
+            becomeBusy(action)
+            return
+        }
+        // Approval done: the retry's confirm says so. Past sign the row is "Signed · not installed" and Add app is off for it,
+        // so the retry is Install, through its own confirm. A signed build that is not the approved one gets no retry: Add
+        // app is off for its row and Install would put that build on the device.
+        var retry: MenuAction? = action
+        if envelope.errors.first?.code == "SIGNED_BUILD_MISMATCH" {
+            retry = nil
+        } else if steps.done[.sign] != nil {
+            retry = .install(device: alias, app: app)
+        } else if steps.done[.approve] != nil, !fetched.alreadyApproved {
+            var approved = fetched
+            approved.alreadyApproved = true
+            retry = .addApprove(device: alias, app: app, fetched: approved)
+        }
+        for step in MenuActionRunner.AddStep.allCases {
+            if let status = steps.done[step] {
+                let skipped = status == "skipped"
+                lines.append(line(step.rawValue, step.title, skipped ? .neutral : .good, step.text(skipped: skipped, appIdNew: steps.appIdNew)))
+            } else if step == steps.failed {
+                let entry = envelope.errors.first
+                let code = entry?.code ?? "INTERNAL_ERROR"
+                let issue = MenuIssue(code: code, message: entry?.message ?? "The step did not finish.", fix: entry?.fix)
+                if code == "INTERRUPTED" {
+                    lines.append(line(step.rawValue, step.title, .neutral, "Stopped", retry: retry))
+                } else {
+                    lines.append(line(step.rawValue, step.title, .failed, "Failed · \(code)", issue: issue, retry: retry))
+                }
+            }
+        }
+        if envelope.ok {
+            kind = .done
+            headline = "Added \(name) \(fetched.version) to \(alias)"
+            notes += Self.warningNotes(envelope)
+            return
+        }
+        kind = .failed
+        headline = "Add stopped at \(steps.failed?.rawValue ?? "the start")"
+        notes = steps.done.isEmpty ? [] : [Self.addKeptNote]
+        if steps.failed == .install { notes.append("The signed build is kept: Install on the app's row also finishes it.") }
     }
 
     // MARK: shared

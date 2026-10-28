@@ -290,6 +290,29 @@ public struct MenuRefreshTarget: Sendable, Equatable {
     public var lent: Bool
 }
 
+/// One app "Add app…" offers on a device: an approved source with no row on it.
+public struct MenuAddOption: Sendable, Equatable, Hashable {
+    public var app: String
+    public var name: String
+    /// Where the download comes from: "github.com", "dl.strem.io (third-party index)".
+    public var source: String
+    /// Adding it registers a new App ID (the bundle ID has no live epoch in the ledger).
+    public var newAppId: Bool
+    /// A new App ID fits the budget (`FreeAppIdBudget.evaluate`); always true when the App ID is reused.
+    public var appIdAllowed: Bool
+}
+
+/// An approved, fetchable catalog app, whatever the device (`config.approvedSources` over `FetchCatalog`; never the filler).
+public struct MenuAddSource: Sendable, Equatable {
+    public var app: String
+    public var name: String
+    public var source: String
+    /// The saved device `platform` it runs on.
+    public var platform: String
+    /// A third-party index, which vouches for the file less than the publisher does.
+    public var thirdParty: Bool
+}
+
 /// What the device's own app list said, for the card's actions (they need a successful read).
 public enum MenuLiveRead: Sendable, Equatable {
     /// Not asked, or the device is not visible.
@@ -332,6 +355,10 @@ public struct MenuDeviceCard: Sendable, Equatable, Identifiable {
     public var hasPending: Bool
     /// What the device's app list said, while the device is visible.
     public var liveRead: MenuLiveRead
+    /// The apps "Add app…" lists: approved sources for this platform with no row on the card.
+    public var addable: [MenuAddOption] = []
+    /// The device's OS (`devicectl list devices`) while it is visible; nil when not known.
+    public var osVersion: String?
 
     /// The row of one app, by its app key.
     public func row(for app: String) -> MenuAppRow? { apps.first { $0.app == app } }
@@ -371,6 +398,8 @@ public struct MenuSnapshot: Sendable, Equatable {
     public var appIds: MenuAppIds?
     /// The free identity set changed (`icon.state == .certChanged`): the free actions stop.
     public var suspended: Bool
+    /// Every approved source "Add app…" could offer, on any platform.
+    public var addSources: [MenuAddSource] = []
 }
 
 /// The panel's states (design section 12). An action's own states (confirm, running, result) are `MenuActionState`.

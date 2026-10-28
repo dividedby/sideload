@@ -26,7 +26,7 @@ team) before changing anything.
   and a lab run never sign at the same time. Take it before touching that team's identity or profiles. A busy
   lock means a manual run reports `OPERATION_IN_PROGRESS` and auto-refresh logs a skip; never wait on it or
   delete the file. The lock is a BSD `flock` (`LOCK_EX|LOCK_NB`) and
-  the only ordering mechanism with the lab: don't probe for its processes (no `pgrep`).
+  the only ordering mechanism with the lab: don't probe for its processes (no `pgrep`). `fetch` downloads without it; it takes it to record a verified file and for `--approve`.
 
 ## Apple TV
 
@@ -67,8 +67,9 @@ team) before changing anything.
   to `io.github.dividedby.free.*`, `--yes` is the owner's), and `slot restore` (the owner's retry of an app-data restore: it
   pushes a saved backup into the app on the device; owner-only, `--yes` is the owner's, and it takes `--device <alias>`, never
   `--udid`).
-- The menu bar app's action buttons (Renew…, Install, Remove, Lendable and the confirm that follows them). They are owner
-  clicks: the confirm click is the owner's `--yes`, and agents never click them, never run the built app and never drive it
+- The menu bar app's action buttons (Renew…, Add app…, Install, Remove, Lendable and the confirm that follows them). They are owner
+  clicks: the confirm click is the owner's `--yes`, Add app… runs fetch, approve, provision, sign and install on a real device
+  (its second confirm is the owner's approval of that exact version and file), and agents never click them, never run the built app and never drive it
   (no computer-use clicks, no UI scripting), exactly as for the commands behind them.
 - `device lendable` (it chooses which app the lab may borrow the slot of). `slot lend` and `slot return` are run by
   mobile-safari-lab with no `--yes`; agents never run them against a real device, and they take `.op.lock`, accept

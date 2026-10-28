@@ -7,6 +7,27 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
+- Menu bar "Add app…": installs an app from `approvedSources` (Apollo, Stremio) that the device does not have yet. The
+  per-device menu beside Renew… lists the approved sources for that platform with no row on the device (the filler and any
+  unapproved source are hidden; an Apple TV card gets it like any device). The first confirm ("Fetch Apollo for iphone")
+  runs `fetch` alone: it downloads and checks the latest release and changes neither the device nor the portal. The second
+  confirm ("Approve and install Apollo 3.9.0 on iphone") shows the version, build, size, minimum OS and the full SHA-256,
+  the extensions that will be removed, whether it costs a new App ID, and the slots; its click approves that exact
+  version and file and runs `fetch --approve --version`, `provision`, `sign` and `install` (the owner's `--yes`). A
+  fetched version opens the second confirm at once, with no result card and no re-read of the device. The run re-reads
+  `manifest.json` first and refuses a file whose SHA-256 is not the one shown, skips `provision` when a stored profile has
+  6 days or more left and `sign` when the signed build already is this version and profile, checks Cancel between steps, and
+  checks that the signed build is the confirmed version before `install`; a run that stops halfway keeps what is done and
+  the same Add app resumes. A disabled item says why: no free slot, the App ID budget, a device that is not connected, an
+  app already on the device, or an OS older than the app's minimum. New: `MenuAction.addFetch` and `.addApprove`,
+  `MenuFetched`, `MenuAddOption`, `MenuAddSource`, `MenuActionOutcome.proceed`, `MenuActionSteps.fetch/provision/sign`,
+  `MenuDeviceCard.addable/osVersion`, `MenuSnapshot.addSources`.
+  Retry after a failure past `sign` is Install (the row is then "Signed · not installed"); `provision` is retried once with
+  `renew` on `PROFILE_NOT_RENEWED`, like `refresh`; the device note on a cancel appears only when `install` was called;
+  a reused App ID is not blocked by an unknown budget; a Cancel that arrives after the fetch succeeded says "not approved".
+- `fetch`'s "already stored" shortcut removes a `tmp/staged-<digest>.ipa` left for that digest.
+- `SignOptions.version` (Core only, no CLI flag): `sign` signs exactly that fetched, approved version instead of the newest
+  approved one (`NOT_APPROVED` when it is not both); nil keeps the old behaviour. The menu's Add app sets it.
 - Menu bar actions: Renew… (All apps or one app, Retry on a failed renewal), Install and Install update, Remove and
   "Lendable: <App>" now run from the panel. Each opens an inline confirm that names the device alias and the app and
   states the effect (slots, App IDs, the keychain prompt); the confirm button is the owner's `--yes`. A running action
@@ -39,6 +60,15 @@ All notable changes to this project are documented here. Format follows
 
 ### Changed
 
+- `fetch` downloads without `.op.lock` and takes it only to record the verified file (and for `--approve`, which holds it
+  throughout), so a long download no longer blocks the lab or another command. Each run keeps a `live.lock` flock in its
+  `tmp/fetch-XXXXXX/` folder; the sweep (now lock-free, in every fetch) removes a folder only when it is older than 60 s by
+  real file time and its lock is free or missing, and removes a `staged-*` file after 24 hours. At commit the manifest is
+  reloaded, so two fetches no longer lose each other's entry, and a version another fetch recorded first is returned as
+  `downloaded:false` with its approval. A busy lock at commit is still `OPERATION_IN_PROGRESS` (never waited on), but the
+  verified file is kept as `tmp/staged-<sha256>.ipa` (0600) for 24 hours and the re-run claims it instead of downloading
+  again (it is hashed again first). CLI flags and the envelope are unchanged. New: `FileLock.tryAcquireExisting`,
+  `FileLock.isLinked`.
 - Menu bar: the Apps card, the ring and the status colour now come from `installs[]` and `slots[]`, not `freeSigned`; the
   expiry is the install's `profileExpires`, so a newer signed build that is not installed no longer moves it. An app with
   only a `freeSigned` record and no usable live read has no row. Free slots with a live read follow what `install` counts (the
