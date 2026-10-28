@@ -123,8 +123,7 @@ public enum StatusCommand {
             let saved = Set(config.devices.keys)
             items = (items + ExpiryItems.installs(projected, devices: saved, now: now))
                 .sorted { ($0.notAfter, $0.name) < ($1.notAfter, $1.name) }
-            let present = projected.installs.filter { $0.present && saved.contains($0.device) }
-                .sorted { ($0.profileExpires, $0.id) < ($1.profileExpires, $1.id) }
+            let present = ExpiryItems.presentInstalls(projected, devices: saved)
             installs = .array(
                 present.map { Self.installRow($0, autoRefresh: config.devices[$0.device]?.autoRefresh ?? false, now: now) })
             for install in present {

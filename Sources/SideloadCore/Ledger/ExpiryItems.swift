@@ -61,7 +61,7 @@ public enum ExpiryItems {
     /// device's records are ignored), at the install's `profileExpires` with the section 18 thresholds of
     /// `FreeInstallExpiry`. Soonest first. `ledger` keeps listing the paid items only.
     public static func installs(_ ledger: Ledger, devices: Set<String>, now: Date) -> [ExpiryItem] {
-        ledger.installs.filter { $0.present && devices.contains($0.device) }
+        presentInstalls(ledger, devices: devices)
             .map { install in
                 let (days, level) = FreeInstallExpiry.assess(expires: install.profileExpires, now: now)
                 return ExpiryItem(
@@ -69,6 +69,12 @@ public enum ExpiryItems {
                     daysLeft: days, level: level)
             }
             .sorted { ($0.notAfter, $0.name) < ($1.notAfter, $1.name) }
+    }
+
+    /// The free installs `status` shows: recorded present, on a device still saved in config. Soonest expiry first.
+    static func presentInstalls(_ ledger: Ledger, devices: Set<String>) -> [LedgerInstall] {
+        ledger.installs.filter { $0.present && devices.contains($0.device) }
+            .sorted { ($0.profileExpires, $0.id) < ($1.profileExpires, $1.id) }
     }
 }
 
