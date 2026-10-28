@@ -61,6 +61,7 @@ public enum MenuActionRunner {
     ) async -> Envelope {
         var results: [JSONValue] = []
         var errors: [Envelope.Entry] = []
+        var warnings: [JSONValue] = []
         var stop: String?
         for app in apps {
             if stop == nil, isCancelled() {
@@ -88,6 +89,7 @@ public enum MenuActionRunner {
                 let code = envelope.errors.first?.code ?? "INTERNAL_ERROR"
                 results.append(["app": .string(app), "status": "failed", "code": .string(code)])
             }
+            if case .array(let more)? = envelope.data["warnings"] { warnings += more }
             for error in envelope.errors {
                 let named = error.message.hasPrefix("\(app): ") ? error.message : "\(app): \(error.message)"
                 errors.append(.init(code: error.code, message: named, fix: error.fix))
@@ -98,6 +100,6 @@ public enum MenuActionRunner {
         }
         return Envelope(
             ok: errors.isEmpty, command: "refresh",
-            data: ["device": .string(device), "results": .array(results)], errors: errors)
+            data: ["device": .string(device), "results": .array(results), "warnings": .array(warnings)], errors: errors)
     }
 }

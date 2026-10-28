@@ -79,6 +79,29 @@ struct MenuActionOutcomeTests {
         #expect(outcome.issues.isEmpty)
     }
 
+    @Test("Renewed X of Y counts the apps a fatal stop skipped, not the ones that were simply not due")
+    func counts() {
+        let envelope = refresh(
+            [
+                result("apollo", "renewed", before: 1, after: 7), result("filler", "failed", code: "FREE_CERT_CHANGED"),
+                result("stremio-ios", "skipped", code: "FREE_CERT_CHANGED"), result("stremio-tvos", "skipped", code: "NOT_DUE"),
+            ], errors: [entry("FREE_CERT_CHANGED", "filler: The identities changed.")])
+        let outcome = MenuActionOutcome(action: renewAll, envelope: envelope, cancelled: false)
+        #expect(outcome.headline == "Renewed 1 of 3 on iphone")
+    }
+
+    @Test("refresh warnings show as notes, except the lent notice the line already says")
+    func warningNotes() {
+        let warnings = JSONValue.array([
+            ["code": "REFRESH_STATE_NOT_RECORDED", "message": "The refresh fields of apollo could not be written."],
+            ["code": "APP_LENT", "message": "apollo is lent."],
+        ])
+        var envelope = refresh([result("apollo", "renewed", before: 1, after: 7)])
+        envelope = Envelope(ok: true, command: "refresh", data: envelope.data.merging(["warnings": warnings]) { $1 })
+        let outcome = MenuActionOutcome(action: renewAll, envelope: envelope, cancelled: false)
+        #expect(outcome.notes == ["The refresh fields of apollo could not be written."])
+    }
+
     @Test("a top-level error with no results is an issue, with a Retry for the whole action")
     func topLevel() {
         let envelope = Envelope.fail(

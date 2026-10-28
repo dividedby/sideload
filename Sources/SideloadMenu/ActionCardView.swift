@@ -62,7 +62,7 @@ private struct ResultView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
-                Image(systemName: symbol).foregroundStyle(tone.color).frame(width: 14)
+                Image(systemName: symbol).foregroundStyle(tone.resultColor).frame(width: 14)
                 Text(outcome.headline).fontWeight(.semibold).fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 Button("Dismiss") { model.dismiss() }.buttonStyle(.link)
@@ -107,7 +107,7 @@ private struct LineView: View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline) {
                 if !line.name.isEmpty { Text(line.name) }
-                Text(line.text).foregroundStyle(line.tone.color)
+                Text(line.text).foregroundStyle(line.tone.resultColor)
                 Spacer()
                 if let retry = line.retry {
                     let availability = model.retryAvailability(retry)
@@ -121,6 +121,11 @@ private struct LineView: View {
             if let issue = line.issue { IssueText(issue: issue) }
         }
     }
+}
+
+extension MenuTone {
+    /// Colour marks only what is due or failed: a success in a result card is plain text.
+    var resultColor: Color { self == .good ? MenuTone.plain.color : color }
 }
 
 /// Code, message and fix, small.

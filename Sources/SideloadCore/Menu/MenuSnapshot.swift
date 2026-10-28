@@ -333,6 +333,9 @@ public struct MenuDeviceCard: Sendable, Equatable, Identifiable {
     /// What the device's app list said, while the device is visible.
     public var liveRead: MenuLiveRead
 
+    /// The row of one app, by its app key.
+    public func row(for app: String) -> MenuAppRow? { apps.first { $0.app == app } }
+
     /// The status dot is filled when the device is visible, hollow otherwise.
     public var dotFilled: Bool { presence.isVisible }
 }

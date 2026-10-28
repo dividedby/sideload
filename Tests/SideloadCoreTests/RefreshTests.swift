@@ -451,6 +451,43 @@ struct RefreshTests {
         }
     }
 
+    @Test("a permanent failure that lands while the task is cancelled keeps its own result: counted, backed off, suspended")
+    func cancelledButPermanent() async throws {
+        try await withRefreshWorld(profileDays: 4, ledger: { seed(&$0, .stremioIOS, days: 1) }) { w in
+            let log = CallLog([])
+            let steps = scripted(
+                log,
+                provision: { _ in
+                    withUnsafeCurrentTask { $0?.cancel() }
+                    return failEnvelope("provision", "PROFILE_INVALID")
+                })
+            let out = await refresh(w, steps)
+            #expect(!out.ok)
+            #expect(result(out, .stremioIOS)?["code"] == "PROFILE_INVALID")
+            let fields = try refreshFields(w, .stremioIOS)
+            #expect(fields.lastResult == "failed" && fields.lastCode == "PROFILE_INVALID")
+            #expect(fields.consecutiveFailures == 1 && fields.suspended && fields.attemptsByDay == [today: 1])
+        }
+    }
+
+    @Test("INTERRUPTED from a step while the task is cancelled is the cancellation's own: given back, nothing recorded")
+    func cancelledInterrupted() async throws {
+        try await withRefreshWorld(profileDays: 4, ledger: { seed(&$0, .stremioIOS, days: 1) }) { w in
+            let log = CallLog([])
+            let steps = scripted(
+                log,
+                provision: { _ in
+                    withUnsafeCurrentTask { $0?.cancel() }
+                    return failEnvelope("provision", "INTERRUPTED")
+                })
+            let out = await refresh(w, steps)
+            #expect(result(out, .stremioIOS)?["code"] == "INTERRUPTED")
+            let fields = try refreshFields(w, .stremioIOS)
+            #expect(fields.lastResult == "skipped" && fields.lastCode == "INTERRUPTED" && fields.consecutiveFailures == 0)
+            #expect(fields.attemptsByDay.isEmpty && !fields.suspended)
+        }
+    }
+
     @Test("the real steps take .op.lock themselves: with another run holding it, nothing runs and the lock is not waited on")
     func busyRealLock() async throws {
         try await withRefreshWorld(profileDays: 2, ledger: { seed(&$0, .stremioIOS, days: 2) }) { w in

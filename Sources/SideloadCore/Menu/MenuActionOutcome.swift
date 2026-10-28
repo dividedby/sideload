@@ -94,7 +94,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
     private mutating func readRenew(_ app: String?, alias: String, envelope: Envelope, action: MenuAction) {
         let results = Self.results(envelope)
         let errors = envelope.errors
-        let renewedCount = results.filter { ["renewed", "renewed-not-installed"].contains($0.status) }.count
+        let renewedCount = results.filter { $0.status == .renewed || $0.status == .renewedNotInstalled }.count
         if renewedCount == 0, !errors.isEmpty, errors.allSatisfy({ $0.code == "OPERATION_IN_PROGRESS" }) {
             becomeBusy(action)
             return
@@ -104,13 +104,13 @@ public struct MenuActionOutcome: Sendable, Equatable {
             let key = result.app
             let name = MenuFormat.appName(key)
             switch result.status {
-            case "renewed":
+            case .renewed:
                 lines.append(line(key, name, .good, "Renewed" + Self.span(result)))
-            case "renewed-not-installed":
+            case .renewedNotInstalled:
                 lines.append(line(key, name, .good, "Renewed, goes back on return"))
-            case "skipped":
+            case .skipped:
                 lines.append(line(key, name, .neutral, Self.skipText(result.code)))
-            default:
+            case .failed:
                 // A failed app takes its message from the error entry that names it ("<app>: ...").
                 var issue: MenuIssue?
                 if let index = errors.indices.first(where: { !claimed.contains($0) && errors[$0].message.hasPrefix("\(key): ") }) {
@@ -138,7 +138,9 @@ public struct MenuActionOutcome: Sendable, Equatable {
         }
         if results.isEmpty, !envelope.ok { lines.append(line("", "", .neutral, "Not run", retry: action)) }
 
-        let failed = results.filter { $0.status == "failed" }.count
+        // Apps that were meant to run and did not (failed, or skipped by a stop) count; policy skips ("not due") do not.
+        let attempted = results.filter { $0.status == .failed || ($0.status == .skipped && !Self.isPolicySkip($0.code)) }.count
+        notes += Self.warningNotes(envelope, excluding: ["APP_LENT"])
         if envelope.ok {
             kind = .done
             let target = app.map(MenuFormat.appName) ?? "all apps"
@@ -150,14 +152,14 @@ public struct MenuActionOutcome: Sendable, Equatable {
             kind = .failed
             headline =
                 renewedCount > 0
-                ? "Renewed \(renewedCount) of \(renewedCount + max(failed, 1)) on \(alias)"
+                ? "Renewed \(renewedCount) of \(renewedCount + max(attempted, 1)) on \(alias)"
                 : "Renewal failed on \(alias)"
         }
     }
 
     private struct RefreshResult {
         var app: String
-        var status: String
+        var status: RefreshResultStatus
         var code: String?
         var before: Int?
         var after: Int?
@@ -167,7 +169,9 @@ public struct MenuActionOutcome: Sendable, Equatable {
         guard case .array(let items)? = envelope.data["results"] else { return [] }
         var results: [RefreshResult] = []
         for case .object(let item) in items {
-            guard case .string(let app)? = item["app"], case .string(let status)? = item["status"] else { continue }
+            guard case .string(let app)? = item["app"], case .string(let raw)? = item["status"],
+                let status = RefreshResultStatus(rawValue: raw)
+            else { continue }
             var result = RefreshResult(app: app, status: status)
             if case .string(let code)? = item["code"] { result.code = code }
             if case .number(let n)? = item["daysLeftBefore"] { result.before = Int(n) }
@@ -181,6 +185,11 @@ public struct MenuActionOutcome: Sendable, Equatable {
     private static func span(_ result: RefreshResult) -> String {
         guard let before = result.before, let after = result.after else { return "" }
         return " · \(before) d → \(after) d"
+    }
+
+    /// A skip that is the plan's ("not due", "not on the device"), not a stop.
+    private static func isPolicySkip(_ code: String?) -> Bool {
+        ["NOT_DUE", "NOT_PRESENT", "NOT_INSTALLED", "NOT_SIGNED"].contains(code)
     }
 
     private static func skipText(_ code: String?) -> String {
@@ -212,12 +221,14 @@ public struct MenuActionOutcome: Sendable, Equatable {
         lines = [line(app, app.isEmpty ? "" : MenuFormat.appName(app), .failed, "Not completed", retry: action)]
     }
 
-    private static func warningNotes(_ envelope: Envelope) -> [String] {
+    /// The messages of the command's `warnings[]` (REFRESH_STATE_NOT_RECORDED, LAST_FREE_APP_REMOVED, ...).
+    private static func warningNotes(_ envelope: Envelope, excluding skipped: Set<String> = []) -> [String] {
         guard case .array(let warnings)? = envelope.data["warnings"] else { return [] }
         var notes: [String] = []
         for case .object(let warning) in warnings {
             guard case .string(let message)? = warning["message"] else { continue }
-            notes.append(MenuIssue(code: "", message: message).message)
+            if case .string(let code)? = warning["code"], skipped.contains(code) { continue }
+            notes.append(Redactor.redactPatterns(message))
         }
         return notes
     }

@@ -116,14 +116,14 @@ final class MenuModel {
             return
         }
         // Only what the owner saw may run: the confirm is worked out again from the panel as it is now.
-        let now = services.clock.now()
-        guard let prompt = MenuActions.prompt(for: action, in: snapshot, now: now) else {
-            let reason = MenuActions.availability(action, in: snapshot, now: now).reason ?? "It is no longer available."
-            actionState = .finished(.notRun(reason))
+        let prompt: MenuPrompt
+        switch MenuActions.reconfirm(action, shown: shown, in: snapshot, now: services.clock.now()) {
+        case .run(let same): prompt = same
+        case .show(let changed):
+            actionState = .confirming(action, changed)
             return
-        }
-        guard prompt == shown else {
-            actionState = .confirming(action, prompt)
+        case .blocked(let reason):
+            actionState = .finished(.notRun(reason))
             return
         }
         // A load in flight must not write over the action's state or store a read cut short by it.
@@ -179,7 +179,7 @@ final class MenuModel {
     }
 
     func availability(_ action: MenuAction, in snapshot: MenuSnapshot) -> MenuAvailability {
-        if !controlsEnabled { return .disabled("Another action is in progress") }
+        if !controlsEnabled { return .disabled(MenuActions.controlsBusy) }
         return MenuActions.availability(action, in: snapshot, now: services.clock.now())
     }
 
@@ -189,19 +189,10 @@ final class MenuModel {
         return availability(action, in: snapshot)
     }
 
-    /// Cancels a running action and waits up to `grace` for it to wind down.
-    func cancelAndWait(grace: Duration) async {
-        cancelAction()
-        let deadline = ContinuousClock.now + grace
-        while actionBusy, ContinuousClock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-    }
-
     func offers(for row: MenuAppRow, on card: MenuDeviceCard, in snapshot: MenuSnapshot) -> [MenuOffer] {
         MenuActions.rowOffers(row, card: card, snapshot: snapshot, now: services.clock.now()).map { offer in
             var offer = offer
-            if !controlsEnabled { offer.availability = .disabled("Another action is in progress") }
+            if !controlsEnabled { offer.availability = .disabled(MenuActions.controlsBusy) }
             return offer
         }
     }

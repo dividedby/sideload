@@ -152,7 +152,8 @@ struct MenuPresenceMatrixTests {
                 let label = "\(ledger) / \(device)"
                 #expect((snapshot.icon.remaining != nil) == inRing, "\(label)")
                 #expect(snapshot.devices[0].renew.items.count == (inRing ? 2 : 1), "\(label)")
-                #expect(snapshot.devices[0].renew.items.first?.detail == (inRing ? "1" : "0"), "\(label)")
+                // "All apps N" counts the apps `refresh` would renew, which is not the same set as the rows.
+                #expect(snapshot.devices[0].renew.items.first?.detail == "\(snapshot.devices[0].refreshSet.count)", "\(label)")
             }
         }
     }

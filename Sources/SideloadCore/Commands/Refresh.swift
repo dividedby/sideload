@@ -107,11 +107,14 @@ private enum StepState: String {
     case done, skipped, failed
 }
 
+/// A `results[].status` of `refresh`; the menu reads the same values.
+enum RefreshResultStatus: String {
+    case renewed, renewedNotInstalled = "renewed-not-installed", skipped, failed
+}
+
 /// What one app ended as. `failure` is set exactly when `status` is `failed`.
 private struct AppResult {
-    enum Status: String {
-        case renewed, renewedNotInstalled = "renewed-not-installed", skipped, failed
-    }
+    typealias Status = RefreshResultStatus
 
     let app: ProvisionApp
     var status: Status
@@ -417,7 +420,7 @@ private struct RefreshRun {
         if let failure {
             result.code = failure.code
             result.failure = failure.naming(app)
-            if Task.isCancelled {
+            if Task.isCancelled, RefreshPolicy.isCancellation(failure.code) {
                 // The menu's Cancel (the CLI is stopped by signals instead): a step that died with the task is not a failure
                 // of the app, so it is neither counted nor backed off.
                 result.code = "INTERRUPTED"

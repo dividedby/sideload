@@ -16,12 +16,12 @@ All notable changes to this project are documented here. Format follows
   app's Renew; Remove needs an installed row; the lendable setting is off while the device has a lent or pending row.
   Quitting with an action running cancels it, then kills its children. New: `MenuActions`, `MenuActionOutcome`,
   `MenuActionRunner`, `MenuActionState`, `MenuAppsCache.invalidate`, `AppsRead.shows`, `AppPresence.isLive`; the snapshot
-  carries the facts the rules need. "All apps" lists the apps `refresh` would select and is off unless all
-  of them are available; it then runs one `refresh --app` per listed app (stopping on a fatal error or a busy lock), so it
-  cannot touch an app the confirm did not list, and the confirm click runs only the confirm that was shown (a changed
+  carries the facts the rules need. "All apps" lists the available apps `refresh` would select, names each one it
+  leaves out and why, and is off only when none is available; it runs one `refresh --app` per listed app (stopping on a fatal
+  error or a busy lock), so it cannot touch an app the confirm did not list, and the confirm click runs only the confirm that was shown (a changed
   one is shown again). The menu icon is `renewing` while a Renew from the menu runs.
 - `RefreshPolicy.Result.cancelled`: when the menu's Cancel stops a `refresh` run (the task is cancelled and a step
-  fails), the app's result is `INTERRUPTED`, the attempt is given back and no failure, backoff or suspension is recorded
+  fails with a code the cancellation can explain), the app's result is `INTERRUPTED`, the attempt is given back and no failure, backoff or suspension is recorded
   (`lastResult: skipped`, `lastCode: INTERRUPTED`). The CLI is unchanged: signals still stop its process.
 - Menu bar: the Apps card checks each visible device live. After `devicectl list devices`, the app runs one read-only
   `device info apps` per visible saved device (15 s timeout, one device after the other; no lock, no profile read, nothing

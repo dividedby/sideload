@@ -36,6 +36,13 @@ enum RefreshPolicy {
     /// Provision and sign do not need the device, so they still run; the install is skipped for the rest of the run.
     static let deviceUnavailableCodes: Set<String> = ["DEVICE_LOCKED", "DEVICE_NOT_CONNECTED", "DEVICE_NOT_PAIRED"]
 
+    /// Whether a step's failure can be the cancellation's own doing: the killed child surfaces as some ordinary step code, or
+    /// as `INTERRUPTED`. A code that names a definite verdict on the app or the run (a permanent or a fatal one) is not: it
+    /// landed at the same moment and keeps its own result, counting, backoff and suspension.
+    static func isCancellation(_ code: String) -> Bool {
+        code == "INTERRUPTED" || !(permanentCodes.contains(code) || isFatal(code))
+    }
+
     static func isFatal(_ code: String) -> Bool { fatalCodes.contains(code) || code.hasPrefix("FREE_IDENTITY_") }
 
     // MARK: options

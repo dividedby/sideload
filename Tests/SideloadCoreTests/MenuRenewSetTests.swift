@@ -19,8 +19,11 @@ private struct Fixture {
     var device: [String]?
     /// The apps `refresh` is expected to touch.
     var expected: [String]
-    /// What "All apps" must be.
+    /// What "All apps" must be: enabled when at least one app in the set is available.
     var all: MenuAvailability
+    /// The apps the confirm runs (default: `expected`) and the "Not included" lines for the others.
+    var listed: [String]?
+    var excluded: [String] = []
     /// The panel holds a read taken before the ledger last learned about the app (a lab `slot return` inside the cache
     /// window): it shows the app absent, while `refresh`'s own fresh snapshot (`device`) shows it.
     var staleRead = false
@@ -46,7 +49,7 @@ private func fixtures() -> [Fixture] {
     list.append(
         Fixture(
             name: "offline, lent due and installed due", ledger: offline, device: nil, expected: ["stremio-ios", "apollo"],
-            all: .disabled("Connect iphone over Wi-Fi or USB")))
+            all: .enabled, listed: ["apollo"], excluded: ["Not included: Stremio (Connect iphone over Wi-Fi or USB)"]))
 
     // Hand-installed (no install record) with a signed copy that is not due: refresh reinstalls it to record it.
     list.append(
@@ -147,7 +150,7 @@ struct MenuRenewSetTests {
         }
     }
 
-    @Test("All apps is enabled only when every app in the set is, with the first blocked app's reason")
+    @Test("All apps is enabled when at least one app in the set is available, else it gives the first blocked app's reason")
     func availability() {
         for fixture in fixtures() {
             let result = MenuActions.availability(renewAll, in: snapshot(fixture), now: testNow)
@@ -155,26 +158,34 @@ struct MenuRenewSetTests {
         }
     }
 
-    @Test("the confirm lists every app the run touches and asks to keep the device connected when any is installed")
+    @Test("the confirm lists the available apps and names each one left out; the run list is exactly the listed apps")
     func confirmLists() throws {
         for fixture in fixtures() where fixture.all == .enabled {
-            let prompt = try #require(MenuActions.prompt(for: renewAll, in: snapshot(fixture), now: testNow), "\(fixture.name)")
-            let listed = prompt.lines.dropFirst().prefix { !$0.hasPrefix("Portal:") }
-            let names = listed.map { $0.split(separator: ":").first.map(String.init) ?? $0 }
-            #expect(names == fixture.expected.map(MenuActions.displayName), "\(fixture.name): \(prompt.lines)")
-            let installs = fixture.expected.contains { !($0 == "apollo" && fixture.name.hasPrefix("lent")) }
+            let snapshot = snapshot(fixture)
+            let prompt = try #require(MenuActions.prompt(for: renewAll, in: snapshot, now: testNow), "\(fixture.name)")
+            let listed = fixture.listed ?? fixture.expected
+            let body = prompt.lines.dropFirst().prefix { !$0.hasPrefix("Portal:") }
+            let names = body.filter { !$0.hasPrefix("Not included:") }.map { $0.split(separator: ":").first.map(String.init) ?? $0 }
+            #expect(names == listed.map(MenuActions.displayName), "\(fixture.name): \(prompt.lines)")
+            #expect(body.filter { $0.hasPrefix("Not included:") } == fixture.excluded, "\(fixture.name)")
+            #expect(prompt.apps == listed, "\(fixture.name)")
+            let installs = snapshot.devices[0].refreshSet.contains { listed.contains($0.app) && !$0.lent }
             #expect(prompt.lines.contains("Keep the device unlocked and connected") == installs, "\(fixture.name)")
         }
     }
 
-    @Test("the reviewer's scenario: offline, a lent app due and an installed app due: All is off and names the connection")
+    @Test("offline with a lent app due and an installed app due: All runs the lent app and says why it leaves the other out")
     func offlineMix() throws {
         let fixture = fixtures()[1]
         let snapshot = snapshot(fixture)
         #expect(MenuActions.availability(.renew(device: "iphone", app: "stremio-ios"), in: snapshot, now: testNow) == .disabled("Connect iphone over Wi-Fi or USB"))
         #expect(MenuActions.availability(.renew(device: "iphone", app: "apollo"), in: snapshot, now: testNow) == .enabled)
-        #expect(MenuActions.availability(renewAll, in: snapshot, now: testNow) == .disabled("Connect iphone over Wi-Fi or USB"))
-        #expect(MenuActions.prompt(for: renewAll, in: snapshot, now: testNow) == nil)
+        #expect(MenuActions.availability(renewAll, in: snapshot, now: testNow) == .enabled)
+        let prompt = try #require(MenuActions.prompt(for: renewAll, in: snapshot, now: testNow))
+        #expect(prompt.apps == ["apollo"])
+        #expect(prompt.lines.contains("Apollo: re-signed only, not installed (lent to the lab)"))
+        #expect(prompt.lines.contains("Not included: Stremio (Connect iphone over Wi-Fi or USB)"))
+        #expect(!prompt.lines.contains("Keep the device unlocked and connected"))
     }
 
     @Test("a hand-installed app with a fresh signed copy is renewable on its own too, and is listed by All")

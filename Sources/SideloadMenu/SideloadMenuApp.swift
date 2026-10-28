@@ -50,8 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Cancel the action first (the runner kills its child on cancel), give it a moment, then kill what is
                 // left and exit.
                 Task { @MainActor in
-                    await Self.model?.cancelAndWait(grace: Self.signalGrace)
-                    LiveChildren.shared.killAll(SIGKILL, closing: true)
+                    await Self.stopRunningAction(grace: Self.signalGrace)
                     exit(128 + signo)
                 }
             }
@@ -63,10 +62,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model = Self.model, model.actionBusy else { return .terminateNow }
         Task {
-            await model.cancelAndWait(grace: Self.quitGrace)
-            LiveChildren.shared.killAll(SIGKILL, closing: true)
+            await Self.stopRunningAction(grace: Self.quitGrace)
             NSApplication.shared.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+
+    private static func stopRunningAction(grace: Duration) async {
+        await MenuShutdown.cancelWaitKill(
+            grace: grace, cancel: { model?.cancelAction() }, isBusy: { model?.actionBusy ?? false })
     }
 }

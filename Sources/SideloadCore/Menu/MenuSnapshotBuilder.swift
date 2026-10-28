@@ -239,6 +239,7 @@ public enum MenuSnapshotBuilder {
             : 0
         let reservedRows = (0..<reserved).map { n in reserved == 1 ? "Reserved slot" : "Reserved slot (\(n + 1))" }
 
+        let renewSet = refreshSet(alias: alias, saved: saved, projected: projected, prefix: prefix, read: read, now: now)
         let card = MenuDeviceCard(
             alias: alias, presence: presence, connectionLabel: MenuFormat.connection(presence), freeSlots: free,
             slotsLabel: known ? MenuFormat.slots(free) : "slots unknown",
@@ -246,9 +247,9 @@ public enum MenuSnapshotBuilder {
             appsNote: appsNote(failedCode: failedCode, rows: rows, readOverRows: read != nil, presence: presence),
             apps: rows, reservedSlots: reservedRows,
             renew: MenuRenewMenu(
-                items: [MenuRenewMenu.Item(title: "All apps", detail: "\(renewItems.count)", due: false, app: nil)] + renewItems),
+                items: [MenuRenewMenu.Item(title: "All apps", detail: "\(renewSet.count)", due: false, app: nil)] + renewItems),
             platform: saved.platform, slotsKnown: known, lendableApp: saved.lendableApp,
-            refreshSet: refreshSet(alias: alias, saved: saved, projected: projected, prefix: prefix, read: read, now: now),
+            refreshSet: renewSet,
             hasPending: rows.contains { $0.presence == .pending }, liveRead: liveRead(presence: presence, probe: probe))
         return DeviceBuild(card: card, expiring: expiring, renewFailed: renewFailed)
     }

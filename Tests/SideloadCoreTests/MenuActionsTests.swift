@@ -84,7 +84,7 @@ struct MenuActionAvailabilityTests {
         #expect(availability(renewAll, far) == .disabled("renewable at 6 d left"))
     }
 
-    @Test("All apps is enabled only when at least one app is")
+    @Test("All apps is enabled when at least one app in the set is available, and says why when none is")
     func allApps() {
         let near = menuLedger([("iphone", "apollo", 7), ("iphone", "stremio-ios", 2)])
         let snapshot = menuBuild(ledger: near, apps: read([apolloBid, stremioBid]))
@@ -137,7 +137,8 @@ struct MenuActionAvailabilityTests {
 
         var unsigned = ledger
         unsigned.freeSigned = []
-        #expect(availability(install, menuBuild(ledger: unsigned, apps: read([]))).reason?.contains("sideload provision") == true)
+        let unsignedReason = availability(install, menuBuild(ledger: unsigned, apps: read([]))).reason
+        #expect(unsignedReason == "Not signed yet: the owner runs `sideload sign --app apollo --device iphone --yes` first")
 
         // An installed app only offers the slot-neutral update, and only when a newer build is signed.
         let installed = menuBuild(ledger: ledger, apps: read([apolloBid]))
@@ -244,12 +245,54 @@ struct MenuActionAvailabilityTests {
         let card = snapshot.devices[0]
         let labels = MenuActions.rowOffers(card.apps[0], card: card, snapshot: snapshot, now: testNow).map(\.label)
         #expect(labels == ["Retry", "Install update", "Remove"])
+        #expect(MenuActions.rowOffers(card.apps[0], card: card, snapshot: snapshot, now: testNow).map(\.kind) == [.retry, .installUpdate, .remove])
         let remove = MenuActions.rowOffers(card.apps[0], card: card, snapshot: snapshot, now: testNow).last
         #expect(remove?.destructive == true && remove?.availability == .enabled)
 
         let gone = menuBuild(ledger: menuLedger([("iphone", "apollo", 5)]), apps: read([]))
         let goneCard = gone.devices[0]
         #expect(MenuActions.rowOffers(goneCard.apps[0], card: goneCard, snapshot: gone, now: testNow).map(\.label) == ["Install"])
+    }
+}
+
+@Suite("menu actions: reconfirm")
+struct MenuReconfirmTests {
+    private func snapshot(appIds: [LedgerFreeAppId] = [], suspended: Bool = false) -> MenuSnapshot {
+        var ledger = menuLedger([("iphone", "apollo", 3)])
+        ledger.freeAppIds = appIds
+        if suspended { ledger.freeSuspended = LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow) }
+        return menuBuild(ledger: ledger, apps: read([apolloBid]))
+    }
+
+    @Test("the same confirm runs; a changed line shows the new confirm; an action no longer available is blocked with its reason")
+    func outcomes() throws {
+        let before = snapshot()
+        let shown = try #require(MenuActions.prompt(for: renewApollo, in: before, now: testNow))
+        #expect(MenuActions.reconfirm(renewApollo, shown: shown, in: snapshot(), now: testNow) == .run(shown))
+
+        let spent = snapshot(appIds: [LedgerFreeAppId(bundleId: apolloBid, epochStart: daysFromNow(-1))])
+        let changed = try #require(MenuActions.prompt(for: renewApollo, in: spent, now: testNow))
+        #expect(changed != shown)
+        #expect(MenuActions.reconfirm(renewApollo, shown: shown, in: spent, now: testNow) == .show(changed))
+
+        #expect(
+            MenuActions.reconfirm(renewApollo, shown: shown, in: snapshot(suspended: true), now: testNow)
+                == .blocked("Free certificate changed"))
+    }
+
+    @Test("a change in the list of apps alone is a changed confirm")
+    func appList() throws {
+        var ledger = menuLedger([("iphone", "apollo", 3), ("iphone", "stremio-ios", 2)])
+        ledger.freeSigned = []
+        let both = menuBuild(ledger: ledger, apps: read([apolloBid, stremioBid]))
+        let shown = try #require(MenuActions.prompt(for: renewAll, in: both, now: testNow))
+        #expect(shown.apps == ["stremio-ios", "apollo"])
+        let one = menuBuild(ledger: ledger, apps: read([apolloBid]))
+        guard case .show(let now) = MenuActions.reconfirm(renewAll, shown: shown, in: one, now: testNow) else {
+            Issue.record("expected a changed confirm")
+            return
+        }
+        #expect(now.apps == ["apollo"])
     }
 }
 

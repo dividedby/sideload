@@ -137,10 +137,10 @@ struct AppRowView: View {
                 Text(app.daysLabel)
                     .foregroundStyle(app.textTone.color)
                     .fontWeight(app.showsBar && app.level != .ok ? .semibold : .regular)
-                let others = offers.filter { $0.label != "Retry" }
+                let others = offers.filter { $0.kind != .retry }
                 if !others.isEmpty {
                     Menu {
-                        ForEach(others, id: \.label) { offer in
+                        ForEach(others, id: \.action) { offer in
                             Button(offer.label, role: offer.destructive ? .destructive : nil) { model.request(offer.action) }
                                 .disabled(!offer.availability.isEnabled)
                                 .help(offer.availability.reason ?? "")
@@ -161,7 +161,7 @@ struct AppRowView: View {
                 HStack {
                     Text(failure).font(.callout).foregroundStyle(MenuTone.failed.color)
                     Spacer()
-                    if let retry = offers.first(where: { $0.label == "Retry" }) {
+                    if let retry = offers.first(where: { $0.kind == .retry }) {
                         Button("Retry") { model.request(retry.action) }
                             .buttonStyle(.link)
                             .disabled(!retry.availability.isEnabled)
@@ -173,6 +173,8 @@ struct AppRowView: View {
                 Text(exception).font(.callout).foregroundStyle(.secondary)
             }
         }
+        // Grouped, not combined: the row's buttons and menu stay reachable on their own.
+        .accessibilityElement(children: .contain)
     }
 }
 
