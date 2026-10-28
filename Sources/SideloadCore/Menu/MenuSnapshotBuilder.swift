@@ -191,7 +191,10 @@ public enum MenuSnapshotBuilder {
         if let read {
             for signed in ledger.freeSigned where signed.device == alias && read.snapshot.ids.contains(signed.bundleId) {
                 if candidates.contains(where: { $0.app == signed.app || $0.bundleId == signed.bundleId }) { continue }
-                candidates.append(Candidate(app: signed.app, bundleId: signed.bundleId, signed: signed))
+                // A slot record (an absent one after `app remove`) is newer than a read taken before it was written.
+                let slot = slots.first { $0.app == signed.app }
+                if let slot, !usable(slot, takenAt: read.takenAt) { continue }
+                candidates.append(Candidate(app: signed.app, bundleId: signed.bundleId, slot: slot, signed: signed))
             }
         }
 
@@ -252,7 +255,7 @@ public enum MenuSnapshotBuilder {
             }
         }
         // A visible device whose list could not be read says so once, for the whole card; its rows show the ledger's record.
-        let appsNote = failedCode.map { code -> String in
+        var appsNote = failedCode.map { code -> String in
             let why =
                 switch code {
                 case "DEVICE_LOCKED": "device locked"
@@ -260,6 +263,11 @@ public enum MenuSnapshotBuilder {
                 default: "couldn't read"
                 }
             return "Couldn't check apps (\(why)) · showing last known"
+        }
+        // The same for a read the ledger has overtaken (ignored) and for a device list that failed.
+        let overtaken = read.map { read in slots.contains { !usable($0, takenAt: read.takenAt) } } ?? false
+        if appsNote == nil, !rows.isEmpty, overtaken || presence == .unknown {
+            appsNote = "Couldn't check apps · showing last known"
         }
 
         let card = MenuDeviceCard(

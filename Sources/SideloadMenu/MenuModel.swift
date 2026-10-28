@@ -25,6 +25,8 @@ final class MenuModel {
     /// Bumped by every `runDoctor` and `cancelDoctor`: only the latest run may write its result.
     private var doctorGeneration = 0
     private var lastLoadFinished: Date?
+    /// "Check status now" arrived while a load was running.
+    private var pendingForce = false
     private var apps = MenuAppsCache()
 
     /// Panel-open events can arrive in bursts; a load that finished this recently is not repeated.
@@ -39,7 +41,11 @@ final class MenuModel {
 
     /// `force` is the explicit "Check status now"; a panel-open event passes false.
     func reload(force: Bool = false) {
-        if loadTask != nil { return }
+        if loadTask != nil {
+            // A running load may hold a read up to 5 minutes old: the owner's explicit check runs once it ends.
+            if force { pendingForce = true }
+            return
+        }
         if !force, let last = lastLoadFinished, services.clock.now().timeIntervalSince(last) < Self.openDebounce { return }
         loadTask = Task { [services] in
             let local = await Task.detached { MenuLoader.loadLocal(services) }.value
@@ -65,6 +71,10 @@ final class MenuModel {
             }
             lastLoadFinished = services.clock.now()
             loadTask = nil
+            if pendingForce {
+                pendingForce = false
+                reload(force: true)
+            }
         }
     }
 

@@ -215,6 +215,40 @@ struct MenuModelReadTests {
         #expect(try Data(contentsOf: URL(fileURLWithPath: paths.ledger)) == ledger)
     }
 
+    @Test("Check status now during a running load is not dropped: it runs once that load ends and reads every visible device")
+    func forceDuringLoad() async throws {
+        let w = try await world { _ in .apps([menuBundleId("apollo")]) }
+        defer { try? FileManager.default.removeItem(at: w.dir) }
+        w.model.reload()
+        await settle(w.model)
+        #expect(w.runner.infoApps.count == 2)
+
+        // An open whose `list devices` is slow; the owner presses Check status now meanwhile. The cached reads are fresh,
+        // so the open alone would read nothing.
+        w.clock.advance(10)
+        w.runner.holdList(true)
+        let before = w.runner.lists
+        w.model.reload()
+        while w.runner.lists == before { try await Task.sleep(for: .milliseconds(5)) }
+        w.model.reload(force: true)
+        w.runner.holdList(false)
+        var waited = 0
+        while w.model.loadTask != nil || w.runner.lists < before + 2, waited < 1_000 {
+            await w.model.loadTask?.value
+            try await Task.sleep(for: .milliseconds(5))
+            waited += 1
+        }
+        #expect(w.runner.lists == before + 2)
+        #expect(w.runner.infoApps.count == 4)
+        #expect(w.runner.maxInFlight == 1)
+
+        // Not remembered beyond that one run.
+        w.clock.advance(10)
+        w.model.reload()
+        await settle(w.model)
+        #expect(w.runner.infoApps.count == 4)
+    }
+
     @Test("a reload paints what the last load learned at once: no checking rows, and nothing changes when the answers agree")
     func firstPaintKeepsWhatIsKnown() async throws {
         let w = try await world { _ in .apps([menuBundleId("apollo")]) }

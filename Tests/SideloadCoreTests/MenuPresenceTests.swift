@@ -207,6 +207,39 @@ struct MenuPresenceMatrixTests {
         #expect(older.devices[0].apps.map(\.presence) == [.unconfirmed])
     }
 
+    @Test("app remove then an open inside 5 minutes: a cached read from before it cannot bring a removed app back")
+    func staleReadCannotRestoreARemovedApp() {
+        var ledger = LedgerCase.removed.ledger
+        ledger.slots[0].seenAt = testNow
+        let before = DeviceAppsProbe.read(menuSnapshot([apollo]), takenAt: testNow.addingTimeInterval(-120))
+        let stale = menuBuild(ledger: ledger, apps: ["iphone": before])
+        #expect(stale.devices[0].apps.isEmpty)
+        #expect(stale.icon.remaining == nil)
+        #expect(stale.devices[0].renew.items.map(\.title) == ["All apps"])
+        #expect(stale.devices[0].renew.items.first?.detail == "0")
+        // The card says the read was not used (there are no rows to say it on, so only a card with rows shows the note).
+        let fresh = menuBuild(ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)])
+        #expect(fresh.devices[0].apps.map(\.presence) == [.installed])
+        #expect(fresh.devices[0].appsNote == nil)
+    }
+
+    @Test("a card whose rows show the ledger's record because a read was overtaken, or the device list failed, says so")
+    func lastKnownNote() {
+        let ledger = menuLedger([("iphone", "apollo", 5)])
+        var seen = ledger
+        seen.slots[0].seenAt = testNow
+        let overtaken = menuBuild(
+            ledger: seen, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow.addingTimeInterval(-120))])
+        #expect(overtaken.devices[0].apps.map(\.presence) == [.unconfirmed])
+        #expect(overtaken.devices[0].appsNote == "Couldn't check apps · showing last known")
+        let listFailed = menuBuild(ledger: ledger, probe: .failed)
+        #expect(listFailed.devices[0].appsNote == "Couldn't check apps · showing last known")
+        // Nothing to show, nothing to say; a good read and an offline device keep their own wording.
+        #expect(menuBuild(probe: .failed).devices[0].appsNote == nil)
+        #expect(menuBuild(ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)]).devices[0].appsNote == nil)
+        #expect(menuBuild(ledger: ledger, probe: .listed([menuListed(link: "unavailable")])).devices[0].appsNote == nil)
+    }
+
     @Test("a retired device's records make no row and no ring, even when the device list shows it")
     func retiredDevice() {
         var ledger = menuLedger([("gone", "apollo", 0.5)])
