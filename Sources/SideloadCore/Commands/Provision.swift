@@ -45,6 +45,12 @@ enum ProvisionApp: String, CaseIterable {
         }
     }
 
+    /// `<prefix>.free.<suffix>`, the bundle ID this app has on the free team; nil when the prefix is missing or invalid.
+    func freeBundleId(prefix: String?) -> String? {
+        guard let prefix, CanaryCommand.isValidPrefix(prefix) else { return nil }
+        return prefix + ".free." + suffix
+    }
+
     /// Signed by `provision` (Xcode signs the carrier), never by `sign`.
     var signedByProvision: Bool { self == .filler }
 

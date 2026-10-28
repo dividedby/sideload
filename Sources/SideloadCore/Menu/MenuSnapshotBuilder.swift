@@ -137,9 +137,7 @@ public enum MenuSnapshotBuilder {
 
     /// The record's own ID, else the one the prefix and the app name give.
     private static func bundleId(of app: String, recorded: String?, prefix: String?) -> String? {
-        if let recorded { return recorded }
-        guard let prefix, CanaryCommand.isValidPrefix(prefix), let known = ProvisionApp(rawValue: app) else { return nil }
-        return prefix + ".free." + known.suffix
+        recorded ?? ProvisionApp(rawValue: app)?.freeBundleId(prefix: prefix)
     }
 
     /// Whether a snapshot taken at `takenAt` can say anything about this record: not when the ledger has learned something
@@ -160,43 +158,17 @@ public enum MenuSnapshotBuilder {
 
         // What the device itself said, only while it is visible: a read of a device that has since gone away says nothing.
         let probe = presence.isVisible ? inputs.deviceApps[alias] : nil
-        var read: (snapshot: AppSnapshot, takenAt: Date)?
+        let read = probe?.appsRead
         var failedCode: String?
         var reading = listChecking
         switch probe {
-        case .read(let snapshot, let takenAt)?: read = (snapshot, takenAt)
         case .failed(let code, _)?: failedCode = code
         case .checking?: reading = true
-        case nil: break
+        default: break
         }
 
-        // The rows: what `install` recorded as present (the slot record decides presence, not `freeSigned`, which `sign`
-        // advances before `install`), what is lent or has an operation in flight, and signed apps the device shows that
-        // sideload did not install.
         let slots = projected.slots.filter { $0.device == alias }
-        var candidates: [Candidate] = []
-        for install in ExpiryItems.presentInstalls(projected, devices: [alias]) {
-            candidates.append(
-                Candidate(
-                    app: install.app, bundleId: install.bundleId, install: install,
-                    slot: slots.first { $0.app == install.app }))
-        }
-        for slot in slots where (slot.lentTo != nil || slot.op != nil) && !candidates.contains(where: { $0.app == slot.app }) {
-            let install = projected.installs.first { $0.id == slot.id }
-            candidates.append(
-                Candidate(
-                    app: slot.app, bundleId: bundleId(of: slot.app, recorded: install?.bundleId, prefix: prefix), install: install,
-                    slot: slot))
-        }
-        if let read {
-            for signed in ledger.freeSigned where signed.device == alias && read.snapshot.ids.contains(signed.bundleId) {
-                if candidates.contains(where: { $0.app == signed.app || $0.bundleId == signed.bundleId }) { continue }
-                // A slot record (an absent one after `app remove`) is newer than a read taken before it was written.
-                let slot = slots.first { $0.app == signed.app }
-                if let slot, !usable(slot, takenAt: read.takenAt) { continue }
-                candidates.append(Candidate(app: signed.app, bundleId: signed.bundleId, slot: slot, signed: signed))
-            }
-        }
+        let candidates = gather(alias: alias, ledger: ledger, projected: projected, slots: slots, prefix: prefix, read: read)
 
         var rows: [MenuAppRow] = []
         var expiring: [ExpiryItem] = []
@@ -244,49 +216,83 @@ public enum MenuSnapshotBuilder {
             : 0
         let reservedRows = (0..<reserved).map { n in reserved == 1 ? "Reserved slot" : "Reserved slot (\(n + 1))" }
 
-        var note: String?
-        if case .offline(let lastSeen) = presence {
-            let seen = lastSeen.map { "Seen " + MenuFormat.ago(from: $0, now: now) } ?? "Offline"
-            if !inputs.autoRefreshAvailable {
-                // The card header already says "offline"; the state is shown once. Never seen: no line at all.
-                note = lastSeen == nil ? nil : seen
-            } else {
-                note = seen + " · " + (saved.autoRefresh ? "renews when back on Wi-Fi or USB" : "auto-renew off")
-            }
-        }
-        // A visible device whose list could not be read says so once, for the whole card; its rows show the ledger's record.
-        var appsNote = failedCode.map { code -> String in
-            let why =
-                switch code {
-                case "DEVICE_LOCKED": "device locked"
-                case "TIMEOUT": "timed out"
-                default: "couldn't read"
-                }
-            return "Couldn't check apps (\(why)) · showing last known"
-        }
-        // The same for a read the ledger has overtaken (ignored: a row it was meant to settle shows the record unconfirmed)
-        // and for a device list that failed.
-        let overtaken = read != nil && rows.contains { $0.presence == .unconfirmed }
-        if appsNote == nil, !rows.isEmpty, overtaken || presence == .unknown {
-            appsNote = "Couldn't check apps · showing last known"
-        }
-
         let card = MenuDeviceCard(
             alias: alias, presence: presence, connectionLabel: MenuFormat.connection(presence), freeSlots: free,
-            slotsLabel: known ? MenuFormat.slots(free) : "slots unknown", offlineNote: note, appsNote: appsNote, apps: rows,
-            reservedSlots: reservedRows,
+            slotsLabel: known ? MenuFormat.slots(free) : "slots unknown",
+            offlineNote: offlineNote(presence, saved: saved, autoRefreshAvailable: inputs.autoRefreshAvailable, now: now),
+            appsNote: appsNote(failedCode: failedCode, rows: rows, readOverRows: read != nil, presence: presence),
+            apps: rows, reservedSlots: reservedRows,
             renew: MenuRenewMenu(
                 enabled: false, tooltip: renewDisabledTooltip,
                 items: [MenuRenewMenu.Item(title: "All apps", detail: "\(renewItems.count)", due: false)] + renewItems))
         return DeviceBuild(card: card, expiring: expiring, renewFailed: renewFailed)
     }
 
+    /// The rows of a device: what `install` recorded as present (the slot record decides presence, not `freeSigned`, which
+    /// `sign` advances before `install`), what is lent or has an operation in flight, and signed apps the device shows that
+    /// sideload did not install.
+    private static func gather(
+        alias: String, ledger: Ledger, projected: Ledger, slots: [LedgerSlot], prefix: String?, read: AppsRead?
+    ) -> [Candidate] {
+        var candidates: [Candidate] = []
+        for install in ExpiryItems.presentInstalls(projected, devices: [alias]) {
+            candidates.append(
+                Candidate(
+                    app: install.app, bundleId: install.bundleId, install: install,
+                    slot: slots.first { $0.app == install.app }))
+        }
+        for slot in slots where (slot.lentTo != nil || slot.op != nil) && !candidates.contains(where: { $0.app == slot.app }) {
+            let install = projected.installs.first { $0.id == slot.id }
+            candidates.append(
+                Candidate(
+                    app: slot.app, bundleId: bundleId(of: slot.app, recorded: install?.bundleId, prefix: prefix), install: install,
+                    slot: slot))
+        }
+        if let read {
+            for signed in ledger.freeSigned where signed.device == alias && read.snapshot.ids.contains(signed.bundleId) {
+                if candidates.contains(where: { $0.app == signed.app || $0.bundleId == signed.bundleId }) { continue }
+                // A slot record (an absent one after `app remove`) is newer than a read taken before it was written.
+                let slot = slots.first { $0.app == signed.app }
+                if let slot, !usable(slot, takenAt: read.takenAt) { continue }
+                candidates.append(Candidate(app: signed.app, bundleId: signed.bundleId, slot: slot, signed: signed))
+            }
+        }
+        return candidates
+    }
+
+    /// The one line an offline device shows ("Seen 3 h ago"); nil for any other.
+    private static func offlineNote(_ presence: MenuPresence, saved: SavedDevice, autoRefreshAvailable: Bool, now: Date) -> String? {
+        guard case .offline(let lastSeen) = presence else { return nil }
+        let seen = lastSeen.map { "Seen " + MenuFormat.ago(from: $0, now: now) } ?? "Offline"
+        if autoRefreshAvailable {
+            return seen + " · " + (saved.autoRefresh ? "renews when back on Wi-Fi or USB" : "auto-renew off")
+        }
+        // The card header already says "offline"; the state is shown once. Never seen: no line at all.
+        return lastSeen == nil ? nil : seen
+    }
+
+    /// A visible device whose list could not be read says so once, for the whole card; its rows show the ledger's record.
+    /// The same for a read the ledger has overtaken (ignored: a row it was meant to settle shows the record unconfirmed) and
+    /// for a device list that failed. `readOverRows` is whether a live read exists to have been overtaken.
+    private static func appsNote(failedCode: String?, rows: [MenuAppRow], readOverRows: Bool, presence: MenuPresence) -> String? {
+        if let failedCode {
+            let why =
+                switch failedCode {
+                case "DEVICE_LOCKED": "device locked"
+                case "TIMEOUT": "timed out"
+                default: "couldn't read"
+                }
+            return "Couldn't check apps (\(why)) · showing last known"
+        }
+        let overtaken = readOverRows && rows.contains { $0.presence == .unconfirmed }
+        if !rows.isEmpty, overtaken || presence == .unknown { return "Couldn't check apps · showing last known" }
+        return nil
+    }
+
     /// Where the app is, first match wins. A live read settles the record in memory (`SlotRule.settle`, the rule `install`
     /// writes): an operation past its window resolves from the snapshot, one inside it stays pending, a lent app that is
     /// back on the device is no longer lent. Without a read, the ledger alone speaks.
-    private static func classify(_ candidate: Candidate, alias: String, read: (snapshot: AppSnapshot, takenAt: Date)?, reading: Bool)
-        -> AppPresence
-    {
+    private static func classify(_ candidate: Candidate, alias: String, read: AppsRead?, reading: Bool) -> AppPresence {
         let slot = candidate.slot ?? LedgerSlot(device: alias, app: candidate.app, presence: .unknown)
         if let read, let id = candidate.bundleId, usable(slot, takenAt: read.takenAt) {
             let present = read.snapshot.ids.contains(id)
@@ -337,8 +343,7 @@ public enum MenuSnapshotBuilder {
     /// slot record, even an absent one, is newer than `freeSigned` and decides). Either way a pending or lent slot is
     /// never free.
     private static func freeSlots(
-        alias: String, ledger: Ledger, projected: Ledger, slots: [LedgerSlot], reserved: Int, prefix: String?,
-        read: (snapshot: AppSnapshot, takenAt: Date)?
+        alias: String, ledger: Ledger, projected: Ledger, slots: [LedgerSlot], reserved: Int, prefix: String?, read: AppsRead?
     ) -> Int {
         if let read, let prefix, CanaryCommand.isValidPrefix(prefix) {
             var outside = SlotBook.OutsideUse()

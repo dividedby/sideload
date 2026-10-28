@@ -84,10 +84,11 @@ public enum MenuLoader {
     /// because `FreeDeviceCalls` carries one; `info apps` is not an app mutation and the ID is never sent. A failed, locked
     /// or timed-out read keeps its error code and never looks like an empty device.
     public static func readApps(_ services: Services, alias: String) async -> DeviceAppsProbe {
-        guard let prefix = (try? services.store.load())?.bundleIdPrefix, CanaryCommand.isValidPrefix(prefix) else {
+        let prefix = (try? services.store.load())?.bundleIdPrefix
+        guard let bundleId = ProvisionApp.apollo.freeBundleId(prefix: prefix) else {
             return .failed(code: "CONFIG_MISSING", takenAt: services.clock.now())
         }
-        let calls = FreeDeviceCalls(services: services, alias: alias, bundleId: prefix + ".free." + ProvisionApp.apollo.suffix)
+        let calls = FreeDeviceCalls(services: services, alias: alias, bundleId: bundleId)
         let read = await calls.trySnapshot(timeoutSec: 15)
         if let snapshot = read.snapshot { return .read(snapshot, takenAt: read.takenAt) }
         return .failed(code: read.error?.code ?? "SNAPSHOT_FAILED", takenAt: read.takenAt)
@@ -122,6 +123,12 @@ public enum DeviceAppsProbe: Sendable, Equatable {
     /// Only the error code is kept (`DEVICE_LOCKED`, `TIMEOUT`, ...), at the time of the attempt.
     case failed(code: String, takenAt: Date)
 
+    /// The successful read, if this is one.
+    var appsRead: AppsRead? {
+        if case .read(let snapshot, let takenAt) = self { return AppsRead(snapshot: snapshot, takenAt: takenAt) }
+        return nil
+    }
+
     /// When the read was attempted; nil while it runs.
     public var takenAt: Date? {
         switch self {
@@ -129,6 +136,12 @@ public enum DeviceAppsProbe: Sendable, Equatable {
         case .read(_, let at), .failed(_, let at): at
         }
     }
+}
+
+/// A successful read of a device's app list and when it was taken (`DeviceAppsProbe.read`).
+struct AppsRead {
+    let snapshot: AppSnapshot
+    let takenAt: Date
 }
 
 /// Which saved devices the panel reads and when (design section 12): at launch, on "Check status now", and on a panel open
