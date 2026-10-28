@@ -31,6 +31,8 @@ final class MenuModel {
     private var apps = MenuAppsCache()
     private let steps: MenuActionSteps
     private var actionTask: Task<Void, Never>?
+    /// Add app: the second confirm a successful fetch opened, held until the fetch task has ended.
+    private var proceed: MenuAction?
     /// Bumped when an action starts: a load that began earlier must not write anything after it.
     private var loadGeneration = 0
     /// The last local read, so the icon can be redrawn (`renewing`) without reading again.
@@ -126,11 +128,14 @@ final class MenuModel {
             actionState = .finished(.notRun(reason))
             return
         }
-        // A load in flight must not write over the action's state or store a read cut short by it.
-        loadGeneration += 1
-        loadTask?.cancel()
-        loadTask = nil
-        pendingForce = false
+        // A load in flight must not write over the action's state or store a read cut short by it. The fetch of Add app
+        // changes neither the device nor the ledger, so it leaves the load alone and the panel stays current for stage 2.
+        if !isFetchStage(action) {
+            loadGeneration += 1
+            loadTask?.cancel()
+            loadTask = nil
+            pendingForce = false
+        }
         actionState = .running(label: prompt.runningLabel, cancellable: MenuActions.cancellable(action), cancelling: false)
         if case .renew = action { repaint(renewing: true) }
         actionTask = Task { [services, steps] in
@@ -141,17 +146,54 @@ final class MenuModel {
         }
     }
 
+    private func isFetchStage(_ action: MenuAction) -> Bool {
+        if case .addFetch = action { return true }
+        return false
+    }
+
     private func deliver(_ outcome: MenuActionOutcome) {
+        if let next = outcome.proceed {
+            // No result card: the fetched version goes straight to its approval confirm once the task ends.
+            proceed = next
+            return
+        }
         actionState = .finished(outcome)
     }
 
     /// The command and its post-result work are done: forget what was read of the device and read it again at once.
     private func finishAction(_ action: MenuAction) {
         actionTask = nil
+        if let next = proceed {
+            // Stage 1 changed nothing on the device or in the ledger: the device cache stays and nothing reloads, or the
+            // card would say "Checking apps…" and the second confirm could not open.
+            proceed = nil
+            openApproval(next)
+            return
+        }
+        // A fetch that failed, was busy or was cancelled changed nothing either.
+        if isFetchStage(action) { return }
         apps.invalidate(action.device)
         repaint(renewing: false)
         lastLoadFinished = nil
         reload()
+    }
+
+    private func openApproval(_ action: MenuAction) {
+        actionState = .idle
+        request(action)
+        if case .confirming = actionState { return }
+        // The panel moved on while the fetch ran (a device went away, a slot was taken): say why, and read the device again.
+        let reason = panelSnapshot.flatMap { MenuActions.availability(action, in: $0, now: services.clock.now()).reason }
+        actionState = .finished(.notRun(reason ?? "It is no longer available."))
+        apps.invalidate(action.device)
+        repaint(renewing: false)
+        lastLoadFinished = nil
+        reload()
+    }
+
+    private var panelSnapshot: MenuSnapshot? {
+        if case .loaded(let snapshot) = panel { return snapshot }
+        return nil
     }
 
     func cancelAction() {

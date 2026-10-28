@@ -1,7 +1,7 @@
 import SideloadCore
 import SwiftUI
 
-/// One saved device: status dot, alias, connection and free slots, the Renew… menu, then one row per app.
+/// One saved device: status dot, alias, connection and free slots, the Add app… and Renew… menus, then one row per app.
 struct DeviceCardView: View {
     var device: MenuDeviceCard
     var snapshot: MenuSnapshot
@@ -17,6 +17,7 @@ struct DeviceCardView: View {
                 Spacer(minLength: 8)
                 Text("\(device.connectionLabel) · \(device.slotsLabel)")
                     .font(.callout).foregroundStyle(.secondary).lineLimit(1)
+                AddAppMenu(card: device, snapshot: snapshot, model: model)
                 RenewMenu(card: device, snapshot: snapshot, model: model)
             }
             if let note = device.offlineNote ?? device.appsNote {
@@ -90,6 +91,37 @@ struct RenewMenu: View {
     private func label(_ item: MenuRenewMenu.Item, _ availability: MenuAvailability) -> String {
         let base = item.detail.map { "\(item.title)  \($0)" } ?? (item.due ? "\(item.title)  due" : item.title)
         return availability.reason.map { "\(base)  ·  \($0)" } ?? base
+    }
+}
+
+/// "Add app… ▾": the approved sources that are not on the device. Choosing one opens the fetch confirm; a disabled item says
+/// why in its label and in its help text. Hidden when every approved source for this device is already a row.
+struct AddAppMenu: View {
+    var card: MenuDeviceCard
+    var snapshot: MenuSnapshot
+    var model: MenuModel
+
+    var body: some View {
+        if !card.addable.isEmpty {
+            Menu {
+                ForEach(card.addable, id: \.app) { option in
+                    let action = MenuAction.addFetch(device: card.alias, app: option.app)
+                    let availability = model.availability(action, in: snapshot)
+                    Button {
+                        model.request(action)
+                    } label: {
+                        Text(availability.reason.map { "\(option.name)  ·  \($0)" } ?? option.name)
+                    }
+                    .disabled(!availability.isEnabled)
+                    .help(availability.reason ?? "")
+                }
+            } label: {
+                Text("Add app…")
+            }
+            .menuStyle(.button)
+            .fixedSize()
+            .disabled(!model.controlsEnabled)
+        }
     }
 }
 

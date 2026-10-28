@@ -11,12 +11,34 @@ public enum MenuAction: Hashable, Sendable {
     case remove(device: String, app: String)
     /// `app` nil is none: the lab may not borrow a slot.
     case lendable(device: String, app: String?)
+    /// Add app, stage 1: `fetch` downloads and checks an approved source's latest release. Nothing is signed or installed.
+    case addFetch(device: String, app: String)
+    /// Add app, stage 2: approve exactly `fetched`, then provision, sign and install it.
+    case addApprove(device: String, app: String, fetched: MenuFetched)
 
     public var device: String {
         switch self {
-        case .renew(let device, _), .install(let device, _), .remove(let device, _), .lendable(let device, _): device
+        case .renew(let device, _), .install(let device, _), .remove(let device, _), .lendable(let device, _),
+            .addFetch(let device, _), .addApprove(let device, _, _):
+            device
         }
     }
+}
+
+/// What stage 1 of Add app fetched and checked: the facts the second confirm shows, and the exact version and file the owner
+/// approves. The runner approves nothing whose manifest entry has a different SHA-256.
+public struct MenuFetched: Sendable, Hashable {
+    public var version: String
+    public var build: String?
+    /// The full SHA-256 of the file.
+    public var sha256: String
+    public var size: Int64
+    /// The stricter of the source's declared minimum OS and the one the binary says; nil when neither is known.
+    public var minOS: String?
+    /// Extensions `sign` will strip.
+    public var extensionCount: Int
+    /// The version was approved before this fetch.
+    public var alreadyApproved: Bool
 }
 
 public enum MenuAvailability: Sendable, Equatable {
@@ -43,6 +65,8 @@ public struct MenuPrompt: Sendable, Equatable {
     /// The apps a Renew runs, in order: the one app, or every app the confirm lists for "All apps". The run uses exactly
     /// this list, never what `refresh` would select by itself. Empty for the other actions.
     public var apps: [String]
+    /// Indexes into `lines` drawn monospaced and selectable (a SHA-256 to compare by eye).
+    public var monospacedLines: Set<Int> = []
 }
 
 public enum MenuOfferKind: Sendable, Equatable {
@@ -69,7 +93,7 @@ public enum MenuActions {
     static let ledgerUnreadable = "Can't read the ledger"
     static func lentOrChanging(_ alias: String) -> String { "An app is lent or changing on \(alias)" }
 
-    /// Install, Remove and Renew stop for the owner's Cancel; saving the lendable setting is instant.
+    /// Install, Remove, Renew and both Add app stages stop for the owner's Cancel; saving the lendable setting is instant.
     public static func cancellable(_ action: MenuAction) -> Bool {
         if case .lendable = action { return false }
         return true
@@ -95,6 +119,13 @@ public enum MenuActions {
         case .remove(_, let app):
             if let stop = freeStop(card: card, snapshot: snapshot) { return stop }
             return remove(app, card: card)
+        case .addFetch(_, let app):
+            if let stop = freeStop(card: card, snapshot: snapshot) { return stop }
+            return add(app, card: card, snapshot: snapshot)
+        case .addApprove(_, let app, let fetched):
+            if let stop = freeStop(card: card, snapshot: snapshot) { return stop }
+            if let stop = add(app, card: card, snapshot: snapshot).reason { return .disabled(stop) }
+            return minimumOS(app, fetched: fetched, card: card)
         }
     }
 
@@ -204,6 +235,40 @@ public enum MenuActions {
         return row.presence == .installed ? .enabled : .disabled(why(row.presence))
     }
 
+    /// Add app, first match wins: an approved source, the platform, no row yet, a readable device, a free slot, an App ID.
+    private static func add(_ app: String, card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuAvailability {
+        guard let source = snapshot.addSources.first(where: { $0.app == app }) else { return .disabled("Not an approved source") }
+        guard let platform = card.platform else { return .disabled("\(card.alias) has no recorded platform") }
+        guard source.platform == platform else { return .disabled("\(source.name) does not run on \(card.alias)") }
+        if let row = card.row(for: app) {
+            switch row.presence {
+            case .installed: return .disabled("Already installed")
+            case .notInstalled: return .disabled("Signed · not installed: use Install")
+            case .lent: return .disabled(why(.lent))
+            case .pending: return .disabled(why(.pending))
+            case .unconfirmed: return .disabled("Already recorded on \(card.alias)")
+            case .checking: return .disabled(checkingApps)
+            }
+        }
+        if let stop = deviceStop(card: card) { return stop }
+        guard card.slotsKnown else { return .disabled("Slots unknown") }
+        guard card.freeSlots > 0 else { return .disabled("No free slot: remove an app first") }
+        guard let ids = snapshot.appIds else { return .disabled("App ID budget unknown") }
+        guard let option = card.addable.first(where: { $0.app == app }) else { return .disabled("Bundle ID prefix is not set") }
+        if !option.appIdAllowed {
+            return .disabled("App ID limit: \(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved")
+        }
+        return .enabled
+    }
+
+    /// `sign` refuses a build the device's OS is too old for, after `provision` has spent the App ID: the confirm says so first.
+    private static func minimumOS(_ app: String, fetched: MenuFetched, card: MenuDeviceCard) -> MenuAvailability {
+        guard let need = fetched.minOS, let have = card.osVersion, OSVersion.isAtLeast(have, need) == false else { return .enabled }
+        return .disabled("\(MenuFormat.appName(app)) \(fetched.version) needs \(osName(card)) \(need) or later; \(card.alias) runs \(have)")
+    }
+
+    private static func osName(_ card: MenuDeviceCard) -> String { card.platform == "tvos" ? "tvOS" : "iOS" }
+
     /// The lab's borrowing is a setting; it changes nothing on the device. It stays put while an app is lent or changing,
     /// because the lab repeats `slot lend` and a different `lendableApp` mid-lend would fail it with ALREADY_LENT.
     private static func lendable(_ app: String?, card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuAvailability {
@@ -258,6 +323,8 @@ public enum MenuActions {
         case .install(_, let app): return installPrompt(app, card: card)
         case .remove(_, let app): return removePrompt(app, card: card)
         case .lendable(_, let app): return lendablePrompt(app, card: card)
+        case .addFetch(_, let app): return addFetchPrompt(app, card: card, snapshot: snapshot)
+        case .addApprove(_, let app, let fetched): return addApprovePrompt(app, fetched: fetched, card: card, snapshot: snapshot)
         }
     }
 
@@ -369,5 +436,55 @@ public enum MenuActions {
             title: "Make \(name) lendable on \(alias)",
             lines: ["Setting only: the lab may uninstall \(name) and put it back"], confirmLabel: "Make lendable",
             destructive: false, runningLabel: "Saving…", apps: [])
+    }
+
+    private static func addFetchPrompt(_ app: String, card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuPrompt {
+        let alias = card.alias
+        let name = MenuFormat.appName(app)
+        let source = snapshot.addSources.first { $0.app == app }?.source ?? "its source"
+        return MenuPrompt(
+            title: "Fetch \(name) for \(alias)",
+            lines: [
+                "Downloads the latest \(name) release from \(source) and checks it",
+                "Nothing is signed or installed; \(alias) and the portal are unchanged",
+            ], confirmLabel: "Fetch", destructive: false, runningLabel: "Fetching \(name)…", apps: [])
+    }
+
+    private static func addApprovePrompt(_ app: String, fetched: MenuFetched, card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuPrompt {
+        let alias = card.alias
+        let name = MenuFormat.appName(app)
+        let thirdParty = snapshot.addSources.first { $0.app == app }?.thirdParty == true
+        var facts = "\(name) \(fetched.version)"
+        if let build = fetched.build { facts += " (build \(build))" }
+        facts += " · " + MenuFormat.size(fetched.size)
+        if let minOS = fetched.minOS { facts += " · \(osName(card)) \(minOS) or later" }
+        var lines = [facts, "SHA-256 \(fetched.sha256)"]
+        let hashLine = lines.count - 1
+        lines.append(
+            thirdParty
+                ? "Matches the index's; a third party, so this guards against corruption, not a bad index"
+                : "Matches the publisher's")
+        if fetched.extensionCount > 0 {
+            lines.append("\(fetched.extensionCount) extension\(fetched.extensionCount == 1 ? "" : "s") will be removed")
+        }
+        lines.append("Approves this exact version for signing" + (fetched.alreadyApproved ? " (approved earlier)" : ""))
+        let option = card.addable.first { $0.app == app }
+        var portal: String
+        if option?.newAppId == false {
+            portal = "Portal: reuses the existing App ID, profile only"
+        } else {
+            portal = "Portal: creates one App ID and a 7-day profile"
+            if let ids = snapshot.appIds {
+                portal += " (\(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved)"
+            }
+        }
+        lines.append(portal)
+        if let slots = slotArithmetic(card, delta: 1) { lines.append("Slots \(slots)") }
+        lines.append("Keep the device unlocked and connected")
+        lines.append(keychain)
+        return MenuPrompt(
+            title: "Approve and install \(name) \(fetched.version) on \(alias)", lines: lines,
+            confirmLabel: "Approve and install", destructive: false,
+            runningLabel: "Adding \(name) \(fetched.version) to \(alias)…", apps: [], monospacedLines: [hashLine])
     }
 }

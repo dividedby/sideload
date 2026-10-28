@@ -68,6 +68,7 @@ public enum MenuSnapshotBuilder {
 
         // The slot records and `installs[]` as `status` reads them: migrated and projected in memory.
         let projected = SlotRule.migrated(ledger, now: now)
+        let addSources = addSources(config)
         let built = config.devices.keys
             .sorted { lhs, rhs in
                 let l = (config.devices[lhs]?.platform == "tvos" ? 1 : 0, lhs)
@@ -75,7 +76,9 @@ public enum MenuSnapshotBuilder {
                 return l < r
             }
             .compactMap { alias in
-                config.devices[alias].map { device(alias: alias, saved: $0, inputs: inputs, projected: projected) }
+                config.devices[alias].map {
+                    device(alias: alias, saved: $0, inputs: inputs, projected: projected, addSources: addSources)
+                }
             }
         let cards = built.map(\.card)
 
@@ -101,7 +104,25 @@ public enum MenuSnapshotBuilder {
                 freeInUse: !ledger.freeSigned.isEmpty || !ledger.freeProfiles.isEmpty || !ledger.installs.isEmpty, paid: paid),
             devices: cards, showsApps: cards.contains { !$0.apps.isEmpty }, showsCertKitExport: paid != .blocked,
             checkingDevices: inputs.probe == .checking, checkingApps: checkingApps, notices: inputs.notices,
-            ledgerReadable: inputs.ledgerReadable, appIds: appIds(inputs), suspended: ledger.freeSuspended != nil)
+            ledgerReadable: inputs.ledgerReadable, appIds: appIds(inputs), suspended: ledger.freeSuspended != nil,
+            addSources: addSources)
+    }
+
+    /// The catalog apps the owner approved in `approvedSources` that "Add app…" can fetch: never the filler, which has no IPA.
+    static func addSources(_ config: Config) -> [MenuAddSource] {
+        FetchCatalog.sources.compactMap { catalog in
+            guard let app = ProvisionApp(rawValue: catalog.app), !app.signedByProvision,
+                let approved = try? FetchCatalog.approved(app: catalog.app, config: config)
+            else { return nil }
+            let label: String
+            switch approved.kind {
+            case .githubRelease: label = "github.com"
+            case .altstoreIndex: label = (approved.downloadHosts.sorted().first ?? "the index") + " (third-party index)"
+            }
+            return MenuAddSource(
+                app: app.rawValue, name: MenuFormat.appName(app.rawValue), source: label, platform: app.devicePlatform,
+                thirdParty: { if case .altstoreIndex = approved.kind { true } else { false } }())
+        }
     }
 
     private static func appIds(_ inputs: MenuInputs) -> MenuAppIds? {
@@ -129,6 +150,34 @@ public enum MenuSnapshotBuilder {
         }
     }
 
+    /// The OS `devicectl list devices` reports for a visible saved device.
+    private static func osVersion(of saved: SavedDevice, probe: DeviceProbe) -> String? {
+        guard case .listed(let devices) = probe, let listed = DeviceList.findSaved(devices, matching: saved),
+            DeviceList.visibilityOf(listed) == .ok
+        else { return nil }
+        return listed.osVersion
+    }
+
+    /// The approved sources for the card's platform with no row on it, each with the App ID it would use and whether that fits.
+    private static func addable(
+        _ sources: [MenuAddSource], platform: String?, rows: [MenuAppRow], inputs: MenuInputs
+    ) -> [MenuAddOption] {
+        guard let platform else { return [] }
+        let reserved = inputs.ledgerReadable ? try? inputs.config.freeTeamReservedAppIds() : nil
+        return sources.compactMap { source in
+            guard source.platform == platform, !rows.contains(where: { $0.app == source.app }),
+                let bundleId = ProvisionApp(rawValue: source.app)?.freeBundleId(prefix: inputs.config.bundleIdPrefix)
+            else { return nil }
+            // Without the ledger or the reserve the budget is unknown; the action says so, and nothing is allowed.
+            let decision = reserved.map {
+                FreeAppIdBudget.evaluate(inputs.ledger.freeAppIds, bundleId: bundleId, reserved: $0, now: inputs.now)
+            }
+            return MenuAddOption(
+                app: source.app, name: source.name, source: source.source, newAppId: decision?.isNew ?? true,
+                appIdAllowed: decision?.allowed ?? false)
+        }
+    }
+
     /// One app on one device before it becomes a row.
     private struct Candidate {
         let app: String
@@ -150,7 +199,9 @@ public enum MenuSnapshotBuilder {
         takenAt >= (slot.seenAt ?? .distantPast) && takenAt >= (slot.since ?? .distantPast)
     }
 
-    private static func device(alias: String, saved: SavedDevice, inputs: MenuInputs, projected: Ledger) -> DeviceBuild {
+    private static func device(
+        alias: String, saved: SavedDevice, inputs: MenuInputs, projected: Ledger, addSources: [MenuAddSource]
+    ) -> DeviceBuild {
         let now = inputs.now
         let ledger = inputs.ledger
         let prefix = inputs.config.bundleIdPrefix
@@ -250,7 +301,9 @@ public enum MenuSnapshotBuilder {
                 items: [MenuRenewMenu.Item(title: "All apps", detail: "\(renewSet.count)", due: false, app: nil)] + renewItems),
             platform: saved.platform, slotsKnown: known, lendableApp: saved.lendableApp,
             refreshSet: renewSet,
-            hasPending: rows.contains { $0.presence == .pending }, liveRead: liveRead(presence: presence, probe: probe))
+            hasPending: rows.contains { $0.presence == .pending }, liveRead: liveRead(presence: presence, probe: probe),
+            addable: addable(addSources, platform: saved.platform, rows: rows, inputs: inputs),
+            osVersion: osVersion(of: saved, probe: inputs.probe))
         return DeviceBuild(card: card, expiring: expiring, renewFailed: renewFailed)
     }
 

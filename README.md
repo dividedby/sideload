@@ -111,7 +111,9 @@ over its 7 days (label colour; orange when due at 3 days or fewer; red at 1 day 
 expired; a red "!" when the free certificate changed; a dashed grey "?" with no data; a blue arc while a Renew runs). Check status
 now, Run doctor (shown inline), Settings… (opens `~/.sideload/config.json`), Open ~/.sideload and Quit need no confirm. The
 actions are Renew… (All apps or one app, and Retry on a failed renewal), Install (a signed app the device does not show, or
-Install update for a newer signed build), Remove and "Lendable: <App>". Each opens an inline confirm that says what it will do
+Install update for a newer signed build), Add app… (an app from `approvedSources` the device does not have: a fetch confirm,
+then a second confirm that shows the version and its full SHA-256 and approves that exact version before provisioning, signing
+and installing it), Remove and "Lendable: <App>". Each opens an inline confirm that says what it will do
 (slots, App IDs, the keychain prompt); the confirm button is the owner's `--yes`, and only then does the app run the same
 in-process command as the CLI. A running action shows Cancel; the result lists each app with its code, message and fix and a
 Retry, or says the lock was busy. A disabled control says why ("Connect iphone over Wi-Fi or USB", "renewable at 6 d left",
