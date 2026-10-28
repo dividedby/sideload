@@ -23,11 +23,12 @@ enum PendingRestores {
     /// `ledger` must be the readable ledger (an unreadable one says nothing about which apps are lent). Sorted by device,
     /// then app.
     static func find(_ services: Services, config: Config, ledger: Ledger, now: Date) -> [Entry] {
-        let slots = SlotRule.migrated(ledger, now: now).slots
+        let migrated = SlotRule.migrated(ledger, now: now)
+        let slots = migrated.slots
         var found: [Entry] = []
         for alias in config.devices.keys.sorted() {
-            let gated = slots.contains { $0.device == alias && $0.op.flatMap { SlotRule.remaining($0, now: now) } != nil }
-            guard !gated else { continue }
+            // `slot restore`'s own gate, on the same migrated ledger.
+            guard SlotBook(services: services, config: config, alias: alias).pending(migrated, now: now) == nil else { continue }
             for app in ProvisionApp.allCases.sorted(by: { $0.rawValue < $1.rawValue }) {
                 let busy = slots.contains { slot in
                     guard slot.device == alias, slot.app == app.rawValue else { return false }

@@ -126,7 +126,7 @@ public enum StatusCommand {
             let present = projected.installs.filter { $0.present && saved.contains($0.device) }
                 .sorted { ($0.profileExpires, $0.id) < ($1.profileExpires, $1.id) }
             installs = .array(
-                present.map { Self.install($0, autoRefresh: config.devices[$0.device]?.autoRefresh ?? false, now: now) })
+                present.map { Self.installRow($0, autoRefresh: config.devices[$0.device]?.autoRefresh ?? false, now: now) })
             for install in present {
                 if let w = Self.expiryWarning(install, now: now) { warnings.append(w) }
             }
@@ -193,7 +193,7 @@ public enum StatusCommand {
 
     /// One free install on a saved device: its expiry and the refresh bookkeeping `refresh` keeps on the record.
     /// `autoRefresh` is the device's opt-in (the automatic mode itself is not built).
-    static func install(_ install: LedgerInstall, autoRefresh: Bool, now: Date) -> JSONValue {
+    static func installRow(_ install: LedgerInstall, autoRefresh: Bool, now: Date) -> JSONValue {
         let (days, level) = FreeInstallExpiry.assess(expires: install.profileExpires, now: now)
         return [
             "id": .string(install.id), "device": .string(install.device), "app": .string(install.app),
