@@ -17,7 +17,7 @@ struct DeviceCardView: View {
                     .font(.callout).foregroundStyle(.secondary).lineLimit(1)
                 RenewMenu(renew: device.renew)
             }
-            if let note = device.offlineNote {
+            if let note = device.offlineNote ?? device.appsNote {
                 Text(note).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                     .padding(.top, -4)
             }
@@ -56,7 +56,7 @@ struct StatusDot: View {
     }
 }
 
-/// "Renew… ▾": All apps plus each app. Disabled in v1 because `refresh` is not built; the items are shown so the
+/// "Renew… ▾": All apps plus each app. Disabled because the menu does not call `refresh` yet; the items are shown so the
 /// final shape is visible.
 struct RenewMenu: View {
     var renew: MenuRenewMenu
@@ -90,9 +90,14 @@ struct AppRowView: View {
                 Spacer()
                 Text(app.daysLabel)
                     .foregroundStyle(app.textTone.color)
-                    .fontWeight(app.level == .ok ? .regular : .semibold)
+                    .fontWeight(app.showsBar && app.level != .ok ? .semibold : .regular)
             }
-            TimeLeftBar(fraction: app.barFraction, tone: app.barTone)
+            if app.showsBar {
+                TimeLeftBar(fraction: app.barFraction, tone: app.barTone)
+            }
+            if let failure = app.failure {
+                Text(failure).font(.callout).foregroundStyle(MenuTone.failed.color)
+            }
             if let exception = app.exception {
                 Text(exception).font(.callout).foregroundStyle(.secondary)
             }

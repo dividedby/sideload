@@ -69,7 +69,8 @@ public struct MenuIcon: Sendable, Equatable {
     ///     `warn` is due, `critical` (which includes expired) is critical, anything else is unknown. The paid state
     ///     never drives the icon while free installs exist.
     ///   - certChanged: the ledger's `freeSuspended` is set.
-    ///   - renewing, renewFailed: nothing sets these in v1 (`refresh` does not exist yet).
+    ///   - renewing: nothing sets it yet (the menu does not run `refresh`).
+    ///   - renewFailed: an install's last refresh failed (the builder derives it from the rows).
     public static func make(
         soonest: Date?, now: Date, paid: StatusState, certChanged: Bool, renewing: Bool = false,
         renewFailed: Bool = false
@@ -190,20 +191,42 @@ public struct MenuStrip: Sendable, Equatable {
     public var line: String { freeText + " · " + paidText }
 }
 
-/// One installed app on a device's card.
+/// What the panel knows about one app on a device. A row is a countdown only for `installed` and `unconfirmed`.
+public enum AppPresence: String, Sendable, Equatable {
+    /// Seen on the device (the live app list, or a hand-installed app signed by sideload).
+    case installed
+    /// Signed and recorded, but the live app list does not show it: no countdown, out of the ring.
+    case notInstalled
+    /// Lent to the lab: the app is off the device and the slot is the lab's.
+    case lent
+    /// A device operation on the app is in flight (or ended unknown): it may or may not be there.
+    case pending
+    /// Not read from the device (it is offline, locked or not asked): the ledger's record is shown.
+    case unconfirmed
+    /// The device is being read right now.
+    case checking
+}
+
+/// One app on a device's card.
 public struct MenuAppRow: Sendable, Equatable, Identifiable {
     public var id: String
     public var name: String
+    public var presence: AppPresence
     public var daysLeft: Int
     public var level: ExpiryItem.Level
-    /// "6 d", "2 d · due", "5 h · due" or "expired".
+    /// "6 d", "2 d · due", "5 h · due" or "expired" for a countdown; the state in words otherwise ("Signed · not
+    /// installed", "Lent to lab", "Change in progress", "checking…").
     public var daysLabel: String
     /// Time left over the 7-day signing window, 0...1.
     public var barFraction: Double
     public var barTone: MenuTone
     public var textTone: MenuTone
+    /// Only a countdown draws the bar.
+    public var showsBar: Bool
     /// Only an exception shows under a row ("Auto-renew off"); nil otherwise.
     public var exception: String?
+    /// "Renewal failed · REFRESH_X" from the install's last refresh result; drawn red under the row. nil otherwise.
+    public var failure: String?
 }
 
 /// How a saved device shows up right now.
@@ -221,7 +244,7 @@ public enum MenuPresence: Sendable, Equatable {
     }
 }
 
-/// The "Renew…" menu. Disabled in v1: `refresh` is not built.
+/// The "Renew…" menu. Disabled: the menu does not call `refresh` yet. Lists the rows with a countdown.
 public struct MenuRenewMenu: Sendable, Equatable {
     public struct Item: Sendable, Equatable {
         public var title: String
@@ -247,6 +270,9 @@ public struct MenuDeviceCard: Sendable, Equatable, Identifiable {
     public var slotsLabel: String
     /// The one line an offline device shows ("Seen 3 h ago · renews when back on Wi-Fi or USB"); nil otherwise.
     public var offlineNote: String?
+    /// The one line a visible device shows when its app list could not be read ("Couldn't check apps (device locked) ·
+    /// showing last known"); nil otherwise. "Not checked live" is said once per card, never per row.
+    public var appsNote: String?
     public var apps: [MenuAppRow]
     /// Grey rows for slots the owner reserved for apps sideload does not manage.
     public var reservedSlots: [String]
@@ -271,6 +297,8 @@ public struct MenuSnapshot: Sendable, Equatable {
     public var showsCertKitExport: Bool
     /// True while `devicectl` has not answered.
     public var checkingDevices: Bool
+    /// True while a visible device's app list is being read.
+    public var checkingApps: Bool
     /// Unreadable sources (an invalid ledger or canary log); the rest of the panel still draws.
     public var notices: [MenuIssue]
 }

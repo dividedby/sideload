@@ -104,11 +104,17 @@ to paste; the command then stays running for 90 s and clears the clipboard itsel
 ## Menu bar app
 
 `SideloadMenu` is a menu bar app (no Dock icon) that shows the canary state, each saved device's free-account apps (days
-left, a time-left bar, free slots, Wi-Fi/USB/offline) and a countdown-ring icon: the ring is the time left of the soonest free install
+left, a time-left bar, free slots, Wi-Fi/USB/offline; read from the ledger's `installs[]` and `slots[]` and checked live against
+the device's app list, so an app that is gone shows "Signed · not installed", a lent one "Lent to lab", and a failed renewal a
+red "Renewal failed · CODE") and a countdown-ring icon: the ring is the time left of the soonest free install
 over its 7 days (label colour; orange when due at 3 days or fewer; red at 1 day or fewer; a dashed red ring with a cross when
 expired; a red "!" when the free certificate changed; a dashed grey "?" with no data). v1 is read-only plus safe actions: Check status
 now, Run doctor (shown inline), Settings… (opens `~/.sideload/config.json`), Open ~/.sideload and Quit. "Renew…" and the
 cert kit Export are visible but disabled (the menu does not call `refresh` yet). A pending app-data restore shows as an orange notice with the owner's `slot restore` command. Light and dark follow the system.
+
+The live check is one read-only `devicectl device info apps` per visible device, at launch, on Check status now, and on a panel
+open only when the last attempt is 5 minutes old; it takes no lock and writes nothing (`docs/design.md` section 12). When a device
+cannot be read (locked, offline, timed out) the card says so once and the rows show the ledger's record.
 
 Build, install and launch (the build never installs or launches anything; it signs ad hoc, with no identity or Apple ID):
 
