@@ -86,13 +86,16 @@ private enum DeviceState: CaseIterable {
 
     /// The row the matrix expects; nil is no row at all.
     func expected(_ ledger: LedgerCase) -> AppPresence? {
-        let hasApp = self == .readHas
         switch (ledger, self) {
         case (.recorded, .readHas): return .installed
         case (.recorded, .readNot): return .notInstalled
         case (.recorded, .readChecking), (.recorded, .listChecking): return .checking
         case (.recorded, _): return .unconfirmed
-        case (.removed, _), (.signedOnly, _): return hasApp ? .installed : nil
+        // Signed but not recorded present: a usable read confirms it (installed by hand, or "Signed · not installed");
+        // with no read there is no row.
+        case (.removed, .readHas), (.signedOnly, .readHas): return .installed
+        case (.removed, .readNot), (.signedOnly, .readNot): return .notInstalled
+        case (.removed, _), (.signedOnly, _): return nil
         case (.lent, .readHas): return .installed
         case (.lent, _): return .lent
         case (.opInWindow, _): return .pending

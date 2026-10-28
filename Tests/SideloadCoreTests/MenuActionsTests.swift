@@ -149,6 +149,31 @@ struct MenuActionAvailabilityTests {
         #expect(availability(install, update) == .enabled)
     }
 
+    @Test("after app remove a fresh read confirms the signed app absent: a Signed · not installed row with Install; a stale read or none shows no row")
+    func removedThenReinstall() {
+        var ledger = Ledger(freeSigned: [menuSigned("iphone", "apollo", days: 5)])
+        ledger.installs = [menuInstall("iphone", "apollo", days: 5, present: false)]
+        ledger.slots = [LedgerSlot(device: "iphone", app: "apollo", presence: .absent, seenAt: testNow)]
+        SlotRule.project(&ledger)
+        let install = MenuAction.install(device: "iphone", app: "apollo")
+
+        let fresh = menuBuild(ledger: ledger, apps: read([]))
+        let card = fresh.devices[0]
+        #expect(card.apps.map(\.presence) == [.notInstalled])
+        #expect(card.apps[0].daysLabel == "Signed · not installed" && !card.apps[0].showsBar)
+        #expect(card.freeSlots == 3 && fresh.icon.remaining == nil, "it holds no slot and is out of the ring")
+        #expect(card.renew.items.compactMap(\.app).isEmpty)
+        #expect(availability(install, fresh) == .enabled)
+        #expect(MenuActions.rowOffers(card.apps[0], card: card, snapshot: fresh, now: testNow).map(\.label) == ["Install"])
+
+        let full = menuBuild(config: menuConfig(reserved: ["iphone": 3]), ledger: ledger, apps: read([]))
+        #expect(availability(install, full) == .disabled("No free slot: remove an app first"))
+
+        let stale = menuBuild(ledger: ledger, apps: ["iphone": .read(menuSnapshot([]), takenAt: testNow.addingTimeInterval(-120))])
+        #expect(stale.devices[0].apps.isEmpty)
+        #expect(menuBuild(ledger: ledger).devices[0].apps.isEmpty)
+    }
+
     @Test("newerSigned needs a different profile more than a day later that has not expired")
     func newerSigned() {
         func newer(_ days: Double, uuid: String) -> Bool {

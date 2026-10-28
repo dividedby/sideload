@@ -26,8 +26,9 @@ All notable changes to this project are documented here. Format follows
   attempt counts, so a locked device is not retried at every open). A row is installed, "Signed · not installed" (recorded
   but gone from the device: no bar, out of the ring and the slot count), "Lent to lab", "Change in progress", or the
   ledger's countdown when the device could not be read; a card whose device could not be read says why once ("Couldn't
-  check apps (device locked) · showing last known"). An app sideload did not install but signed shows once the device lists
-  it. New: `MenuLoader.readApps`, `visibleAliases`, `DeviceAppsProbe`, `MenuAppsCache`, `AppPresence`.
+  check apps (device locked) · showing last known"). A signed app (`freeSigned`) with no other record shows once the device lists
+  it (installed by hand) and, once a read at least as new as its slot record confirms it absent, as "Signed · not installed"
+  (for instance after `app remove`), with an Install offer; with no usable read it has no row. New: `MenuLoader.readApps`, `visibleAliases`, `DeviceAppsProbe`, `MenuAppsCache`, `AppPresence`.
 - Menu bar: a failed last renewal (`installs[].refresh.lastResult == "failed"`) shows "Renewal failed · CODE" in red under
   the row and sets the icon's renew-failed badge.
 
@@ -35,7 +36,7 @@ All notable changes to this project are documented here. Format follows
 
 - Menu bar: the Apps card, the ring and the status colour now come from `installs[]` and `slots[]`, not `freeSigned`; the
   expiry is the install's `profileExpires`, so a newer signed build that is not installed no longer moves it. An app with
-  only a `freeSigned` record and no live read has no row. Free slots with a live read follow what `install` counts (the
+  only a `freeSigned` record and no usable live read has no row. Free slots with a live read follow what `install` counts (the
   device's managed apps, the reserve, lent and pending records); without one, a signed app counts only while no slot
   record exists for it, so an app removed with `app remove` stops holding a slot. The Renew… menu is wired to `refresh` (see Added).
 - `MenuLoader.readApps` takes the loaded config's `bundleIdPrefix` instead of reading the config again.

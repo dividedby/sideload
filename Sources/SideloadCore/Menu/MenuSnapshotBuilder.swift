@@ -263,8 +263,8 @@ public enum MenuSnapshotBuilder {
     }
 
     /// The rows of a device: what `install` recorded as present (the slot record decides presence, not `freeSigned`, which
-    /// `sign` advances before `install`), what is lent or has an operation in flight, and signed apps the device shows that
-    /// sideload did not install.
+    /// `sign` advances before `install`), what is lent or has an operation in flight, and signed apps that sideload did not install
+    /// (installed by hand when the live read shows them, "Signed · not installed" when it confirms they are absent).
     private static func gather(
         alias: String, ledger: Ledger, projected: Ledger, slots: [LedgerSlot], prefix: String?, read: AppsRead?
     ) -> [Candidate] {
@@ -283,11 +283,13 @@ public enum MenuSnapshotBuilder {
                     slot: slot))
         }
         if let read {
-            for signed in ledger.freeSigned where signed.device == alias && read.shows(signed.bundleId) {
+            for signed in ledger.freeSigned where signed.device == alias {
                 if candidates.contains(where: { $0.app == signed.app || $0.bundleId == signed.bundleId }) { continue }
                 // A slot record (an absent one after `app remove`) is newer than a read taken before it was written.
                 let slot = slots.first { $0.app == signed.app }
                 if let slot, !usable(slot, takenAt: read.takenAt) { continue }
+                // The device shows it: installed by hand. It does not: signed, not installed (the read confirms it, so it is
+                // never a guess; `classify` settles it from the same read).
                 candidates.append(Candidate(app: signed.app, bundleId: signed.bundleId, slot: slot, signed: signed))
             }
         }
