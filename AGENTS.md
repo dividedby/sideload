@@ -90,7 +90,7 @@ team) before changing anything.
 
 - Swift is the implementation (`docs/design.md`): Swift 6 language mode, macOS 27 / arm64, zero third-party
   packages, `SideloadCore` imports no AppKit/SwiftUI (the `sideload` CLI target imports AppKit only for
-  the pasteboard, in `Sources/sideload/Pasteboard.swift`; the `SideloadMenu` target is the only other UI target and holds views and the view model only; the logic lives in `Sources/SideloadCore/Menu/`). Tests use Swift Testing (`import Testing`), not XCTest.
+  the pasteboard, in `Sources/sideload/Pasteboard.swift`; the `SideloadMenu` target is the only other UI target and holds views, the view model and the app delegate's OS wiring (signals, terminate) only; the logic, timings included, lives in `Sources/SideloadCore/Menu/`). Tests use Swift Testing (`import Testing`), not XCTest.
 - Node remains only for `scripts/check-secrets.mjs` and its test (plain ESM, zero dependencies).
   **pnpm only** (never npm or yarn).
 - `portal` is GET-only: no code path may send a mutating HTTP method or a request body (a test scans `Sources/`).

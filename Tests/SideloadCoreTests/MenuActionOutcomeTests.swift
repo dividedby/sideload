@@ -187,6 +187,24 @@ struct MenuActionOutcomeTests {
         #expect(already.headline == "Apollo was already gone from iphone" && already.notes.isEmpty)
     }
 
+    @Test("Install: INSTALL_RESULT_UNCERTAIN becomes a note on the done card")
+    func installNotes() {
+        let warning = CanaryCommand.warning(
+            "INSTALL_RESULT_UNCERTAIN",
+            "The install reported a failure (DEVICE_TIMEOUT) but the app is on the device, so it is recorded as installed.",
+            "No action needed.")
+        let data: [String: JSONValue] = ["app": "apollo", "installed": true, "warnings": .array([warning])]
+        let outcome = MenuActionOutcome(action: installApollo, envelope: .result("install", data), cancelled: false)
+        #expect(outcome.kind == .done && outcome.headline == "Installed Apollo on iphone")
+        #expect(
+            outcome.notes == [
+                "The install reported a failure (DEVICE_TIMEOUT) but the app is on the device, so it is recorded as installed."
+            ])
+        let plain = MenuActionOutcome(
+            action: installApollo, envelope: .result("install", ["warnings": .array([])]), cancelled: false)
+        #expect(plain.notes.isEmpty)
+    }
+
     @Test("Install and Lendable: done headlines, and a failure keeps every error with a Retry")
     func singles() {
         let ok = MenuActionOutcome(action: installApollo, envelope: .result("install", [:]), cancelled: false)

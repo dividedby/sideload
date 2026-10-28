@@ -47,6 +47,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
         case .install(_, let app):
             let name = MenuFormat.appName(app)
             readSingle(envelope, action: action, app: app, done: "Installed \(name) on \(alias)", failed: "Install failed")
+            if envelope.ok { notes += Self.warningNotes(envelope) }
         case .remove(_, let app):
             let name = MenuFormat.appName(app)
             let gone = envelope.data["wasPresent"] == .bool(false)

@@ -1,7 +1,7 @@
 import Foundation
 
 /// What each menu action calls. The defaults are the real commands (the same in-process entry points the CLI runs, each
-/// taking `.op.lock` itself); tests replace them.
+/// taking `.op.lock` itself, except `device lendable`, which only writes config); tests replace them.
 public struct MenuActionSteps: Sendable {
     public var refresh: @Sendable (Services, RefreshOptions) async -> Envelope = { await RefreshCommand.run($0, $1) }
     public var install: @Sendable (Services, InstallOptions) async -> Envelope = { await InstallCommand.run($0, $1) }
@@ -44,12 +44,33 @@ public enum MenuActionRunner {
         case .remove(let device, let app):
             envelope = await steps.remove(services, AppOptions(sub: "remove", app: app, device: device, yes: true))
         case .lendable(let device, let app):
+            // `device lendable` takes no `.op.lock`, so a lab `slot lend` can land after the panel was drawn: the ledger is
+            // read again here, and the setting is not written while the device has a lent or pending slot.
+            if let reason = lendableStop(device: device, services: services) {
+                await deliver(.notRun(reason))
+                return
+            }
             envelope = await steps.lendable(
                 services, DeviceOptions(sub: "lendable", alias: device, app: app, none: app == nil, yes: true))
         }
         let cancelled = isCancelled()
         await deliver(MenuActionOutcome(action: action, envelope: envelope, cancelled: cancelled))
         if !cancelled { await postEmit.runIfPending() }
+    }
+
+    /// Why the lendable setting must not be written now: the ledger as it is on disk says the device has a lent or pending
+    /// slot, or cannot be read. Nil when it is clear.
+    static func lendableStop(device: String, services: Services) -> String? {
+        let ledger: Ledger
+        do {
+            ledger = try services.ledgerStore.load()
+        } catch {
+            return MenuActions.ledgerUnreadable
+        }
+        let busy = SlotRule.migrated(ledger, now: services.clock.now()).slots.contains {
+            $0.device == device && ($0.lentTo != nil || $0.op != nil)
+        }
+        return busy ? MenuActions.lentOrChanging(device) : nil
     }
 
     /// "All apps": one `refresh --app X --force` per listed app, in order, folded into one `refresh`-shaped envelope. Like

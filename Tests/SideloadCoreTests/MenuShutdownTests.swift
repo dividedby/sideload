@@ -30,6 +30,11 @@ struct MenuShutdownTests {
         #expect(events == ["cancel", "kill"])
     }
 
+    @Test("the graces: a quit gets longer than a signal, which a service manager follows with SIGKILL")
+    func graces() {
+        #expect(MenuShutdown.quitGrace == .seconds(3) && MenuShutdown.signalGrace == .seconds(1))
+    }
+
     @Test("with nothing running it kills at once")
     func idle() async {
         var killed = false

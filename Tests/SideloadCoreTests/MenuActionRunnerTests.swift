@@ -107,6 +107,65 @@ struct MenuActionRunnerTests {
         #expect(!log.value.contains("postEmit-from-first"))
     }
 
+    /// A home with a ledger file; `body` shapes it (nil leaves the file unwritten, `garbage` makes it unreadable).
+    private func lendableRun(
+        _ action: MenuAction, ledger body: ((inout Ledger) -> Void)?, garbage: Bool = false
+    ) async throws -> (log: [String], outcomes: [MenuActionOutcome]) {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let paths = Paths(home: dir.path)
+        try paths.ensureHome()
+        if let body { try await LedgerStore(paths: paths).update { body(&$0) } }
+        if garbage { try Data("{ not json".utf8).write(to: URL(fileURLWithPath: paths.ledger)) }
+        let services = Services(
+            runner: FakeRunner { _ in RunResult() }, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow),
+            keychain: FakeKeychain(), home: paths)
+        let log = Log()
+        let outcomes = Mutex<[MenuActionOutcome]>([])
+        await MenuActionRunner.perform(action, services: services, steps: steps(log), isCancelled: { false }) { outcome in
+            outcomes.withLock { $0.append(outcome) }
+        }
+        return (log.value, outcomes.withLock { $0 })
+    }
+
+    @Test("the lendable setting reads the ledger again: a lent or pending slot on the device stops it, others do not")
+    func lendableGate() async throws {
+        let setting = MenuAction.lendable(device: "iphone", app: "apollo")
+
+        let clear = try await lendableRun(setting) { $0.slots = [LedgerSlot(device: "iphone", app: "apollo", presence: .present)] }
+        #expect(clear.log.count == 1 && clear.log[0].hasPrefix("lendable ") && clear.outcomes.map(\.kind) == [.done])
+        let empty = try await lendableRun(setting, ledger: nil)
+        #expect(empty.log.count == 1 && empty.outcomes.map(\.kind) == [.done])
+
+        let lent = try await lendableRun(setting) {
+            $0.slots = [LedgerSlot(device: "iphone", app: "apollo", presence: .absent, lentTo: "lab", since: testNow)]
+        }
+        #expect(lent.log.isEmpty)
+        #expect(lent.outcomes.map(\.kind) == [.failed] && lent.outcomes.first?.headline == "Not run")
+        #expect(lent.outcomes.first?.issues.first?.message == MenuActions.lentOrChanging("iphone"))
+
+        let pending = try await lendableRun(.lendable(device: "iphone", app: nil)) {
+            $0.slots = [
+                LedgerSlot(
+                    device: "iphone", app: "apollo", presence: .unknown,
+                    op: LedgerSlotOp(kind: .install, by: .install, startedAt: testNow, window: 600))
+            ]
+        }
+        #expect(pending.log.isEmpty && pending.outcomes.first?.issues.first?.message == MenuActions.lentOrChanging("iphone"))
+
+        let other = try await lendableRun(setting) {
+            $0.slots = [LedgerSlot(device: "ipad", app: "apollo", presence: .absent, lentTo: "lab", since: testNow)]
+        }
+        #expect(other.log.count == 1)
+    }
+
+    @Test("the lendable setting is not written when the ledger cannot be read")
+    func lendableUnreadable() async throws {
+        let run = try await lendableRun(.lendable(device: "iphone", app: "apollo"), ledger: nil, garbage: true)
+        #expect(run.log.isEmpty)
+        #expect(run.outcomes.first?.issues.first?.message == MenuActions.ledgerUnreadable)
+    }
+
     @Test("each action gets its own PostEmit and InterruptReport, whatever the services passed in")
     func freshPerAction() async {
         let shared = services()

@@ -14,7 +14,9 @@ All notable changes to this project are documented here. Format follows
   message and fix per app, with Retry), busy (the lock was held) or cancelled, and the device is then read again at
   once. A disabled control says why. Renew and Install need a visible device with a successful live read, except a lent
   app's Renew; Remove needs an installed row; the lendable setting is off while the device has a lent or pending row.
-  Quitting with an action running cancels it, then kills its children. New: `MenuActions`, `MenuActionOutcome`,
+  Quitting with an action running cancels it (also during the command's post-result work), then kills its children;
+  the result card shows an install's `warnings[]` as notes, and the lendable setting re-reads the ledger just before it
+  runs and is not run while the device has a lent or pending slot. New: `MenuActions`, `MenuActionOutcome`,
   `MenuActionRunner`, `MenuActionState`, `MenuAppsCache.invalidate`, `AppsRead.shows`, `AppPresence.isLive`; the snapshot
   carries the facts the rules need. "All apps" lists the available apps `refresh` would select, names each one it
   leaves out and why, and is off only when none is available; it runs one `refresh --app` per listed app (stopping on a fatal

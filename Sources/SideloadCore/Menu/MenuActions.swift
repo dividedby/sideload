@@ -66,6 +66,8 @@ public enum MenuActions {
     public static let checkingApps = "Checking apps…"
     public static let couldntCheckApps = "Couldn't check apps"
     public static let controlsBusy = "Another action is in progress"
+    static let ledgerUnreadable = "Can't read the ledger"
+    static func lentOrChanging(_ alias: String) -> String { "An app is lent or changing on \(alias)" }
 
     /// Install, Remove and Renew stop for the owner's Cancel; saving the lendable setting is instant.
     public static func cancellable(_ action: MenuAction) -> Bool {
@@ -99,7 +101,7 @@ public enum MenuActions {
     /// The rules every free action shares, first match wins.
     private static func freeStop(card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuAvailability? {
         if snapshot.suspended { return .disabled("Free certificate changed") }
-        if !snapshot.ledgerReadable { return .disabled("Can't read the ledger") }
+        if !snapshot.ledgerReadable { return .disabled(ledgerUnreadable) }
         if card.hasPending { return .disabled("Change in progress on \(card.alias)") }
         return nil
     }
@@ -206,9 +208,9 @@ public enum MenuActions {
     /// because the lab repeats `slot lend` and a different `lendableApp` mid-lend would fail it with ALREADY_LENT.
     private static func lendable(_ app: String?, card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuAvailability {
         // Without the ledger the rows cannot say whether an app is lent.
-        if !snapshot.ledgerReadable { return .disabled("Can't read the ledger") }
+        if !snapshot.ledgerReadable { return .disabled(ledgerUnreadable) }
         if card.apps.contains(where: { $0.presence == .lent || $0.presence == .pending }) {
-            return .disabled("An app is lent or changing on \(card.alias)")
+            return .disabled(lentOrChanging(card.alias))
         }
         if app == card.lendableApp { return .disabled("Already set") }
         if let app, !lendableChoices(card).contains(app) {

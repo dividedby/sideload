@@ -34,11 +34,6 @@ struct SideloadMenuApp: App {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static var model: MenuModel?
 
-    /// How long a cancelled action gets to return before its children are killed.
-    private static let quitGrace: Duration = .seconds(3)
-    /// The same for SIGTERM and SIGHUP, which a service manager follows with SIGKILL soon.
-    private static let signalGrace: Duration = .seconds(1)
-
     private var signalSources: [any DispatchSourceSignal] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -50,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Cancel the action first (the runner kills its child on cancel), give it a moment, then kill what is
                 // left and exit.
                 Task { @MainActor in
-                    await Self.stopRunningAction(grace: Self.signalGrace)
+                    await Self.stopRunningAction(grace: MenuShutdown.signalGrace)
                     exit(128 + signo)
                 }
             }
@@ -62,7 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let model = Self.model, model.actionBusy else { return .terminateNow }
         Task {
-            await Self.stopRunningAction(grace: Self.quitGrace)
+            await Self.stopRunningAction(grace: MenuShutdown.quitGrace)
             NSApplication.shared.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
@@ -70,6 +65,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static func stopRunningAction(grace: Duration) async {
         await MenuShutdown.cancelWaitKill(
-            grace: grace, cancel: { model?.cancelAction() }, isBusy: { model?.actionBusy ?? false })
+            grace: grace, cancel: { model?.cancelForShutdown() }, isBusy: { model?.actionBusy ?? false })
     }
 }

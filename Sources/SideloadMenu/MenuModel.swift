@@ -160,6 +160,13 @@ final class MenuModel {
         actionTask?.cancel()
     }
 
+    /// Quit and SIGTERM: Cancel's stop, plus the command's post-result work, which still runs after the result is shown
+    /// (the on-card Cancel is gone by then, so `cancelAction` alone would leave the task running until the kill).
+    func cancelForShutdown() {
+        cancelAction()
+        if case .finished = actionState { actionTask?.cancel() }
+    }
+
     /// Closes the confirm or the result.
     func dismiss() {
         switch actionState {

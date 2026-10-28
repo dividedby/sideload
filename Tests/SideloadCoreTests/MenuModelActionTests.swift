@@ -55,7 +55,7 @@ struct MenuModelActionTests {
 
     /// One reachable device with Apollo recorded (5.5 days left: renewable, and `ok` for the ring). `refresh` waits at the
     /// gate when `held`, and leaves post-result work behind when `postEmit`.
-    private func world(held: Bool, postEmit: Bool = false) async throws -> World {
+    private func world(held: Bool, postEmit: Bool = false, postEmitWaitsForCancel: Bool = false) async throws -> World {
         let dir = try makeTempDir()
         let paths = Paths(home: dir.path)
         try paths.ensureHome()
@@ -71,6 +71,13 @@ struct MenuModelActionTests {
             if postEmit {
                 services.postEmit.add { gate.record("postEmit lists=\(runner.lists)") }
             }
+            if postEmitWaitsForCancel {
+                services.postEmit.add {
+                    gate.record("postEmit waiting")
+                    for _ in 0..<300 where !Task.isCancelled { try? await Task.sleep(for: .milliseconds(10)) }
+                    gate.record("postEmit cancelled=\(Task.isCancelled)")
+                }
+            }
             if held { await gate.wait() }
             return Envelope(
                 ok: true, command: "refresh",
@@ -79,8 +86,8 @@ struct MenuModelActionTests {
         return World(model: MenuModel(services: services, steps: steps), runner: runner, gate: gate, dir: dir)
     }
 
-    private func loadedWorld(held: Bool = true, postEmit: Bool = false) async throws -> World {
-        let w = try await world(held: held, postEmit: postEmit)
+    private func loadedWorld(held: Bool = true, postEmit: Bool = false, postEmitWaitsForCancel: Bool = false) async throws -> World {
+        let w = try await world(held: held, postEmit: postEmit, postEmitWaitsForCancel: postEmitWaitsForCancel)
         w.model.reload(force: true)
         await w.model.loadTask?.value
         return w
@@ -215,6 +222,27 @@ struct MenuModelActionTests {
             return
         }
         #expect(outcome.kind == .done)
+        await w.model.loadTask?.value
+    }
+
+    @Test("quit during the post-result work cancels the task; the on-card Cancel does not reach it")
+    func shutdownReachesPostEmit() async throws {
+        let w = try await loadedWorld(held: false, postEmitWaitsForCancel: true)
+        defer { try? FileManager.default.removeItem(at: w.dir) }
+        w.model.request(renew)
+        w.model.confirm()
+        try await until { w.gate.calls.contains("postEmit waiting") }
+        guard case .finished = w.model.actionState else {
+            Issue.record("expected the result while the post-result work runs: \(w.model.actionState)")
+            return
+        }
+        #expect(w.model.actionBusy)
+        w.model.cancelAction()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(w.model.actionBusy)
+        w.model.cancelForShutdown()
+        try await until { !w.model.actionBusy }
+        #expect(w.gate.calls.last == "postEmit cancelled=true")
         await w.model.loadTask?.value
     }
 
