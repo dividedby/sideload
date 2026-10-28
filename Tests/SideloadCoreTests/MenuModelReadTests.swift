@@ -13,6 +13,7 @@ private final class SlowDeviceRunner: Runner {
         var maxInFlight = 0
         var infoApps: [String] = []
         var lists = 0
+        var holdList = false
     }
 
     private let state = Mutex(State())
@@ -24,6 +25,9 @@ private final class SlowDeviceRunner: Runner {
     var maxInFlight: Int { state.withLock { $0.maxInFlight } }
     var lists: Int { state.withLock { $0.lists } }
 
+    /// While held, `list devices` does not answer.
+    func holdList(_ hold: Bool) { state.withLock { $0.holdList = hold } }
+
     func run(_ spec: CommandSpec) async -> RunResult {
         let isApps = spec.args.contains("apps")
         state.withLock { st in
@@ -34,6 +38,9 @@ private final class SlowDeviceRunner: Runner {
             st.infoApps.append(spec.args.firstIndex(of: "--device").map { spec.args[$0 + 1] } ?? "")
         }
         if isApps { try? await Task.sleep(for: .milliseconds(30)) }
+        if spec.args.contains("list") {
+            while state.withLock({ $0.holdList }) { try? await Task.sleep(for: .milliseconds(5)) }
+        }
         let result = script(spec)
         if isApps { state.withLock { $0.inFlight -= 1 } }
         return result
@@ -206,5 +213,29 @@ struct MenuModelReadTests {
         #expect(!FileManager.default.fileExists(atPath: paths.opLock))
         #expect(try Data(contentsOf: URL(fileURLWithPath: paths.config)) == config)
         #expect(try Data(contentsOf: URL(fileURLWithPath: paths.ledger)) == ledger)
+    }
+
+    @Test("a reload paints what the last load learned at once: no checking rows, and nothing changes when the answers agree")
+    func firstPaintKeepsWhatIsKnown() async throws {
+        let w = try await world { _ in .apps([menuBundleId("apollo")]) }
+        defer { try? FileManager.default.removeItem(at: w.dir) }
+        w.model.reload()
+        await settle(w.model)
+        let settled = try #require(loaded(w.model))
+        #expect(settled.devices.allSatisfy { $0.presence != .checking })
+
+        // The second load's `list devices` is held, so the panel shows only its first paint.
+        w.runner.holdList(true)
+        let before = w.runner.lists
+        w.model.reload(force: true)
+        while w.runner.lists == before { try await Task.sleep(for: .milliseconds(5)) }
+        let first = try #require(loaded(w.model))
+        #expect(first == settled)
+        #expect(!first.checkingDevices && !first.checkingApps)
+        #expect(rows(w.model) == ["iphone": [.installed], "ipad": [.installed], "appletv": []])
+
+        w.runner.holdList(false)
+        await settle(w.model)
+        #expect(rows(w.model) == ["iphone": [.installed], "ipad": [.installed], "appletv": []])
     }
 }

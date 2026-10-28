@@ -43,15 +43,19 @@ final class MenuModel {
         if !force, let last = lastLoadFinished, services.clock.now().timeIntervalSince(last) < Self.openDebounce { return }
         loadTask = Task { [services] in
             let local = await Task.detached { MenuLoader.loadLocal(services) }.value
-            panel = MenuLoader.panel(local, probe: .checking)
+            panel = MenuLoader.firstPaint(local, cache: apps)
             if case .ready(let inputs) = local {
                 let probe = await MenuLoader.probeDevices(services, saved: inputs.config)
+                apps.remember(probe)
                 let visible = MenuLoader.visibleAliases(inputs.config, probe: probe)
                 apps.retain(visible)
                 panel = MenuLoader.panel(local, probe: probe, apps: apps.entries)
                 for alias in visible where apps.needsRead(alias, force: force, now: services.clock.now()) {
-                    apps.set(alias, .checking)
-                    panel = MenuLoader.panel(local, probe: probe, apps: apps.entries)
+                    // A device with an earlier answer keeps showing it while it is read again.
+                    if apps.entries[alias] == nil {
+                        apps.set(alias, .checking)
+                        panel = MenuLoader.panel(local, probe: probe, apps: apps.entries)
+                    }
                     apps.set(alias, await MenuLoader.readApps(services, alias: alias))
                     panel = MenuLoader.panel(local, probe: probe, apps: apps.entries)
                 }

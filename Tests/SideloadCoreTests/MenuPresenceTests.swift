@@ -590,4 +590,28 @@ struct MenuAppsCacheTests {
         #expect(Set(cache.entries.keys) == ["iphone"])
         #expect(cache.needsRead("ipad", force: false, now: testNow))
     }
+
+    @Test("the first paint of a load reuses the last device list and the cached reads; with nothing known it says checking")
+    func firstPaint() {
+        let local = MenuLoader.Local.ready(
+            MenuInputs(
+                now: testNow, canaryStatus: nil, config: menuConfig(), ledger: menuLedger([("iphone", "apollo", 5)]),
+                probe: .checking))
+        guard case .loaded(let launch) = MenuLoader.firstPaint(local, cache: MenuAppsCache()) else {
+            Issue.record("expected a loaded panel")
+            return
+        }
+        #expect(launch.checkingDevices)
+        #expect(launch.devices[0].apps.map(\.presence) == [.checking])
+
+        var cache = MenuAppsCache()
+        let probe = DeviceProbe.listed([menuListed()])
+        cache.remember(probe)
+        cache.set("iphone", .read(menuSnapshot([apollo]), takenAt: testNow))
+        let settled = MenuLoader.panel(local, probe: probe, apps: cache.entries)
+        #expect(MenuLoader.firstPaint(local, cache: cache) == settled)
+        guard case .loaded(let again) = settled else { return }
+        #expect(again.devices[0].apps.map(\.presence) == [.installed])
+        #expect(!again.checkingDevices)
+    }
 }

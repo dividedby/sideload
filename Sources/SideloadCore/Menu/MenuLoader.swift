@@ -93,6 +93,12 @@ public enum MenuLoader {
         return .failed(code: read.error?.code ?? "SNAPSHOT_FAILED", takenAt: read.takenAt)
     }
 
+    /// The first paint of a load: the freshly read local files over what the last load learned (the device list and the
+    /// cached app reads), so rows change only when a new answer differs. Only a launch with nothing known says "checking…".
+    public static func firstPaint(_ local: Local, cache: MenuAppsCache) -> MenuPanel {
+        panel(local, probe: cache.lastProbe ?? .checking, apps: cache.entries)
+    }
+
     /// `apps` holds what was read per alias; a missing key means the device was not asked.
     public static func panel(_ local: Local, probe: DeviceProbe, apps: [String: DeviceAppsProbe] = [:]) -> MenuPanel {
         switch local {
@@ -132,8 +138,12 @@ public struct MenuAppsCache: Sendable, Equatable {
     public static let maxAge: TimeInterval = 300
 
     public private(set) var entries: [String: DeviceAppsProbe] = [:]
+    /// The last `list devices` answer, kept so a reload's first paint shows what was last known, not "checking…".
+    public private(set) var lastProbe: DeviceProbe?
 
     public init() {}
+
+    public mutating func remember(_ probe: DeviceProbe) { lastProbe = probe }
 
     public func needsRead(_ alias: String, force: Bool, now: Date) -> Bool {
         if force { return true }
