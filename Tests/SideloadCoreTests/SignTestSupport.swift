@@ -264,6 +264,8 @@ enum ManifestMode {
     case none
     /// Approved at 1.0.0, then a newer fetch that is not.
     case newerUnapproved
+    /// Approved at 1.0.0, then a newer fetch that is approved too.
+    case newerApproved
     /// The IPA's bytes changed after the manifest recorded them.
     case tampered
     /// The IPA file is gone.
@@ -306,11 +308,12 @@ struct SignWorld {
     func ledger() throws -> Ledger { try services.ledgerStore.load() }
 
     func run(
-        app: String? = nil, device: String? = nil, yes: Bool = true, registry: ScratchRegistry = ScratchRegistry(),
-        hooks: SignHooks = SignHooks()
+        app: String? = nil, device: String? = nil, yes: Bool = true, version: String? = nil,
+        registry: ScratchRegistry = ScratchRegistry(), hooks: SignHooks = SignHooks()
     ) async -> Envelope {
         await SignCommand.run(
-            services, SignOptions(app: app ?? self.app.rawValue, device: device ?? alias, yes: yes), registry: registry, hooks: hooks)
+            services, SignOptions(app: app ?? self.app.rawValue, device: device ?? alias, yes: yes, version: version),
+            registry: registry, hooks: hooks)
     }
 
     /// Scratch folders left under `$SIDELOAD_HOME/tmp`.
@@ -359,6 +362,11 @@ func withSignWorld(
         case .approved, .tampered, .missingFile: entries = [entry(version: app.version, approved: true, fetchedAt: old)]
         case .unapproved: entries = [entry(version: app.version, approved: false, fetchedAt: old)]
         case .none: break
+        case .newerApproved:
+            entries = [
+                entry(version: "1.0.0", approved: true, fetchedAt: old.addingTimeInterval(-86_400)),
+                entry(version: app.version, approved: true, fetchedAt: old),
+            ]
         case .newerUnapproved:
             entries = [
                 entry(version: "1.0.0", approved: true, fetchedAt: old.addingTimeInterval(-86_400)),
