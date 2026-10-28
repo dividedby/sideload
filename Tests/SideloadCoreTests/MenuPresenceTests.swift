@@ -240,6 +240,19 @@ struct MenuPresenceMatrixTests {
         #expect(menuBuild(ledger: ledger, probe: .listed([menuListed(link: "unavailable")])).devices[0].appsNote == nil)
     }
 
+    @Test("the overtaken-read note is for the rows that show the record because of it, not for any slot on the device")
+    func noteFollowsTheRows() {
+        var ledger = LedgerCase.removed.ledger
+        ledger.slots[0].seenAt = testNow
+        ledger = menuLedger([("iphone", "stremio-ios", 5)], base: ledger)
+        let stremio = menuBundleId("stremio-ios")
+        // Taken before the remove of apollo: it cannot speak for apollo, but stremio's record is older than the read.
+        let read = DeviceAppsProbe.read(menuSnapshot([apollo, stremio]), takenAt: testNow.addingTimeInterval(-120))
+        let card = menuBuild(ledger: ledger, apps: ["iphone": read]).devices[0]
+        #expect(card.apps.map(\.presence) == [.installed])
+        #expect(card.appsNote == nil)
+    }
+
     @Test("a retired device's records make no row and no ring, even when the device list shows it")
     func retiredDevice() {
         var ledger = menuLedger([("gone", "apollo", 0.5)])

@@ -264,8 +264,9 @@ public enum MenuSnapshotBuilder {
                 }
             return "Couldn't check apps (\(why)) · showing last known"
         }
-        // The same for a read the ledger has overtaken (ignored) and for a device list that failed.
-        let overtaken = read.map { read in slots.contains { !usable($0, takenAt: read.takenAt) } } ?? false
+        // The same for a read the ledger has overtaken (ignored: a row it was meant to settle shows the record unconfirmed)
+        // and for a device list that failed.
+        let overtaken = read != nil && rows.contains { $0.presence == .unconfirmed }
         if appsNote == nil, !rows.isEmpty, overtaken || presence == .unknown {
             appsNote = "Couldn't check apps · showing last known"
         }

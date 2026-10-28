@@ -14,6 +14,7 @@ private final class SlowDeviceRunner: Runner {
         var infoApps: [String] = []
         var lists = 0
         var holdList = false
+        var holdApps = false
     }
 
     private let state = Mutex(State())
@@ -28,6 +29,9 @@ private final class SlowDeviceRunner: Runner {
     /// While held, `list devices` does not answer.
     func holdList(_ hold: Bool) { state.withLock { $0.holdList = hold } }
 
+    /// While held, `device info apps` does not answer.
+    func holdApps(_ hold: Bool) { state.withLock { $0.holdApps = hold } }
+
     func run(_ spec: CommandSpec) async -> RunResult {
         let isApps = spec.args.contains("apps")
         state.withLock { st in
@@ -37,7 +41,10 @@ private final class SlowDeviceRunner: Runner {
             st.maxInFlight = max(st.maxInFlight, st.inFlight)
             st.infoApps.append(spec.args.firstIndex(of: "--device").map { spec.args[$0 + 1] } ?? "")
         }
-        if isApps { try? await Task.sleep(for: .milliseconds(30)) }
+        if isApps {
+            try? await Task.sleep(for: .milliseconds(30))
+            while state.withLock({ $0.holdApps }) { try? await Task.sleep(for: .milliseconds(5)) }
+        }
         if spec.args.contains("list") {
             while state.withLock({ $0.holdList }) { try? await Task.sleep(for: .milliseconds(5)) }
         }
@@ -247,6 +254,23 @@ struct MenuModelReadTests {
         w.model.reload()
         await settle(w.model)
         #expect(w.runner.infoApps.count == 4)
+    }
+
+    @Test("every visible device still to be read says checking from the start, not when its turn comes")
+    func allDueDevicesCheckingAtOnce() async throws {
+        let w = try await world { _ in .apps([menuBundleId("apollo")]) }
+        defer { try? FileManager.default.removeItem(at: w.dir) }
+        w.runner.holdApps(true)
+        w.model.reload()
+        // The first device (ipad) is being read and is held; iphone has not had its turn.
+        while w.runner.infoApps.isEmpty { try await Task.sleep(for: .milliseconds(5)) }
+        let midway = try #require(loaded(w.model))
+        #expect(rows(w.model) == ["iphone": [.checking], "ipad": [.checking], "appletv": []])
+        #expect(midway.checkingApps)
+
+        w.runner.holdApps(false)
+        await settle(w.model)
+        #expect(rows(w.model) == ["iphone": [.installed], "ipad": [.installed], "appletv": []])
     }
 
     @Test("a reload paints what the last load learned at once: no checking rows, and nothing changes when the answers agree")

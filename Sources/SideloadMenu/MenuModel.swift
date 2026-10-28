@@ -55,13 +55,12 @@ final class MenuModel {
                 apps.remember(probe)
                 let visible = MenuLoader.visibleAliases(inputs.config, probe: probe)
                 apps.retain(visible)
+                // Every device still to be read says so at once, not when its turn comes; one with an earlier answer keeps
+                // showing it while it is read again.
+                let due = visible.filter { apps.needsRead($0, force: force, now: services.clock.now()) }
+                for alias in due where apps.entries[alias] == nil { apps.set(alias, .checking) }
                 panel = MenuLoader.panel(local, probe: probe, apps: apps.entries)
-                for alias in visible where apps.needsRead(alias, force: force, now: services.clock.now()) {
-                    // A device with an earlier answer keeps showing it while it is read again.
-                    if apps.entries[alias] == nil {
-                        apps.set(alias, .checking)
-                        panel = MenuLoader.panel(local, probe: probe, apps: apps.entries)
-                    }
+                for alias in due {
                     apps.set(alias, await MenuLoader.readApps(services, alias: alias))
                     panel = MenuLoader.panel(local, probe: probe, apps: apps.entries)
                 }
