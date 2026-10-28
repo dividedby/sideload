@@ -293,7 +293,9 @@ struct RunnerTests {
         #expect(r.signal == SIGKILL)
         #expect(h.log.signals == [SIGTERM, SIGKILL])
         let term = try #require(h.log.sent(SIGTERM))
+        let toTerm = term - (try #require(h.spawned.at))
         let toKill = try #require(h.log.sent(SIGKILL)) - term
+        #expect(toTerm < runnerSlack, "the cap hit soon after the spawn, long before the timeout; took \(toTerm)")
         #expect(toKill >= grace, "SIGKILL must wait for the grace period")
         #expect(toKill < grace + runnerSlack, "SIGKILL right after the grace period, took \(toKill)")
     }

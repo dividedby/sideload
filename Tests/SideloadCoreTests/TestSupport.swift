@@ -49,8 +49,9 @@ final class Moment: Sendable {
     }
 }
 
-/// How late the runner's own thread may act under load, past the time its timeout or grace period sets. Far below the
-/// timeouts these tests tell apart, so a runner that waits for the wrong deadline still fails.
+/// How late the runner's own thread may act under load, past the time its timeout or grace period sets. The lower bounds
+/// (at least the timeout, at least the grace period) check the deadlines; this upper bound rules out a hang, and is far
+/// below the 20 s and 60 s timeouts the overflow and cancellation tests must beat.
 let runnerSlack: Duration = .seconds(5)
 
 /// Records the signals a runner sends to child groups, and when, while still delivering them.
