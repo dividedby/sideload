@@ -548,6 +548,14 @@ All notable changes to this project are documented here. Format follows
 - Internal: the `blockedStdoutMainWrite` signal test waits for a DEBUG-only readiness marker (`SIDELOAD_TEST_READY`,
   written after the handlers are installed) instead of sleeping 500 ms, and signal tests report `terminationReason`
   and `terminationStatus` on failure; `scripts/check.sh` also tees `swift test` to `$TMPDIR/sideload-swift-test.log`.
+- Internal: `RunnerTests` timing checks no longer fail on a loaded machine. They timed the whole `await run`, which also
+  counts how long the test task waits to be resumed; under load the overflow test took 16 to 22 s against a 15 s bound.
+  Instrumented next to 16 CPU burners, the runner had sent its last signal 57 ms after the spawn, and the test task resumed
+  11 s later. The timing checks now compare marks taken on the runner's own thread (the spawn and each signal sent): at least
+  the timeout or grace period, and at most that plus a 5 s slack. The overflow test also proves more than before: its fixture
+  died of SIGPIPE when the runner closed its pipes, so it passed even with the grace-period SIGKILL removed. The fixture now
+  ignores SIGTERM and SIGPIPE and keeps running, and the test checks the child ended by SIGKILL, sent one grace period after
+  SIGTERM. The runner is unchanged.
 
 ### Fixed
 - App-data backup and restore treated a `devicectl` call that exits 0 but reports a failure as a success. A call now fails
