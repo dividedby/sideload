@@ -137,6 +137,7 @@ public enum MenuActionRunner {
         var results: [JSONValue] = []
         var warnings: [JSONValue] = []
         var appIdNew: Bool?
+        var installStarted = false
         func record(_ step: AddStep, _ status: String) { results.append(["step": .string(step.rawValue), "status": .string(status)]) }
         func finish(_ failed: AddStep? = nil, _ error: Envelope.Entry? = nil) -> Envelope {
             if let failed { record(failed, "failed") }
@@ -145,6 +146,7 @@ public enum MenuActionRunner {
                 "steps": .array(results), "warnings": .array(warnings),
             ]
             if let appIdNew { data["appIdNew"] = .bool(appIdNew) }
+            if installStarted { data["installStarted"] = true }
             return Envelope(ok: failed == nil, command: "add", data: data, errors: error.map { [$0] } ?? [])
         }
         func stop(_ step: AddStep, _ envelope: Envelope) -> Envelope {
@@ -179,7 +181,11 @@ public enum MenuActionRunner {
             if fresh == true {
                 record(.provision, "skipped")
             } else {
-                let envelope = await steps.provision(services, ProvisionOptions(app: app, device: device, yes: true))
+                var envelope = await steps.provision(services, ProvisionOptions(app: app, device: device, yes: true))
+                // Like `refresh`: only a profile that did not move is retried, once, with the renewal of our own cached copy.
+                if !envelope.ok, envelope.errors.first?.code == "PROFILE_NOT_RENEWED" {
+                    envelope = await steps.provision(services, ProvisionOptions(app: app, device: device, renew: true, yes: true))
+                }
                 guard envelope.ok else { return stop(.provision, envelope) }
                 if case .bool(let isNew)? = envelope.data["appIdNew"] { appIdNew = isNew }
                 record(.provision, "done")
@@ -219,6 +225,7 @@ public enum MenuActionRunner {
 
         // 4. Install.
         if let stopped = interrupted(.install) { return stopped }
+        installStarted = true
         let installed = await steps.install(services, InstallOptions(app: app, device: device, yes: true))
         guard installed.ok else { return stop(.install, installed) }
         if case .array(let more)? = installed.data["warnings"] { warnings += more }

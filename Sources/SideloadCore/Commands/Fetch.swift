@@ -152,6 +152,8 @@ private struct FetchRun {
             guard prior.upstreamDigest == asset.upstreamDigest else { throw Self.contentChanged(asset) }
             if let stored = try? FileDigest.sha256(path: store.path(of: prior)), stored.hex == prior.sha256 {
                 services.log("fetch: \(asset.app) \(asset.version) is already stored")
+                // A file an earlier busy run kept for this digest is no longer needed.
+                if Self.isHexDigest(asset.upstreamDigest) { unlink(Self.stagedPath(asset.upstreamDigest, tmp: services.home.tmp)) }
                 return try await report(prior, downloaded: false, alreadyApproved: prior.approved)
             }
         }
@@ -223,6 +225,11 @@ private struct FetchRun {
         return (digest, count)
     }
 
+    /// 64 lower-case hex digits: the only digests that may name a staged file.
+    private static func isHexDigest(_ digest: String) -> Bool {
+        digest.utf8.count == 64 && digest.utf8.allSatisfy { ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x61 && $0 <= 0x66) }
+    }
+
     private static func stagedPath(_ digest: String, tmp: String) -> String {
         tmp + "/" + FetchCommand.stagedPrefix + digest + ".ipa"
     }
@@ -231,8 +238,7 @@ private struct FetchRun {
     /// second re-run cannot also have it (the loser gets ENOENT and downloads). The bytes are hashed again, without
     /// following a link, because the staged name is only a claim; anything that does not match is deleted.
     private func claimStaged(_ asset: ResolvedAsset, into part: String) -> (digest: String, count: Int64)? {
-        guard asset.upstreamDigest.utf8.count == 64, asset.upstreamDigest.utf8.allSatisfy({ ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x61 && $0 <= 0x66) })
-        else { return nil }
+        guard Self.isHexDigest(asset.upstreamDigest) else { return nil }
         guard rename(Self.stagedPath(asset.upstreamDigest, tmp: services.home.tmp), part) == 0 else { return nil }
         if let stored = try? FileDigest.sha256(path: part), stored.hex == asset.upstreamDigest, stored.size == asset.size {
             services.log("fetch: using the verified download kept from an earlier run")

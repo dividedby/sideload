@@ -166,6 +166,20 @@ struct MenuAddAvailabilityTests {
         #expect(availability(fetchApollo, addBuild(ledger: epochs(6, including: menuBundleId("apollo")))) == .enabled)
     }
 
+    @Test("an unknown budget stops only a new App ID; a reused one is not gated on it")
+    func unknownBudget() {
+        func config() -> Config { addConfig { $0.extra["freeTeam"] = .object(["reservedAppIds": 99]) } }
+        var ledger = Ledger()
+        ledger.freeAppIds = [LedgerFreeAppId(bundleId: menuBundleId("apollo"), epochStart: testNow.addingTimeInterval(-3_600))]
+        let reused = addBuild(config: config(), ledger: ledger)
+        #expect(reused.appIds == nil && reused.devices[0].addable.map(\.newAppId) == [false])
+        #expect(availability(fetchApollo, reused) == .enabled)
+        #expect(availability(approveApollo, reused) == .enabled)
+        // The same unknown budget with a new App ID still stops.
+        #expect(availability(fetchApollo, addBuild(config: config())) == .disabled("App ID budget unknown"))
+        #expect(availability(approveApollo, addBuild(config: config())) == .disabled("App ID budget unknown"))
+    }
+
     @Test("the approval confirm re-applies those rules, and refuses an app the device's OS is too old for")
     func approval() {
         #expect(availability(approveApollo, addBuild()) == .enabled)

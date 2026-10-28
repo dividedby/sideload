@@ -33,6 +33,8 @@ private struct Script: Sendable {
     var fail: [String: Envelope] = [:]
     var approveSha = addSha
     var alreadyApproved = false
+    /// `provision` answers PROFILE_NOT_RENEWED this many times before it works.
+    var notRenewed = 0
     /// What `sign` records, when it succeeds.
     var signs: LedgerFreeSigned = signedBuild()
     var onStep: @Sendable (String) -> Void = { _ in }
@@ -40,6 +42,7 @@ private struct Script: Sendable {
 
 private func steps(_ log: Calls, _ script: Script = Script()) -> MenuActionSteps {
     var steps = MenuActionSteps()
+    let provisions = Mutex(0)
     steps.fetch = { _, options in
         let name = options.approve ? "approve" : "fetch"
         log.add(options.approve ? "approve \(options.app ?? "") \(options.version ?? "")" : "fetch \(options.app ?? "")")
@@ -56,6 +59,13 @@ private func steps(_ log: Calls, _ script: Script = Script()) -> MenuActionSteps
         log.add("provision \(options)")
         script.onStep("provision")
         if let failure = script.fail["provision"] { return failure }
+        let n = provisions.withLock { value -> Int in
+            value += 1
+            return value
+        }
+        if n <= script.notRenewed {
+            return .fail("provision", code: "PROFILE_NOT_RENEWED", message: "Xcode reused the profile.", fix: "Wait.")
+        }
         try? await services.ledgerStore.update { $0.freeProfiles = [freeProfile(days: 7)] }
         return Envelope(ok: true, command: "provision", data: ["appIdNew": true])
     }
@@ -116,6 +126,7 @@ private func busy() -> Envelope { .fail("x", code: "OPERATION_IN_PROGRESS", mess
 
 private let provisionCall = "provision \(ProvisionOptions(app: "apollo", device: "iphone", yes: true))"
 private let installCall = "install \(InstallOptions(app: "apollo", device: "iphone", yes: true))"
+private let renewCall = "provision \(ProvisionOptions(app: "apollo", device: "iphone", renew: true, yes: true))"
 private let signCall = "sign apollo iphone yes=true version=3.9.0"
 
 @Suite("menu add app: the run")
@@ -200,6 +211,8 @@ struct MenuAddRunTests {
             #expect(ran.outcomes.count == 1 && ran.outcomes[0].kind == .cancelled && ran.outcomes[0].headline == "Cancelled")
             #expect(ran.outcomes[0].lines.allSatisfy { $0.tone == .good })
             #expect(ran.outcomes[0].lines.count == all.firstIndex(of: stopAfter)! + 1)
+            // Install never started, so the device cannot have changed.
+            #expect(!ran.outcomes[0].notes.contains(MenuActionOutcome.deviceNote), "after \(stopAfter)")
         }
     }
 
@@ -236,13 +249,61 @@ struct MenuAddRunTests {
             // Later steps did not run.
             let order = ["approve", "provision", "sign", "install"]
             #expect(ran.calls.count == order.firstIndex(of: step)! + 1, "\(step): \(ran.calls)")
-            // The retry's confirm knows the version is approved.
-            if case .addApprove(_, _, let fetched)? = outcome.lines.last?.retry {
+            // Before sign finished the retry is Add app's confirm, which knows the version is approved; past it, the row is
+            // "Signed · not installed" and the retry is Install.
+            if step == "install" {
+                #expect(outcome.lines.last?.retry == .install(device: "iphone", app: "apollo"))
+            } else if case .addApprove(_, _, let fetched)? = outcome.lines.last?.retry {
                 #expect(fetched.alreadyApproved)
             } else {
                 Issue.record("expected a retry for \(step)")
             }
         }
+    }
+
+    @Test("a failure past sign offers Install as its Retry, and Install is available for the row it leaves")
+    func retryPastSign() async throws {
+        var script = Script()
+        script.fail["install"] = .fail("install", code: "DEVICE_LOCKED", message: "Locked.", fix: "Unlock it.")
+        let ran = try await run(approve, script: script)
+        let retry = try #require(ran.outcomes[0].lines.last?.retry)
+        #expect(retry == .install(device: "iphone", app: "apollo"))
+        // Add app is off for that row, Install is on.
+        var ledger = Ledger()
+        ledger.freeSigned = [menuSigned("iphone", "apollo", days: 6)]
+        let snapshot = addBuild(ledger: ledger)
+        #expect(MenuActions.availability(approve, in: snapshot, now: testNow).reason == "Signed · not installed: use Install")
+        #expect(MenuActions.availability(retry, in: snapshot, now: testNow) == .enabled)
+
+        // Before sign the retry is Add app again.
+        var early = Script()
+        early.fail["sign"] = .fail("sign", code: "SIGNING_FAILED", message: "No.", fix: "Fix.")
+        let before = try await run(approve, script: early)
+        guard case .addApprove? = before.outcomes[0].lines.last?.retry else {
+            Issue.record("expected Add app again, got \(String(describing: before.outcomes[0].lines.last?.retry))")
+            return
+        }
+    }
+
+    @Test("PROFILE_NOT_RENEWED is retried once with renew, like refresh; anything else, or a second one, stops")
+    func profileNotRenewed() async throws {
+        var once = Script()
+        once.notRenewed = 1
+        let ok = try await run(approve, script: once)
+        #expect(ok.calls == ["approve apollo 3.9.0", provisionCall, renewCall, signCall, installCall])
+        #expect(ok.outcomes[0].kind == .done)
+
+        var twice = Script()
+        twice.notRenewed = 2
+        let stuck = try await run(approve, script: twice)
+        #expect(stuck.calls == ["approve apollo 3.9.0", provisionCall, renewCall])
+        #expect(stuck.outcomes[0].headline == "Add stopped at provision")
+        #expect(stuck.outcomes[0].lines.last?.issue?.code == "PROFILE_NOT_RENEWED")
+
+        var other = Script()
+        other.fail["provision"] = .fail("provision", code: "FREE_APP_ID_LIMIT", message: "Limit.", fix: "Wait.")
+        let limit = try await run(approve, script: other)
+        #expect(limit.calls == ["approve apollo 3.9.0", provisionCall])
     }
 
     @Test("after sign the signed build must be the confirmed version before install")
@@ -321,6 +382,9 @@ struct MenuAddFetchOutcomeTests {
     func endings() {
         let late = MenuActionOutcome(action: fetch, envelope: ok(), cancelled: true)
         #expect(late.proceed == nil && late.kind == .done)
+        // Not a plain success: it says nothing was approved and what to do next.
+        #expect(late.headline == "Fetched Apollo 3.9.0 · not approved")
+        #expect(late.notes == ["Choose Add app again to approve and install."])
 
         let failed = MenuActionOutcome(
             action: fetch, envelope: .fail("fetch", code: "DIGEST_MISMATCH", message: "Wrong file.", fix: "Retry."), cancelled: false)

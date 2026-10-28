@@ -130,7 +130,7 @@ final class MenuModel {
         }
         // A load in flight must not write over the action's state or store a read cut short by it. The fetch of Add app
         // changes neither the device nor the ledger, so it leaves the load alone and the panel stays current for stage 2.
-        if !isFetchStage(action) {
+        if !action.isFetchStage {
             loadGeneration += 1
             loadTask?.cancel()
             loadTask = nil
@@ -144,11 +144,6 @@ final class MenuModel {
             }
             finishAction(action)
         }
-    }
-
-    private func isFetchStage(_ action: MenuAction) -> Bool {
-        if case .addFetch = action { return true }
-        return false
     }
 
     private func deliver(_ outcome: MenuActionOutcome) {
@@ -171,7 +166,7 @@ final class MenuModel {
             return
         }
         // A fetch that failed, was busy or was cancelled changed nothing either.
-        if isFetchStage(action) { return }
+        if action.isFetchStage { return }
         apps.invalidate(action.device)
         repaint(renewing: false)
         lastLoadFinished = nil

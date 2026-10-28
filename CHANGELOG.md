@@ -22,6 +22,10 @@ All notable changes to this project are documented here. Format follows
   app already on the device, or an OS older than the app's minimum. New: `MenuAction.addFetch` and `.addApprove`,
   `MenuFetched`, `MenuAddOption`, `MenuAddSource`, `MenuActionOutcome.proceed`, `MenuActionSteps.fetch/provision/sign`,
   `MenuDeviceCard.addable/osVersion`, `MenuSnapshot.addSources`.
+  Retry after a failure past `sign` is Install (the row is then "Signed · not installed"); `provision` is retried once with
+  `renew` on `PROFILE_NOT_RENEWED`, like `refresh`; the device note on a cancel appears only when `install` was called;
+  a reused App ID is not blocked by an unknown budget; a Cancel that arrives after the fetch succeeded says "not approved".
+- `fetch`'s "already stored" shortcut removes a `tmp/staged-<digest>.ipa` left for that digest.
 - `SignOptions.version` (Core only, no CLI flag): `sign` signs exactly that fetched, approved version instead of the newest
   approved one (`NOT_APPROVED` when it is not both); nil keeps the old behaviour. The menu's Add app sets it.
 - Menu bar actions: Renew… (All apps or one app, Retry on a failed renewal), Install and Install update, Remove and

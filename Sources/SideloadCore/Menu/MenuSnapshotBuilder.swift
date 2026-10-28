@@ -168,13 +168,16 @@ public enum MenuSnapshotBuilder {
             guard source.platform == platform, !rows.contains(where: { $0.app == source.app }),
                 let bundleId = ProvisionApp(rawValue: source.app)?.freeBundleId(prefix: inputs.config.bundleIdPrefix)
             else { return nil }
-            // Without the ledger or the reserve the budget is unknown; the action says so, and nothing is allowed.
-            let decision = reserved.map {
-                FreeAppIdBudget.evaluate(inputs.ledger.freeAppIds, bundleId: bundleId, reserved: $0, now: inputs.now)
+            // Whether the App ID is new needs only the ledger; whether a new one fits also needs the reserve. Without them the
+            // budget is unknown: a new App ID is then not allowed, a reused one costs nothing.
+            let live = inputs.ledgerReadable ? FreeAppIdBudget.live(inputs.ledger.freeAppIds, now: inputs.now) : nil
+            let isNew = live.map { entries in !entries.contains { $0.bundleId == bundleId } } ?? true
+            let fits = reserved.map {
+                FreeAppIdBudget.evaluate(inputs.ledger.freeAppIds, bundleId: bundleId, reserved: $0, now: inputs.now).allowed
             }
             return MenuAddOption(
-                app: source.app, name: source.name, source: source.source, newAppId: decision?.isNew ?? true,
-                appIdAllowed: decision?.allowed ?? false)
+                app: source.app, name: source.name, source: source.source, newAppId: isNew,
+                appIdAllowed: !isNew || fits == true)
         }
     }
 

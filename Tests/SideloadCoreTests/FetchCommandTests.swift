@@ -720,6 +720,25 @@ struct FetchLockTests {
         }
     }
 
+    @Test("a re-run that finds the version already stored deletes the staged file for that digest")
+    func storedDropsStaged() async throws {
+        let ipa = try await SampleIPAs.shared.data("plain")
+        let digest = sha256Hex(ipa)
+        try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
+            let first = await runFetch(paths, apolloTransport(ipa: ipa), FetchOptions(app: "apollo"))
+            #expect(first.ok, "\(first.errors)")
+            // An earlier run that found the lock busy left this behind while another run recorded the file.
+            try ipa.write(to: URL(fileURLWithPath: paths.tmp + "/staged-\(digest).ipa"))
+            #expect(stagedFiles(paths) == ["staged-\(digest).ipa"])
+
+            let second = apolloTransport(ipa: ipa)
+            let again = await runFetch(paths, second, FetchOptions(app: "apollo"))
+            #expect(again.ok, "\(again.errors)")
+            #expect(second.downloadRequests.isEmpty)
+            #expect(stagedFiles(paths).isEmpty)
+        }
+    }
+
     @Test("a corrupted staged file, a wrong-sized one and a staged symlink are deleted and the file is downloaded")
     func badStagedFile() async throws {
         let ipa = try await SampleIPAs.shared.data("plain")

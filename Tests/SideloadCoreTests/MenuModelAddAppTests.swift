@@ -242,4 +242,33 @@ struct MenuModelAddAppTests {
         #expect(outcome.kind == .cancelled && outcome.proceed == nil)
         #expect(w.hold.calls == ["fetch"])
     }
+
+    @Test("a panel that no longer allows the approval says why, instead of opening it, and the device is read again")
+    func approvalBlocked() async throws {
+        let w = try await loaded(held: true)
+        defer { try? FileManager.default.removeItem(at: w.dir) }
+        // A reload is in flight (its device read is held) when the owner starts the fetch: stage 1 leaves it running.
+        w.runner.holdApps(true)
+        w.model.reload(force: true)
+        try await until { w.runner.infoApps.count >= 2 }
+        w.model.request(fetch)
+        w.model.confirm()
+        try await until { w.hold.waiting == 1 }
+        // While the download runs the owner takes the source away, and the load that was running finishes with that config.
+        let without = addConfig(approved: [])
+        try await seed(Paths(home: w.dir.path), config: without, ledger: Ledger())
+        w.runner.holdApps(false)
+        await w.model.loadTask?.value
+        let listsBefore = w.runner.lists
+        w.hold.release()
+        try await until { !w.model.actionBusy }
+        guard case .finished(let outcome) = w.model.actionState else {
+            Issue.record("expected the Not run card, got \(w.model.actionState)")
+            return
+        }
+        #expect(outcome.headline == "Not run" && outcome.issues.first?.message == "Not an approved source")
+        #expect(w.hold.calls == ["fetch"])
+        await w.model.loadTask?.value
+        #expect(w.runner.lists == listsBefore + 1)
+    }
 }

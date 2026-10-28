@@ -77,7 +77,8 @@ public struct MenuActionOutcome: Sendable, Equatable {
             case .addFetch: notes = ["Nothing was signed or installed."]
             case .addApprove:
                 let steps = Self.addSteps(envelope)
-                if steps.failed == .install { notes.append(Self.deviceNote) }
+                // Only an install that started may have finished on the device.
+                if steps.installStarted { notes.append(Self.deviceNote) }
                 if !steps.done.isEmpty { notes.append(Self.addKeptNote) }
             default: break
             }
@@ -263,9 +264,15 @@ public struct MenuActionOutcome: Sendable, Equatable {
             return
         }
         kind = .done
-        headline = "Fetched \(MenuFormat.appName(app)) \(fetched.version)"
-        // A Cancel that arrived too late to stop the download is still the owner's: no second confirm opens.
-        if !cancelled { proceed = .addApprove(device: alias, app: app, fetched: fetched) }
+        if cancelled {
+            // A Cancel that arrived too late to stop the download is still the owner's: no second confirm opens, and the card
+            // says nothing was approved. The next Add app reuses the stored file.
+            headline = "Fetched \(MenuFormat.appName(app)) \(fetched.version) · not approved"
+            notes = ["Choose Add app again to approve and install."]
+        } else {
+            headline = "Fetched \(MenuFormat.appName(app)) \(fetched.version)"
+            proceed = .addApprove(device: alias, app: app, fetched: fetched)
+        }
     }
 
     private static func fetched(_ envelope: Envelope) -> MenuFetched? {
@@ -290,6 +297,8 @@ public struct MenuActionOutcome: Sendable, Equatable {
         var done: [MenuActionRunner.AddStep: String] = [:]
         var failed: MenuActionRunner.AddStep?
         var appIdNew = false
+        /// `install` was called (a cancel before it never reached the device).
+        var installStarted = false
     }
 
     /// The per-step status the runner folded into the add envelope: step -> "done" or "skipped"; the step that failed.
@@ -304,6 +313,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
             }
         }
         result.appIdNew = envelope.data["appIdNew"] == .bool(true)
+        result.installStarted = envelope.data["installStarted"] == .bool(true)
         return result
     }
 
@@ -316,9 +326,12 @@ public struct MenuActionOutcome: Sendable, Equatable {
             becomeBusy(action)
             return
         }
-        // Approval done: the retry's confirm says so.
+        // Approval done: the retry's confirm says so. Past sign the row is "Signed · not installed" and Add app is off for it,
+        // so the retry is Install, through its own confirm.
         var retry = action
-        if steps.done[.approve] != nil, !fetched.alreadyApproved {
+        if steps.done[.sign] != nil {
+            retry = .install(device: alias, app: app)
+        } else if steps.done[.approve] != nil, !fetched.alreadyApproved {
             var approved = fetched
             approved.alreadyApproved = true
             retry = .addApprove(device: alias, app: app, fetched: approved)

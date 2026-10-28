@@ -16,6 +16,13 @@ public enum MenuAction: Hashable, Sendable {
     /// Add app, stage 2: approve exactly `fetched`, then provision, sign and install it.
     case addApprove(device: String, app: String, fetched: MenuFetched)
 
+    /// Add app's fetch downloads and checks a file; it changes neither the device nor the ledger, so the model neither
+    /// cancels a load for it nor reads the device again when it ends.
+    public var isFetchStage: Bool {
+        if case .addFetch = self { return true }
+        return false
+    }
+
     public var device: String {
         switch self {
         case .renew(let device, _), .install(let device, _), .remove(let device, _), .lendable(let device, _),
@@ -253,8 +260,10 @@ public enum MenuActions {
         if let stop = deviceStop(card: card) { return stop }
         guard card.slotsKnown else { return .disabled("Slots unknown") }
         guard card.freeSlots > 0 else { return .disabled("No free slot: remove an app first") }
-        guard let ids = snapshot.appIds else { return .disabled("App ID budget unknown") }
         guard let option = card.addable.first(where: { $0.app == app }) else { return .disabled("Bundle ID prefix is not set") }
+        // A reused App ID costs none, so only a new one is gated on the budget.
+        guard option.newAppId else { return .enabled }
+        guard let ids = snapshot.appIds else { return .disabled("App ID budget unknown") }
         if !option.appIdAllowed {
             return .disabled("App ID limit: \(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved")
         }
