@@ -14,24 +14,39 @@ extension RefreshPolicy {
 
     /// Why the automatic run did not act, as the `code` of a skipped result and the key of the envelope's `skipped` counts.
     /// The first four end the whole run; of them only `ledgerUnreadable` is a failure, the rest are skips.
-    enum AutoSkip: String, Equatable {
-        case killSwitch = "KILL_SWITCH"
-        case freeCertChanged = "FREE_CERT_CHANGED"
-        case ledgerUnreadable = "LEDGER_INVALID"
-        case operationInProgress = "OPERATION_IN_PROGRESS"
-        case notRecorded = "NOT_RECORDED"
-        case lent = "LENT"
-        case notPresent = "NOT_PRESENT"
-        case suspended = "SUSPENDED"
-        case slotPending = "SLOT_PENDING"
-        case signedVersionDiffers = "SIGNED_VERSION_DIFFERS"
-        case notDue = "NOT_DUE"
-        case backoff = "BACKOFF"
-        case installCap = "INSTALL_CAP"
-        case deviceCap = "DEVICE_CAP"
-        case recentAttempt = "RECENT_ATTEMPT"
-        case deviceNotVisible = "DEVICE_NOT_VISIBLE"
-        case deadline = "DEADLINE"
+    enum AutoSkip: Equatable {
+        case killSwitch, freeCertChanged, ledgerUnreadable, operationInProgress
+        case notRecorded, lent, notPresent, suspended, slotPending, signedVersionDiffers, notDue
+        case backoff, installCap, deviceCap, recentAttempt
+        case deviceNotVisible, deadline
+        /// An opted-in device whose slot reserve is out of range, one of a platform none of our apps runs on, and the
+        /// config that could not be read at all.
+        case configInvalid, platformMismatch
+
+        /// The code, which is also the key of the envelope's `skipped` counts. The two the manual run shares are spelled once.
+        var code: String {
+            switch self {
+            case .killSwitch: "KILL_SWITCH"
+            case .freeCertChanged: "FREE_CERT_CHANGED"
+            case .ledgerUnreadable: "LEDGER_INVALID"
+            case .operationInProgress: OperationLock.busyCode
+            case .notRecorded: "NOT_RECORDED"
+            case .lent: "LENT"
+            case .notPresent: RefreshPolicy.notPresent
+            case .suspended: "SUSPENDED"
+            case .slotPending: "SLOT_PENDING"
+            case .signedVersionDiffers: "SIGNED_VERSION_DIFFERS"
+            case .notDue: RefreshPolicy.notDue
+            case .backoff: "BACKOFF"
+            case .installCap: "INSTALL_CAP"
+            case .deviceCap: "DEVICE_CAP"
+            case .recentAttempt: "RECENT_ATTEMPT"
+            case .deviceNotVisible: "DEVICE_NOT_VISIBLE"
+            case .deadline: "DEADLINE"
+            case .configInvalid: "CONFIG_INVALID"
+            case .platformMismatch: "PLATFORM_MISMATCH"
+            }
+        }
     }
 
     /// The whole-run gates, cheapest first: the kill switch, then the ledger (unreadable, or the free team's suspension), then

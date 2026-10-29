@@ -176,13 +176,6 @@ struct AppResult {
     }
 }
 
-/// Who runs the steps. Manual is the owner's `refresh --device`; auto is the launchd agent's `refresh --auto`, which shares
-/// `renew` and differs in what it checks, logs and says (design section 18, "Manual versus auto").
-enum RefreshMode: Sendable {
-    case manual
-    case auto(RefreshAutoContext)
-}
-
 /// What only the automatic run carries: its log and its notifier.
 struct RefreshAutoContext: Sendable {
     let log: RefreshLog
@@ -191,14 +184,12 @@ struct RefreshAutoContext: Sendable {
 
 struct RefreshRun {
     let services: Services
-    let options: RefreshOptions
+    var options = RefreshOptions()
     let steps: RefreshSteps
     let timeZone: TimeZone
-    var mode: RefreshMode = .manual
-
-    var auto: RefreshAutoContext? {
-        if case .auto(let context) = mode { context } else { nil }
-    }
+    /// Set for the launchd agent's `refresh --auto`, which shares `renew` with the owner's `refresh --device` and differs in
+    /// what it checks, logs and says (design section 18, "Manual versus auto"). Nil is a manual run.
+    var auto: RefreshAutoContext?
 
     var command: String { RefreshCommand.command }
 

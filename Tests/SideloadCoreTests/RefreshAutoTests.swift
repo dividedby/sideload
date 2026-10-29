@@ -214,6 +214,26 @@ struct RefreshAutoOutputTests {
         }
     }
 
+    @Test("record cleans every field itself: aliases, codes, the keys of a tally, plain tokens; nothing that is not a scalar")
+    func recordCleans() async throws {
+        try await withTestHome { paths, _ in
+            let log = RefreshLog(paths: paths, clock: FixedClock(testNow), run: "abc12345")
+            log.record(
+                "install",
+                [
+                    "device": .string(savedUdid("1")), "app": "stremio-ios", "reason": "not a code", "code": .string(savedCoreId("1")),
+                    "decision": "/Users/someone/x", "skipped": ["KILL_SWITCH": 2, "lower": 1, "bad one": 4, "ok": "no"],
+                    "nested": ["a": 1], "list": [1], "n": 3, "flag": true,
+                ])
+            let data = try #require(try readFile(paths.refreshLog))
+            let line = try JSONDecoder().decode(JSONValue.self, from: data)
+            #expect(line["device"] == "?" && line["app"] == "stremio-ios" && line["reason"] == "OTHER" && line["code"] == "OTHER")
+            #expect(line["decision"] == "?" && line["nested"] == .null && line["list"] == .null)
+            #expect(line["n"] == 3 && line["flag"] == true && line["event"] == "install")
+            #expect(line["skipped"] == ["KILL_SWITCH": 2, "OTHER": 5])
+        }
+    }
+
     @Test("a log that cannot be written never fails the caller")
     func logWriteFailure() throws {
         let log = RefreshLog(paths: Paths(home: "/dev/null/x"), clock: FixedClock(testNow), run: "r")
@@ -608,6 +628,8 @@ struct RefreshAutoTests {
                 let log = CallBox([])
                 let out = await auto(a, autoSteps(log))
                 #expect(out.ok && skippedCount(out, "DEVICE_NOT_VISIBLE") == 1)
+                let skip = try #require(try logged(a, "install").first)
+                #expect(skip["reason"] == "DEVICE_NOT_VISIBLE" && skip["daysLeft"] == 2)
                 #expect(log.value.isEmpty && a.runner.listCalls == 1 && a.runner.notices.isEmpty)
                 #expect(try a.w.ledger().installs == before)
             }
@@ -788,6 +810,10 @@ struct RefreshAutoTests {
             }
             let counted = try fields(a).attemptsByDay
             #expect(counted.isEmpty)
+            // The skips the stop caused say so in the log, and still carry the days left.
+            let caused = try logged(a, "install").filter { $0["stopped"] == true }
+            #expect(Set(caused.compactMap { $0["app"]?.string }) == ["stremio-ios", "apollo"])
+            #expect(caused.allSatisfy { $0["reason"] == "FREE_CERT_CHANGED" && $0["daysLeft"] == 2 })
             #expect(a.runner.notices.count == 2, "told once for the attempt, once for the suspension")
         }
     }
@@ -853,6 +879,8 @@ struct RefreshAutoTests {
             #expect(out.ok, "\(out.errors)")
             #expect(autoResult(out, .stremioIOS)?["status"] == "renewed")
             #expect(autoResult(out, .apollo)?["code"] == "DEADLINE" && skippedCount(out, "DEADLINE") == 1)
+            let skip = try #require(try logged(a, "install").first { $0["reason"] == "DEADLINE" })
+            #expect(skip["app"] == "apollo" && skip["daysLeft"] == 2 && skip["stopped"] == nil, "an own skip, with its days left")
             #expect(log.value == ["provision stremio-ios", "sign stremio-ios", "install stremio-ios"])
             let apollo = try fields(a, .apollo)
             #expect(apollo.attemptsByDay.isEmpty && apollo.consecutiveFailures == 0)
