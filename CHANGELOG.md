@@ -73,7 +73,7 @@ All notable changes to this project are documented here. Format follows
 
 - `refresh`, and so the menu's Renew, keeps the installed version (owner decision 2026-10-28): it asks `sign` for the
   version in `installs[].version` instead of the newest approved one, so a renewal no longer updates the app. If that
-  version is no longer a fetched, approved manifest entry it falls back to the newest approved one and the envelope
+  version is no longer a fetched, approved manifest entry with its IPA on disk it falls back to the newest approved one and the envelope
   warns `RENEW_VERSION_CHANGED`, naming both versions; the renewal is not failed. An app with no install record behaves
   as before.
 - Menu bar time left rounds up: a fresh 7-day profile reads "7 d" and turns "6 d" exactly when Renew allows it; at a

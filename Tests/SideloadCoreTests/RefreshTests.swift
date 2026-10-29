@@ -884,18 +884,27 @@ struct RefreshTests {
 
 // MARK: renew keeps the installed version (owner decision 2026-10-28)
 
-private func manifestEntry(_ version: String, approved: Bool = true, fetchedDays: Double = 0) -> ManifestEntry {
+private func manifestEntry(
+    _ version: String, app: String = "stremio-ios", approved: Bool = true, fetchedDays: Double = 0
+) -> ManifestEntry {
     let digest = String(repeating: "ab", count: 32)
     return ManifestEntry(
-        app: "stremio-ios", version: version, file: "stremio-ios/\(version)/Stremio.ipa", urlHost: "example.test", sha256: digest,
+        app: app, version: version, file: "\(app)/\(version)/App.ipa", urlHost: "example.test", sha256: digest,
         upstreamDigest: digest, size: 1000, fetchedAt: daysFromNow(fetchedDays), approved: approved,
         approvedAt: approved ? daysFromNow(fetchedDays) : nil)
 }
 
-private func seedManifest(_ w: InstallWorld, _ entries: [ManifestEntry]) throws {
+/// Records `entries`; each one's file is on disk unless its version is in `missing`.
+private func seedManifest(_ w: InstallWorld, _ entries: [ManifestEntry], missing: Set<String> = []) throws {
     var manifest = Manifest()
     manifest.entries = entries
-    try ManifestStore(paths: w.paths).save(manifest)
+    let store = ManifestStore(paths: w.paths)
+    try store.save(manifest)
+    for entry in entries where !missing.contains(entry.version) {
+        let path = try store.path(of: entry)
+        try makeDirectories(parentPath(path), mode: 0o700)
+        try Data("ipa".utf8).write(to: URL(fileURLWithPath: path))
+    }
 }
 
 @Suite("refresh: renewal keeps the installed version")
@@ -946,6 +955,78 @@ struct RefreshVersionTests {
             let (out, signs) = await renew(w)
             #expect(out.ok && signs.value.map(\.version) == [nil])
             #expect(warnings(out) == ["RENEW_VERSION_CHANGED"])
+        }
+    }
+
+    @Test("the installed version is approved but its file is gone: the newest approved is signed, with the warning, never a failure")
+    func installedFileMissing() async throws {
+        try await withRefreshWorld(profileDays: 3, ledger: { seed(&$0, .stremioIOS, days: 3) }) { w in
+            try seedManifest(w, [manifestEntry("1.2.3", fetchedDays: -9), manifestEntry("2.0.0", fetchedDays: -1)], missing: ["1.2.3"])
+            let (out, signs) = await renew(w)
+            #expect(out.ok, "\(out.errors)")
+            #expect(signs.value.map(\.version) == [nil])
+            #expect(warnings(out) == ["RENEW_VERSION_CHANGED"])
+            let warning = try #require(out.data["warnings"]?.array?.first)
+            let text = (warning["message"]?.string ?? "") + (warning["fix"]?.string ?? "")
+            #expect(text.contains("1.2.3") && text.contains("2.0.0"))
+        }
+    }
+
+    @Test("a link in place of the installed version's file counts as missing")
+    func installedFileIsLink() async throws {
+        try await withRefreshWorld(profileDays: 3, ledger: { seed(&$0, .stremioIOS, days: 3) }) { w in
+            let entries = [manifestEntry("1.2.3", fetchedDays: -9), manifestEntry("2.0.0", fetchedDays: -1)]
+            try seedManifest(w, entries, missing: ["1.2.3"])
+            let store = ManifestStore(paths: w.paths)
+            let path = try store.path(of: entries[0])
+            try makeDirectories(parentPath(path), mode: 0o700)
+            try FileManager.default.createSymbolicLink(atPath: path, withDestinationPath: try store.path(of: entries[1]))
+            let (out, signs) = await renew(w)
+            #expect(out.ok && signs.value.map(\.version) == [nil] && warnings(out) == ["RENEW_VERSION_CHANGED"])
+        }
+    }
+
+    @Test("the newest approved entry is the installed one and its file is gone: no switch to name, sign reports it")
+    func installedIsNewestAndMissing() async throws {
+        try await withRefreshWorld(profileDays: 3, ledger: { seed(&$0, .stremioIOS, days: 3) }) { w in
+            try seedManifest(w, [manifestEntry("1.2.3", fetchedDays: -1)], missing: ["1.2.3"])
+            let (out, signs) = await renew(w)
+            #expect(signs.value.map(\.version) == [nil] && warnings(out).isEmpty)
+        }
+    }
+
+    @Test("all apps on the device: each renewal keeps its own installed version, and so does --force")
+    func allAppsAndForce() async throws {
+        for force in [false, true] {
+            let days: Double = force ? 6 : 3
+            try await withRefreshWorld(
+                [.stremioIOS, .apollo], profileDays: days,
+                ledger: {
+                    seed(&$0, .stremioIOS, days: days)
+                    seed(&$0, .apollo, days: days)
+                    for i in $0.installs.indices { $0.installs[i].version = $0.installs[i].app == "apollo" ? "3.9.0" : "1.2.3" }
+                }
+            ) { w in
+                try seedManifest(
+                    w,
+                    [
+                        manifestEntry("1.2.3", fetchedDays: -9), manifestEntry("2.0.0", fetchedDays: -1),
+                        manifestEntry("3.9.0", app: "apollo", fetchedDays: -9),
+                        manifestEntry("3.10.0", app: "apollo", fetchedDays: -1),
+                    ])
+                let signs = Box<[SignOptions]>([])
+                let steps = scripted(
+                    CallLog([]),
+                    sign: { options in
+                        signs.value.append(options)
+                        return okEnvelope("sign", options.app ?? "")
+                    })
+                let out = await refresh(w, steps, force: force)
+                #expect(out.ok, "\(out.errors)")
+                let byApp = Dictionary(uniqueKeysWithValues: signs.value.map { ($0.app ?? "", $0.version) })
+                #expect(byApp == ["stremio-ios": "1.2.3", "apollo": "3.9.0"], "force \(force)")
+                #expect(warnings(out).isEmpty)
+            }
         }
     }
 

@@ -75,12 +75,7 @@ private struct FetchRun {
         let manifest = try store.load()
         services.log("fetch: reading the \(source.app) metadata")
         let asset = try SourceResolver.resolve(source, json: try await metadata())
-        guard DownloadPolicy.permits(asset.url, hosts: source.downloadHosts) else {
-            throw SideloadError(
-                "SOURCE_NOT_ALLOWED", "The download URL is not https on an allowed host for \(source.app).",
-                fix: "Allowed hosts: \(source.downloadHosts.sorted().joined(separator: ", ")).",
-                data: ["host": .string(printableCut(asset.url.host ?? ""))])
-        }
+        try SourceResolver.requireDownloadHost(asset, source: source)
 
         let prior = manifest.entry(app: asset.app, version: asset.version)
         if let prior {
@@ -132,7 +127,7 @@ private struct FetchRun {
                 timeout: FetchCommand.downloadTimeout)
             response = try await services.http.download(request) { try sink.accept($0) }
         } catch {
-            throw Self.map(error)
+            throw SourceMetadata.map(error)
         }
         guard response.status == 200 else {
             throw SideloadError(
@@ -140,7 +135,7 @@ private struct FetchRun {
                 data: ["status": .number(Double(response.status))])
         }
         guard DownloadPolicy.permits(response.finalURL, hosts: source.downloadHosts) else {
-            throw Self.redirectRefused
+            throw SourceMetadata.redirectRefused
         }
         let (digest, count) = try sink.finish()
         // The source declared this size and it was the cap; a short body is as wrong as a long one.
@@ -322,9 +317,6 @@ private struct FetchRun {
             fix: "Treat this as a swapped file. Inspect it by hand; the owner removes the manifest entry and its folder to start over.")
     }
 
-    private static var redirectRefused: SideloadError { SourceMetadata.redirectRefused }
-
-    private static func map(_ error: any Error) -> SideloadError { SourceMetadata.map(error) }
 }
 
 /// Streams a body to a 0600 file while hashing it. Refuses to take more than `maxBytes`.

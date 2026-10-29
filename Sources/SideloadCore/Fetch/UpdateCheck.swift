@@ -61,10 +61,10 @@ enum UpdateCheck {
 
         let installed = installedRecords(ledger, saved: Set(config.devices.keys))
         var cancelled = false
-        for catalog in FetchCatalog.sources where named == nil || catalog.app == named {
-            if cancelled || Task.isCancelled {
+        sources: for catalog in FetchCatalog.sources where named == nil || catalog.app == named {
+            if Task.isCancelled {
                 cancelled = true
-                break
+                break sources
             }
             let app = catalog.app
             guard let source = try? FetchCatalog.approved(app: app, config: config) else {
@@ -91,7 +91,7 @@ enum UpdateCheck {
                     let failure = SourceMetadata.map(error, command: "updates")
                     if failure.code == "CANCELLED" {
                         cancelled = true
-                        break
+                        break sources
                     }
                     var asked: Int?
                     if case .number(let seconds)? = failure.data["retryAfter"] { asked = Int(seconds) }
@@ -135,15 +135,12 @@ enum UpdateCheck {
             let rateLimited = response.status == 403 || response.status == 429
             throw SourceMetadata.httpError(response.status, retryAfter: rateLimited ? response.retryAfter : nil)
         }
+        // The live transport enforces this cap itself; the check guards a stub transport that does not.
         guard response.body.count <= URLSessionTransport.maxBodyBytes else {
             throw SourceMetadata.map(HTTPTransportError.bodyTooLarge)
         }
         let asset = try SourceResolver.resolve(source, json: response.body)
-        guard DownloadPolicy.permits(asset.url, hosts: source.downloadHosts) else {
-            throw SideloadError(
-                "SOURCE_NOT_ALLOWED", "The download URL is not https on an allowed host for \(source.app).",
-                fix: "Allowed hosts: \(source.downloadHosts.sorted().joined(separator: ", ")).")
-        }
+        try SourceResolver.requireDownloadHost(asset, source: source)
         return asset
     }
 

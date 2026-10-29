@@ -193,6 +193,16 @@ enum SourceResolver {
             app: app, version: versionKey, fileName: last, url: url, upstreamDigest: digest, size: size, build: build, minOS: minOS)
     }
 
+    /// The asset's URL must be https on one of the source's (possibly narrowed) download hosts; `fetch` and `updates` both ask.
+    static func requireDownloadHost(_ asset: ResolvedAsset, source: FetchSource) throws {
+        guard DownloadPolicy.permits(asset.url, hosts: source.downloadHosts) else {
+            throw SideloadError(
+                "SOURCE_NOT_ALLOWED", "The download URL is not https on an allowed host for \(source.app).",
+                fix: "Allowed hosts: \(source.downloadHosts.sorted().joined(separator: ", ")).",
+                data: ["host": .string(printableCut(asset.url.host ?? ""))])
+        }
+    }
+
     static func resolve(_ source: FetchSource, json: Data) throws -> ResolvedAsset {
         switch source.kind {
         case .githubRelease(let repo): try apollo(app: source.app, repo: repo, json: json)
