@@ -256,24 +256,7 @@ private struct FetchRun {
     }
 
     private func metadata() async throws -> Data {
-        let url = source.metadataURL
-        guard DownloadPolicy.permits(url, hosts: source.metadataHosts) else {
-            throw SideloadError(
-                "SOURCE_NOT_ALLOWED", "The metadata URL for \(source.app) is not on an allowed host.",
-                fix: "Allowed hosts: \(source.metadataHosts.sorted().joined(separator: ", ")).")
-        }
-        let response: HTTPResponse
-        do {
-            response = try await services.http.get(HTTPRequest(url: url))
-        } catch {
-            throw Self.map(error)
-        }
-        guard response.status == 200 else {
-            throw SideloadError(
-                "FETCH_HTTP_ERROR", "The metadata request answered HTTP \(response.status) (redirects are not followed).",
-                fix: "Retry later.", data: ["status": .number(Double(response.status))])
-        }
-        return response.body
+        try await SourceMetadata.fetch(services, source)
     }
 
     struct Inspected {
@@ -339,25 +322,9 @@ private struct FetchRun {
             fix: "Treat this as a swapped file. Inspect it by hand; the owner removes the manifest entry and its folder to start over.")
     }
 
-    private static var redirectRefused: SideloadError {
-        SideloadError(
-            "REDIRECT_NOT_ALLOWED", "The download was redirected to a URL that is not https on this source's allowed hosts.",
-            fix: "Nothing was kept. If the CDN moved, the owner reviews the new host before it is added to the catalog.")
-    }
+    private static var redirectRefused: SideloadError { SourceMetadata.redirectRefused }
 
-    private static func map(_ error: any Error) -> SideloadError {
-        if let known = error as? SideloadError { return known }
-        if error is CancellationError { return SideloadError("CANCELLED", "fetch was cancelled.", fix: "Re-run the command.") }
-        switch error as? HTTPTransportError {
-        case .redirectRefused: return redirectRefused
-        case .bodyTooLarge:
-            return SideloadError("DOWNLOAD_TOO_LARGE", "The download is larger than the size the source declared.", fix: "Nothing was kept.")
-        case .timedOut: return SideloadError("FETCH_TIMEOUT", "The request timed out.", fix: "Retry later.")
-        case .cancelled: return SideloadError("CANCELLED", "fetch was cancelled.", fix: "Re-run the command.")
-        case .disabled: return SideloadError("FETCH_NETWORK", "Network access is disabled in this build.", fix: "Use the live sideload binary.")
-        case .failed, nil: return SideloadError("FETCH_NETWORK", "The request failed.", fix: "Check the network and retry.")
-        }
-    }
+    private static func map(_ error: any Error) -> SideloadError { SourceMetadata.map(error) }
 }
 
 /// Streams a body to a 0600 file while hashing it. Refuses to take more than `maxBytes`.
