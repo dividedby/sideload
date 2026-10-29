@@ -178,7 +178,7 @@ struct MenuUpdateAvailabilityTests {
         lent.slots = [LedgerSlot(device: "iphone", app: "apollo", presence: .absent, lentTo: "lab", since: testNow)]
         SlotRule.project(&lent)
         #expect(availability(updFetch, updBuild(ledger: lent, apps: addRead())) == .disabled("Lent to lab"))
-        #expect(availability(updFetch, updBuild(apps: [:], probe: .listed([]))) == .disabled("Not confirmed on the device"))
+        #expect(availability(updFetch, updBuild(apps: [:], probe: .listed([]))) == .disabled("Connect iphone over Wi-Fi or USB"))
         #expect(availability(updFetch, updBuild(apps: ["iphone": .checking])) == .disabled("Checking apps…"))
         // 4. a recorded install at the version the owner saw
         #expect(availability(updFetch, updBuild(ledger: signedOnly, apps: addRead("iphone", [menuBundleId("apollo")]))) == .disabled("Installed by hand: no update check"))
@@ -245,7 +245,7 @@ struct MenuUpdateAvailabilityTests {
         strict.minOS = "17.0"
         #expect(availability(updApprove(strict), updBuild(os: "16.2")) == .disabled("Apollo 3.10.0 needs iOS 17.0 or later; iphone runs 16.2"))
         #expect(availability(updApprove(strict), updBuild(os: "17.1")) == .enabled)
-        #expect(availability(updApprove(), updBuild(apps: [:], probe: .listed([]))) == .disabled("Not confirmed on the device"))
+        #expect(availability(updApprove(), updBuild(apps: [:], probe: .listed([]))) == .disabled("Connect iphone over Wi-Fi or USB"))
     }
 
     @Test("both stages stop for the owner's Cancel, and the fetch stage is a fetch stage")
@@ -257,26 +257,52 @@ struct MenuUpdateAvailabilityTests {
 
 @Suite("menu update: the two confirms")
 struct MenuUpdatePromptTests {
-    @Test("confirm 1: installed against listed and how old that is, a download, nothing approved, signed or installed")
+    @Test("confirm 1: installed against listed, a download, nothing approved, signed or installed; no age in it")
     func fetchText() throws {
         let shown = try #require(prompt(updFetch, updBuild()))
         #expect(shown.title == "Fetch Apollo update for iphone")
         #expect(shown.confirmLabel == "Fetch" && !shown.destructive && shown.runningLabel == "Fetching Apollo update…")
         #expect(
             shown.lines == [
-                "Installed 3.9.0; listed 3.10.0 (checked 3 h ago)",
+                "Installed 3.9.0; the source lists 3.10.0",
                 "Downloads the Apollo release from github.com and checks it",
                 "Nothing is approved, signed or installed; iphone and the portal are unchanged",
             ])
         let failed = try #require(prompt(updFetch, updBuild(["apollo": listing("3.10.0", error: "FETCH_NETWORK")])))
-        #expect(failed.lines[0] == "Installed 3.9.0; listed 3.10.0 (checked 3 h ago); the latest check failed")
+        #expect(failed.lines[0] == "Installed 3.9.0; the source lists 3.10.0 (the latest check failed)")
         let stremio = try #require(
             prompt(
                 .updateFetch(device: "iphone", app: "stremio-ios", from: "1.9.2b45"),
                 updBuild(["stremio-ios": listing("1.9.6b142")], app: "stremio-ios", ledger: updLedger(app: "stremio-ios", installed: "1.9.2b45"))))
-        #expect(stremio.lines[0] == "Installed 1.9.2 (45); listed 1.9.6 (142) (checked 3 h ago)")
+        #expect(stremio.lines[0] == "Installed 1.9.2 (45); the source lists 1.9.6 (142)")
         #expect(stremio.lines[1] == "Downloads the Stremio release from dl.strem.io (third-party index) and checks it")
         #expect(prompt(updFetch, updBuild([:])) == nil)
+    }
+
+    @Test("confirm 1 is stable: built at one time and checked ten minutes later it runs, not shows again")
+    func fetchStable() throws {
+        let snapshot = updBuild()
+        let shown = try #require(prompt(updFetch, snapshot))
+        #expect(MenuActions.reconfirm(updFetch, shown: shown, in: snapshot, now: testNow.addingTimeInterval(600)) == .run(shown))
+        #expect(MenuActions.reconfirm(updFetch, shown: shown, in: snapshot, now: testNow.addingTimeInterval(4 * 3_600)) == .run(shown))
+    }
+
+    @Test("both second confirms write the file's lines alike: Stremio's build once, in Add app too")
+    func sharedLines() throws {
+        let stremio = MenuFetched(
+            version: "1.9.6b142", build: "142", sha256: addSha, size: 2_000_000_000, minOS: "14.0", extensionCount: 1, alreadyApproved: false)
+        let config = addConfig(approved: ["stremio-ios"])
+        let add = try #require(
+            prompt(.addApprove(device: "iphone", app: "stremio-ios", fetched: stremio), addBuild(config: config)))
+        // Before this change Add app wrote "Stremio 1.9.6b142 (build 142)".
+        #expect(add.lines[0] == "Stremio 1.9.6 (142) · 2.0 GB · iOS 14.0 or later")
+        let ledger = updLedger(app: "stremio-ios", installed: "1.9.2b45", extensions: 1)
+        let update = try #require(
+            prompt(
+                .updateApprove(device: "iphone", app: "stremio-ios", from: "1.9.2b45", fetched: stremio),
+                updBuild(["stremio-ios": listing("1.9.6b142")], app: "stremio-ios", ledger: ledger)))
+        #expect(Array(update.lines[0...3]) == Array(add.lines[0...2]) + ["1 extension will be removed"])
+        #expect(add.lines[3] == "1 extension will be removed" && add.monospacedLines == [1] && update.monospacedLines == [1])
     }
 
     @Test("confirm 2 with a fresh profile: the facts, the full SHA-256, the approval, the reuse, the data kept")

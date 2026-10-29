@@ -22,6 +22,15 @@ public enum MenuAction: Hashable, Sendable {
     /// installed `from`.
     case updateApprove(device: String, app: String, from: String, fetched: MenuFetched)
 
+    /// Which chain a fetch or approval belongs to: Add app's first install or an Update over the installed version.
+    var chain: AddChain? {
+        switch self {
+        case .addFetch, .addApprove: .add
+        case .updateFetch(_, _, let from), .updateApprove(_, _, let from, _): .update(from: from)
+        default: nil
+        }
+    }
+
     /// A fetch downloads and checks a file; it changes neither the device nor the ledger, so the model neither cancels a load
     /// for it nor reads the device again when it ends.
     public var isFetchStage: Bool {
@@ -37,6 +46,45 @@ public enum MenuAction: Hashable, Sendable {
             .addFetch(let device, _), .addApprove(let device, _, _), .updateFetch(let device, _, _),
             .updateApprove(let device, _, _, _):
             device
+        }
+    }
+}
+
+/// The chain behind the two confirms of Add app and of Update: fetch, then approve, provision, sign and install. They differ in
+/// their texts, the envelope's `command` and the second confirm they hand on to; the steps are the same.
+enum AddChain: Sendable, Equatable {
+    case add
+    /// An Update over the installed version `from`.
+    case update(from: String)
+
+    /// The envelope's `command`.
+    var command: String {
+        switch self {
+        case .add: "add"
+        case .update: "update"
+        }
+    }
+
+    /// The menu item the owner chooses again, and what the second confirm does.
+    var menuName: String {
+        switch self {
+        case .add: "Add app"
+        case .update: "Update"
+        }
+    }
+
+    var approveVerb: String {
+        switch self {
+        case .add: "install"
+        case .update: "update"
+        }
+    }
+
+    /// The second confirm for `fetched`.
+    func approval(device: String, app: String, fetched: MenuFetched) -> MenuAction {
+        switch self {
+        case .add: .addApprove(device: device, app: app, fetched: fetched)
+        case .update(let from): .updateApprove(device: device, app: app, from: from, fetched: fetched)
         }
     }
 }
@@ -289,13 +337,12 @@ public enum MenuActions {
         return .disabled("\(MenuFormat.appName(app)) \(version) needs \(ProvisionApp.osName(devicePlatform: card.platform)) \(need) or later; \(card.alias) runs \(have)")
     }
 
-    /// The stored profile has what `provision` is skipped for (the runner's rule: 6 days or more left).
+    /// The row's stored profile is fresh, so `provision` is skipped (the runner's rule, `MenuActionRunner.profileIsFresh`).
     static func profileIsFresh(_ row: MenuAppRow, now: Date) -> Bool {
-        row.profile?.storedExpires.map { $0.timeIntervalSince(now) >= MenuActionRunner.freshProfileDays * FreeInstallExpiry.secondsPerDay }
-            ?? false
+        row.profile?.storedExpires.map { MenuActionRunner.profileIsFresh(expires: $0, now: now) } ?? false
     }
 
-    /// Update, first match wins: a row and where it is, a readable device, a recorded install still at the version the owner
+    /// Update, first match wins: a row and where it is (lent, changing, not installed), a readable device, a recorded install still at the version the owner
     /// saw, an approved source, a newer version (the listed one for stage 1; for stage 2 the fetched one, which is what will be
     /// installed), the minimum OS, and the App ID budget only when `provision` will run and register a new one.
     private static func update(
@@ -308,10 +355,11 @@ public enum MenuActions {
         case .lent: return .disabled(why(.lent))
         case .pending: return .disabled(why(.pending))
         case .notInstalled: return .disabled("Signed · not installed: use Install")
-        case .unconfirmed: return .disabled(why(.unconfirmed))
-        case .checking: return .disabled(checkingApps)
+        case .unconfirmed, .checking: break
         }
         if let stop = deviceStop(card: card) { return stop }
+        if row.presence == .unconfirmed { return .disabled(why(.unconfirmed)) }
+        if row.presence == .checking { return .disabled(checkingApps) }
         guard row.recorded, let installed = row.installedVersion else { return .disabled("Installed by hand: no update check") }
         guard installed == from else {
             return .disabled("\(name) is now \(MenuFormat.version(installed)), not \(MenuFormat.version(from))")
@@ -406,7 +454,7 @@ public enum MenuActions {
         case .lendable(_, let app): return lendablePrompt(app, card: card)
         case .addFetch(_, let app): return addFetchPrompt(app, card: card, snapshot: snapshot)
         case .addApprove(_, let app, let fetched): return addApprovePrompt(app, fetched: fetched, card: card, snapshot: snapshot)
-        case .updateFetch(_, let app, let from): return updateFetchPrompt(app, from: from, card: card, snapshot: snapshot, now: now)
+        case .updateFetch(_, let app, let from): return updateFetchPrompt(app, from: from, card: card, snapshot: snapshot)
         case .updateApprove(_, let app, let from, let fetched):
             return updateApprovePrompt(app, from: from, fetched: fetched, card: card, snapshot: snapshot, now: now)
         }
@@ -545,20 +593,8 @@ public enum MenuActions {
     private static func addApprovePrompt(_ app: String, fetched: MenuFetched, card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuPrompt {
         let alias = card.alias
         let name = MenuFormat.appName(app)
-        let thirdParty = snapshot.addSources.first { $0.app == app }?.thirdParty == true
-        var facts = "\(name) \(fetched.version)"
-        if let build = fetched.build { facts += " (build \(build))" }
-        facts += " · " + MenuFormat.size(fetched.size)
-        if let minOS = fetched.minOS { facts += " · \(ProvisionApp.osName(devicePlatform: card.platform)) \(minOS) or later" }
-        var lines = [facts, "SHA-256 \(fetched.sha256)"]
-        let hashLine = lines.count - 1
-        lines.append(
-            thirdParty
-                ? "Matches the index's; a third party, so this guards against corruption, not a bad index"
-                : "Matches the publisher's")
-        if fetched.extensionCount > 0 {
-            lines.append("\(fetched.extensionCount) extension\(fetched.extensionCount == 1 ? "" : "s") will be removed")
-        }
+        var lines = fetchedLines(app, fetched, card: card, snapshot: snapshot)
+        if let extensions = extensionsLine(fetched.extensionCount) { lines.append(extensions) }
         lines.append("Approves this exact version for signing" + (fetched.alreadyApproved ? " (approved earlier)" : ""))
         let option = card.addable.first { $0.app == app }
         var portal: String
@@ -577,20 +613,50 @@ public enum MenuActions {
         return MenuPrompt(
             title: "Approve and install \(name) \(fetched.version) on \(alias)", lines: lines,
             confirmLabel: "Approve and install", destructive: false,
-            runningLabel: "Adding \(name) \(fetched.version) to \(alias)…", apps: [], monospacedLines: [hashLine])
+            runningLabel: "Adding \(name) \(fetched.version) to \(alias)…", apps: [], monospacedLines: [hashLineIndex])
     }
 
-    private static func updateFetchPrompt(
-        _ app: String, from: String, card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date
-    ) -> MenuPrompt {
+    /// Where the SHA-256 is in the lines `fetchedLines` returns (monospaced and selectable).
+    private static let hashLineIndex = 1
+
+    /// The first lines of both second confirms: the file's version and build, size and minimum OS, the full SHA-256 and who
+    /// vouches for it. The build is written once: Stremio's spelling ("1.9.6b142" is "1.9.6 (142)") already carries it.
+    private static func fetchedLines(_ app: String, _ fetched: MenuFetched, card: MenuDeviceCard, snapshot: MenuSnapshot) -> [String] {
+        var facts = "\(MenuFormat.appName(app)) \(MenuFormat.version(fetched.version))"
+        if let build = fetched.build, !facts.hasSuffix(")") { facts += " (build \(build))" }
+        facts += " · " + MenuFormat.size(fetched.size)
+        if let minOS = fetched.minOS { facts += " · \(ProvisionApp.osName(devicePlatform: card.platform)) \(minOS) or later" }
+        let thirdParty = snapshot.addSources.first { $0.app == app }?.thirdParty == true
+        return [
+            facts, "SHA-256 \(fetched.sha256)",
+            thirdParty
+                ? "Matches the index's; a third party, so this guards against corruption, not a bad index"
+                : "Matches the publisher's",
+        ]
+    }
+
+    /// "2 extensions will be removed", nil when none. An Update adds how it differs from the installed build's `installed`
+    /// count ("(1 more than 3.9.0)").
+    private static func extensionsLine(_ count: Int, installed: (count: Int, version: String)? = nil) -> String? {
+        var line = count > 0 ? "\(count) extension\(count == 1 ? "" : "s") will be removed" : nil
+        if let installed, installed.count != count {
+            let more = count - installed.count
+            line =
+                (line ?? "No extensions will be removed")
+                + (more > 0 ? " (\(more) more than \(installed.version))" : " (\(-more) fewer than \(installed.version))")
+        }
+        return line
+    }
+
+    private static func updateFetchPrompt(_ app: String, from: String, card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuPrompt {
         let alias = card.alias
         let name = MenuFormat.appName(app)
         let source = snapshot.addSources.first { $0.app == app }?.source ?? "its source"
+        // No age here: the confirm is compared with itself when the owner clicks, and a time label would change under them.
         var seen = "Installed \(MenuFormat.version(from))"
         if let listed = card.row(for: app)?.update {
-            seen += "; listed \(MenuFormat.version(listed.version))"
-            if let at = listed.checkedAt { seen += " (checked \(MenuFormat.ago(from: at, now: now)))" }
-            if listed.checkFailed { seen += "; the latest check failed" }
+            seen += "; the source lists \(MenuFormat.version(listed.version))"
+            if listed.checkFailed { seen += " (the latest check failed)" }
         }
         return MenuPrompt(
             title: "Fetch \(name) update for \(alias)",
@@ -607,31 +673,12 @@ public enum MenuActions {
         let alias = card.alias
         let name = MenuFormat.appName(app)
         let row = card.row(for: app)
-        let thirdParty = snapshot.addSources.first { $0.app == app }?.thirdParty == true
         let before = MenuFormat.version(from)
         let after = MenuFormat.version(fetched.version)
-        var facts = "\(name) \(after)"
-        // Stremio's spelling already carries the build.
-        if let build = fetched.build, !after.contains("(") { facts += " (build \(build))" }
-        facts += " · " + MenuFormat.size(fetched.size)
-        if let minOS = fetched.minOS { facts += " · \(ProvisionApp.osName(devicePlatform: card.platform)) \(minOS) or later" }
-        var lines = [facts, "SHA-256 \(fetched.sha256)"]
-        let hashLine = lines.count - 1
-        lines.append(
-            thirdParty
-                ? "Matches the index's; a third party, so this guards against corruption, not a bad index"
-                : "Matches the publisher's")
-        var extensions: String?
-        if fetched.extensionCount > 0 {
-            extensions = "\(fetched.extensionCount) extension\(fetched.extensionCount == 1 ? "" : "s") will be removed"
+        var lines = fetchedLines(app, fetched, card: card, snapshot: snapshot)
+        if let extensions = extensionsLine(fetched.extensionCount, installed: row?.profile.map { (count: $0.installedExtensions, version: before) }) {
+            lines.append(extensions)
         }
-        if let had = row?.profile?.installedExtensions, had != fetched.extensionCount {
-            let more = fetched.extensionCount - had
-            extensions =
-                (extensions ?? "No extensions will be removed")
-                + (more > 0 ? " (\(more) more than \(before))" : " (\(-more) fewer than \(before))")
-        }
-        if let extensions { lines.append(extensions) }
         lines.append("Approves this exact version for signing" + (fetched.alreadyApproved ? " (approved earlier)" : ""))
         if let row, profileIsFresh(row, now: now), let expires = row.profile?.storedExpires,
             case .days(let days) = FreeInstallExpiry.timeLeft(expires.timeIntervalSince(now))
@@ -652,6 +699,6 @@ public enum MenuActions {
         return MenuPrompt(
             title: "Approve and update \(name) \(before) → \(after) on \(alias)", lines: lines,
             confirmLabel: "Approve and update", destructive: false,
-            runningLabel: "Updating \(name) \(before) → \(after) on \(alias)…", apps: [], monospacedLines: [hashLine])
+            runningLabel: "Updating \(name) \(before) → \(after) on \(alias)…", apps: [], monospacedLines: [hashLineIndex])
     }
 }

@@ -64,15 +64,13 @@ public struct MenuActionOutcome: Sendable, Equatable {
                 envelope, action: action, app: app ?? "",
                 done: name.map { "\($0) is lendable on \(alias)" } ?? "Lending is off on \(alias)", failed: "Setting not saved")
         case .addFetch(_, let app):
-            readFetch(app, alias: alias, envelope: envelope, action: action, cancelled: cancelled, again: "Add app") {
-                .addApprove(device: alias, app: app, fetched: $0)
-            }
+            readFetch(app, alias: alias, envelope: envelope, action: action, cancelled: cancelled, chain: .add)
         case .updateFetch(_, let app, let from):
-            readFetch(app, alias: alias, envelope: envelope, action: action, cancelled: cancelled, again: "Update") {
-                .updateApprove(device: alias, app: app, from: from, fetched: $0)
-            }
-        case .addApprove(_, let app, let fetched), .updateApprove(_, let app, _, let fetched):
-            readAdd(app, fetched: fetched, alias: alias, envelope: envelope, action: action)
+            readFetch(app, alias: alias, envelope: envelope, action: action, cancelled: cancelled, chain: .update(from: from))
+        case .addApprove(_, let app, let fetched):
+            readAdd(app, fetched: fetched, alias: alias, envelope: envelope, chain: .add)
+        case .updateApprove(_, let app, let from, let fetched):
+            readAdd(app, fetched: fetched, alias: alias, envelope: envelope, chain: .update(from: from))
         }
         // A run that finished cleanly despite the click lost nothing, so it is reported as done.
         if cancelled, !envelope.ok {
@@ -87,7 +85,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
                 let steps = Self.addSteps(envelope)
                 // Only an install that started may have finished on the device.
                 if steps.installStarted { notes.append(Self.deviceNote) }
-                if !steps.done.isEmpty { notes.append(Self.keptNote(action)) }
+                if !steps.done.isEmpty, let chain = action.chain { notes.append(Self.keptNote(chain)) }
             default: break
             }
             // What finished before the stop stays visible; what was cut short is not a failure to retry.
@@ -259,16 +257,16 @@ public struct MenuActionOutcome: Sendable, Equatable {
     static let addKeptNote = "Steps already done are kept; Add app again resumes where this stopped."
     static let updateKeptNote = "Steps already done are kept; Update again resumes where this stopped."
 
-    private static func keptNote(_ action: MenuAction) -> String {
-        if case .updateApprove = action { return updateKeptNote }
-        return addKeptNote
+    private static func keptNote(_ chain: AddChain) -> String {
+        switch chain {
+        case .add: addKeptNote
+        case .update: updateKeptNote
+        }
     }
 
-    /// Stage 1: the fetched version's facts for the second confirm. No result card on success. `again` names the menu item
-    /// the owner chooses again after a Cancel that came too late; `next` is the second confirm.
+    /// Stage 1: the fetched version's facts for the second confirm. No result card on success.
     private mutating func readFetch(
-        _ app: String, alias: String, envelope: Envelope, action: MenuAction, cancelled: Bool, again: String,
-        next: (MenuFetched) -> MenuAction
+        _ app: String, alias: String, envelope: Envelope, action: MenuAction, cancelled: Bool, chain: AddChain
     ) {
         guard envelope.ok else {
             readFailure(envelope, action: action, app: app, failed: "Fetch failed")
@@ -286,10 +284,10 @@ public struct MenuActionOutcome: Sendable, Equatable {
             // A Cancel that arrived too late to stop the download is still the owner's: no second confirm opens, and the card
             // says nothing was approved. The next Add app reuses the stored file.
             headline = "Fetched \(MenuFormat.appName(app)) \(fetched.version) · not approved"
-            notes = ["Choose \(again) again to approve and \(again == "Update" ? "update" : "install")."]
+            notes = ["Choose \(chain.menuName) again to approve and \(chain.approveVerb)."]
         } else {
             headline = "Fetched \(MenuFormat.appName(app)) \(fetched.version)"
-            proceed = next(fetched)
+            proceed = chain.approval(device: alias, app: app, fetched: fetched)
         }
     }
 
@@ -336,10 +334,9 @@ public struct MenuActionOutcome: Sendable, Equatable {
     }
 
     /// Stage 2 of Add app and of Update: one line per step that ran or was skipped, as the run's own record of what is now done.
-    private mutating func readAdd(_ app: String, fetched: MenuFetched, alias: String, envelope: Envelope, action: MenuAction) {
+    private mutating func readAdd(_ app: String, fetched: MenuFetched, alias: String, envelope: Envelope, chain: AddChain) {
         let name = MenuFormat.appName(app)
-        var from: String?
-        if case .updateApprove(_, _, let installed, _) = action { from = installed }
+        let action = chain.approval(device: alias, app: app, fetched: fetched)
         let steps = Self.addSteps(envelope)
         // Busy before anything was approved changed nothing: the plain busy card. Later it is a stop with partial state.
         if !envelope.ok, steps.failed == .approve, envelope.errors.first?.code == OperationLock.busyCode {
@@ -357,8 +354,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
         } else if steps.done[.approve] != nil, !fetched.alreadyApproved {
             var approved = fetched
             approved.alreadyApproved = true
-            retry = from.map { .updateApprove(device: alias, app: app, from: $0, fetched: approved) }
-                ?? .addApprove(device: alias, app: app, fetched: approved)
+            retry = chain.approval(device: alias, app: app, fetched: approved)
         }
         for step in MenuActionRunner.AddStep.allCases {
             if let status = steps.done[step] {
@@ -377,17 +373,19 @@ public struct MenuActionOutcome: Sendable, Equatable {
         }
         if envelope.ok {
             kind = .done
-            headline =
-                from.map { "Updated \(name) \(MenuFormat.version($0)) → \(MenuFormat.version(fetched.version)) on \(alias)" }
-                ?? "Added \(name) \(fetched.version) to \(alias)"
+            switch chain {
+            case .add: headline = "Added \(name) \(fetched.version) to \(alias)"
+            case .update(let from):
+                headline = "Updated \(name) \(MenuFormat.version(from)) → \(MenuFormat.version(fetched.version)) on \(alias)"
+            }
             notes += Self.warningNotes(envelope)
             return
         }
         kind = .failed
-        headline = "\(from == nil ? "Add" : "Update") stopped at \(steps.failed?.rawValue ?? "the start")"
-        notes = steps.done.isEmpty ? [] : [Self.keptNote(action)]
+        headline = "\(chain == .add ? "Add" : "Update") stopped at \(steps.failed?.rawValue ?? "the start")"
+        notes = steps.done.isEmpty ? [] : [Self.keptNote(chain)]
         if steps.failed == .install {
-            notes.append("The signed build is kept: \(from == nil ? "Install" : "Install update") on the app's row also finishes it.")
+            notes.append("The signed build is kept: \(chain == .add ? "Install" : "Install update") on the app's row also finishes it.")
         }
     }
 

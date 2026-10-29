@@ -214,6 +214,68 @@ struct MenuModelUpdateTests {
         #expect(MenuUpdates.cached(w.model.services).isEmpty)
     }
 
+    @Test("Check status now during a running check is queued and runs once, forced, when it ends")
+    func forcedCheckQueued() async throws {
+        let w = try await world()
+        defer { try? FileManager.default.removeItem(at: w.dir) }
+        w.source.hold(true)
+        w.model.reload(force: false)
+        await w.model.loadTask?.value
+        try await until { w.source.gets.count == 1 }
+        // Past the 5-minute floor of the check that is running, which started now.
+        w.clock.advance(400)
+        w.model.reload(force: true)
+        await w.model.loadTask?.value
+        #expect(w.source.gets.count == 1)
+        w.source.hold(false)
+        try await until { w.source.gets.count == 2 }
+        await w.model.updateTask?.value
+        #expect(w.source.gets.count == 2 && w.model.updateTask == nil)
+        #expect(row(w)?.updateLine != nil)
+    }
+
+    @Test("an action that starts cancels the check in flight; its end checks again, and a forced one is still forced")
+    func actionCancelsCheck() async throws {
+        let w = try await world()
+        defer { try? FileManager.default.removeItem(at: w.dir) }
+        await loaded(w)
+        #expect(w.source.gets.count == 1)
+        w.clock.advance(400)
+        w.source.hold(true)
+        w.model.reload(force: true)
+        await w.model.loadTask?.value
+        try await until { w.source.gets.count == 2 }
+        #expect(w.model.updateTask != nil)
+        w.model.request(.remove(device: "iphone", app: "apollo"))
+        w.model.confirm()
+        #expect(w.model.updateTask == nil, "cancelled when the action started")
+        w.source.hold(false)
+        try await until { !w.model.actionBusy }
+        await w.model.loadTask?.value
+        await w.model.updateTask?.value
+        // The cancelled forced check ran again after the action, forced, so it asked even though the cache was fresh.
+        #expect(w.source.gets.count == 3)
+    }
+
+    @Test("a fetch stage that ends with no reload runs the check it held off")
+    func fetchStageChecks() async throws {
+        let w = try await world()
+        defer { try? FileManager.default.removeItem(at: w.dir) }
+        await loaded(w)
+        #expect(w.source.gets.count == 1)
+        // The 6 h cadence has run out meanwhile; no load follows a fetch stage.
+        w.clock.advance(7 * 3_600)
+        w.model.request(fetch)
+        w.model.confirm()
+        try await until { !w.model.actionBusy }
+        await w.model.updateTask?.value
+        #expect(w.source.gets.count == 2)
+        guard case .confirming = w.model.actionState else {
+            Issue.record("expected the approval confirm, got \(w.model.actionState)")
+            return
+        }
+    }
+
     @Test("an action running holds the check off")
     func notDuringAction() async throws {
         let w = try await world()
