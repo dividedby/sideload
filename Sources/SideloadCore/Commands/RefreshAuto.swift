@@ -66,8 +66,10 @@ extension RefreshRun {
         do {
             config = try services.store.load()
         } catch {
-            state.failures.append(RefreshFailure(error: error))
-            return finish(state, auto, reason: RefreshPolicy.AutoSkip.configInvalid.code)
+            let failure = RefreshFailure(error: error)
+            state.failures.append(failure)
+            // The log is all a launchd run leaves: name the real code (CONFIG_MISSING, CONFIG_INVALID, ...).
+            return finish(state, auto, reason: failure.code)
         }
         if let reason = planDevices(&state, config, auto) { return finish(state, auto, reason: reason) }
 
@@ -239,7 +241,10 @@ extension RefreshRun {
                 case .renew(let baseline): entries.append(Candidate(target: candidate.target, expires: baseline.expires))
                 case .skip(let code, let expires):
                     state.plans[index].results.append(skipped(candidate.target, code, expires, now: state.start, auto))
-                case .unlisted: break
+                case .unlisted:
+                    // Its record went away since planning: say so, as the per-app re-gate does, rather than drop it.
+                    state.plans[index].results.append(
+                        skipped(candidate.target, RefreshPolicy.AutoSkip.notRecorded.code, nil, now: state.start, auto))
                 }
             }
         } catch {
