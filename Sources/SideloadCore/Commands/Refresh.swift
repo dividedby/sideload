@@ -384,7 +384,8 @@ private struct RefreshRun {
         if result.appIdNew == nil { result.appIdNew = false }
 
         if failure == nil, plan.sign {
-            let envelope = await steps.sign(services, SignOptions(app: app.rawValue, device: alias, yes: true))
+            let version = installedVersion(target, warnings: &warnings)
+            let envelope = await steps.sign(services, SignOptions(app: app.rawValue, device: alias, yes: true, version: version))
             if envelope.ok {
                 result.steps[.sign] = .done
                 done += 1
@@ -467,6 +468,28 @@ private struct RefreshRun {
                     "The renewal itself is not affected; `sideload doctor` shows whether the ledger is writable.").withApp(app))
         }
         return result
+    }
+
+    /// A renewal keeps the installed version (owner decision 2026-10-28): the version `installs[]` records, when it is still a
+    /// fetched, approved manifest entry. Nil signs the newest approved one, as `sign` does without a version: for an app with
+    /// no install record (installed by hand, nothing to compare), or one whose recorded version is no longer approved, which
+    /// is also a warning that names both versions. A renewal is never failed for this.
+    private func installedVersion(_ target: FreeTarget, warnings: inout [JSONValue]) -> String? {
+        guard let installed = (try? services.ledgerStore.load())?.installs.first(where: { $0.id == target.key })?.version,
+            !installed.isEmpty
+        else { return nil }
+        let approved = ((try? ManifestStore(paths: services.home).load())?.entries ?? []).filter {
+            $0.app == target.app.rawValue && $0.approved
+        }
+        if approved.contains(where: { $0.version == installed }) { return installed }
+        guard let newest = approved.max(by: { ($0.fetchedAt, $0.version) < ($1.fetchedAt, $1.version) }) else { return nil }
+        let app = target.app.rawValue
+        warnings.append(
+            CanaryCommand.warning(
+                "RENEW_VERSION_CHANGED",
+                "\(app) \(printableCut(installed)) is installed but is not a fetched, approved version, so the renewal signs the newest approved one, \(printableCut(newest.version)).",
+                "This renewal installs \(printableCut(newest.version)) over \(printableCut(installed)). To stay on \(printableCut(installed)), do not renew until it is a fetched, approved version in the manifest again.").withApp(target.app))
+        return nil
     }
 
     /// Cap and suspension notices for a manual run: the caps bind the future auto-refresh, not this run.

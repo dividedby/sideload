@@ -881,3 +881,109 @@ struct RefreshTests {
         }
     }
 }
+
+// MARK: renew keeps the installed version (owner decision 2026-10-28)
+
+private func manifestEntry(_ version: String, approved: Bool = true, fetchedDays: Double = 0) -> ManifestEntry {
+    let digest = String(repeating: "ab", count: 32)
+    return ManifestEntry(
+        app: "stremio-ios", version: version, file: "stremio-ios/\(version)/Stremio.ipa", urlHost: "example.test", sha256: digest,
+        upstreamDigest: digest, size: 1000, fetchedAt: daysFromNow(fetchedDays), approved: approved,
+        approvedAt: approved ? daysFromNow(fetchedDays) : nil)
+}
+
+private func seedManifest(_ w: InstallWorld, _ entries: [ManifestEntry]) throws {
+    var manifest = Manifest()
+    manifest.entries = entries
+    try ManifestStore(paths: w.paths).save(manifest)
+}
+
+@Suite("refresh: renewal keeps the installed version")
+struct RefreshVersionTests {
+    private func renew(_ w: InstallWorld) async -> (Envelope, Box<[SignOptions]>) {
+        let signs = Box<[SignOptions]>([])
+        let steps = scripted(
+            CallLog([]),
+            sign: { options in
+                signs.value.append(options)
+                return okEnvelope("sign", options.app ?? "")
+            })
+        return (await refresh(w, steps), signs)
+    }
+
+    @Test("a newer approved version exists: the renewal signs the installed one")
+    func keepsInstalled() async throws {
+        try await withRefreshWorld(profileDays: 3, ledger: { seed(&$0, .stremioIOS, days: 3) }) { w in
+            try seedManifest(w, [manifestEntry("1.2.3", fetchedDays: -9), manifestEntry("2.0.0", fetchedDays: -1)])
+            let (out, signs) = await renew(w)
+            #expect(out.ok, "\(out.errors)")
+            #expect(signs.value.count == 1 && signs.value[0].version == "1.2.3" && signs.value[0].app == "stremio-ios")
+            #expect(!warnings(out).contains("RENEW_VERSION_CHANGED"))
+            #expect(result(out, .stremioIOS)?["status"] == "renewed")
+        }
+    }
+
+    @Test("the installed version is only fetched, not approved: the newest approved is signed, with a warning naming both")
+    func unapprovedInstalled() async throws {
+        try await withRefreshWorld(profileDays: 3, ledger: { seed(&$0, .stremioIOS, days: 3) }) { w in
+            try seedManifest(w, [manifestEntry("1.2.3", approved: false, fetchedDays: -9), manifestEntry("2.0.0", fetchedDays: -1)])
+            let (out, signs) = await renew(w)
+            #expect(out.ok, "never a failed renewal for this: \(out.errors)")
+            #expect(signs.value.map(\.version) == [nil])
+            #expect(warnings(out) == ["RENEW_VERSION_CHANGED"])
+            let warning = try #require(out.data["warnings"]?.array?.first)
+            let text = (warning["message"]?.string ?? "") + (warning["fix"]?.string ?? "")
+            #expect(text.contains("1.2.3") && text.contains("2.0.0"))
+            #expect(warning["app"] == "stremio-ios" && warning["fix"]?.string?.isEmpty == false)
+            #expect(result(out, .stremioIOS)?["status"] == "renewed")
+        }
+    }
+
+    @Test("the installed version is not in the manifest at all: the newest approved is signed, with the warning")
+    func missingInstalled() async throws {
+        try await withRefreshWorld(profileDays: 3, ledger: { seed(&$0, .stremioIOS, days: 3) }) { w in
+            try seedManifest(w, [manifestEntry("2.0.0", fetchedDays: -1)])
+            let (out, signs) = await renew(w)
+            #expect(out.ok && signs.value.map(\.version) == [nil])
+            #expect(warnings(out) == ["RENEW_VERSION_CHANGED"])
+        }
+    }
+
+    @Test("no recorded install (installed by hand): today's behaviour, the newest approved, and no warning")
+    func noRecordedVersion() async throws {
+        try await withRefreshWorld(profileDays: 2, ledger: { seed(&$0, .stremioIOS, days: 2, installed: false) }) { w in
+            try seedManifest(w, [manifestEntry("1.2.3", fetchedDays: -9), manifestEntry("2.0.0", fetchedDays: -1)])
+            let (out, signs) = await renew(w)
+            #expect(out.ok && signs.value.map(\.version) == [nil])
+            #expect(warnings(out).isEmpty)
+        }
+    }
+
+    @Test("nothing approved at all: sign is asked as before (and says NOT_APPROVED itself); no warning from refresh")
+    func nothingApproved() async throws {
+        try await withRefreshWorld(profileDays: 3, ledger: { seed(&$0, .stremioIOS, days: 3) }) { w in
+            let (out, signs) = await renew(w)
+            #expect(out.ok && signs.value.map(\.version) == [nil])
+            #expect(warnings(out).isEmpty)
+        }
+    }
+
+    @Test("a renewal that resumes after sign does not ask for a version at all")
+    func signSkipped() async throws {
+        var stale = LedgerInstallRefresh()
+        stale.lastCode = "DEVICE_LOCKED"
+        try await withRefreshWorld(
+            profileDays: 5,
+            ledger: {
+                seed(&$0, .stremioIOS, days: 5)
+                var install = installRecord(.stremioIOS, refresh: stale)
+                install.profileExpires = daysFromNow(1)
+                $0.installs = [install]
+            }
+        ) { w in
+            try seedManifest(w, [manifestEntry("2.0.0", fetchedDays: -1)])
+            let (out, signs) = await renew(w)
+            #expect(out.ok && signs.value.isEmpty && warnings(out).isEmpty)
+        }
+    }
+}
