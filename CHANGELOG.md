@@ -77,6 +77,9 @@ All notable changes to this project are documented here. Format follows
 - `MenuLoader.readApps` takes the loaded config's `bundleIdPrefix` instead of reading the config again.
 - `ExpiryItems.item(_:now:)` is shared by `status` and the menu; `FreeDeviceCalls.snapshot` and `trySnapshot` take a
   `timeoutSec` (default 60).
+- Internal cleanup from the #11 and #12 reviews; no behaviour change. The refresh skip codes, `INTERRUPTED` and the busy-lock
+  code each have one definition (`RefreshPolicy`, `OperationLock.busyCode`), and fetch's staging and sweep moved into
+  `FetchStaging.swift`.
 
 ## [0.2.0] - 2026-10-28
 
