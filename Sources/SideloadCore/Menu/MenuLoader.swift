@@ -57,7 +57,8 @@ public enum MenuLoader {
         return .ready(
             MenuInputs(
                 now: services.clock.now(), canaryStatus: canaryStatus, config: config, ledger: ledger,
-                probe: .checking, notices: notices, ledgerReadable: ledgerReadable, upstream: MenuUpdates.cached(services)))
+                probe: .checking, notices: notices, ledgerReadable: ledgerReadable, autoRefreshAvailable: true,
+                upstream: MenuUpdates.cached(services)))
     }
 
     /// `devicectl list devices` through `DeviceCtl` (read-only). With no saved device there is nothing to ask.
