@@ -67,9 +67,9 @@ team) before changing anything.
   to `io.github.dividedby.free.*`, `--yes` is the owner's), and `slot restore` (the owner's retry of an app-data restore: it
   pushes a saved backup into the app on the device; owner-only, `--yes` is the owner's, and it takes `--device <alias>`, never
   `--udid`).
-- The menu bar app's action buttons (Renew…, Add app…, Install, Remove, Lendable and the confirm that follows them). They are owner
-  clicks: the confirm click is the owner's `--yes`, Add app… runs fetch, approve, provision, sign and install on a real device
-  (its second confirm is the owner's approval of that exact version and file), and agents never click them, never run the built app and never drive it
+- The menu bar app's action buttons (Renew…, Add app…, Update…, Install, Remove, Lendable and the confirm that follows them). They are owner
+  clicks: the confirm click is the owner's `--yes`, Add app… and Update… run fetch, approve, provision, sign and install on a real device
+  (their second confirm is the owner's approval of that exact version and file; Update… goes over an installed app), and agents never click them, never run the built app and never drive it
   (no computer-use clicks, no UI scripting), exactly as for the commands behind them.
 - `device lendable` (it chooses which app the lab may borrow the slot of). `slot lend` and `slot return` are run by
   mobile-safari-lab with no `--yes`; agents never run them against a real device, and they take `.op.lock`, accept

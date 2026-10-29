@@ -18,6 +18,25 @@ All notable changes to this project are documented here. Format follows
   hours), and `--force` keeps a 5-minute floor. A failed check keeps the last good values and is `ok:false` with
   `fetch`'s codes. New: `UpdateCheck`, `UpdateCache`, `VersionOrder`, `SourceMetadata` (the metadata GET extracted
   from `fetch`, behaviour unchanged), `Paths.updates`.
+- Menu bar "Update…": a row whose approved source lists a newer version than the installed one shows a second neutral
+  line ("Update available · 3.9.0 → 3.10.0"; Stremio's `1.9.2b45` reads "1.9.2 (45)") and "Update to 3.10.0…" in its "…"
+  menu. The panel shows the listing from `updates.json` at once (a local read) and, after the device reads, runs one
+  update check as a task of its own: at most one metadata GET per approved source that is installed, only when the 6 h
+  cadence allows (Check status now keeps the 5-minute floor), one at a time, never while an action runs, cancelled on
+  quit; it repaints when it ends and reads each source's own status, not the command's `ok`. Hand-installed rows (no
+  `installs[]` record), sources the owner did not approve, and an older or unparseable version get no update; there is
+  no icon badge and nothing is ever approved on its own. The first confirm ("Fetch Apollo update for iphone") downloads
+  and checks the release and changes nothing else; the second ("Approve and update Apollo 3.9.0 → 3.10.0 on iphone")
+  shows the version, size, minimum OS, the full SHA-256, the extensions against the installed build, whether the
+  profile is reused ("Profile reused (7 d left), no portal change") or renewed (under 6 days left is allowed and says
+  "Renews the 7-day profile"), and that the install goes over the existing app and keeps its data. It is Add app's chain
+  (hash gate, approve, `provision` when needed, `sign` with `SignOptions.version`, `install`) with an `update`-shaped
+  result ("Updated Apollo 3.9.0 → 3.10.0 on iphone", "Update stopped at sign"); Retry is the second confirm before
+  `sign` and Install update after. A fetched version that is not newer than the installed one is "Not run". Old IPAs are
+  kept. New: `MenuAction.updateFetch` and `.updateApprove`, `MenuUpdates`, `MenuUpstream`, `MenuUpdateInfo`,
+  `MenuRowProfile`, `MenuAppRow.installedVersion/signedVersion/update/profile`, `MenuInputs.upstream`.
+- Menu bar "Install update" now also covers a signed build of a newer version on the same profile, not only a
+  longer-lived profile (an Update that stopped before `install` left such a build and no way to finish it from the row).
 - Menu bar "Add app…": installs an app from `approvedSources` (Apollo, Stremio) that the device does not have yet. The
   per-device menu beside Renew… lists the approved sources for that platform with no row on the device (the filler and any
   unapproved source are hidden; an Apple TV card gets it like any device). The first confirm ("Fetch Apollo for iphone")

@@ -113,7 +113,9 @@ now, Run doctor (shown inline), Settings… (opens `~/.sideload/config.json`), O
 actions are Renew… (All apps or one app, and Retry on a failed renewal), Install (a signed app the device does not show, or
 Install update for a newer signed build), Add app… (an app from `approvedSources` the device does not have: a fetch confirm,
 then a second confirm that shows the version and its full SHA-256 and approves that exact version before provisioning, signing
-and installing it), Remove and "Lendable: <App>". Each opens an inline confirm that says what it will do
+and installing it), Update… (an installed app whose approved source lists a newer version: the row shows "Update available ·
+3.9.0 → 3.10.0" and "Update to 3.10.0…" in its menu; the same two confirms as Add app, and the install goes over the app and
+keeps its data), Remove and "Lendable: <App>". Each opens an inline confirm that says what it will do
 (slots, App IDs, the keychain prompt); the confirm button is the owner's `--yes`, and only then does the app run the same
 in-process command as the CLI. A running action shows Cancel; the result lists each app with its code, message and fix and a
 Retry, or says the lock was busy. A disabled control says why ("Connect iphone over Wi-Fi or USB", "renewable at 6 d left",
@@ -121,7 +123,9 @@ Retry, or says the lock was busy. A disabled control says why ("Connect iphone o
 
 The live check is one read-only `devicectl device info apps` per visible device, at launch, on Check status now, and on a panel
 open only when the last attempt is 5 minutes old; it takes no lock and writes nothing (`docs/design.md` section 12). When a device
-cannot be read (locked, offline, timed out) the card says so once and the rows show the ledger's record.
+cannot be read (locked, offline, timed out) the card says so once and the rows show the ledger's record. The only network the
+panel starts by itself is the update check (`sideload updates` in process: one metadata GET per approved, installed source, at most
+every 6 hours, 5 minutes for Check status now); it downloads no IPA and writes only `updates.json`.
 
 Build, install and launch (the build never installs or launches anything; it signs ad hoc, with no identity or Apple ID):
 
