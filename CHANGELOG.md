@@ -7,8 +7,8 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
-- `sideload refresh --auto`: the command the launchd agent will run every 30 minutes (the agent itself, `refresh
-  --print-agent`, is not built yet, so until then it is owner-run). It takes no other option. It acts only on devices
+- `sideload refresh --auto`: the command the launchd agent runs every 30 minutes (the owner loads the agent from
+  `refresh --print-agent`, below). It takes no other option. It acts only on devices
   with `autoRefresh` on and renews installs with 5 days or fewer left through the same `provision`, `sign` and
   `install` as the manual run, with the same one `--renew` retry of `PROFILE_NOT_RENEWED` and no new App ID. It never
   waits on `.op.lock`. Whole-run skips are `ok:true` and silent: the `$SIDELOAD_HOME/refresh.disabled` kill-switch file
@@ -26,7 +26,19 @@ All notable changes to this project are documented here. Format follows
   through `osascript` (the text is an argument, cleaned to aliases, app names, numbers and codes; a failed notification
   is only logged). New: `RefreshAuto`, `RefreshAutoPolicy` (`RefreshPolicy.runGate`, `autoGate`), `RefreshLog`,
   `Notifier`, `Paths.refreshLog`, `Paths.refreshDisabled`; `RefreshRun` takes an optional auto context (manual output is
-  unchanged). `refresh --print-agent` still answers `USAGE`.
+  unchanged).
+
+- `sideload refresh --print-agent [--binary <absolute path>]`: prints the launchd user agent that runs `refresh --auto`.
+  Pure: no lock, no subprocess, no file written (not even the home is created), no device. One object with `label`
+  (`io.github.dividedby.sideload.refresh`), `path` (`~/Library/LaunchAgents/<label>.plist`), `plist` (the XML text),
+  `install` (the owner's commands: make the folders, write the plist with a quoted here-document, `plutil -lint`,
+  `launchctl bootstrap gui/$(id -u)`, `launchctl kickstart -k`) and `stop` (`touch $SIDELOAD_HOME/refresh.disabled`,
+  `launchctl bootout`). The plist runs `<binary> refresh --auto` every 1800 s with `RunAtLoad` false, `ProcessType
+  Background`, `LowPriorityIO`, `LimitLoadToSessionType Aqua`, stderr to `$SIDELOAD_HOME/logs/launchd-refresh.err`, stdout
+  to `/dev/null`, `SIDELOAD_HOME` only when it is not the default, and no `KeepAlive`; every string is XML-escaped.
+  `--binary` defaults to `~/.local/bin/sideload` and must be absolute; it, and any other refresh option, is `USAGE`
+  otherwise. Printing is not installing: agents never run the printed `launchctl` commands. README gains "Turning on
+  auto-refresh" with the owner's steps. New: `AgentPlist`, `RefreshCommand.printAgent`.
 
 - `sideload updates [--app <a>] [--force]`: read-only check of what each approved source offers against what is
   installed on the saved devices. It makes one metadata GET per source that is approved and has an `installs[]`
@@ -115,6 +127,12 @@ All notable changes to this project are documented here. Format follows
 
 ### Changed
 
+- The menu bar app now shows auto-renew state (`MenuLoader.loadLocal` sets `autoRefreshAvailable`, now that `refresh --auto`
+  exists): "Auto-renew off" under the rows of a visible device that is not opted in (`device auto-refresh`), and an
+  offline device's line reads "Seen 3 h ago · renews when back on Wi-Fi or USB" or "... · auto-renew off".
+- Output redaction: `Envelope.keepsUserPaths` (false by default) lets one envelope keep `/Users/<name>` paths instead of
+  masking them to `/Users/<user>`. Only `refresh --print-agent` sets it, because a plist with a masked home cannot load;
+  every other redaction still applies to it and every other command is unchanged.
 - `refresh`, and so the menu's Renew, keeps the installed version (owner decision 2026-10-28): it asks `sign` for the
   version in `installs[].version` instead of the newest approved one, so a renewal no longer updates the app. If that
   version is no longer a fetched, approved manifest entry with its IPA on disk it falls back to the newest approved one and the envelope
