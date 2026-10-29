@@ -28,6 +28,10 @@ struct FetchSource: Sendable, Equatable {
         case githubRelease(repo: String)
         /// A gorlev AltStore-style index; `tvos` pins the exact CDN path shape (design section 8).
         case altstoreIndex(url: String, tvos: Bool)
+
+        var isThirdParty: Bool {
+            if case .altstoreIndex = self { true } else { false }
+        }
     }
 
     let app: String

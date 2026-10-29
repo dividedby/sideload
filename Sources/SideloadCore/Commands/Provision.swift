@@ -58,7 +58,10 @@ enum ProvisionApp: String, CaseIterable {
     var devicePlatform: String { self == .stremioTVOS ? "tvos" : "ios" }
 
     /// `Platform` as a provisioning profile spells it.
-    var profilePlatform: String { self == .stremioTVOS ? "tvOS" : "iOS" }
+    var profilePlatform: String { Self.osName(devicePlatform: devicePlatform) }
+
+    /// The OS as people and profiles spell it, from a saved device's `platform`.
+    static func osName(devicePlatform: String?) -> String { devicePlatform == "tvos" ? "tvOS" : "iOS" }
 
     /// The SDK folder name under `Build/Products/Debug-<sdk>`.
     var sdk: String { self == .stremioTVOS ? "appletvos" : "iphoneos" }

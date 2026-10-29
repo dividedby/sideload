@@ -311,7 +311,7 @@ public enum SlotCommand {
                         "The uninstall's result was not certain, but the app is no longer on the device, so the slot is recorded as lent.",
                         "No action needed; `slot return` reinstalls the app."))
             }
-            if removal.lastFreeApp(before: s0) {
+            if FreeRemoval.isLastFreeApp(bundleId: target.bundleId, in: s0, prefix: target.prefix) {
                 warnings.append(
                     CanaryCommand.warning(
                         "LAST_FREE_APP_REMOVED",

@@ -167,10 +167,7 @@ final class MenuModel {
         }
         // A fetch that failed, was busy or was cancelled changed nothing either.
         if action.isFetchStage { return }
-        apps.invalidate(action.device)
-        repaint(renewing: false)
-        lastLoadFinished = nil
-        reload()
+        invalidateAndReload(action)
     }
 
     private func openApproval(_ action: MenuAction) {
@@ -179,6 +176,11 @@ final class MenuModel {
         if case .confirming = actionState { return }
         // The panel moved on while the fetch ran (a device went away, a slot was taken): say why, and read the device again.
         actionState = .finished(.notRun(MenuActions.blockedReason(action, in: panelSnapshot, now: services.clock.now())))
+        invalidateAndReload(action)
+    }
+
+    /// Forgets what was read of the action's device and reads it again at once.
+    private func invalidateAndReload(_ action: MenuAction) {
         apps.invalidate(action.device)
         repaint(renewing: false)
         lastLoadFinished = nil

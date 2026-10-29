@@ -94,7 +94,7 @@ public enum MenuActionRunner {
     enum AddStep: String, CaseIterable, Sendable {
         case approve, provision, sign, install
 
-        var title: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
+        var title: String { MenuFormat.capitalised(rawValue) }
 
         func text(skipped: Bool, appIdNew: Bool) -> String {
             switch self {
@@ -104,6 +104,11 @@ public enum MenuActionRunner {
             case .install: "Installed"
             }
         }
+    }
+
+    /// The status the runner records for a step in the add envelope.
+    enum AddStepStatus: String, Sendable {
+        case done, skipped, failed
     }
 
     /// A profile with this many days left or more is used as it is: `provision` within 24 h of the last one answers
@@ -138,9 +143,11 @@ public enum MenuActionRunner {
         var warnings: [JSONValue] = []
         var appIdNew: Bool?
         var installStarted = false
-        func record(_ step: AddStep, _ status: String) { results.append(["step": .string(step.rawValue), "status": .string(status)]) }
+        func record(_ step: AddStep, _ status: AddStepStatus) {
+            results.append(["step": .string(step.rawValue), "status": .string(status.rawValue)])
+        }
         func finish(_ failed: AddStep? = nil, _ error: Envelope.Entry? = nil) -> Envelope {
-            if let failed { record(failed, "failed") }
+            if let failed { record(failed, .failed) }
             var data: [String: JSONValue] = [
                 "device": .string(device), "app": .string(app), "version": .string(fetched.version),
                 "steps": .array(results), "warnings": .array(warnings),
@@ -154,10 +161,12 @@ public enum MenuActionRunner {
         }
         func interrupted(_ step: AddStep) -> Envelope? {
             guard isCancelled() else { return nil }
-            return finish(step, .init(code: "INTERRUPTED", message: "The run was interrupted.", fix: nil))
+            return finish(step, .init(code: RefreshPolicy.interrupted, message: "The run was interrupted.", fix: nil))
         }
         let id = "\(device)/\(app)"
         let loadLedger = { () -> Ledger in try services.ledgerStore.load() }
+        func profile(in ledger: Ledger) -> LedgerFreeProfile? { ledger.freeProfiles.first { $0.id == id } }
+        func signed(in ledger: Ledger) -> LedgerFreeSigned? { ledger.freeSigned.first { $0.id == id } }
 
         // 1. Approve this exact version (offline: it re-hashes and inspects the stored file).
         let approved = await steps.fetch(services, FetchOptions(app: app, approve: true, version: fetched.version))
@@ -169,17 +178,17 @@ public enum MenuActionRunner {
                     code: "DIGEST_MISMATCH", message: "The approved file is not the one you reviewed. Nothing was signed.",
                     fix: "Fetch it again and review the SHA-256."))
         }
-        record(.approve, approved.data["alreadyApproved"] == .bool(true) ? "skipped" : "done")
+        record(.approve, approved.data["alreadyApproved"] == .bool(true) ? .skipped : .done)
 
         // 2. Provision, unless a stored profile is still fresh.
         if let stopped = interrupted(.provision) { return stopped }
         do {
             let ledger = try loadLedger()
-            let fresh = ledger.freeProfiles.first { $0.id == id }.map {
+            let fresh = profile(in: ledger).map {
                 $0.expires.timeIntervalSince(services.clock.now()) >= freshProfileDays * 86_400
             }
             if fresh == true {
-                record(.provision, "skipped")
+                record(.provision, .skipped)
             } else {
                 var envelope = await steps.provision(services, ProvisionOptions(app: app, device: device, yes: true))
                 // Like `refresh`: only a profile that did not move is retried, once, with the renewal of our own cached copy.
@@ -188,7 +197,7 @@ public enum MenuActionRunner {
                 }
                 guard envelope.ok else { return stop(.provision, envelope) }
                 if case .bool(let isNew)? = envelope.data["appIdNew"] { appIdNew = isNew }
-                record(.provision, "done")
+                record(.provision, .done)
             }
         } catch {
             return stop(.provision, .from(error, command: "add"))
@@ -199,18 +208,18 @@ public enum MenuActionRunner {
         do {
             let ledger = try loadLedger()
             let prefix = String(fetched.sha256.prefix(8))
-            let current = ledger.freeSigned.first { $0.id == id }.map { signed in
-                signed.version == fetched.version && signed.sha256Prefix == prefix
-                    && signed.profileUuid == ledger.freeProfiles.first { $0.id == id }?.profileUuid
+            let current = signed(in: ledger).map { build in
+                build.version == fetched.version && build.sha256Prefix == prefix
+                    && build.profileUuid == profile(in: ledger)?.profileUuid
             }
-            var status = "skipped"
+            var status = AddStepStatus.skipped
             if current != true {
                 let envelope = await steps.sign(services, SignOptions(app: app, device: device, yes: true, version: fetched.version))
                 guard envelope.ok else { return stop(.sign, envelope) }
-                status = "done"
+                status = .done
             }
             // `install` puts whatever `freeSigned` holds on the device: it must be what the owner approved.
-            let after = try loadLedger().freeSigned.first { $0.id == id }
+            let after = signed(in: try loadLedger())
             guard after?.version == fetched.version, after?.sha256Prefix == prefix else {
                 return finish(
                     .sign,
@@ -229,7 +238,7 @@ public enum MenuActionRunner {
         let installed = await steps.install(services, InstallOptions(app: app, device: device, yes: true))
         guard installed.ok else { return stop(.install, installed) }
         if case .array(let more)? = installed.data["warnings"] { warnings += more }
-        record(.install, "done")
+        record(.install, .done)
         return finish()
     }
 
@@ -246,8 +255,8 @@ public enum MenuActionRunner {
         var stop: String?
         for app in apps {
             if stop == nil, isCancelled() {
-                stop = "INTERRUPTED"
-                errors.append(.init(code: "INTERRUPTED", message: "The run was interrupted.", fix: nil))
+                stop = RefreshPolicy.interrupted
+                errors.append(.init(code: RefreshPolicy.interrupted, message: "The run was interrupted.", fix: nil))
             }
             if let stop {
                 results.append(["app": .string(app), "status": "skipped", "code": .string(stop)])
@@ -264,7 +273,7 @@ public enum MenuActionRunner {
             if let entry {
                 results.append(entry)
             } else if envelope.ok {
-                results.append(["app": .string(app), "status": "skipped", "code": "NOT_DUE"])
+                results.append(["app": .string(app), "status": "skipped", "code": .string(RefreshPolicy.notDue)])
             } else {
                 // Stopped before any app ran (a suspension, a pending change, a config problem).
                 let code = envelope.errors.first?.code ?? "INTERNAL_ERROR"
@@ -275,7 +284,7 @@ public enum MenuActionRunner {
                 let named = error.message.hasPrefix("\(app): ") ? error.message : "\(app): \(error.message)"
                 errors.append(.init(code: error.code, message: named, fix: error.fix))
             }
-            if let failed = envelope.errors.first?.code, RefreshPolicy.isFatal(failed) || failed == "OPERATION_IN_PROGRESS" {
+            if let failed = envelope.errors.first?.code, RefreshPolicy.isFatal(failed) || failed == OperationLock.busyCode {
                 stop = failed
             }
         }

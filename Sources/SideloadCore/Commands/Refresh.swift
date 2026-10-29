@@ -233,7 +233,7 @@ private struct RefreshRun {
         }
         // An app nothing is known about is not listed, unless it was named.
         if options.app == nil {
-            entries.removeAll { $0.decision == .skip(code: "NOT_INSTALLED", expires: nil) }
+            entries.removeAll { $0.decision == .skip(code: RefreshPolicy.notInstalled, expires: nil) }
         }
         entries.sort { lhs, rhs in
             (Self.expiry(lhs.decision) ?? .distantFuture, lhs.target.app.rawValue)
@@ -257,10 +257,10 @@ private struct RefreshRun {
                 }
                 if Task.isCancelled {
                     // A due app left unrenewed is a failure, so a run cancelled before any failure is still `ok:false`.
-                    let interrupted = RefreshFailure(code: "INTERRUPTED", message: "The run was interrupted.", fix: nil)
+                    let interrupted = RefreshFailure(code: RefreshPolicy.interrupted, message: "The run was interrupted.", fix: nil)
                     failures.append(interrupted)
                     stop = interrupted
-                    results.append(.skipped(target.app, code: "INTERRUPTED", expires: baseline.expires, now: start))
+                    results.append(.skipped(target.app, code: RefreshPolicy.interrupted, expires: baseline.expires, now: start))
                     continue
                 }
                 let outcome = await renew(target, baseline: baseline, start: start, installBlock: &installBlock, warnings: &warnings)
@@ -423,10 +423,10 @@ private struct RefreshRun {
             if Task.isCancelled, RefreshPolicy.isCancellation(failure.code) {
                 // The menu's Cancel (the CLI is stopped by signals instead): a step that died with the task is not a failure
                 // of the app, so it is neither counted nor backed off.
-                result.code = "INTERRUPTED"
+                result.code = RefreshPolicy.interrupted
                 outcome = .cancelled
             } else {
-                outcome = failure.code == "OPERATION_IN_PROGRESS" && done == 0 ? .busy : .failed(code: failure.code)
+                outcome = failure.code == OperationLock.busyCode && done == 0 ? .busy : .failed(code: failure.code)
             }
         } else {
             result.status = baseline.lent ? .renewedNotInstalled : .renewed

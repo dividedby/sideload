@@ -121,7 +121,7 @@ public enum MenuSnapshotBuilder {
             }
             return MenuAddSource(
                 app: app.rawValue, name: MenuFormat.appName(app.rawValue), source: label, platform: app.devicePlatform,
-                thirdParty: { if case .altstoreIndex = approved.kind { true } else { false } }())
+                thirdParty: approved.kind.isThirdParty)
         }
     }
 

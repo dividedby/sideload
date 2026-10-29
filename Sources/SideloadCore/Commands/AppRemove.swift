@@ -51,12 +51,7 @@ struct FreeRemoval: Sendable {
 
     /// True unless something known to keep the developer's trust stays: our other `<prefix>.free.*` installs or an app of a
     /// known free-team signer (WebDriverAgent, SideStore). The reserve and unflagged developer-signed apps do not count:
-    /// this errs on the side of warning.
-    func lastFreeApp(before: AppSnapshot) -> Bool {
-        Self.isLastFreeApp(bundleId: target.bundleId, in: before, prefix: target.prefix)
-    }
-
-    /// The same rule without a target, for the menu's confirm text.
+    /// this errs on the side of warning. The menu snapshot uses it too, for the Remove confirm's trust warning.
     static func isLastFreeApp(bundleId: String, in snapshot: AppSnapshot, prefix: String?) -> Bool {
         let managedOthers = snapshot.managedIds(prefix: prefix).filter { $0 != bundleId }.count
         let signers = snapshot.ids.filter { !Config.isFreeBundleId($0, prefix: prefix) && FreeTeamSigner.label(of: $0) != nil }.count
@@ -185,7 +180,7 @@ public enum AppCommand {
                     "The uninstall's result was not certain\(outcome.opFailure.map { " (\($0.code))" } ?? ""), but the app is no longer on the device, so it is recorded as removed.",
                     "No action needed."))
         }
-        if removal.lastFreeApp(before: before) {
+        if FreeRemoval.isLastFreeApp(bundleId: target.bundleId, in: before, prefix: target.prefix) {
             warnings.append(
                 CanaryCommand.warning(
                     "LAST_FREE_APP_REMOVED",

@@ -273,6 +273,28 @@ struct RefreshPolicyTests {
         }
         #expect(RefreshPolicy.deviceUnavailableCodes == ["DEVICE_LOCKED", "DEVICE_NOT_CONNECTED", "DEVICE_NOT_PAIRED"])
     }
+
+    @Test("every skip code decide() can return is a policy skip, so the menu never counts it as a stop")
+    func decideSkipsArePolicySkips() {
+        var codes = Set<String>()
+        for install in [nil, 2.0, 6.0] as [Double?] {
+            for signed in [nil, 2.0, 6.0] as [Double?] {
+                for present in [true, false] {
+                    for lent in [true, false] {
+                        for presence in [RefreshPolicy.Presence.unknown, .present, .absent] {
+                            let s = subject(installDays: install, signedDays: signed, profileDays: signed, present: present, lent: lent)
+                            if case .skip(let code, _) = RefreshPolicy.decide(s, now: testNow, within: 5, presence: presence) {
+                                codes.insert(code)
+                                #expect(RefreshPolicy.isPolicySkip(code), "\(code)")
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        #expect(codes == RefreshPolicy.policySkipCodes)
+        #expect(!RefreshPolicy.isPolicySkip(RefreshPolicy.interrupted) && !RefreshPolicy.isPolicySkip(nil))
+    }
 }
 
 @Suite("PostEmit")
