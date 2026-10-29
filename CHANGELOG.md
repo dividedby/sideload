@@ -25,7 +25,7 @@ All notable changes to this project are documented here. Format follows
   codes only), and each renewal attempt and each install it suspends is told to the owner by a macOS notification
   through `osascript` (the text is an argument, cleaned to aliases, app names, numbers and codes; a failed notification
   is only logged). New: `RefreshAuto`, `RefreshAutoPolicy` (`RefreshPolicy.runGate`, `autoGate`), `RefreshLog`,
-  `Notifier`, `Paths.refreshLog`, `Paths.refreshDisabled`; `RefreshRun` takes a `RefreshMode` (manual output is
+  `Notifier`, `Paths.refreshLog`, `Paths.refreshDisabled`; `RefreshRun` takes an optional auto context (manual output is
   unchanged). `refresh --print-agent` still answers `USAGE`.
 
 - `sideload updates [--app <a>] [--force]`: read-only check of what each approved source offers against what is
