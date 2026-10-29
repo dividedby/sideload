@@ -47,15 +47,19 @@ public enum MenuActionRunner {
             envelope = await steps.install(services, InstallOptions(app: app, device: device, yes: true))
         case .remove(let device, let app):
             envelope = await steps.remove(services, AppOptions(sub: "remove", app: app, device: device, yes: true))
-        case .addFetch(_, let app):
+        case .addFetch(_, let app), .updateFetch(_, let app, _):
             envelope = await steps.fetch(services, FetchOptions(app: app))
-        case .addApprove(let device, let app, let fetched):
+        case .addApprove(let device, let app, let fetched), .updateApprove(let device, let app, _, let fetched):
             if let reason = addStop(app: app, fetched: fetched, services: services) {
                 await deliver(.notRun(reason))
                 return
             }
+            // Update is the same chain: the app is already installed, so `install` goes over it and keeps its data.
+            var isUpdate = false
+            if case .updateApprove = action { isUpdate = true }
             envelope = await addEach(
-                app, device: device, fetched: fetched, services: services, steps: steps, isCancelled: isCancelled)
+                app, device: device, fetched: fetched, command: isUpdate ? "update" : "add", services: services, steps: steps,
+                isCancelled: isCancelled)
         case .lendable(let device, let app):
             // `device lendable` takes no `.op.lock`, so a lab `slot lend` can land after the panel was drawn: the ledger is
             // read again here, and the setting is not written while the device has a lent or pending slot.
@@ -90,7 +94,7 @@ public enum MenuActionRunner {
         return busy ? MenuActions.lentOrChanging(device) : nil
     }
 
-    /// The steps of the second Add app confirm, in order.
+    /// The steps of the second Add app (and Update) confirm, in order.
     enum AddStep: String, CaseIterable, Sendable {
         case approve, provision, sign, install
 
@@ -131,12 +135,12 @@ public enum MenuActionRunner {
         return nil
     }
 
-    /// Add app, stage 2: approve exactly the confirmed version, then only the steps still needed, then install, folded into one
-    /// `add`-shaped envelope with a status per step. Each command takes `.op.lock` itself, so the lab can interleave between
+    /// Add app and Update, stage 2: approve exactly the confirmed version, then only the steps still needed, then install, folded
+    /// into one `add`- (or `update`-) shaped envelope with a status per step. Each command takes `.op.lock` itself, so the lab can interleave between
     /// steps. A step that is already done (a profile with 6 days or more left, a signed build for this version and profile) is
     /// skipped, so a run that stopped halfway resumes. Stops between steps when cancelled, and on the first failure.
     private static func addEach(
-        _ app: String, device: String, fetched: MenuFetched, services: Services, steps: MenuActionSteps,
+        _ app: String, device: String, fetched: MenuFetched, command: String, services: Services, steps: MenuActionSteps,
         isCancelled: @Sendable () -> Bool
     ) async -> Envelope {
         var results: [JSONValue] = []
@@ -154,7 +158,7 @@ public enum MenuActionRunner {
             ]
             if let appIdNew { data["appIdNew"] = .bool(appIdNew) }
             if installStarted { data["installStarted"] = true }
-            return Envelope(ok: failed == nil, command: "add", data: data, errors: error.map { [$0] } ?? [])
+            return Envelope(ok: failed == nil, command: command, data: data, errors: error.map { [$0] } ?? [])
         }
         func stop(_ step: AddStep, _ envelope: Envelope) -> Envelope {
             finish(step, envelope.errors.first ?? .init(code: "INTERNAL_ERROR", message: "\(step.rawValue) failed.", fix: nil))
@@ -200,7 +204,7 @@ public enum MenuActionRunner {
                 record(.provision, .done)
             }
         } catch {
-            return stop(.provision, .from(error, command: "add"))
+            return stop(.provision, .from(error, command: command))
         }
 
         // 3. Sign exactly this version, unless the signed build already is this version on the stored profile.
@@ -229,7 +233,7 @@ public enum MenuActionRunner {
             }
             record(.sign, status)
         } catch {
-            return stop(.sign, .from(error, command: "add"))
+            return stop(.sign, .from(error, command: command))
         }
 
         // 4. Install.
