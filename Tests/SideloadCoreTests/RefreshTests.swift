@@ -837,8 +837,8 @@ struct RefreshTests {
             #expect(!unsaved.ok && unsaved.errors.first?.code == "DEVICE_NOT_SAVED")
             #expect(log.value.isEmpty && w.runner.deviceCalls.isEmpty)
             try w.expectClean(noYes)
-            // Through the CLI parser: the designed but unbuilt flags answer USAGE.
-            for flag in ["--auto", "--print-agent"] {
+            // Through the CLI parser: the designed but unbuilt flag answers USAGE (`--auto` is built: RefreshAutoTests).
+            for flag in ["--print-agent"] {
                 let out = await run(argv: ["refresh", flag], services: w.services)
                 #expect(!out.ok && out.errors.first?.code == "USAGE", "\(flag)")
             }

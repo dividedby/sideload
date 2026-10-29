@@ -251,9 +251,11 @@ struct MenuModelUpdateTests {
         #expect(w.model.updateTask == nil, "cancelled when the action started")
         w.source.hold(false)
         try await until { !w.model.actionBusy }
+        // The cancelled forced check runs again after the action (from the reload its end starts), forced, so it asks even
+        // though the cache is fresh. Wait for that request: the reload may not have started when the action stops being busy.
+        try await until { w.source.gets.count == 3 }
         await w.model.loadTask?.value
         await w.model.updateTask?.value
-        // The cancelled forced check ran again after the action, forced, so it asked even though the cache was fresh.
         #expect(w.source.gets.count == 3)
     }
 

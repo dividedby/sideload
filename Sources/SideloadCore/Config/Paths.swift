@@ -46,6 +46,10 @@ public struct Paths: Sendable, Equatable {
     public var updates: String { home + "/updates.json" }
     public var canaryLog: String { logs + "/canary.jsonl" }
     public var commandsLog: String { logs + "/commands.log" }
+    /// One JSON line per `refresh --auto` decision and step (design section 18). Aliases, app names, codes and numbers only.
+    public var refreshLog: String { logs + "/refresh.jsonl" }
+    /// The kill switch: while this file exists, `refresh --auto` does nothing. The owner creates and removes it (`touch`).
+    public var refreshDisabled: String { home + "/refresh.disabled" }
     public var configLock: String { home + "/.config.lock" }
     public var opLock: String { home + "/.op.lock" }
     public var ledgerLock: String { home + "/.ledger.lock" }

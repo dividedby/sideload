@@ -24,6 +24,7 @@ private func help() -> Envelope {
             "sign --app <apollo|stremio-ios|stremio-tvos> --device <alias> --yes",
             "install --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> --yes",
             .string("refresh --device <alias> [--app <apollo|stremio-ios|stremio-tvos|filler>] [--within 1-\(RefreshCommand.maxWithin) | --force] --yes"),
+            "refresh --auto",
             "app remove --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> --yes",
             "slot lend --device <alias>|--udid <id> --to lab",
             "slot return --device <alias>|--udid <id>",
@@ -46,8 +47,10 @@ private let provisionSpec = ArgSpec(values: ["app", "device"], flags: ["yes", "r
 private let signSpec = ArgSpec(values: ["app", "device"], flags: ["yes"])
 private let installSpec = ArgSpec(values: ["app", "device"], flags: ["yes"])
 private let refreshSpec = ArgSpec(values: ["device", "app", "within"], flags: ["yes", "force", "auto", "print-agent"])
-// `--auto` and `--print-agent` are designed (design section 18) but not built; they parse only so they can say so.
-private let refreshDeferredFlags = ["auto", "print-agent"]
+// `--print-agent` is designed (design section 18) but not built; it parses only so it can say so. `--auto` is built and
+// takes no other option.
+private let refreshDeferredFlags = ["print-agent"]
+private let refreshAutoConflicts = ["device", "app", "within", "yes", "force"]
 private let appSpec = ArgSpec(values: ["app", "device"], flags: ["yes"])
 private let slotSpec = ArgSpec(values: ["device", "udid", "to", "app"], flags: ["yes"])
 private let fetchSpec = ArgSpec(values: ["app", "version"], flags: ["approve"])
@@ -140,8 +143,16 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
 
     if command == "refresh", let flag = refreshDeferredFlags.first(where: parsed.flags.contains) {
         return .fail(
-            command, code: "USAGE", message: "refresh --\(flag) is not built yet (only the manual refresh is).",
-            fix: "Run `sideload refresh --device <alias> [--app <app>] --yes`.")
+            command, code: "USAGE", message: "refresh --\(flag) is not built yet (the manual and the automatic refresh are).",
+            fix: "Run `sideload refresh --device <alias> [--app <app>] --yes`, or `sideload refresh --auto`.")
+    }
+
+    if command == "refresh", parsed.flags.contains("auto"),
+        let option = refreshAutoConflicts.first(where: { parsed.values[$0] != nil || parsed.flags.contains($0) })
+    {
+        return .fail(
+            command, code: "USAGE", message: "refresh --auto takes no other option (--\(option) was given).",
+            fix: "Run `sideload refresh --auto` on its own; the opted-in devices and the limits are the policy's.")
     }
 
     var portalResource: PortalResource?
@@ -187,6 +198,7 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
             services,
             InstallOptions(app: parsed.values["app"], device: parsed.values["device"], yes: parsed.flags.contains("yes")))
     }
+    if command == "refresh", parsed.flags.contains("auto") { return await RefreshCommand.runAuto(services) }
     if command == "refresh" {
         return await RefreshCommand.run(
             services,

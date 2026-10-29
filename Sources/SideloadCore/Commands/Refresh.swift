@@ -66,7 +66,7 @@ public enum RefreshCommand {
 }
 
 /// One failure, as an `errors[]` entry and the `code` of an app's result.
-private struct RefreshFailure {
+struct RefreshFailure {
     var code: String
     var message: String
     var fix: String?
@@ -99,11 +99,11 @@ private struct RefreshFailure {
     }
 }
 
-private enum Step: String, CaseIterable {
+enum RefreshStep: String, CaseIterable {
     case provision, sign, install
 }
 
-private enum StepState: String {
+enum RefreshStepState: String {
     case done, skipped, failed
 }
 
@@ -113,12 +113,12 @@ enum RefreshResultStatus: String {
 }
 
 /// What one app ended as. `failure` is set exactly when `status` is `failed`.
-private struct AppResult {
+struct AppResult {
     typealias Status = RefreshResultStatus
 
     let app: ProvisionApp
     var status: Status
-    var steps: [Step: StepState] = [:]
+    var steps: [RefreshStep: RefreshStepState] = [:]
     var code: String?
     var daysLeftBefore: Int?
     var daysLeftAfter: Int?
@@ -127,6 +127,21 @@ private struct AppResult {
     var renewRetried = false
     var renew: [String: JSONValue] = [:]
     var failure: RefreshFailure?
+    /// What the automatic run needs to know afterwards; not part of `json`.
+    var trace = Trace()
+
+    struct Trace {
+        /// The lock was busy: the attempt was given back, nothing is recorded as a failure.
+        var busy = false
+        /// The task was cancelled and the failure is the cancellation's own.
+        var cancelled = false
+        /// This attempt made the install `suspended`.
+        var newlySuspended = false
+        /// The install's `refresh.nextEligible` after the attempt.
+        var nextEligible: Date?
+        /// The expiry the owner has after a success.
+        var newExpires: Date?
+    }
 
     /// A policy or consequence skip: nothing was run for the app.
     static func skipped(_ app: ProvisionApp, code: String, expires: Date?, now: Date) -> AppResult {
@@ -161,15 +176,24 @@ private struct AppResult {
     }
 }
 
-private struct RefreshRun {
+/// What only the automatic run carries: its log and its notifier.
+struct RefreshAutoContext: Sendable {
+    let log: RefreshLog
+    let notifier: Notifier
+}
+
+struct RefreshRun {
     let services: Services
-    let options: RefreshOptions
+    var options = RefreshOptions()
     let steps: RefreshSteps
     let timeZone: TimeZone
+    /// Set for the launchd agent's `refresh --auto`, which shares `renew` with the owner's `refresh --device` and differs in
+    /// what it checks, logs and says (design section 18, "Manual versus auto"). Nil is a manual run.
+    var auto: RefreshAutoContext?
 
-    private var command: String { RefreshCommand.command }
+    var command: String { RefreshCommand.command }
 
-    private func log(_ message: String) { services.log("refresh: " + message) }
+    func log(_ message: String) { services.log("refresh: " + message) }
 
     func execute() async throws -> Envelope {
         guard let alias = options.device, !alias.isEmpty else {
@@ -301,7 +325,7 @@ private struct RefreshRun {
     }
 
     /// The saved device and the apps to look at: the one `--app`, else every app that runs on the device's platform.
-    private static func targets(app appName: String?, alias: String, config: Config) throws -> [FreeTarget] {
+    static func targets(app appName: String?, alias: String, config: Config) throws -> [FreeTarget] {
         if let appName, !appName.isEmpty {
             return [try FreeTarget.resolve(app: try FreeTarget.parseApp(appName), alias: alias, config: config)]
         }
@@ -315,7 +339,7 @@ private struct RefreshRun {
         return try apps.map { try FreeTarget.resolve(app: $0, alias: alias, config: config) }
     }
 
-    private func subject(_ app: ProvisionApp, _ ledger: Ledger, alias: String) -> RefreshPolicy.Subject {
+    func subject(_ app: ProvisionApp, _ ledger: Ledger, alias: String) -> RefreshPolicy.Subject {
         let key = "\(alias)/\(app.rawValue)"
         return RefreshPolicy.Subject(
             app: app, install: ledger.installs.first { $0.id == key }, signed: ledger.freeSigned.first { $0.id == key },
@@ -325,7 +349,7 @@ private struct RefreshRun {
 
     // MARK: one app
 
-    private func renew(
+    func renew(
         _ target: FreeTarget, baseline: RefreshPolicy.Target, start: Date, installBlock: inout RefreshFailure?,
         warnings: inout [JSONValue]
     ) async -> AppResult {
@@ -337,8 +361,11 @@ private struct RefreshRun {
         // The attempt is written before the first step, so a run that dies in the middle still counts.
         let attemptAt = wholeSeconds(services.clock.now())
         do {
-            let before = try services.ledgerStore.load()
-            warnings.append(contentsOf: Self.counterWarnings(before, target: target, now: attemptAt, timeZone: timeZone))
+            // The caps and the suspension bind the automatic run, which has already honoured them; only a manual run warns.
+            if auto == nil {
+                let before = try services.ledgerStore.load()
+                warnings.append(contentsOf: Self.counterWarnings(before, target: target, now: attemptAt, timeZone: timeZone))
+            }
             let (zone, key) = (timeZone, target.key)
             try await services.ledgerStore.update { ledger in
                 guard let index = ledger.installs.firstIndex(where: { $0.id == key }) else { return }
@@ -357,12 +384,26 @@ private struct RefreshRun {
         } catch {
             return result.failing(RefreshFailure(error: error).naming(app))
         }
-        result.steps = Dictionary(uniqueKeysWithValues: Step.allCases.map { ($0, StepState.skipped) })
+        result.steps = Dictionary(uniqueKeysWithValues: RefreshStep.allCases.map { ($0, RefreshStepState.skipped) })
         log("\(app.rawValue): provision=\(plan.provision) sign=\(plan.sign) install=\(plan.install)")
+
+        // Auto never falls back to another version: the installed one must be a fetched, approved entry whose file is on disk,
+        // and that is known before the portal is asked for anything. Not a permanent failure: it backs off and notifies.
+        var pinned: String?
+        if auto != nil, plan.sign {
+            pinned = pinnedVersion(target)
+            if pinned == nil {
+                failure = RefreshFailure(
+                    code: RefreshPolicy.versionNotAvailable,
+                    message: "The installed version of \(app.rawValue) is not a fetched, approved version with its file on disk, and the automatic refresh never signs another one.",
+                    fix: "The owner fetches and approves that version again, or updates the app (Update in the menu); a manual `sideload refresh --device \(alias) --app \(app.rawValue) --yes` signs the newest approved version.")
+            }
+        }
 
         // provision, without --renew first: a renewal that Xcode makes by itself spends no App ID. Only a profile that did
         // not move is retried, once, with the renewal of our own cached copy.
-        if plan.provision {
+        if failure == nil, plan.provision {
+            let began = services.clock.now()
             var envelope = await steps.provision(services, ProvisionOptions(app: app.rawValue, device: alias, yes: true))
             if !envelope.ok, envelope.errors.first?.code == "PROFILE_NOT_RENEWED" {
                 result.renewRetried = true
@@ -380,11 +421,13 @@ private struct RefreshRun {
                 result.steps[.provision] = .failed
                 failure = RefreshFailure(envelope)
             }
+            logStep(.provision, target, since: began, failure: failure, retried: result.renewRetried)
         }
         if result.appIdNew == nil { result.appIdNew = false }
 
         if failure == nil, plan.sign {
-            let version = installedVersion(target, warnings: &warnings)
+            let began = services.clock.now()
+            let version = auto != nil ? pinned : installedVersion(target, warnings: &warnings)
             let envelope = await steps.sign(services, SignOptions(app: app.rawValue, device: alias, yes: true, version: version))
             if envelope.ok {
                 result.steps[.sign] = .done
@@ -393,6 +436,7 @@ private struct RefreshRun {
                 result.steps[.sign] = .failed
                 failure = RefreshFailure(envelope)
             }
+            logStep(.sign, target, since: began, failure: failure)
         }
 
         if failure == nil, plan.install {
@@ -402,6 +446,7 @@ private struct RefreshRun {
                     code: block.code, message: "The install was skipped: \(block.message)",
                     fix: "Unlock the device and keep it connected (or reconnect it), then rerun `sideload refresh --device \(alias) --app \(app.rawValue) --yes`; the rerun resumes at the install.")
             } else {
+                let began = services.clock.now()
                 let envelope = await steps.install(services, InstallOptions(app: app.rawValue, device: alias, yes: true))
                 if envelope.ok {
                     result.steps[.install] = .done
@@ -412,6 +457,7 @@ private struct RefreshRun {
                     failure = failed
                     if RefreshPolicy.deviceUnavailableCodes.contains(failed.code) { installBlock = failed }
                 }
+                logStep(.install, target, since: began, failure: failure)
             }
         }
 
@@ -427,8 +473,13 @@ private struct RefreshRun {
                 result.code = RefreshPolicy.interrupted
                 outcome = .cancelled
             } else {
-                outcome = failure.code == OperationLock.busyCode && done == 0 ? .busy : .failed(code: failure.code)
+                // A manual run that got part-way and then found the lock busy counts a failure (its rerun resumes); the
+                // automatic run never does: a busy lock is the lab's turn, whenever it comes.
+                let busy = failure.code == OperationLock.busyCode && (done == 0 || auto != nil)
+                outcome = busy ? .busy : .failed(code: failure.code)
             }
+            result.trace.busy = outcome == .busy
+            result.trace.cancelled = outcome == .cancelled
         } else {
             result.status = baseline.lent ? .renewedNotInstalled : .renewed
             outcome = baseline.lent ? .renewedNotInstalled : .refreshed
@@ -448,6 +499,7 @@ private struct RefreshRun {
                 let signed = ledger.freeSigned.first { $0.id == key }?.profileExpires
                 if let expires = baseline.lent ? signed : (installed ?? signed) {
                     result.daysLeftAfter = RefreshPolicy.daysLeft(expires, now: finished)
+                    result.trace.newExpires = expires
                 }
             }
             result.appIdsLast7Days = FreeAppIdBudget.live(ledger.freeAppIds, now: finished).count
@@ -455,11 +507,15 @@ private struct RefreshRun {
         do {
             let (zone, key) = (timeZone, target.key)
             let stamp = wholeSeconds(finished)
-            try await services.ledgerStore.update { ledger in
-                guard let index = ledger.installs.firstIndex(where: { $0.id == key }) else { return }
-                ledger.installs[index].refresh = RefreshPolicy.applying(
-                    outcome, to: ledger.installs[index].refresh, now: stamp, timeZone: zone)
+            let change = try await services.ledgerStore.update { ledger -> (was: Bool, now: LedgerInstallRefresh)? in
+                guard let index = ledger.installs.firstIndex(where: { $0.id == key }) else { return nil }
+                let was = ledger.installs[index].refresh
+                let applied = RefreshPolicy.applying(outcome, to: was, now: stamp, timeZone: zone)
+                ledger.installs[index].refresh = applied
+                return (was.suspended, applied)
             }
+            result.trace.newlySuspended = (change?.now.suspended ?? false) && !(change?.was ?? false)
+            result.trace.nextEligible = change?.now.nextEligible
         } catch {
             warnings.append(
                 CanaryCommand.warning(
@@ -476,11 +532,8 @@ private struct RefreshRun {
     /// no longer approved or no longer on disk, which is also a warning that names both versions. A renewal is never failed
     /// for this.
     private func installedVersion(_ target: FreeTarget, warnings: inout [JSONValue]) -> String? {
-        guard let installed = (try? services.ledgerStore.load())?.installs.first(where: { $0.id == target.key })?.version,
-            !installed.isEmpty
-        else { return nil }
-        let store = ManifestStore(paths: services.home)
-        let approved = ((try? store.load())?.entries ?? []).filter { $0.app == target.app.rawValue && $0.approved }
+        guard let installed = recordedVersion(target) else { return nil }
+        let (store, approved) = approvedEntries(target)
         if approved.contains(where: { $0.version == installed && store.hasFile($0) }) { return installed }
         // The version `sign` will pick; if that is the installed one itself (its file is gone) there is nothing to switch to
         // and `sign` reports IPA_MISSING.
@@ -492,6 +545,40 @@ private struct RefreshRun {
                 "\(app) \(printableCut(installed)) is installed but is not a fetched, approved version on disk, so the renewal signs the newest approved one, \(printableCut(newest.version)).",
                 "This renewal installs \(printableCut(newest.version)) over \(printableCut(installed)). To stay on \(printableCut(installed)), do not renew until it is a fetched, approved version on disk again.").withApp(target.app))
         return nil
+    }
+
+    /// The version `installs[]` records for the app, nil when there is no record or it names none.
+    private func recordedVersion(_ target: FreeTarget) -> String? {
+        guard let installed = (try? services.ledgerStore.load())?.installs.first(where: { $0.id == target.key })?.version,
+            !installed.isEmpty
+        else { return nil }
+        return installed
+    }
+
+    private func approvedEntries(_ target: FreeTarget) -> (store: ManifestStore, approved: [ManifestEntry]) {
+        let store = ManifestStore(paths: services.home)
+        return (store, ((try? store.load())?.entries ?? []).filter { $0.app == target.app.rawValue && $0.approved })
+    }
+
+    /// The automatic run's version: the installed one, only when it is still a fetched, approved entry whose file is on disk.
+    /// Nil means it is not, and there is no other version to sign.
+    private func pinnedVersion(_ target: FreeTarget) -> String? {
+        guard let installed = recordedVersion(target) else { return nil }
+        let (store, approved) = approvedEntries(target)
+        return approved.contains { $0.version == installed && store.hasFile($0) } ? installed : nil
+    }
+
+    /// One line of the automatic run's log per step that ran; the manual run writes none.
+    private func logStep(_ step: RefreshStep, _ target: FreeTarget, since began: Date, failure: RefreshFailure?, retried: Bool = false) {
+        guard let auto else { return }
+        var fields: [String: JSONValue] = [
+            "device": .string(RefreshLog.alias(target.alias)), "app": .string(target.app.rawValue), "step": .string(step.rawValue),
+            "ok": .bool(failure == nil),
+            "durationMs": RefreshLog.int(max(0, Int(services.clock.now().timeIntervalSince(began) * 1000))),
+        ]
+        if let failure { fields["code"] = .string(RefreshLog.code(failure.code)) }
+        if retried { fields["renewRetried"] = true }
+        auto.log.record("step", fields)
     }
 
     /// Cap and suspension notices for a manual run: the caps bind the future auto-refresh, not this run.
