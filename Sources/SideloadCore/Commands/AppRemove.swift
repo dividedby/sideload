@@ -51,7 +51,7 @@ struct FreeRemoval: Sendable {
 
     /// True unless something known to keep the developer's trust stays: our other `<prefix>.free.*` installs or an app of a
     /// known free-team signer (WebDriverAgent, SideStore). The reserve and unflagged developer-signed apps do not count:
-    /// this errs on the side of warning. Also the menu's confirm text.
+    /// this errs on the side of warning. The menu snapshot uses it too, for the Remove confirm's trust warning.
     static func isLastFreeApp(bundleId: String, in snapshot: AppSnapshot, prefix: String?) -> Bool {
         let managedOthers = snapshot.managedIds(prefix: prefix).filter { $0 != bundleId }.count
         let signers = snapshot.ids.filter { !Config.isFreeBundleId($0, prefix: prefix) && FreeTeamSigner.label(of: $0) != nil }.count

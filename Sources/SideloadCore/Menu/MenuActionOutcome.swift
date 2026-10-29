@@ -152,7 +152,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
         if results.isEmpty, !envelope.ok { lines.append(line("", "", .neutral, "Not run", retry: action)) }
 
         // Apps that were meant to run and did not (failed, or skipped by a stop) count; policy skips ("not due") do not.
-        let attempted = results.filter { $0.status == .failed || ($0.status == .skipped && !Self.isPolicySkip($0.code)) }.count
+        let attempted = results.filter { $0.status == .failed || ($0.status == .skipped && !RefreshPolicy.isPolicySkip($0.code)) }.count
         notes += Self.warningNotes(envelope, excluding: ["APP_LENT"])
         if envelope.ok {
             kind = .done
@@ -201,7 +201,6 @@ public struct MenuActionOutcome: Sendable, Equatable {
     }
 
     /// A skip that is the plan's ("not due", "not on the device"), not a stop.
-    private static func isPolicySkip(_ code: String?) -> Bool { RefreshPolicy.isPolicySkip(code) }
 
     private static func skipText(_ code: String?) -> String {
         switch code {
