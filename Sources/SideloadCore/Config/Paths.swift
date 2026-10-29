@@ -42,6 +42,8 @@ public struct Paths: Sendable, Equatable {
     public var ledger: String { home + "/ledger.json" }
     /// Every IPA `fetch` downloaded: sha256, version, approval (design section 9). Holds no secrets.
     public var manifest: String { home + "/manifest.json" }
+    /// What `updates` last saw upstream per source (design section 9). Advisory only; holds no secrets.
+    public var updates: String { home + "/updates.json" }
     public var canaryLog: String { logs + "/canary.jsonl" }
     public var commandsLog: String { logs + "/commands.log" }
     public var configLock: String { home + "/.config.lock" }

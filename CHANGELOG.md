@@ -7,6 +7,17 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
+- `sideload updates [--app <a>] [--force]`: read-only check of what each approved source offers against what is
+  installed on the saved devices. It makes one metadata GET per source that is approved and has an `installs[]`
+  record (the same GET `fetch` makes, through `Services.http`, sequentially), compares the latest version with the
+  installed one (`newer`, `current`, `older`, `unknown`: whole-number `x.y.z` and Stremio's `b<build>`; an older or
+  unparseable version is never offered, there is no text comparison) and prints `sources[]` and `installs[]`. No
+  `.op.lock`, device, subprocess or IPA download, so it is safe for an agent to run. The answer is cached in
+  `$SIDELOAD_HOME/updates.json` (0600, advisory: `fetch` still resolves the source itself and every hash gate is
+  unchanged): 6 hours between checks, 1 hour after an error, a 403 or 429 waits for its `Retry-After` (at most 24
+  hours), and `--force` keeps a 5-minute floor. A failed check keeps the last good values and is `ok:false` with
+  `fetch`'s codes. New: `UpdateCheck`, `UpdateCache`, `VersionOrder`, `SourceMetadata` (the metadata GET extracted
+  from `fetch`, behaviour unchanged), `Paths.updates`.
 - Menu bar "Add app…": installs an app from `approvedSources` (Apollo, Stremio) that the device does not have yet. The
   per-device menu beside Renew… lists the approved sources for that platform with no row on the device (the filler and any
   unapproved source are hidden; an Apple TV card gets it like any device). The first confirm ("Fetch Apollo for iphone")
@@ -60,6 +71,11 @@ All notable changes to this project are documented here. Format follows
 
 ### Changed
 
+- `refresh`, and so the menu's Renew, keeps the installed version (owner decision 2026-10-28): it asks `sign` for the
+  version in `installs[].version` instead of the newest approved one, so a renewal no longer updates the app. If that
+  version is no longer a fetched, approved manifest entry with its IPA on disk it falls back to the newest approved one and the envelope
+  warns `RENEW_VERSION_CHANGED`, naming both versions; the renewal is not failed. An app with no install record behaves
+  as before.
 - Menu bar time left rounds up: a fresh 7-day profile reads "7 d" and turns "6 d" exactly when Renew allows it; at a
   day or less it reads hours ("24 h · due", then "<1 h · due"), and the icon's spoken time left matches. The JSON's
   `daysLeft` is unchanged (floored). "All apps" in Renew… shows its count as "(2)", and no count when it would renew none.

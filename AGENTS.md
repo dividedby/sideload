@@ -86,6 +86,9 @@ team) before changing anything.
 
 - IPAs and source only from upstream releases the owner approved (`approvedSources` in config). Record
   version + SHA-256 of everything downloaded; verify before signing.
+- `sideload updates` is read-only and safe for an agent to run: one metadata GET per approved source, no IPA download,
+  no lock, no device, and it writes only `$SIDELOAD_HOME/updates.json`. It never approves, fetches, signs or installs
+  anything; a newer version it reports is still `fetch`, the owner's `--approve`, `sign` and `install`.
 
 ## Code
 

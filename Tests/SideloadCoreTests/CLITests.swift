@@ -90,8 +90,8 @@ struct CLITests {
             let out = try await invoke(argv)
             #expect(out.envelope.ok, "\(argv)")
             #expect(out.json["command"] == "help")
-            #expect(out.json["built"] == ["doctor", "device", "canary", "ledger", "portal", "export-cert", "status", "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot"])
-            #expect(out.json["commands"]?.array?.count == 15)
+            #expect(out.json["built"] == ["doctor", "device", "canary", "ledger", "portal", "export-cert", "status", "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot", "updates"])
+            #expect(out.json["commands"]?.array?.count == 16)
             #expect(out.runner.calls.isEmpty)
         }
     }

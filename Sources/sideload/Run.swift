@@ -1,7 +1,7 @@
 import SideloadCore
 
-let allCommands: [JSONValue] = ["doctor", "device", "canary", "portal", "export-cert", "fetch", "sign", "install", "status", "ledger", "inspect", "provision", "app", "slot", "refresh"]
-let builtCommands: [JSONValue] = ["doctor", "device", "canary", "ledger", "portal", "export-cert", "status", "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot"]
+let allCommands: [JSONValue] = ["doctor", "device", "canary", "portal", "export-cert", "fetch", "sign", "install", "status", "ledger", "inspect", "provision", "app", "slot", "refresh", "updates"]
+let builtCommands: [JSONValue] = ["doctor", "device", "canary", "ledger", "portal", "export-cert", "status", "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot", "updates"]
 
 private let helpFlags: Set<String> = ["-h", "--help"]
 
@@ -18,6 +18,7 @@ private func help() -> Envelope {
             "device lendable --alias <alias> --app <apollo|stremio-ios|stremio-tvos|filler>|--none --yes",
             "inspect <path.ipa>",
             "fetch --app <apollo|stremio-ios|stremio-tvos> [--approve --version <v>]",
+            "updates [--app <apollo|stremio-ios|stremio-tvos>] [--force]",
             "provision --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> [--register-device] [--renew] --yes",
             "provision --renew-ack --yes",
             "sign --app <apollo|stremio-ios|stremio-tvos> --device <alias> --yes",
@@ -50,6 +51,7 @@ private let refreshDeferredFlags = ["auto", "print-agent"]
 private let appSpec = ArgSpec(values: ["app", "device"], flags: ["yes"])
 private let slotSpec = ArgSpec(values: ["device", "udid", "to", "app"], flags: ["yes"])
 private let fetchSpec = ArgSpec(values: ["app", "version"], flags: ["approve"])
+private let updatesSpec = ArgSpec(values: ["app"], flags: ["force"])
 private let portalSpec = ArgSpec(flags: ["show-identifiers"])
 // `status` v1 is read-only; the designed `--notify` and `--print-agent` parse only so they can say they are not built.
 private let statusDeferredFlags = ["notify", "print-agent"]
@@ -93,6 +95,7 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     case "status": spec = statusSpec
     case "inspect": spec = ArgSpec()
     case "fetch": spec = fetchSpec
+    case "updates": spec = updatesSpec
     case "provision": spec = provisionSpec
     case "sign": spec = signSpec
     case "install": spec = installSpec
@@ -162,6 +165,9 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     if command == "ledger" { return await LedgerCommand.run(services, LedgerOptions(sub: parsed.positionals.isEmpty ? .show : .refresh)) }
     if command == "fetch" {
         return await FetchCommand.run(services, FetchOptions(app: parsed.values["app"], approve: parsed.flags.contains("approve"), version: parsed.values["version"]))
+    }
+    if command == "updates" {
+        return await UpdatesCommand.run(services, UpdatesOptions(app: parsed.values["app"], force: parsed.flags.contains("force")))
     }
     if command == "provision" {
         return await ProvisionCommand.run(

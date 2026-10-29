@@ -304,7 +304,7 @@ private struct SignRun {
         let manifestStore = ManifestStore(paths: services.home)
         let manifest = try manifestStore.load()
         let entries = manifest.entries.filter { $0.app == app.rawValue }
-        guard let entry = entries.filter({ $0.approved && (version == nil || $0.version == version) }).max(by: Self.older) else {
+        guard let entry = entries.filter({ $0.approved && (version == nil || $0.version == version) }).max(by: ManifestEntry.older) else {
             if let version {
                 return fail(
                     "NOT_APPROVED", "Version \(printableCut(version)) of \(app.rawValue) is not fetched and approved, so it is not signed.",
@@ -401,11 +401,6 @@ private struct SignRun {
         ]
         data["pinnedFp8"] = .string(identity.fp8)
         return .result(SignCommand.command, data)
-    }
-
-    /// Older first, so `max(by:)` is the newest: the later fetch, then the larger version text.
-    private static func older(_ a: ManifestEntry, _ b: ManifestEntry) -> Bool {
-        (a.fetchedAt, a.version) < (b.fetchedAt, b.version)
     }
 
     private func digestMismatch(expected: String, actual: String) -> Envelope {

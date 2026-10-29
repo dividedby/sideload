@@ -30,6 +30,14 @@ public struct ManifestEntry: Codable, Sendable, Equatable {
     public var inspectMinOS: String?
 }
 
+extension ManifestEntry {
+    /// Older first, so `max(by:)` is the newest: the later fetch, then the larger version text. `sign` picks the version it
+    /// signs with this, and `refresh` names the same one in its warning.
+    static func older(_ a: ManifestEntry, _ b: ManifestEntry) -> Bool {
+        (a.fetchedAt, a.version) < (b.fetchedAt, b.version)
+    }
+}
+
 /// `$SIDELOAD_HOME/manifest.json`, schema 1. Only commands holding `.op.lock` write it.
 public struct Manifest: Codable, Sendable, Equatable {
     public static let schema = 1
@@ -88,6 +96,14 @@ public struct ManifestStore: Sendable {
                 "MANIFEST_WRITE_FAILED", "manifest.json could not be written.",
                 fix: "Check the permissions and free space of $SIDELOAD_HOME.")
         }
+    }
+
+    /// Whether the entry's file is on disk as a regular file (a link or a missing file is not), the way `FileDigest` reads it.
+    /// It does not hash the file; `sign` does that.
+    func hasFile(_ entry: ManifestEntry) -> Bool {
+        guard let path = try? path(of: entry) else { return false }
+        var st = stat()
+        return lstat(path, &st) == 0 && st.st_mode & S_IFMT == S_IFREG
     }
 
     /// Absolute path of an entry's file. A `file` that is not `<app>/<version>/<name>` of plain names is refused,
