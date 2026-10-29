@@ -90,9 +90,6 @@ public struct MenuOffer: Sendable, Equatable {
 }
 
 public enum MenuActions {
-    /// Renew takes an app only when this many days or fewer are left (`RefreshPolicy.maxWithin`).
-    static let renewWindowDays = RefreshPolicy.maxWithin
-
     /// Reasons more than one rule gives, and the view model's.
     public static let checkingApps = "Checking apps…"
     public static let couldntCheckApps = "Couldn't check apps"
@@ -209,7 +206,7 @@ public enum MenuActions {
         return (included, excluded)
     }
 
-    static let notDue = "renewable at \(renewWindowDays) d left"
+    static let notDue = "renewable at \(RefreshPolicy.maxWithin) d left"
 
     private static func install(_ app: String, card: MenuDeviceCard, now: Date) -> MenuAvailability {
         guard let row = card.row(for: app) else { return .disabled("Not on \(card.alias)") }
@@ -273,10 +270,8 @@ public enum MenuActions {
     /// `sign` refuses a build the device's OS is too old for, after `provision` has spent the App ID: the confirm says so first.
     private static func minimumOS(_ app: String, fetched: MenuFetched, card: MenuDeviceCard) -> MenuAvailability {
         guard let need = fetched.minOS, let have = card.osVersion, OSVersion.isAtLeast(have, need) == false else { return .enabled }
-        return .disabled("\(MenuFormat.appName(app)) \(fetched.version) needs \(osName(card)) \(need) or later; \(card.alias) runs \(have)")
+        return .disabled("\(MenuFormat.appName(app)) \(fetched.version) needs \(ProvisionApp.osName(devicePlatform: card.platform)) \(need) or later; \(card.alias) runs \(have)")
     }
-
-    private static func osName(_ card: MenuDeviceCard) -> String { card.platform == "tvos" ? "tvOS" : "iOS" }
 
     /// The lab's borrowing is a setting; it changes nothing on the device. It stays put while an app is lent or changing,
     /// because the lab repeats `slot lend` and a different `lendableApp` mid-lend would fail it with ALREADY_LENT.
@@ -471,7 +466,7 @@ public enum MenuActions {
         var facts = "\(name) \(fetched.version)"
         if let build = fetched.build { facts += " (build \(build))" }
         facts += " · " + MenuFormat.size(fetched.size)
-        if let minOS = fetched.minOS { facts += " · \(osName(card)) \(minOS) or later" }
+        if let minOS = fetched.minOS { facts += " · \(ProvisionApp.osName(devicePlatform: card.platform)) \(minOS) or later" }
         var lines = [facts, "SHA-256 \(fetched.sha256)"]
         let hashLine = lines.count - 1
         lines.append(

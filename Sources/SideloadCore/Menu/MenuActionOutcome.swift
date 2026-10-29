@@ -108,7 +108,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
         let results = Self.results(envelope)
         let errors = envelope.errors
         let renewedCount = results.filter { $0.status == .renewed || $0.status == .renewedNotInstalled }.count
-        if renewedCount == 0, !errors.isEmpty, errors.allSatisfy({ $0.code == "OPERATION_IN_PROGRESS" }) {
+        if renewedCount == 0, !errors.isEmpty, errors.allSatisfy({ $0.code == OperationLock.busyCode }) {
             becomeBusy(action)
             return
         }
@@ -133,9 +133,9 @@ public struct MenuActionOutcome: Sendable, Equatable {
                 }
                 let code = issue?.code ?? result.code ?? "INTERNAL_ERROR"
                 issue = issue ?? MenuIssue(code: code, message: "The renewal did not finish.")
-                if code == "INTERRUPTED" {
+                if code == RefreshPolicy.interrupted {
                     lines.append(line(key, name, .neutral, "Stopped", retry: .renew(device: alias, app: key)))
-                } else if code == "OPERATION_IN_PROGRESS" {
+                } else if code == OperationLock.busyCode {
                     lines.append(line(key, name, .neutral, "Busy · try again", retry: .renew(device: alias, app: key)))
                 } else {
                     lines.append(
@@ -145,7 +145,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
         }
         // Errors no app line took (the run stopped before any app, or a stop that names no app).
         for (index, entry) in errors.enumerated() where !claimed.contains(index) {
-            if results.isEmpty || entry.code != "INTERRUPTED" {
+            if results.isEmpty || entry.code != RefreshPolicy.interrupted {
                 issues.append(MenuIssue(code: entry.code, message: entry.message, fix: entry.fix))
             }
         }
@@ -201,16 +201,14 @@ public struct MenuActionOutcome: Sendable, Equatable {
     }
 
     /// A skip that is the plan's ("not due", "not on the device"), not a stop.
-    private static func isPolicySkip(_ code: String?) -> Bool {
-        ["NOT_DUE", "NOT_PRESENT", "NOT_INSTALLED", "NOT_SIGNED"].contains(code)
-    }
+    private static func isPolicySkip(_ code: String?) -> Bool { RefreshPolicy.isPolicySkip(code) }
 
     private static func skipText(_ code: String?) -> String {
         switch code {
-        case "NOT_DUE": "Not due"
-        case "NOT_PRESENT", "NOT_INSTALLED": "Not on the device"
-        case "NOT_SIGNED": "No signed build"
-        case "INTERRUPTED": "Stopped"
+        case RefreshPolicy.notDue: "Not due"
+        case RefreshPolicy.notPresent, RefreshPolicy.notInstalled: "Not on the device"
+        case RefreshPolicy.notSigned: "No signed build"
+        case RefreshPolicy.interrupted: "Stopped"
         case let code?: "Skipped · \(code)"
         case nil: "Skipped"
         }
@@ -224,7 +222,12 @@ public struct MenuActionOutcome: Sendable, Equatable {
             headline = done
             return
         }
-        if envelope.errors.first?.code == "OPERATION_IN_PROGRESS" {
+        readFailure(envelope, action: action, app: app, failed: failed)
+    }
+
+    /// A command that did not succeed: the busy card when the lock was busy, else the failed headline with the command's errors.
+    private mutating func readFailure(_ envelope: Envelope, action: MenuAction, app: String, failed: String) {
+        if envelope.errors.first?.code == OperationLock.busyCode {
             becomeBusy(action)
             return
         }
@@ -253,7 +256,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
     /// Stage 1: the fetched version's facts for the second confirm. No result card on success.
     private mutating func readFetch(_ app: String, alias: String, envelope: Envelope, action: MenuAction, cancelled: Bool) {
         guard envelope.ok else {
-            readSingle(envelope, action: action, app: app, done: "", failed: "Fetch failed")
+            readFailure(envelope, action: action, app: app, failed: "Fetch failed")
             return
         }
         guard let fetched = Self.fetched(envelope) else {
@@ -294,22 +297,22 @@ public struct MenuActionOutcome: Sendable, Equatable {
     }
 
     struct AddSteps {
-        var done: [MenuActionRunner.AddStep: String] = [:]
+        var done: [MenuActionRunner.AddStep: MenuActionRunner.AddStepStatus] = [:]
         var failed: MenuActionRunner.AddStep?
         var appIdNew = false
         /// `install` was called (a cancel before it never reached the device).
         var installStarted = false
     }
 
-    /// The per-step status the runner folded into the add envelope: step -> "done" or "skipped"; the step that failed.
+    /// The per-step status the runner folded into the add envelope: step -> done or skipped; the step that failed.
     static func addSteps(_ envelope: Envelope) -> AddSteps {
         var result = AddSteps()
         if case .array(let items)? = envelope.data["steps"] {
             for case .object(let item) in items {
                 guard case .string(let name)? = item["step"], let step = MenuActionRunner.AddStep(rawValue: name),
-                    case .string(let status)? = item["status"]
+                    case .string(let raw)? = item["status"], let status = MenuActionRunner.AddStepStatus(rawValue: raw)
                 else { continue }
-                if status == "failed" { result.failed = step } else { result.done[step] = status }
+                if status == .failed { result.failed = step } else { result.done[step] = status }
             }
         }
         result.appIdNew = envelope.data["appIdNew"] == .bool(true)
@@ -322,7 +325,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
         let name = MenuFormat.appName(app)
         let steps = Self.addSteps(envelope)
         // Busy before anything was approved changed nothing: the plain busy card. Later it is a stop with partial state.
-        if !envelope.ok, steps.failed == .approve, envelope.errors.first?.code == "OPERATION_IN_PROGRESS" {
+        if !envelope.ok, steps.failed == .approve, envelope.errors.first?.code == OperationLock.busyCode {
             becomeBusy(action)
             return
         }
@@ -341,13 +344,13 @@ public struct MenuActionOutcome: Sendable, Equatable {
         }
         for step in MenuActionRunner.AddStep.allCases {
             if let status = steps.done[step] {
-                let skipped = status == "skipped"
+                let skipped = status == .skipped
                 lines.append(line(step.rawValue, step.title, skipped ? .neutral : .good, step.text(skipped: skipped, appIdNew: steps.appIdNew)))
             } else if step == steps.failed {
                 let entry = envelope.errors.first
                 let code = entry?.code ?? "INTERNAL_ERROR"
                 let issue = MenuIssue(code: code, message: entry?.message ?? "The step did not finish.", fix: entry?.fix)
-                if code == "INTERRUPTED" {
+                if code == RefreshPolicy.interrupted {
                     lines.append(line(step.rawValue, step.title, .neutral, "Stopped", retry: retry))
                 } else {
                     lines.append(line(step.rawValue, step.title, .failed, "Failed · \(code)", issue: issue, retry: retry))

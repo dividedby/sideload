@@ -168,7 +168,7 @@ private struct FetchRun {
         let lock: OperationLock
         do {
             lock = try OperationLock.acquire(paths: services.home)
-        } catch let busy as SideloadError where busy.code == "OPERATION_IN_PROGRESS" {
+        } catch let busy as SideloadError where busy.code == OperationLock.busyCode {
             let staged = rename(part, FetchStaging.path(digest: digest, tmp: services.home.tmp)) == 0
             throw SideloadError(
                 busy.code, busy.message,

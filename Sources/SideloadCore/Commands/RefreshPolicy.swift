@@ -17,6 +17,17 @@ enum RefreshPolicy {
     static let backoff: [TimeInterval] = [30 * 60, 3600, 2 * 3600, 4 * 3600, 8 * 3600, 12 * 3600]
     static let counterDays = 7
 
+    /// The skip codes a result carries. The first four are the plan's own ("not due", "not on the device", ...): ok results,
+    /// not stops. `interrupted` is the code of a run the owner (or a signal) stopped.
+    static let notDue = "NOT_DUE"
+    static let notPresent = "NOT_PRESENT"
+    static let notInstalled = "NOT_INSTALLED"
+    static let notSigned = "NOT_SIGNED"
+    static let interrupted = "INTERRUPTED"
+    static let policySkipCodes: Set<String> = [notDue, notPresent, notInstalled, notSigned]
+
+    static func isPolicySkip(_ code: String?) -> Bool { code.map(policySkipCodes.contains) ?? false }
+
     /// A failure with one of these codes will not fix itself, so the install is marked `suspended` (the future auto-refresh
     /// leaves it alone until a manual success clears it).
     static let permanentCodes: Set<String> = [
@@ -30,7 +41,7 @@ enum RefreshPolicy {
     static let fatalCodes: Set<String> = [
         "FREE_CERT_CHANGED", "IDENTITY_CHECK_FAILED", "KEYCHAIN_LOCKED", "ACCOUNT_NOT_SIGNED_IN", "UNEXPECTED_APP_DELTA",
         "SLOT_PENDING", "RENEW_CROSS_VOLUME", "PROFILE_MOVE_FAILED", "PROFILES_UNREADABLE", "DERIVED_DATA_NOT_CLEARED",
-        "LEDGER_WRITE_FAILED", "LEDGER_INVALID", "WRONG_TEAM", "GUARD_FAILED", "INTERRUPTED", "CONFIG_INVALID", "CONFIG_MISSING",
+        "LEDGER_WRITE_FAILED", "LEDGER_INVALID", "WRONG_TEAM", "GUARD_FAILED", interrupted, "CONFIG_INVALID", "CONFIG_MISSING",
     ]
 
     /// Provision and sign do not need the device, so they still run; the install is skipped for the rest of the run.
@@ -40,7 +51,7 @@ enum RefreshPolicy {
     /// as `INTERRUPTED`. A code that names a definite verdict on the app or the run (a permanent or a fatal one) is not: it
     /// landed at the same moment and keeps its own result, counting, backoff and suspension.
     static func isCancellation(_ code: String) -> Bool {
-        code == "INTERRUPTED" || !(permanentCodes.contains(code) || isFatal(code))
+        code == interrupted || !(permanentCodes.contains(code) || isFatal(code))
     }
 
     static func isFatal(_ code: String) -> Bool { fatalCodes.contains(code) || code.hasPrefix("FREE_IDENTITY_") }
@@ -130,27 +141,27 @@ enum RefreshPolicy {
         let signed = subject.signed
         if subject.lent {
             // Not on the device, so there is nothing to install: provision and sign only, judged by the signed copy.
-            guard let signed else { return .skip(code: "NOT_SIGNED", expires: nil) }
+            guard let signed else { return .skip(code: notSigned, expires: nil) }
             guard isDue(expires: signed.profileExpires, now: now, within: within) else {
-                return .skip(code: "NOT_DUE", expires: signed.profileExpires)
+                return .skip(code: notDue, expires: signed.profileExpires)
             }
             return .renew(Target(expires: signed.profileExpires, lent: true, recorded: subject.install != nil))
         }
         if let install = subject.install {
-            guard install.present else { return .skip(code: "NOT_PRESENT", expires: install.profileExpires) }
+            guard install.present else { return .skip(code: notPresent, expires: install.profileExpires) }
             guard isDue(expires: install.profileExpires, now: now, within: within) else {
-                return .skip(code: "NOT_DUE", expires: install.profileExpires)
+                return .skip(code: notDue, expires: install.profileExpires)
             }
             // Refresh never installs a new app: one the device does not show is skipped, not put back.
-            if presence == .absent { return .skip(code: "NOT_PRESENT", expires: install.profileExpires) }
+            if presence == .absent { return .skip(code: notPresent, expires: install.profileExpires) }
             return .renew(Target(expires: install.profileExpires, lent: false, recorded: true))
         }
         // No install record: only an own app that is signed and that the device shows (installed by hand) is a candidate.
         // The device copy's expiry is unknown (`sign` overwrites the signed copy's with the new profile's, so after a sign whose
         // install was blocked it would read as fresh), so the install is always due: one slot-neutral reinstall records it and
         // the normal rules apply from then on. Provision and sign run only if the signed copy itself is within the window.
-        guard let signed else { return .skip(code: "NOT_INSTALLED", expires: nil) }
-        if presence == .absent { return .skip(code: "NOT_INSTALLED", expires: signed.profileExpires) }
+        guard let signed else { return .skip(code: notInstalled, expires: nil) }
+        if presence == .absent { return .skip(code: notInstalled, expires: signed.profileExpires) }
         let stale = isDue(expires: signed.profileExpires, now: now, within: within)
         // With no word from the device the install cannot run and the device copy's expiry is unknown, so this is never a
         // passing skip: the caller fails the app with the device's code, after provision and sign if the signed copy is due.
@@ -237,7 +248,7 @@ enum RefreshPolicy {
                 if count <= 1 { next.attemptsByDay[today] = nil } else { next.attemptsByDay[today] = count - 1 }
             }
             next.lastResult = "skipped"
-            next.lastCode = result == .busy ? "OPERATION_IN_PROGRESS" : "INTERRUPTED"
+            next.lastCode = result == .busy ? OperationLock.busyCode : interrupted
         }
         return next
     }

@@ -4,6 +4,9 @@
 /// instead of racing portal state or derived data. Released by `release()`, on deinit, and by the kernel
 /// if the process dies.
 public final class OperationLock: Sendable {
+    /// The code a busy lock reports; callers that treat a busy lock specially compare against this.
+    static let busyCode = "OPERATION_IN_PROGRESS"
+
     private let lock: FileLock
 
     private init(lock: FileLock) {
@@ -14,7 +17,7 @@ public final class OperationLock: Sendable {
         try paths.ensureHome()
         guard let lock = try FileLock.tryAcquire(path: paths.opLock) else {
             throw SideloadError(
-                "OPERATION_IN_PROGRESS", "Another sideload operation is already running.",
+                busyCode, "Another sideload operation is already running.",
                 fix: "Wait for it to finish, then retry.")
         }
         return OperationLock(lock: lock)

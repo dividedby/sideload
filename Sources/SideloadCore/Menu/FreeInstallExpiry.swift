@@ -71,8 +71,10 @@ enum MenuFormat {
     /// "apollo" is Apollo; both Stremio builds are Stremio; anything else is capitalised.
     static func appName(_ app: String) -> String {
         if app.hasPrefix("stremio") { return "Stremio" }
-        return app.prefix(1).uppercased() + app.dropFirst()
+        return capitalised(app)
     }
+
+    static func capitalised(_ text: String) -> String { text.prefix(1).uppercased() + text.dropFirst() }
 
     /// "45.2 MB": decimal units, one decimal.
     static func size(_ bytes: Int64) -> String {
