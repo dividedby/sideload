@@ -1721,7 +1721,7 @@ struct CanaryEvidenceCLITests {
             let usage = out.json["usage"]?.array?.compactMap(\.string) ?? []
             #expect(usage.contains { $0.contains("canary history") })
             #expect(usage.contains { $0.contains("--evidence") })
-            #expect(out.json["built"] == ["doctor", "device", "canary", "ledger", "portal", "export-cert", "status", "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot"])
+            #expect(out.json["built"] == ["doctor", "device", "canary", "ledger", "portal", "export-cert", "status", "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot", "updates"])
         }
     }
 }
