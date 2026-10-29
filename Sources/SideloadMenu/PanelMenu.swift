@@ -68,15 +68,27 @@ final class PanelMenuButton: NSPopUpButton {
         invalidateIntrinsicContentSize()
     }
 
-    override func mouseDown(with event: NSEvent) {
+    // The choices are built when the menu opens, so every way of opening it comes here: a click, Space or Return
+    // (`performClick`) and VoiceOver's press. The native pull-down would show only the hidden title item.
+    override func mouseDown(with event: NSEvent) { openMenu() }
+
+    override func performClick(_ sender: Any?) { openMenu() }
+
+    override func accessibilityPerformPress() -> Bool {
+        openMenu()
+        return true
+    }
+
+    private func openMenu() {
         guard isEnabled, !choices.isEmpty else { return }
         let menu = NSMenu()
         menu.autoenablesItems = false
         menu.font = font
-        for (index, choice) in choices.enumerated() {
+        for choice in choices {
             let item = NSMenuItem(title: choice.title, action: #selector(choose(_:)), keyEquivalent: "")
             item.target = self
-            item.tag = index
+            // The item keeps its own action: a snapshot update while the menu is open replaces `choices`.
+            item.representedObject = Choice(choice.action)
             item.isEnabled = choice.enabled
             item.toolTip = choice.help
             if choice.destructive, choice.enabled {
@@ -96,7 +108,11 @@ final class PanelMenuButton: NSPopUpButton {
     }
 
     @objc private func choose(_ sender: NSMenuItem) {
-        guard choices.indices.contains(sender.tag) else { return }
-        choices[sender.tag].action()
+        (sender.representedObject as? Choice)?.action()
+    }
+
+    private final class Choice: NSObject {
+        let action: @MainActor () -> Void
+        init(_ action: @escaping @MainActor () -> Void) { self.action = action }
     }
 }

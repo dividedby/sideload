@@ -504,6 +504,8 @@ struct MenuIconTests {
         #expect(icon(1.5).accessibilityLabel == "sideload: 2 days left, due")
         #expect(icon(0.5).accessibilityLabel == "sideload: 12 hours left, critical")
         #expect(icon(0.01).accessibilityLabel == "sideload: under 1 hour left, critical")
+        #expect(icon(1.0).accessibilityLabel == "sideload: 24 hours left, critical")
+        #expect(icon(1.0 / 24).accessibilityLabel == "sideload: 1 hour left, critical")
         #expect(icon(-1).accessibilityLabel == "sideload: expired")
         #expect(icon(nil).accessibilityLabel == "sideload: status unknown")
         #expect(icon(nil, canary: "working").accessibilityLabel == "sideload: all good")
