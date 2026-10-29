@@ -71,6 +71,8 @@ team) before changing anything.
   clicks: the confirm click is the owner's `--yes`, Add app… and Update… run fetch, approve, provision, sign and install on a real device
   (their second confirm is the owner's approval of that exact version and file; Update… goes over an installed app), and agents never click them, never run the built app and never drive it
   (no computer-use clicks, no UI scripting), exactly as for the commands behind them.
+- `device remove --yes` (it retires a saved device: drops its config entry, ledger records, cached profiles and signed
+  builds; it touches no device).
 - `device lendable` (it chooses which app the lab may borrow the slot of). `slot lend` and `slot return` are run by
   mobile-safari-lab with no `--yes`; agents never run them against a real device, and they take `.op.lock`, accept
   `--udid` only for a saved device and never print it.

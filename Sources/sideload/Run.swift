@@ -16,6 +16,7 @@ private func help() -> Envelope {
             "device auto-refresh --alias <alias> --on|--off --yes",
             "device slots --alias <alias> --reserved 0-3 --yes",
             "device lendable --alias <alias> --app <apollo|stremio-ios|stremio-tvos|filler>|--none --yes",
+            "device remove --alias <alias> --yes",
             "inspect <path.ipa>",
             "fetch --app <apollo|stremio-ios|stremio-tvos> [--approve --version <v>]",
             "updates [--app <apollo|stremio-ios|stremio-tvos>] [--force]",

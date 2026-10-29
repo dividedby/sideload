@@ -1,4 +1,4 @@
-/// Options for `device save|list|auto-refresh|slots`. `sub` is the first positional after `device`.
+/// Options for `device save|list|auto-refresh|slots|lendable|remove`. `sub` is the first positional after `device`.
 public struct DeviceOptions: Sendable, Equatable {
     public var sub: String?
     public var alias: String?
@@ -33,7 +33,7 @@ public struct DeviceOptions: Sendable, Equatable {
     }
 }
 
-/// `device save | list | auto-refresh | slots | lendable`. IDs are read from `devicectl list devices` output, never typed by hand.
+/// `device save | list | auto-refresh | slots | lendable | remove`. IDs are read from `devicectl list devices` output, never typed by hand.
 public enum DeviceCommand {
     static let platforms = ["ios", "tvos"]
 
@@ -50,10 +50,11 @@ public enum DeviceCommand {
             case "auto-refresh": return try await autoRefresh(services, options)
             case "slots": return try await slots(services, options)
             case "lendable": return try await lendable(services, options)
+            case "remove": return try await DeviceRemove.run(services, options)
             default:
                 return .fail(
                     "device", code: "USAGE", message: "Unknown device subcommand \"\(options.sub ?? "")\".",
-                    fix: "Use `sideload device save|list|auto-refresh|slots|lendable`.")
+                    fix: "Use `sideload device save|list|auto-refresh|slots|lendable|remove`.")
             }
         } catch {
             return .from(error, command: "device")
@@ -153,7 +154,7 @@ public enum DeviceCommand {
             if let prior, prior.udid != udid || prior.coreDeviceId != coreDeviceId {
                 throw SideloadError(
                     "ALIAS_EXISTS", "Alias \"\(alias)\" is already saved for a different device.",
-                    fix: "Pick another alias, or remove the entry from config.json yourself.")
+                    fix: "Pick another alias, or retire this one with `sideload device remove --alias \(alias) --yes` (owner).")
             }
             config.devices[alias] = SavedDevice(
                 udid: udid, coreDeviceId: coreDeviceId, platform: platform,
