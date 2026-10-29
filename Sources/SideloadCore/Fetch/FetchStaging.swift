@@ -70,11 +70,7 @@ struct FetchScratch {
 
 /// The verified downloads a busy `.op.lock` left in `tmp/` for the re-run.
 enum FetchStaging {
-    /// 64 lower-case hex digits: the only digests that may name a staged file.
-    static func isHexDigest(_ digest: String) -> Bool {
-        digest.utf8.count == 64 && digest.utf8.allSatisfy { ($0 >= 0x30 && $0 <= 0x39) || ($0 >= 0x61 && $0 <= 0x66) }
-    }
-
+    /// A staged file is named by its digest; only 64 lower-case hex digits may name one, so callers check with `isHex` first.
     static func path(digest: String, tmp: String) -> String {
         tmp + "/" + FetchCommand.stagedPrefix + digest + ".ipa"
     }
@@ -83,7 +79,7 @@ enum FetchStaging {
     /// second re-run cannot also have it (the loser gets ENOENT and downloads). The bytes are hashed again, without
     /// following a link, because the staged name is only a claim; anything that does not match is deleted.
     static func claim(asset: ResolvedAsset, into part: String, services: Services) -> (digest: String, count: Int64)? {
-        guard isHexDigest(asset.upstreamDigest) else { return nil }
+        guard isHex(asset.upstreamDigest, count: 64, lowercaseOnly: true) else { return nil }
         guard rename(path(digest: asset.upstreamDigest, tmp: services.home.tmp), part) == 0 else { return nil }
         if let stored = try? FileDigest.sha256(path: part), stored.hex == asset.upstreamDigest, stored.size == asset.size {
             services.log("fetch: using the verified download kept from an earlier run")

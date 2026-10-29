@@ -88,7 +88,7 @@ private struct FetchRun {
             if let stored = try? FileDigest.sha256(path: store.path(of: prior)), stored.hex == prior.sha256 {
                 services.log("fetch: \(asset.app) \(asset.version) is already stored")
                 // A file an earlier busy run kept for this digest is no longer needed.
-                if FetchStaging.isHexDigest(asset.upstreamDigest) { unlink(FetchStaging.path(digest: asset.upstreamDigest, tmp: services.home.tmp)) }
+                if isHex(asset.upstreamDigest, count: 64, lowercaseOnly: true) { unlink(FetchStaging.path(digest: asset.upstreamDigest, tmp: services.home.tmp)) }
                 return try await report(prior, downloaded: false, alreadyApproved: prior.approved)
             }
         }
@@ -99,13 +99,12 @@ private struct FetchRun {
         defer { scratch.remove() }
         let part = scratch.path + "/download.part"
 
-        let verified: (digest: String, count: Int64)
-        if let staged = FetchStaging.claim(asset: asset, into: part, services: services) {
-            verified = staged
-        } else {
-            verified = try await downloadBody(asset, to: part)
-        }
-        let (digest, count) = verified
+        let (digest, count) =
+            if let staged = FetchStaging.claim(asset: asset, into: part, services: services) {
+                staged
+            } else {
+                try await downloadBody(asset, to: part)
+            }
 
         try checkNotCancelled()
         services.log("fetch: inspecting the archive")

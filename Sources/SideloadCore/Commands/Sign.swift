@@ -304,12 +304,12 @@ private struct SignRun {
         let manifestStore = ManifestStore(paths: services.home)
         let manifest = try manifestStore.load()
         let entries = manifest.entries.filter { $0.app == app.rawValue }
-        if let version, !entries.contains(where: { $0.version == version && $0.approved }) {
-            return fail(
-                "NOT_APPROVED", "Version \(printableCut(version)) of \(app.rawValue) is not fetched and approved, so it is not signed.",
-                "Fetch it and the owner approves it with --approve --version <v>.")
-        }
         guard let entry = entries.filter({ $0.approved && (version == nil || $0.version == version) }).max(by: Self.older) else {
+            if let version {
+                return fail(
+                    "NOT_APPROVED", "Version \(printableCut(version)) of \(app.rawValue) is not fetched and approved, so it is not signed.",
+                    "Fetch it and the owner approves it with --approve --version <v>.")
+            }
             return fail(
                 "NOT_APPROVED",
                 entries.isEmpty
