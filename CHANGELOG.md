@@ -60,6 +60,12 @@ All notable changes to this project are documented here. Format follows
 
 ### Changed
 
+- Menu bar time left rounds up: a fresh 7-day profile reads "7 d" and turns "6 d" exactly when Renew allows it; at a
+  day or less it reads hours ("24 h · due", then "<1 h · due"), and the icon's spoken time left matches. The JSON's
+  `daysLeft` is unchanged (floored). "All apps" in Renew… shows its count as "(2)", and no count when it would renew none.
+- The device card's menus (Renew…, Add app…, Change… and each app's "…") open right-aligned under their button, so they
+  stay over the panel instead of running past its right edge (`PanelMenu`, an AppKit pull-down; SwiftUI's `Menu` always
+  opens from the button's leading edge).
 - `fetch` downloads without `.op.lock` and takes it only to record the verified file (and for `--approve`, which holds it
   throughout), so a long download no longer blocks the lab or another command. Each run keeps a `live.lock` flock in its
   `tmp/fetch-XXXXXX/` folder; the sweep (now lock-free, in every fetch) removes a folder only when it is older than 60 s by

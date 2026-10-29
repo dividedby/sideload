@@ -9,10 +9,12 @@ public enum FreeInstallExpiry {
     public static let criticalDays = 1
 
     public static let secondsPerDay: TimeInterval = 86_400
+    static let secondsPerHour: TimeInterval = 3_600
     static let window: TimeInterval = Double(windowDays) * secondsPerDay
 
     /// The level comes from the exact remaining time (`warn` up to and including 3 days, `critical` up to and including
-    /// 1 day, `expired` at or past zero), so 3.9 days is still `ok`. `daysLeft` is the floored count, for display only.
+    /// 1 day, `expired` at or past zero), so 3.9 days is still `ok`. `daysLeft` is the floored count the JSON reports;
+    /// `label` rounds up.
     public static func assess(expires: Date, now: Date) -> (daysLeft: Int, level: ExpiryItem.Level) {
         let seconds = expires.timeIntervalSince(now)
         let days = Int((seconds / secondsPerDay).rounded(.down))
@@ -45,16 +47,30 @@ public enum FreeInstallExpiry {
         }
     }
 
-    /// "6 d", "2 d · due", "5 h · due" (under a day) or "expired".
+    /// "7 d", "3 d · due", "24 h · due" (a day or less) or "expired". Days and hours round up, so a fresh 7-day profile reads
+    /// "7 d" and turns "6 d" exactly when it becomes renewable (`RefreshPolicy.maxWithin`). `assess`'s floored `daysLeft`
+    /// stays what the JSON reports.
     public static func label(expires: Date, now: Date) -> String {
-        let (days, level) = assess(expires: expires, now: now)
+        let (_, level) = assess(expires: expires, now: now)
         if level == .expired { return "expired" }
         let due = level == .ok ? "" : " · due"
-        if days < 1 {
-            let hours = Int(expires.timeIntervalSince(now) / 3_600)
-            return (hours < 1 ? "<1 h" : "\(hours) h") + due
+        switch timeLeft(expires.timeIntervalSince(now)) {
+        case .days(let days): return "\(days) d" + due
+        case .hours(let hours): return "\(hours) h" + due
+        case .underAnHour: return "<1 h" + due
         }
-        return "\(days) d" + due
+    }
+
+    enum TimeLeft: Equatable {
+        case days(Int), hours(Int), underAnHour
+    }
+
+    /// The time left as the menu shows it, rounded up: whole days above a day, whole hours at a day or less, then under an
+    /// hour. The rows' `label` and the icon's spoken text both use it.
+    static func timeLeft(_ seconds: TimeInterval) -> TimeLeft {
+        if seconds > secondsPerDay { return .days(Int((seconds / secondsPerDay).rounded(.up))) }
+        if seconds < secondsPerHour { return .underAnHour }
+        return .hours(Int((seconds / secondsPerHour).rounded(.up)))
     }
 }
 

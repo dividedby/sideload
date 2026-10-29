@@ -125,13 +125,14 @@ public struct MenuIcon: Sendable, Equatable {
         }
     }
 
-    /// "6 days", "1 day", "5 hours", "under 1 hour": from the exact remaining time, floored like `daysLeft`.
+    /// "7 days", "24 hours", "1 hour", "under 1 hour": from the exact remaining time, rounded up like the rows'
+    /// `FreeInstallExpiry.label`.
     static func timeLeft(_ seconds: TimeInterval) -> String {
-        let days = Int((seconds / FreeInstallExpiry.secondsPerDay).rounded(.down))
-        if days >= 1 { return days == 1 ? "1 day" : "\(days) days" }
-        let hours = Int(max(seconds, 0) / 3_600)
-        if hours < 1 { return "under 1 hour" }
-        return hours == 1 ? "1 hour" : "\(hours) hours"
+        switch FreeInstallExpiry.timeLeft(seconds) {
+        case .days(let days): "\(days) days"
+        case .hours(let hours): hours == 1 ? "1 hour" : "\(hours) hours"
+        case .underAnHour: "under 1 hour"
+        }
     }
 }
 
@@ -272,7 +273,7 @@ public enum MenuPresence: Sendable, Equatable {
 public struct MenuRenewMenu: Sendable, Equatable {
     public struct Item: Sendable, Equatable {
         public var title: String
-        /// The count for "All apps".
+        /// The count for "All apps", as "(2)"; nil when it would renew none.
         public var detail: String?
         public var due: Bool
         /// The app key; nil for "All apps".

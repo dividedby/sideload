@@ -78,14 +78,19 @@ struct FreeInstallExpiryTests {
         #expect(FreeInstallExpiry.textTone(.warn) == .due)
     }
 
-    @Test("labels: plain days when fine, due marker at 3 d or fewer, hours under a day, expired")
+    @Test("labels: days rounded up, due marker at 3 d or fewer, hours at a day or less, expired")
     func labels() {
         let label = { (days: Double) in FreeInstallExpiry.label(expires: daysFromNow(days), now: testNow) }
-        #expect(label(6.2) == "6 d")
-        #expect(label(3.9) == "3 d")  // floored for display, still ok
+        #expect(label(7) == "7 d")
+        #expect(label(6.2) == "7 d")  // rounded up: fresh profiles read 7 d until they are renewable
+        #expect(label(6.0) == "6 d")
+        #expect(label(3.9) == "4 d")  // still ok
         #expect(label(3.0) == "3 d · due")
-        #expect(label(2.5) == "2 d · due")
+        #expect(label(2.5) == "3 d · due")
+        #expect(label(1.01) == "2 d · due")
+        #expect(label(1.0) == "24 h · due")
         #expect(label(0.25) == "6 h · due")
+        #expect(label(0.24) == "6 h · due")  // 5.76 h rounds up
         #expect(label(0.001) == "<1 h · due")
         #expect(label(-1) == "expired")
     }
@@ -99,9 +104,9 @@ struct MenuSnapshotTests {
         let card = snapshot.devices[0]
         #expect(snapshot.showsApps)
         #expect(card.apps.map(\.name) == ["Apollo", "Stremio"])
-        #expect(card.apps[0].daysLabel == "6 d")
+        #expect(card.apps[0].daysLabel == "7 d")
         #expect(card.apps[0].barTone == .good)
-        #expect(card.apps[1].daysLabel == "2 d · due")
+        #expect(card.apps[1].daysLabel == "3 d · due")
         #expect(card.apps[1].barTone == .due)
         #expect(card.apps[1].textTone == .due)
         #expect(card.apps.allSatisfy { $0.presence == .unconfirmed && $0.showsBar && $0.failure == nil })
@@ -213,7 +218,7 @@ struct MenuSnapshotTests {
     @Test("the Renew items carry the app key; All apps shows the count and has none")
     func renewItems() {
         let card = build(ledger: installed(("iphone", "apollo", 5), ("iphone", "stremio-ios", 1))).devices[0]
-        #expect(card.renew.items.first == MenuRenewMenu.Item(title: "All apps", detail: "2", due: false, app: nil))
+        #expect(card.renew.items.first == MenuRenewMenu.Item(title: "All apps", detail: "(2)", due: false, app: nil))
         #expect(card.renew.items.map(\.app) == [nil, "apollo", "stremio-ios"])
         #expect(card.renew.items.last?.due == true)
     }
@@ -494,16 +499,18 @@ struct MenuIconTests {
 
     @Test("accessibility text names the time left and the state")
     func accessibility() {
-        #expect(icon(2.5).accessibilityLabel == "sideload: 2 days left, due")
-        #expect(icon(6.5).accessibilityLabel == "sideload: 6 days left, all good")
-        #expect(icon(1.5).accessibilityLabel == "sideload: 1 day left, due")
+        #expect(icon(2.5).accessibilityLabel == "sideload: 3 days left, due")
+        #expect(icon(6.5).accessibilityLabel == "sideload: 7 days left, all good")
+        #expect(icon(1.5).accessibilityLabel == "sideload: 2 days left, due")
         #expect(icon(0.5).accessibilityLabel == "sideload: 12 hours left, critical")
         #expect(icon(0.01).accessibilityLabel == "sideload: under 1 hour left, critical")
+        #expect(icon(1.0).accessibilityLabel == "sideload: 24 hours left, critical")
+        #expect(icon(1.0 / 24).accessibilityLabel == "sideload: 1 hour left, critical")
         #expect(icon(-1).accessibilityLabel == "sideload: expired")
         #expect(icon(nil).accessibilityLabel == "sideload: status unknown")
         #expect(icon(nil, canary: "working").accessibilityLabel == "sideload: all good")
-        #expect(icon(2.5, renewFailed: true).accessibilityLabel == "sideload: renewal failed, 2 days left")
-        #expect(icon(6.5, renewing: true).accessibilityLabel == "sideload: renewing, 6 days left")
+        #expect(icon(2.5, renewFailed: true).accessibilityLabel == "sideload: renewal failed, 3 days left")
+        #expect(icon(6.5, renewing: true).accessibilityLabel == "sideload: renewing, 7 days left")
         let suspended = Ledger(freeSuspended: LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow))
         #expect(icon(6, ledger: suspended).accessibilityLabel == "sideload: certificate changed, renewal suspended")
     }

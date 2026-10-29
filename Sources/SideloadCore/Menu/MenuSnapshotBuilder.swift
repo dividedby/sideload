@@ -301,7 +301,10 @@ public enum MenuSnapshotBuilder {
             appsNote: appsNote(failedCode: failedCode, rows: rows, readOverRows: read != nil, presence: presence),
             apps: rows, reservedSlots: reservedRows,
             renew: MenuRenewMenu(
-                items: [MenuRenewMenu.Item(title: "All apps", detail: "\(renewSet.count)", due: false, app: nil)] + renewItems),
+                items: [
+                    MenuRenewMenu.Item(
+                        title: "All apps", detail: renewSet.isEmpty ? nil : "(\(renewSet.count))", due: false, app: nil)
+                ] + renewItems),
             platform: saved.platform, slotsKnown: known, lendableApp: saved.lendableApp,
             refreshSet: renewSet,
             hasPending: rows.contains { $0.presence == .pending }, liveRead: liveRead(presence: presence, probe: probe),

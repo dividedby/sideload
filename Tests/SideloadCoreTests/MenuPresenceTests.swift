@@ -152,8 +152,9 @@ struct MenuPresenceMatrixTests {
                 let label = "\(ledger) / \(device)"
                 #expect((snapshot.icon.remaining != nil) == inRing, "\(label)")
                 #expect(snapshot.devices[0].renew.items.count == (inRing ? 2 : 1), "\(label)")
-                // "All apps N" counts the apps `refresh` would renew, which is not the same set as the rows.
-                #expect(snapshot.devices[0].renew.items.first?.detail == "\(snapshot.devices[0].refreshSet.count)", "\(label)")
+                // "All apps (N)" counts the apps `refresh` would renew, which is not the same set as the rows.
+                let count = snapshot.devices[0].refreshSet.count
+                #expect(snapshot.devices[0].renew.items.first?.detail == (count == 0 ? nil : "(\(count))"), "\(label)")
             }
         }
     }
@@ -220,7 +221,7 @@ struct MenuPresenceMatrixTests {
         #expect(stale.devices[0].apps.isEmpty)
         #expect(stale.icon.remaining == nil)
         #expect(stale.devices[0].renew.items.map(\.title) == ["All apps"])
-        #expect(stale.devices[0].renew.items.first?.detail == "0")
+        #expect(stale.devices[0].renew.items.first?.detail == nil)
         // The card says the read was not used (there are no rows to say it on, so only a card with rows shows the note).
         let fresh = menuBuild(ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)])
         #expect(fresh.devices[0].apps.map(\.presence) == [.installed])
@@ -359,7 +360,7 @@ struct MenuPresenceRingTests {
         signedLent.freeSigned = [menuSigned("iphone", "filler", days: 2)]
         let renewable = menuBuild(ledger: signedLent, canary: "working", apps: read)
         #expect(renewable.devices[0].renew.items.compactMap(\.app) == ["filler", "stremio-ios"])
-        #expect(renewable.devices[0].renew.items.first?.detail == "2")
+        #expect(renewable.devices[0].renew.items.first?.detail == "(2)")
         #expect(renewable.icon.state == .ok, "a lent app's signed build never drives the ring")
         // Without the read, the apollo record still counts: it may be on the device.
         let unread = menuBuild(ledger: ledger, canary: "working", probe: .failed)
