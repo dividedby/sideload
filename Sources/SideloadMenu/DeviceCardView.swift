@@ -68,22 +68,16 @@ struct RenewMenu: View {
     var model: MenuModel
 
     var body: some View {
-        Menu {
-            ForEach(card.renew.items, id: \.title) { item in
+        PanelMenu(
+            label: .title("Renew…"),
+            items: card.renew.items.map { item -> PanelMenuItem in
                 let action = MenuAction.renew(device: card.alias, app: item.app)
                 let availability = model.availability(action, in: snapshot)
-                Button {
-                    model.request(action)
-                } label: {
-                    Text(label(item, availability))
-                }
-                .disabled(!availability.isEnabled)
-                .help(availability.reason ?? "")
+                return PanelMenuItem(
+                    title: label(item, availability), enabled: availability.isEnabled, help: availability.reason
+                ) { model.request(action) }
             }
-        } label: {
-            Text("Renew…")
-        }
-        .menuStyle(.button)
+        )
         .fixedSize()
         .disabled(!model.controlsEnabled)
     }
@@ -103,22 +97,17 @@ struct AddAppMenu: View {
 
     var body: some View {
         if !card.addable.isEmpty {
-            Menu {
-                ForEach(card.addable, id: \.app) { option in
+            PanelMenu(
+                label: .title("Add app…"),
+                items: card.addable.map { option -> PanelMenuItem in
                     let action = MenuAction.addFetch(device: card.alias, app: option.app)
                     let availability = model.availability(action, in: snapshot)
-                    Button {
-                        model.request(action)
-                    } label: {
-                        Text(availability.reason.map { "\(option.name)  ·  \($0)" } ?? option.name)
-                    }
-                    .disabled(!availability.isEnabled)
-                    .help(availability.reason ?? "")
+                    return PanelMenuItem(
+                        title: availability.reason.map { "\(option.name)  ·  \($0)" } ?? option.name,
+                        enabled: availability.isEnabled, help: availability.reason
+                    ) { model.request(action) }
                 }
-            } label: {
-                Text("Add app…")
-            }
-            .menuStyle(.button)
+            )
             .fixedSize()
             .disabled(!model.controlsEnabled)
         }
@@ -138,18 +127,19 @@ struct LendableLine: View {
                 Text("Lendable: \(card.lendableApp.map(MenuActions.displayName) ?? "none")")
                     .font(.callout).foregroundStyle(.secondary)
                 Spacer()
-                Menu("Change…") {
-                    ForEach(choices, id: \.self) { app in
+                PanelMenu(
+                    label: .title("Change…"),
+                    items: choices.map { app -> PanelMenuItem in
                         let action = MenuAction.lendable(device: card.alias, app: app)
                         let availability = model.availability(action, in: snapshot)
-                        Button(app.map(MenuActions.displayName) ?? "None") { model.request(action) }
-                            .disabled(!availability.isEnabled)
-                            .help(availability.reason ?? "")
-                    }
-                }
-                .menuStyle(.button)
+                        return PanelMenuItem(
+                            title: app.map(MenuActions.displayName) ?? "None", enabled: availability.isEnabled,
+                            help: availability.reason
+                        ) { model.request(action) }
+                    },
+                    small: true
+                )
                 .fixedSize()
-                .controlSize(.small)
                 .disabled(!model.controlsEnabled)
             }
         }
@@ -171,19 +161,16 @@ struct AppRowView: View {
                     .fontWeight(app.showsBar && app.level != .ok ? .semibold : .regular)
                 let others = offers.filter { $0.kind != .retry }
                 if !others.isEmpty {
-                    Menu {
-                        ForEach(others, id: \.action) { offer in
-                            Button(offer.label, role: offer.destructive ? .destructive : nil) { model.request(offer.action) }
-                                .disabled(!offer.availability.isEnabled)
-                                .help(offer.availability.reason ?? "")
+                    PanelMenu(
+                        label: .symbol("ellipsis.circle", accessibility: "Actions for \(app.name)"),
+                        items: others.map { offer in
+                            PanelMenuItem(
+                                title: offer.label, enabled: offer.availability.isEnabled, help: offer.availability.reason,
+                                destructive: offer.destructive
+                            ) { model.request(offer.action) }
                         }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                    }
-                    .menuStyle(.borderlessButton)
-                    .menuIndicator(.hidden)
+                    )
                     .fixedSize()
-                    .accessibilityLabel("Actions for \(app.name)")
                 }
             }
             if app.showsBar {
