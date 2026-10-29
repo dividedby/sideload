@@ -9,6 +9,7 @@ public enum FreeInstallExpiry {
     public static let criticalDays = 1
 
     public static let secondsPerDay: TimeInterval = 86_400
+    static let secondsPerHour: TimeInterval = 3_600
     static let window: TimeInterval = Double(windowDays) * secondsPerDay
 
     /// The level comes from the exact remaining time (`warn` up to and including 3 days, `critical` up to and including
@@ -53,11 +54,23 @@ public enum FreeInstallExpiry {
         let (_, level) = assess(expires: expires, now: now)
         if level == .expired { return "expired" }
         let due = level == .ok ? "" : " · due"
-        let seconds = expires.timeIntervalSince(now)
-        if seconds <= secondsPerDay {
-            return (seconds < 3_600 ? "<1 h" : "\(Int((seconds / 3_600).rounded(.up))) h") + due
+        switch timeLeft(expires.timeIntervalSince(now)) {
+        case .days(let days): return "\(days) d" + due
+        case .hours(let hours): return "\(hours) h" + due
+        case .underAnHour: return "<1 h" + due
         }
-        return "\(Int((seconds / secondsPerDay).rounded(.up))) d" + due
+    }
+
+    enum TimeLeft: Equatable {
+        case days(Int), hours(Int), underAnHour
+    }
+
+    /// The time left as the menu shows it, rounded up: whole days above a day, whole hours at a day or less, then under an
+    /// hour. The rows' `label` and the icon's spoken text both use it.
+    static func timeLeft(_ seconds: TimeInterval) -> TimeLeft {
+        if seconds > secondsPerDay { return .days(Int((seconds / secondsPerDay).rounded(.up))) }
+        if seconds < secondsPerHour { return .underAnHour }
+        return .hours(Int((seconds / secondsPerHour).rounded(.up)))
     }
 }
 

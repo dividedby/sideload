@@ -128,12 +128,11 @@ public struct MenuIcon: Sendable, Equatable {
     /// "7 days", "24 hours", "1 hour", "under 1 hour": from the exact remaining time, rounded up like the rows'
     /// `FreeInstallExpiry.label`.
     static func timeLeft(_ seconds: TimeInterval) -> String {
-        if seconds > FreeInstallExpiry.secondsPerDay {
-            return "\(Int((seconds / FreeInstallExpiry.secondsPerDay).rounded(.up))) days"
+        switch FreeInstallExpiry.timeLeft(seconds) {
+        case .days(let days): "\(days) days"
+        case .hours(let hours): hours == 1 ? "1 hour" : "\(hours) hours"
+        case .underAnHour: "under 1 hour"
         }
-        if seconds < 3_600 { return "under 1 hour" }
-        let hours = Int((seconds / 3_600).rounded(.up))
-        return hours == 1 ? "1 hour" : "\(hours) hours"
     }
 }
 
