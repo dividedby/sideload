@@ -1002,10 +1002,10 @@ struct RefreshAutoTests {
         }
     }
 
-    @Test("through the command line: --auto takes no other option, --print-agent is still not built, and exit codes follow ok")
+    @Test("through the command line: --auto takes no other option (--print-agent and --binary included), and exit codes follow ok")
     func commandLine() async throws {
         try await withAutoWorld(profileDays: 6) { a in
-            for extra in [["--yes"], ["--device", "iphone"], ["--app", "apollo"], ["--within", "3"], ["--force"], ["--print-agent"]] {
+            for extra in [["--yes"], ["--device", "iphone"], ["--app", "apollo"], ["--within", "3"], ["--force"], ["--print-agent"], ["--binary", "/opt/sl/sideload"]] {
                 let out = await run(argv: ["refresh", "--auto"] + extra, services: a.services)
                 #expect(!out.ok && out.exitCode == 1 && out.errors.first?.code == "USAGE", "\(extra)")
             }

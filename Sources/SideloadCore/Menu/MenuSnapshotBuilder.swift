@@ -20,8 +20,9 @@ public struct MenuInputs: Sendable {
     public var notices: [MenuIssue]
     /// False when `ledger.json` could not be read: `ledger` is then empty and says nothing about the slots.
     public var ledgerReadable: Bool
-    /// Whether `refresh` exists. False in v1: auto-renew state is then not shown at all (no per-row exception, no
-    /// "renews when back" wording). When it ships, the app sets this true and the exception renders.
+    /// Whether `refresh --auto` exists (`loadLocal` sets it true). False: auto-renew state is not shown at all (no per-row
+    /// exception, no "renews when back" wording). True: a visible device that is not opted in shows "Auto-renew off" and an
+    /// offline device's line says whether it renews when back.
     public var autoRefreshAvailable: Bool
     /// A renewal started from the menu is running.
     public var renewing: Bool

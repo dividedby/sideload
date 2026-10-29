@@ -223,7 +223,7 @@ struct MenuSnapshotTests {
         #expect(card.renew.items.last?.due == true)
     }
 
-    @Test("a visible device shows its transport and a filled dot; v1 shows no auto-renew text at all")
+    @Test("a visible device shows its transport and a filled dot; with auto-renew not available there is no auto-renew text at all")
     func visibleDevice() {
         let ledger = installed(("iphone", "apollo", 5))
         let wifi = build(ledger: ledger, probe: .listed([listed(transport: .network)])).devices[0]
@@ -597,6 +597,43 @@ struct MenuLoaderTests {
             #expect(degraded.notices.first?.code == "LEDGER_INVALID")
             #expect(degraded.ledger.freeSigned.isEmpty)
         }
+    }
+
+    @Test("the local load turns auto-renew wording on: Auto-renew off under an opted-out visible device's rows, and the offline line variants")
+    func autoRenewWording() async throws {
+        let apps: [(device: String, app: String, days: Double)] = [("iphone", "apollo", 5), ("iphone", "stremio-ios", 2)]
+        func loaded(auto: Set<String>) async throws -> MenuInputs {
+            try await withTestHome(config: config(auto: auto)) { paths, _ in
+                try await LedgerStore(paths: paths).update { $0 = menuLedger(apps) }
+                let (services, runner) = fakeServices(paths)
+                guard case .ready(let inputs) = MenuLoader.loadLocal(services) else { throw SideloadError("TEST", "expected a ready load") }
+                #expect(runner.calls.isEmpty)
+                return inputs
+            }
+        }
+        func card(_ inputs: MenuInputs, _ probe: DeviceProbe) -> MenuDeviceCard {
+            var inputs = inputs
+            inputs.probe = probe
+            return MenuSnapshotBuilder.build(inputs).devices[0]
+        }
+        let seen = testNow.addingTimeInterval(-3 * 3_600)
+
+        let optedOut = try await loaded(auto: [])
+        #expect(optedOut.autoRefreshAvailable)
+        let visible = card(optedOut, .listed([listed(link: "connected")]))
+        #expect(visible.apps.count == 2 && visible.apps.allSatisfy { $0.exception == "Auto-renew off" })
+        #expect(visible.offlineNote == nil)
+        #expect(card(optedOut, .listed([listed(link: "unavailable", lastSeen: seen)])).offlineNote == "Seen 3 h ago · auto-renew off")
+        #expect(card(optedOut, .listed([])).offlineNote == "Offline · auto-renew off")
+
+        let optedIn = try await loaded(auto: ["iphone"])
+        #expect(card(optedIn, .listed([listed(link: "connected")])).apps.allSatisfy { $0.exception == nil })
+        #expect(
+            card(optedIn, .listed([listed(link: "unavailable", lastSeen: seen)])).offlineNote
+                == "Seen 3 h ago · renews when back on Wi-Fi or USB")
+        #expect(card(optedIn, .listed([])).offlineNote == "Offline · renews when back on Wi-Fi or USB")
+        // An offline device says it once on the card, not under its rows.
+        #expect(card(optedOut, .listed([])).apps.allSatisfy { $0.exception == nil })
     }
 
     @Test("probing lists devices through devicectl once; no saved device means no call; a failure is .failed")
