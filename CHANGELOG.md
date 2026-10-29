@@ -22,8 +22,9 @@ All notable changes to this project are documented here. Format follows
   line ("Update available · 3.9.0 → 3.10.0"; Stremio's `1.9.2b45` reads "1.9.2 (45)") and "Update to 3.10.0…" in its "…"
   menu. The panel shows the listing from `updates.json` at once (a local read) and, after the device reads, runs one
   update check as a task of its own: at most one metadata GET per approved source that is installed, only when the 6 h
-  cadence allows (Check status now keeps the 5-minute floor), one at a time, never while an action runs, cancelled on
-  quit; it repaints when it ends and reads each source's own status, not the command's `ok`. Hand-installed rows (no
+  cadence allows (Check status now keeps the 5-minute floor), one at a time, not started while an action runs and
+  cancelled when one starts (it checks again when the action ends) or on quit, and a Check status now that finds one
+  running is queued, not dropped; it repaints when it ends and reads each source's own status, not the command's `ok`. Hand-installed rows (no
   `installs[]` record), sources the owner did not approve, and an older or unparseable version get no update; there is
   no icon badge and nothing is ever approved on its own. The first confirm ("Fetch Apollo update for iphone") downloads
   and checks the release and changes nothing else; the second ("Approve and update Apollo 3.9.0 → 3.10.0 on iphone")
@@ -35,6 +36,9 @@ All notable changes to this project are documented here. Format follows
   `sign` and Install update after. A fetched version that is not newer than the installed one is "Not run". Old IPAs are
   kept. New: `MenuAction.updateFetch` and `.updateApprove`, `MenuUpdates`, `MenuUpstream`, `MenuUpdateInfo`,
   `MenuRowProfile`, `MenuAppRow.installedVersion/signedVersion/update/profile`, `MenuInputs.upstream`.
+- Menu bar "Add app…" second confirm: Stremio's version line now reads "Stremio 1.9.6 (142) · …" (the build once; it said
+  "Stremio 1.9.6b142 (build 142)"), because Add app and Update build the file's lines with one helper. Other texts are
+  unchanged.
 - Menu bar "Install update" now also covers a signed build of a newer version on the same profile, not only a
   longer-lived profile (an Update that stopped before `install` left such a build and no way to finish it from the row).
 - Menu bar "Add app…": installs an app from `approvedSources` (Apollo, Stremio) that the device does not have yet. The
