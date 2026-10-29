@@ -7,6 +7,27 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
+- `sideload refresh --auto`: the command the launchd agent will run every 30 minutes (the agent itself, `refresh
+  --print-agent`, is not built yet, so until then it is owner-run). It takes no other option. It acts only on devices
+  with `autoRefresh` on and renews installs with 5 days or fewer left through the same `provision`, `sign` and
+  `install` as the manual run, with the same one `--renew` retry of `PROFILE_NOT_RENEWED` and no new App ID. It never
+  waits on `.op.lock`. Whole-run skips are `ok:true` and silent: the `$SIDELOAD_HOME/refresh.disabled` kill-switch file
+  (`KILL_SWITCH`), the ledger's `freeSuspended` (`FREE_CERT_CHANGED`) and a busy lock (`OPERATION_IN_PROGRESS`). Per
+  install it skips with a code: `NOT_RECORDED`, `LENT`, `NOT_PRESENT`, `SUSPENDED` (until a manual success),
+  `SLOT_PENDING`, `SIGNED_VERSION_DIFFERS`, `NOT_DUE`, `BACKOFF`, `INSTALL_CAP` (2 attempts a day), `DEVICE_CAP` (4 a
+  day) and `RECENT_ATTEMPT`; it calls `devicectl list devices` once and only when something is still a candidate (a
+  device that is not paired and connected over Wi-Fi or USB is `DEVICE_NOT_VISIBLE`, not an attempt). It never falls
+  back to another version: the installed one must be a fetched, approved version with its IPA on disk, else
+  `VERSION_NOT_AVAILABLE` (backs off and notifies, does not suspend). A certificate or account failure stops every
+  device, a slot failure only its device, and no new app starts after 20 minutes. Output is one object with
+  `auto:true`, `devices[{alias, results[]}]`, `skipped{code:count}`, `warnings` and `errors`; exit 1 iff a renewal
+  failed. Every decision and step goes to `logs/refresh.jsonl` (0600, rotated at 1 MiB; aliases, app names, numbers and
+  codes only), and each renewal attempt and each install it suspends is told to the owner by a macOS notification
+  through `osascript` (the text is an argument, cleaned to aliases, app names, numbers and codes; a failed notification
+  is only logged). New: `RefreshAuto`, `RefreshAutoPolicy` (`RefreshPolicy.runGate`, `autoGate`), `RefreshLog`,
+  `Notifier`, `Paths.refreshLog`, `Paths.refreshDisabled`; `RefreshRun` takes a `RefreshMode` (manual output is
+  unchanged). `refresh --print-agent` still answers `USAGE`.
+
 - `sideload updates [--app <a>] [--force]`: read-only check of what each approved source offers against what is
   installed on the saved devices. It makes one metadata GET per source that is approved and has an `installs[]`
   record (the same GET `fetch` makes, through `Services.http`, sequentially), compares the latest version with the
