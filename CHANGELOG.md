@@ -7,13 +7,14 @@ All notable changes to this project are documented here. Format follows
 
 ## [0.3.0] - 2026-10-29
 
-Renewals and updates without the terminal: `refresh --auto` and the launchd agent from `refresh --print-agent`;
-`sideload updates` and the menu bar app's Update… and Add app…; the menu's Renew…, Install, Remove and lendable actions,
-and its live app check. Two changes in behaviour: a renewal now keeps the installed version (`RENEW_VERSION_CHANGED`
-when it cannot), and `fetch` downloads without holding `.op.lock`, so a long download no longer blocks the lab. Only
-`refresh --print-agent` prints real home paths (`Envelope.keepsUserPaths`). `refresh --auto` has had one run from the
-owner's agent (nothing due); its first renewal and the notification from a launchd job (spike S9, `docs/design.md`
-section 18) are still to be seen.
+Renewals, updates and new installs from the menu bar app and a launchd agent: `refresh --auto` and the agent from
+`refresh --print-agent`; `sideload updates` and the menu bar app's Update… and Add app…; the menu's Renew…, Install,
+Remove and lendable actions, and its live app check (the menu's other changes are under Changed). Two CLI changes in
+behaviour: a renewal now keeps the installed version (`RENEW_VERSION_CHANGED` when it cannot), and `fetch` downloads
+without holding `.op.lock`, so a long download no longer blocks the lab. Only `refresh --print-agent` prints real home
+paths (`Envelope.keepsUserPaths`). `refresh --auto` had its first run from the owner's agent on 2026-10-29, with nothing
+due; its first renewal and the notification from a launchd job (spike S9, `docs/design.md` section 18) are still to be
+seen.
 
 ### Added
 
