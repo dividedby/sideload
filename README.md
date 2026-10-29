@@ -183,6 +183,7 @@ each renewal attempt, and for an install it gives up on).
    ```sh
    swift build -c release --arch arm64
    mkdir -p ~/.local/bin
+   rm -f ~/.local/bin/sideload
    cp "$(swift build -c release --arch arm64 --show-bin-path)/sideload" ~/.local/bin/sideload
    ~/.local/bin/sideload status
    ```
@@ -199,8 +200,8 @@ each renewal attempt, and for an install it gives up on).
 
 To pause, `touch ~/.sideload/refresh.disabled` (every run skips with `KILL_SWITCH`; `rm` the file to resume). To remove the
 agent, `launchctl bootout gui/$(id -u)/io.github.dividedby.sideload.refresh` and delete the plist; to take a device
-out, `device auto-refresh --alias iphone --off --yes`. After a new release build, copy the binary over the old one; the
-agent needs no reload. The menu bar app shows "Auto-renew off" under the rows of a device that is not opted in.
+out, `device auto-refresh --alias iphone --off --yes`. After a new release build, `rm` the old binary, then copy the new one
+in (copying over a signed binary in place can get it killed by macOS); the agent needs no reload. The menu bar app shows "Auto-renew off" under the rows of a device that is not opted in.
 
 ## Approving download sources
 

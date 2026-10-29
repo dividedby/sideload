@@ -39,7 +39,7 @@ enum AgentPlist {
 
     private static func string(_ value: String) -> String { "<string>\(escape(value))</string>" }
 
-    /// XML text escaping. A control character cannot be written in XML 1.0 at all, so `printAgent` refuses a path with one.
+    /// XML text escaping. A control character cannot be written in XML 1.0 at all, so `printAgent` refuses every path with one.
     static func escape(_ text: String) -> String {
         var out = ""
         for character in text {
@@ -53,6 +53,10 @@ enum AgentPlist {
             }
         }
         return out
+    }
+
+    static func hasControlCharacter(_ text: String) -> Bool {
+        text.unicodeScalars.contains { $0.value < 0x20 || $0.value == 0x7f }
     }
 
     /// The word as a shell argument: left bare when it is made of safe characters, else single-quoted.
@@ -69,13 +73,21 @@ extension RefreshCommand {
     public static func printAgent(_ services: Services, binary: String?) -> Envelope {
         let user = services.localUser.homeDirectory.isEmpty ? NSHomeDirectory() : services.localUser.homeDirectory
         let bin = binary ?? user + "/.local/bin/sideload"
-        guard bin.hasPrefix("/"), !bin.unicodeScalars.contains(where: { $0.value < 0x20 || $0.value == 0x7f }) else {
+        guard bin.hasPrefix("/"), !AgentPlist.hasControlCharacter(bin) else {
             return .fail(
                 command, code: "USAGE", message: "--binary must be an absolute path without control characters.",
                 fix: "Pass the full path of the installed sideload binary, e.g. --binary \(user)/.local/bin/sideload.")
         }
 
         let home = services.home
+        // The other paths come from SIDELOAD_HOME and the user's home: one with a control character could not go in the
+        // plist, and a line break could end the printed here-document early.
+        guard ![user, home.home, home.logs, home.refreshDisabled].contains(where: AgentPlist.hasControlCharacter) else {
+            return .fail(
+                command, code: "PATH_UNSAFE",
+                message: "The sideload home or the home folder path contains a control character, which a launchd plist cannot hold.",
+                fix: "Set SIDELOAD_HOME to a path without control characters, then run refresh --print-agent again.")
+        }
         let isDefaultHome = home.home == Paths.resolveHome(environment: [:], homeDirectory: user).home
         let plist = AgentPlist.render(binary: bin, logs: home.logs, sideloadHome: isDefaultHome ? nil : home.home)
         let agents = user + "/Library/LaunchAgents"

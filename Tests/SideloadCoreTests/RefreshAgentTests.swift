@@ -202,6 +202,18 @@ struct RefreshAgentTests {
         #expect(runner.calls.isEmpty && listing(dir.path).isEmpty)
     }
 
+    @Test("a SIDELOAD_HOME with a control character is refused: it could not go in the plist or the here-document")
+    func unsafeHome() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let made = fakeServices(Paths(home: dir.path + "/side\nSIDELOAD_PLIST_END\nload"))
+        var services = made.services
+        services.localUser = LocalUser(login: "pat", homeDirectory: dir.path)
+        let out = await run(argv: ["refresh", "--print-agent"], services: services)
+        #expect(!out.ok && out.errors.first?.code == "PATH_UNSAFE" && out.data["plist"] == nil)
+        #expect(made.runner.calls.isEmpty && listing(dir.path).isEmpty)
+    }
+
     @Test("help lists it")
     func help() async throws {
         let help = await run(argv: ["help"], services: agentServices().services)
