@@ -1,7 +1,8 @@
 import SideloadCore
 import SwiftUI
 
-/// One saved device: status dot, alias, connection and free slots, the Add app… and Renew… menus, then one row per app.
+/// One saved device: status dot, alias, connection and free slots, the Add app… and Renew… menus, then one row per app (its
+/// "…" menu holds Install, Install update, Update to …, and Remove).
 struct DeviceCardView: View {
     var device: MenuDeviceCard
     var snapshot: MenuSnapshot
@@ -175,6 +176,9 @@ struct AppRowView: View {
             }
             if app.showsBar {
                 TimeLeftBar(fraction: app.barFraction, tone: app.barTone)
+            }
+            if let update = app.updateLine {
+                Text(update).font(.callout).foregroundStyle(MenuTone.neutral.color)
             }
             if let failure = app.failure {
                 HStack {

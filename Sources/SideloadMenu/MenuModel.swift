@@ -13,7 +13,9 @@ enum DoctorState: Equatable {
 /// "Check status now". Local files fill the panel at once; `devicectl list devices` (about 1 to 2 s) then settles the
 /// device cards, which say "checking…" until it answers. Each visible device's app list is then read once
 /// (`MenuAppsCache`: at launch, on "Check status now", and on an open only when the last attempt is 5 minutes old), one
-/// device after the other, repainting after each.
+/// device after the other, repainting after each. The update check (`MenuUpdates.check`, the one network call the panel
+/// makes on its own, at most one metadata GET per approved installed source and only when the 6 h cadence allows) runs as a
+/// task of its own once the device reads are done, one at a time, and repaints when it ends.
 @MainActor @Observable
 final class MenuModel {
     private(set) var panel: MenuPanel = .loading
@@ -31,6 +33,10 @@ final class MenuModel {
     private var apps = MenuAppsCache()
     private let steps: MenuActionSteps
     private var actionTask: Task<Void, Never>?
+    /// The update check, one at a time; cancelled on shutdown.
+    private(set) var updateTask: Task<Void, Never>?
+    /// What the checks of this session listed; `MenuLoader.panel` lays it over `updates.json`.
+    private var checked: [String: MenuUpstream] = [:]
     /// Add app: the second confirm a successful fetch opened, held until the fetch task has ended.
     private var proceed: MenuAction?
     /// Bumped when an action starts: a load that began earlier must not write anything after it.
@@ -67,7 +73,7 @@ final class MenuModel {
             let local = await Task.detached { MenuLoader.loadLocal(services) }.value
             guard generation == loadGeneration else { return }
             lastLocal = local
-            panel = MenuLoader.firstPaint(local, cache: apps)
+            panel = MenuLoader.firstPaint(local, cache: apps, checked: checked)
             if case .ready(let inputs) = local {
                 let probe = await MenuLoader.probeDevices(services, saved: inputs.config)
                 guard generation == loadGeneration else { return }
@@ -78,25 +84,41 @@ final class MenuModel {
                 // showing it while it is read again.
                 let due = visible.filter { apps.needsRead($0, force: force, now: services.clock.now()) }
                 for alias in due where apps.entries[alias] == nil { apps.set(alias, .checking) }
-                panel = MenuLoader.panel(local, probe: probe, apps: apps.entries)
+                panel = MenuLoader.panel(local, probe: probe, apps: apps.entries, checked: checked)
                 for alias in due {
                     let read = await MenuLoader.readApps(services, alias: alias, prefix: inputs.config.bundleIdPrefix)
                     guard generation == loadGeneration else { return }
                     apps.set(alias, read)
-                    panel = MenuLoader.panel(local, probe: probe, apps: apps.entries)
+                    panel = MenuLoader.panel(local, probe: probe, apps: apps.entries, checked: checked)
                 }
                 // A lend or return by the lab can land while the reads run: draw once more from the ledger as it is now.
                 let fresh = await Task.detached { MenuLoader.loadLocal(services) }.value
                 guard generation == loadGeneration else { return }
                 lastLocal = fresh
-                panel = MenuLoader.panel(fresh, probe: probe, apps: apps.entries)
+                panel = MenuLoader.panel(fresh, probe: probe, apps: apps.entries, checked: checked)
             }
             lastLoadFinished = services.clock.now()
             loadTask = nil
+            if case .ready = local { checkUpdates(force: force) }
             if pendingForce {
                 pendingForce = false
                 reload(force: true)
             }
+        }
+    }
+
+    /// The update check, after the device reads: one at a time, never while an action runs (its end reloads, and that load
+    /// checks again). `MenuUpdates.check` decides by its own cadence whether any source is asked at all, so a panel open
+    /// within 6 h of the last check makes no request; `force` ("Check status now") keeps only the 5-minute floor.
+    private func checkUpdates(force: Bool) {
+        guard updateTask == nil, actionTask == nil else { return }
+        updateTask = Task { [services] in
+            let listed = await MenuUpdates.check(services, force: force)
+            updateTask = nil
+            // A shut-down or replaced check says nothing; an action that began meanwhile repaints when it ends.
+            guard !Task.isCancelled, !listed.isEmpty else { return }
+            checked.merge(listed) { _, new in new }
+            if actionTask == nil, loadTask == nil { repaint(renewing: false) }
         }
     }
 
@@ -201,6 +223,7 @@ final class MenuModel {
     /// Quit and SIGTERM: Cancel's stop, plus the command's post-result work, which still runs after the result is shown or
     /// dismissed (the on-card Cancel is gone by then, so `cancelAction` alone would leave the task running until the kill).
     func cancelForShutdown() {
+        updateTask?.cancel()
         if case .running = actionState { cancelAction() } else { actionTask?.cancel() }
     }
 
@@ -243,7 +266,8 @@ final class MenuModel {
 
     private func repaint(renewing: Bool) {
         guard let local = lastLocal else { return }
-        panel = MenuLoader.panel(local, probe: apps.lastProbe ?? .checking, apps: apps.entries, renewing: renewing)
+        panel = MenuLoader.panel(
+            local, probe: apps.lastProbe ?? .checking, apps: apps.entries, renewing: renewing, checked: checked)
     }
 
     func runDoctor() {
