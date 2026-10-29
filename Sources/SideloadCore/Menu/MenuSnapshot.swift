@@ -245,12 +245,68 @@ public struct MenuAppRow: Sendable, Equatable, Identifiable {
     public var recorded: Bool
     /// The expiry of the signed build `sign` left for this app on this device (`freeSigned`); nil when none.
     public var signedExpires: Date?
-    /// The signed build is a different, longer-lived profile than the installed one (more than a day later, not expired):
-    /// installing it is an update. Always false without an `installs[]` record.
+    /// The signed build is a different, longer-lived profile than the installed one (more than a day later), or a newer
+    /// version of the app, and is not expired: installing it is an update. Always false without an `installs[]` record.
     public var newerSigned: Bool
     /// Removing the app takes the developer trust with it (`AppCommand`'s LAST_FREE_APP_REMOVED rule). Set only for an
     /// installed row on a live read.
     public var removalClearsTrust: Bool
+    /// The version `install` recorded for the app on this device; nil without an `installs[]` record.
+    public var installedVersion: String?
+    /// The version of the signed build `sign` left for this app on this device (`freeSigned`); nil when none.
+    public var signedVersion: String?
+    /// What the approved source last listed against `installedVersion` (`updates.json`, design section 12); nil for a
+    /// hand-installed row, an app whose source is not approved or one that was never checked.
+    public var update: MenuUpdateInfo?
+    /// What a `provision` for this row would do and what the installed build lost; nil without an `installs[]` record.
+    public var profile: MenuRowProfile?
+
+    /// "Update available · 3.9.0 → 3.10.0" (Stremio: "1.9.2 (45)"), drawn under a row that is, or may be, on the device;
+    /// nil when there is no newer version to offer.
+    public var updateLine: String? {
+        guard offersUpdate, let installedVersion, let update else { return nil }
+        return "Update available · \(MenuFormat.version(installedVersion)) → \(MenuFormat.version(update.version))"
+    }
+
+    /// The row offers "Update to …": a newer listed version for a recorded install that is, or may be, on the device.
+    public var offersUpdate: Bool {
+        guard update?.state == .newer else { return false }
+        switch presence {
+        case .installed, .unconfirmed, .checking: return true
+        case .notInstalled, .lent, .pending: return false
+        }
+    }
+}
+
+/// How the version an approved source lists compares with the installed one. Never `newer` for an older or an unparseable
+/// version (`VersionOrder`).
+public enum MenuUpdateState: String, Sendable, Equatable {
+    case newer, current, older, unknown
+}
+
+/// One row's update facts: what the source listed, from `updates.json` or the check this session ran.
+public struct MenuUpdateInfo: Sendable, Equatable {
+    /// The listed version in the manifest's spelling ("3.10.0", "1.9.6b142").
+    public var version: String
+    public var state: MenuUpdateState
+    /// The listing's declared minimum OS; nil when it declares none.
+    public var minOS: String?
+    /// When the listing was read; nil when the file does not say.
+    public var checkedAt: Date?
+    /// The last attempt to read the listing failed: the version is the last one read.
+    public var checkFailed: Bool
+}
+
+/// What a `provision` for a recorded install would do: the Update's confirm 2 and its App ID gate read this.
+public struct MenuRowProfile: Sendable, Equatable {
+    /// The stored profile's expiry (`freeProfiles`); nil when none is stored.
+    public var storedExpires: Date?
+    /// A `provision` would register a new App ID (the bundle ID has no live epoch in the ledger).
+    public var newAppId: Bool
+    /// A new App ID fits the budget; always true when the App ID is reused.
+    public var appIdAllowed: Bool
+    /// The extensions `sign` stripped from the installed build.
+    public var installedExtensions: Int
 }
 
 /// How a saved device shows up right now.

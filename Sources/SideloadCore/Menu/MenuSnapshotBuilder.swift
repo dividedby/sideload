@@ -29,12 +29,15 @@ public struct MenuInputs: Sendable {
     public var renewFailed: Bool
     /// What the live app list of each visible device showed; a missing key means the device was not asked.
     public var deviceApps: [String: DeviceAppsProbe]
+    /// What each approved source last listed, by app key (`MenuUpdates`); empty when nothing was ever checked.
+    public var upstream: [String: MenuUpstream]
 
     public init(
         now: Date, canaryStatus: String?, config: Config, ledger: Ledger, probe: DeviceProbe,
         notices: [MenuIssue] = [], ledgerReadable: Bool = true, autoRefreshAvailable: Bool = false, renewing: Bool = false,
-        renewFailed: Bool = false, deviceApps: [String: DeviceAppsProbe] = [:]
+        renewFailed: Bool = false, deviceApps: [String: DeviceAppsProbe] = [:], upstream: [String: MenuUpstream] = [:]
     ) {
+        self.upstream = upstream
         self.ledgerReadable = ledgerReadable
         self.renewing = renewing
         self.renewFailed = renewFailed
@@ -163,22 +166,27 @@ public enum MenuSnapshotBuilder {
         _ sources: [MenuAddSource], platform: String?, rows: [MenuAppRow], inputs: MenuInputs
     ) -> [MenuAddOption] {
         guard let platform else { return [] }
-        let reserved = inputs.ledgerReadable ? try? inputs.config.freeTeamReservedAppIds() : nil
         return sources.compactMap { source in
             guard source.platform == platform, !rows.contains(where: { $0.app == source.app }),
                 let bundleId = ProvisionApp(rawValue: source.app)?.freeBundleId(prefix: inputs.config.bundleIdPrefix)
             else { return nil }
-            // Whether the App ID is new needs only the ledger; whether a new one fits also needs the reserve. Without them the
-            // budget is unknown: a new App ID is then not allowed, a reused one costs nothing.
-            let live = inputs.ledgerReadable ? FreeAppIdBudget.live(inputs.ledger.freeAppIds, now: inputs.now) : nil
-            let isNew = live.map { entries in !entries.contains { $0.bundleId == bundleId } } ?? true
-            let fits = reserved.map {
-                FreeAppIdBudget.evaluate(inputs.ledger.freeAppIds, bundleId: bundleId, reserved: $0, now: inputs.now).allowed
-            }
+            let use = appIdUse(bundleId, inputs: inputs)
             return MenuAddOption(
-                app: source.app, name: source.name, source: source.source, newAppId: isNew,
-                appIdAllowed: !isNew || fits == true)
+                app: source.app, name: source.name, source: source.source, newAppId: use.isNew, appIdAllowed: use.allowed)
         }
+    }
+
+    /// Whether a `provision` for the bundle ID registers a new App ID, and whether that fits the budget. Whether the App ID
+    /// is new needs only the ledger; whether a new one fits also needs the reserve. Without them the budget is unknown: a
+    /// new App ID is then not allowed, a reused one costs nothing.
+    private static func appIdUse(_ bundleId: String, inputs: MenuInputs) -> (isNew: Bool, allowed: Bool) {
+        let reserved = inputs.ledgerReadable ? try? inputs.config.freeTeamReservedAppIds() : nil
+        let live = inputs.ledgerReadable ? FreeAppIdBudget.live(inputs.ledger.freeAppIds, now: inputs.now) : nil
+        let isNew = live.map { entries in !entries.contains { $0.bundleId == bundleId } } ?? true
+        let fits = reserved.map {
+            FreeAppIdBudget.evaluate(inputs.ledger.freeAppIds, bundleId: bundleId, reserved: $0, now: inputs.now).allowed
+        }
+        return (isNew, !isNew || fits == true)
     }
 
     /// One app on one device before it becomes a row.
@@ -256,12 +264,30 @@ public enum MenuSnapshotBuilder {
             built.expires = dated
             built.recorded = candidate.install != nil
             built.signedExpires = signedBuild?.profileExpires
-            if let install = candidate.install, let signedBuild {
-                // A different profile that outlives the installed one by more than a day, and is not expired itself.
-                built.newerSigned =
-                    signedBuild.profileUuid != install.profileUuid
-                    && signedBuild.profileExpires > install.profileExpires.addingTimeInterval(FreeInstallExpiry.secondsPerDay)
-                    && signedBuild.profileExpires > now
+            built.signedVersion = signedBuild?.version
+            if let install = candidate.install {
+                built.installedVersion = install.version
+                if let signedBuild {
+                    // A different profile that outlives the installed one by more than a day, or a newer version than the
+                    // installed one (an Update that stopped before `install`); either way not expired itself.
+                    let newerProfile =
+                        signedBuild.profileUuid != install.profileUuid
+                        && signedBuild.profileExpires > install.profileExpires.addingTimeInterval(FreeInstallExpiry.secondsPerDay)
+                    let newerVersion = VersionOrder.compare(installed: install.version, upstream: signedBuild.version) == .newer
+                    built.newerSigned = (newerProfile || newerVersion) && signedBuild.profileExpires > now
+                }
+                let use = appIdUse(install.bundleId, inputs: inputs)
+                built.profile = MenuRowProfile(
+                    storedExpires: ledger.freeProfiles.first { $0.id == built.id }?.expires, newAppId: use.isNew,
+                    appIdAllowed: use.allowed, installedExtensions: install.strippedExtensions.count)
+                // Only a source the owner approved is offered, whatever an older `updates.json` still holds.
+                if addSources.contains(where: { $0.app == candidate.app }), let listed = inputs.upstream[candidate.app] {
+                    built.update = MenuUpdateInfo(
+                        version: listed.version,
+                        state: MenuUpdateState(rawValue: VersionOrder.compare(installed: install.version, upstream: listed.version).rawValue)
+                            ?? .unknown,
+                        minOS: listed.minOS, checkedAt: listed.checkedAt, checkFailed: listed.errorCode != nil)
+                }
             }
             if state == .installed, let read, let id = candidate.bundleId {
                 built.removalClearsTrust = FreeRemoval.isLastFreeApp(bundleId: id, in: read.snapshot, prefix: prefix)

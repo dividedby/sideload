@@ -92,6 +92,12 @@ enum MenuFormat {
 
     static func capitalised(_ text: String) -> String { text.prefix(1).uppercased() + text.dropFirst() }
 
+    /// A version as the panel writes it: Stremio's `<ver>b<build>` is "1.9.2 (45)", anything else is as it is.
+    static func version(_ raw: String) -> String {
+        guard let match = raw.wholeMatch(of: /([0-9]+(?:\.[0-9]+)*)b([0-9]+)/) else { return raw }
+        return "\(match.1) (\(match.2))"
+    }
+
     /// "45.2 MB": decimal units, one decimal.
     static func size(_ bytes: Int64) -> String {
         let value = Double(bytes)

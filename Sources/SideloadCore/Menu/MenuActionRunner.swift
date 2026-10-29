@@ -47,15 +47,17 @@ public enum MenuActionRunner {
             envelope = await steps.install(services, InstallOptions(app: app, device: device, yes: true))
         case .remove(let device, let app):
             envelope = await steps.remove(services, AppOptions(sub: "remove", app: app, device: device, yes: true))
-        case .addFetch(_, let app):
+        case .addFetch(_, let app), .updateFetch(_, let app, _):
             envelope = await steps.fetch(services, FetchOptions(app: app))
-        case .addApprove(let device, let app, let fetched):
+        case .addApprove(let device, let app, let fetched), .updateApprove(let device, let app, _, let fetched):
             if let reason = addStop(app: app, fetched: fetched, services: services) {
                 await deliver(.notRun(reason))
                 return
             }
+            // Update is the same chain: the app is already installed, so `install` goes over it and keeps its data.
             envelope = await addEach(
-                app, device: device, fetched: fetched, services: services, steps: steps, isCancelled: isCancelled)
+                app, device: device, fetched: fetched, chain: action.chain ?? .add, services: services, steps: steps,
+                isCancelled: isCancelled)
         case .lendable(let device, let app):
             // `device lendable` takes no `.op.lock`, so a lab `slot lend` can land after the panel was drawn: the ledger is
             // read again here, and the setting is not written while the device has a lent or pending slot.
@@ -90,7 +92,7 @@ public enum MenuActionRunner {
         return busy ? MenuActions.lentOrChanging(device) : nil
     }
 
-    /// The steps of the second Add app confirm, in order.
+    /// The steps of the second Add app (and Update) confirm, in order.
     enum AddStep: String, CaseIterable, Sendable {
         case approve, provision, sign, install
 
@@ -115,6 +117,11 @@ public enum MenuActionRunner {
     /// `PROFILE_NOT_RENEWED`, and `refresh` renews at 6 days.
     static let freshProfileDays = Double(RefreshPolicy.maxWithin)
 
+    /// The one rule for "the stored profile is fresh, skip `provision`": the run and the confirm that describes it both ask it.
+    static func profileIsFresh(expires: Date, now: Date) -> Bool {
+        expires.timeIntervalSince(now) >= freshProfileDays * FreeInstallExpiry.secondsPerDay
+    }
+
     /// Why the approval must not run: the manifest as it is on disk has no such entry, or its file is not the one the owner
     /// saw (a different SHA-256). Nil when it matches.
     static func addStop(app: String, fetched: MenuFetched, services: Services) -> String? {
@@ -131,12 +138,12 @@ public enum MenuActionRunner {
         return nil
     }
 
-    /// Add app, stage 2: approve exactly the confirmed version, then only the steps still needed, then install, folded into one
-    /// `add`-shaped envelope with a status per step. Each command takes `.op.lock` itself, so the lab can interleave between
+    /// Add app and Update, stage 2: approve exactly the confirmed version, then only the steps still needed, then install, folded
+    /// into one `add`- (or `update`-) shaped envelope with a status per step. Each command takes `.op.lock` itself, so the lab can interleave between
     /// steps. A step that is already done (a profile with 6 days or more left, a signed build for this version and profile) is
     /// skipped, so a run that stopped halfway resumes. Stops between steps when cancelled, and on the first failure.
     private static func addEach(
-        _ app: String, device: String, fetched: MenuFetched, services: Services, steps: MenuActionSteps,
+        _ app: String, device: String, fetched: MenuFetched, chain: AddChain, services: Services, steps: MenuActionSteps,
         isCancelled: @Sendable () -> Bool
     ) async -> Envelope {
         var results: [JSONValue] = []
@@ -154,7 +161,7 @@ public enum MenuActionRunner {
             ]
             if let appIdNew { data["appIdNew"] = .bool(appIdNew) }
             if installStarted { data["installStarted"] = true }
-            return Envelope(ok: failed == nil, command: "add", data: data, errors: error.map { [$0] } ?? [])
+            return Envelope(ok: failed == nil, command: chain.command, data: data, errors: error.map { [$0] } ?? [])
         }
         func stop(_ step: AddStep, _ envelope: Envelope) -> Envelope {
             finish(step, envelope.errors.first ?? .init(code: "INTERNAL_ERROR", message: "\(step.rawValue) failed.", fix: nil))
@@ -184,9 +191,7 @@ public enum MenuActionRunner {
         if let stopped = interrupted(.provision) { return stopped }
         do {
             let ledger = try loadLedger()
-            let fresh = profile(in: ledger).map {
-                $0.expires.timeIntervalSince(services.clock.now()) >= freshProfileDays * 86_400
-            }
+            let fresh = profile(in: ledger).map { profileIsFresh(expires: $0.expires, now: services.clock.now()) }
             if fresh == true {
                 record(.provision, .skipped)
             } else {
@@ -200,7 +205,7 @@ public enum MenuActionRunner {
                 record(.provision, .done)
             }
         } catch {
-            return stop(.provision, .from(error, command: "add"))
+            return stop(.provision, .from(error, command: chain.command))
         }
 
         // 3. Sign exactly this version, unless the signed build already is this version on the stored profile.
@@ -229,7 +234,7 @@ public enum MenuActionRunner {
             }
             record(.sign, status)
         } catch {
-            return stop(.sign, .from(error, command: "add"))
+            return stop(.sign, .from(error, command: chain.command))
         }
 
         // 4. Install.

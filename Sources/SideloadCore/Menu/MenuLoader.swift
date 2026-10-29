@@ -1,10 +1,10 @@
 import Foundation
 
-/// Reads what the panel shows (design section 12). Local files first (instant: the config, the ledger, the canary log and
-/// the app-data backups' manifests for the pending-restore notice), then one `devicectl list devices`
+/// Reads what the panel shows (design section 12). Local files first (instant: the config, the ledger, the canary log, the
+/// app-data backups' manifests for the pending-restore notice and `updates.json`), then one `devicectl list devices`
 /// (about 1 to 2 s) for visibility and transport, then one `device info apps` per visible device. Nothing here writes, locks,
-/// or touches the keychain, the portal or the network; there are no timers: the app calls it at launch, when the panel
-/// opens and on "Check status now".
+/// or touches the keychain, the portal or the network (the update check is `MenuUpdates.check`, run by the view model as a
+/// task of its own); there are no timers: the app calls it at launch, when the panel opens and on "Check status now".
 public enum MenuLoader {
     /// The part of the snapshot that comes from `config.json`, `ledger.json`, `logs/canary.jsonl` and the backup manifests.
     public enum Local: Sendable {
@@ -57,7 +57,7 @@ public enum MenuLoader {
         return .ready(
             MenuInputs(
                 now: services.clock.now(), canaryStatus: canaryStatus, config: config, ledger: ledger,
-                probe: .checking, notices: notices, ledgerReadable: ledgerReadable))
+                probe: .checking, notices: notices, ledgerReadable: ledgerReadable, upstream: MenuUpdates.cached(services)))
     }
 
     /// `devicectl list devices` through `DeviceCtl` (read-only). With no saved device there is nothing to ask.
@@ -96,14 +96,18 @@ public enum MenuLoader {
 
     /// The first paint of a load: the freshly read local files over what the last load learned (the device list and the
     /// cached app reads), so rows change only when a new answer differs. Only a launch with nothing known says "checking…".
-    public static func firstPaint(_ local: Local, cache: MenuAppsCache, renewing: Bool = false) -> MenuPanel {
-        panel(local, probe: cache.lastProbe ?? .checking, apps: cache.entries, renewing: renewing)
+    public static func firstPaint(
+        _ local: Local, cache: MenuAppsCache, renewing: Bool = false, checked: [String: MenuUpstream] = [:]
+    ) -> MenuPanel {
+        panel(local, probe: cache.lastProbe ?? .checking, apps: cache.entries, renewing: renewing, checked: checked)
     }
 
     /// `apps` holds what was read per alias; a missing key means the device was not asked. `renewing` is a Renew started
-    /// from the menu that is still running: the icon says so (`MenuIcon.State.renewing`), and only then.
+    /// from the menu that is still running: the icon says so (`MenuIcon.State.renewing`), and only then. `checked` is what the
+    /// update check of this session listed; it replaces a listing of `updates.json` that is not newer than it.
     public static func panel(
-        _ local: Local, probe: DeviceProbe, apps: [String: DeviceAppsProbe] = [:], renewing: Bool = false
+        _ local: Local, probe: DeviceProbe, apps: [String: DeviceAppsProbe] = [:], renewing: Bool = false,
+        checked: [String: MenuUpstream] = [:]
     ) -> MenuPanel {
         switch local {
         case .firstRun(let issue): return MenuPanel.firstRun(issue)
@@ -112,6 +116,7 @@ public enum MenuLoader {
             inputs.probe = probe
             inputs.deviceApps = apps
             inputs.renewing = renewing
+            inputs.upstream = MenuUpdates.merged(inputs.upstream, with: checked)
             return .loaded(MenuSnapshotBuilder.build(inputs))
         }
     }
