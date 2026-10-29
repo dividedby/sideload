@@ -5,6 +5,16 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-29
+
+Renewals and updates without the terminal: `refresh --auto` and the launchd agent from `refresh --print-agent`;
+`sideload updates` and the menu bar app's Update… and Add app…; the menu's Renew…, Install, Remove and lendable actions,
+and its live app check. Two changes in behaviour: a renewal now keeps the installed version (`RENEW_VERSION_CHANGED`
+when it cannot), and `fetch` downloads without holding `.op.lock`, so a long download no longer blocks the lab. Only
+`refresh --print-agent` prints real home paths (`Envelope.keepsUserPaths`). `refresh --auto` has had one run from the
+owner's agent (nothing due); its first renewal and the notification from a launchd job (spike S9, `docs/design.md`
+section 18) are still to be seen.
+
 ### Added
 
 - `sideload refresh --auto`: the command the launchd agent runs every 30 minutes (the owner loads the agent from
@@ -874,5 +884,6 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
 - The CLI no longer crashes with an `EPIPE` stack trace when its stdout reader closes early
   (e.g. `sideload doctor | head`).
 
-[Unreleased]: https://github.com/dividedby/sideload/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/dividedby/sideload/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/dividedby/sideload/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dividedby/sideload/releases/tag/v0.2.0
