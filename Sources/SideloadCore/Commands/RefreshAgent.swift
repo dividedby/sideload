@@ -86,7 +86,7 @@ extension RefreshCommand {
             return .fail(
                 command, code: "PATH_UNSAFE",
                 message: "The sideload home or the home folder path contains a control character, which a launchd plist cannot hold.",
-                fix: "Set SIDELOAD_HOME to a path without control characters, then run refresh --print-agent again.")
+                fix: "Use a home folder and a SIDELOAD_HOME without control characters, then run refresh --print-agent again.")
         }
         let isDefaultHome = home.home == Paths.resolveHome(environment: [:], homeDirectory: user).home
         let plist = AgentPlist.render(binary: bin, logs: home.logs, sideloadHome: isDefaultHome ? nil : home.home)
