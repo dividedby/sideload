@@ -6,9 +6,12 @@ public struct Redactor: Sendable {
     /// Caller-supplied literals (e.g. known ids in unusual formats), masked to their last four
     /// characters. Literals shorter than 8 UTF-16 units are ignored.
     public let literals: [String]
+    /// Leaves `/Users/<name>` alone (see `Envelope.keepsUserPaths`).
+    public let keepsUserPaths: Bool
 
-    public init(literals: [String] = []) {
+    public init(literals: [String] = [], keepsUserPaths: Bool = false) {
         self.literals = literals
+        self.keepsUserPaths = keepsUserPaths
     }
 
     /// `…` plus the last four characters.
@@ -39,7 +42,7 @@ public struct Redactor: Sendable {
         for lit in literals where lit.utf16.count >= 8 {
             s = s.replacingOccurrences(of: lit, with: Self.tail4(lit))
         }
-        return Self.redactPatterns(s)
+        return Self.redactPatterns(s, keepingUserPaths: keepsUserPaths)
     }
 
     public func redact(_ value: JSONValue) -> JSONValue {
@@ -62,6 +65,10 @@ public struct Redactor: Sendable {
 
     /// Patterns only, no caller literals. Used for log lines.
     public static func redactPatterns(_ string: String) -> String {
+        redactPatterns(string, keepingUserPaths: false)
+    }
+
+    static func redactPatterns(_ string: String, keepingUserPaths: Bool) -> String {
         var out = replace(privateKeyBlock, in: string, template: "<private key>")
         out = replace(jwt, in: out, template: "<jwt>")
         out = replace(identityName, in: out, template: "$1 (identity hidden)")
@@ -69,7 +76,7 @@ public struct Redactor: Sendable {
             out = replace(re, in: out) { tail4($0) }
         }
         out = replace(email, in: out, template: "<email>")
-        return replace(userPath, in: out, template: "/Users/<user>")
+        return keepingUserPaths ? out : replace(userPath, in: out, template: "/Users/<user>")
     }
 
     private static func replace(_ re: NSRegularExpression, in s: String, template: String) -> String {

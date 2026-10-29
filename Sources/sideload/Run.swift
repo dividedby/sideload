@@ -25,6 +25,7 @@ private func help() -> Envelope {
             "install --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> --yes",
             .string("refresh --device <alias> [--app <apollo|stremio-ios|stremio-tvos|filler>] [--within 1-\(RefreshCommand.maxWithin) | --force] --yes"),
             "refresh --auto",
+            "refresh --print-agent [--binary <absolute path>]",
             "app remove --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> --yes",
             "slot lend --device <alias>|--udid <id> --to lab",
             "slot return --device <alias>|--udid <id>",
@@ -46,11 +47,10 @@ private let exportCertSpec = ArgSpec(values: ["device", "profile", "out"], flags
 private let provisionSpec = ArgSpec(values: ["app", "device"], flags: ["yes", "register-device", "renew", "renew-ack"])
 private let signSpec = ArgSpec(values: ["app", "device"], flags: ["yes"])
 private let installSpec = ArgSpec(values: ["app", "device"], flags: ["yes"])
-private let refreshSpec = ArgSpec(values: ["device", "app", "within"], flags: ["yes", "force", "auto", "print-agent"])
-// `--print-agent` is designed (design section 18) but not built; it parses only so it can say so. `--auto` is built and
-// takes no other option.
-private let refreshDeferredFlags = ["print-agent"]
-private let refreshAutoConflicts = ["device", "app", "within", "yes", "force"]
+private let refreshSpec = ArgSpec(values: ["device", "app", "within", "binary"], flags: ["yes", "force", "auto", "print-agent"])
+// `--auto` and `--print-agent` each take no other option (`--binary` belongs to `--print-agent`).
+private let refreshAutoConflicts = ["device", "app", "within", "yes", "force", "binary", "print-agent"]
+private let refreshPrintAgentConflicts = ["device", "app", "within", "yes", "force", "auto"]
 private let appSpec = ArgSpec(values: ["app", "device"], flags: ["yes"])
 private let slotSpec = ArgSpec(values: ["device", "udid", "to", "app"], flags: ["yes"])
 private let fetchSpec = ArgSpec(values: ["app", "version"], flags: ["approve"])
@@ -141,10 +141,18 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
             fix: "Run `sideload status` with no options.")
     }
 
-    if command == "refresh", let flag = refreshDeferredFlags.first(where: parsed.flags.contains) {
+    if command == "refresh", parsed.flags.contains("print-agent"),
+        let option = refreshPrintAgentConflicts.first(where: { parsed.values[$0] != nil || parsed.flags.contains($0) })
+    {
         return .fail(
-            command, code: "USAGE", message: "refresh --\(flag) is not built yet (the manual and the automatic refresh are).",
-            fix: "Run `sideload refresh --device <alias> [--app <app>] --yes`, or `sideload refresh --auto`.")
+            command, code: "USAGE", message: "refresh --print-agent takes no other option but --binary (--\(option) was given).",
+            fix: "Run `sideload refresh --print-agent [--binary <absolute path>]` on its own.")
+    }
+
+    if command == "refresh", parsed.values["binary"] != nil, !parsed.flags.contains("print-agent") {
+        return .fail(
+            command, code: "USAGE", message: "--binary belongs to refresh --print-agent.",
+            fix: "Run `sideload refresh --print-agent --binary <absolute path>`.")
     }
 
     if command == "refresh", parsed.flags.contains("auto"),
@@ -166,6 +174,10 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     }
 
     let services = services ?? liveServices()
+    // Pure: it prints text, so it does not even create the home.
+    if command == "refresh", parsed.flags.contains("print-agent") {
+        return RefreshCommand.printAgent(services, binary: parsed.values["binary"])
+    }
     do {
         try services.home.ensureHome()
     } catch {

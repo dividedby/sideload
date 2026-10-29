@@ -17,12 +17,19 @@ public struct Envelope: Sendable, Equatable {
     public let command: String
     public let data: [String: JSONValue]
     public let errors: [Entry]
+    /// Print `/Users/<name>` paths as they are instead of `/Users/<user>`. Only for output whose job is to carry the
+    /// owner's own absolute paths (`refresh --print-agent`: a plist with a masked home would not load). Every other
+    /// redaction still applies.
+    public let keepsUserPaths: Bool
 
-    public init(ok: Bool, command: String, data: [String: JSONValue] = [:], errors: [Entry] = []) {
+    public init(
+        ok: Bool, command: String, data: [String: JSONValue] = [:], errors: [Entry] = [], keepsUserPaths: Bool = false
+    ) {
         self.ok = ok
         self.command = command
         self.data = data
         self.errors = errors
+        self.keepsUserPaths = keepsUserPaths
     }
 
     public static func result(_ command: String, _ data: [String: JSONValue] = [:]) -> Envelope {

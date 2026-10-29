@@ -6,7 +6,7 @@ public enum Output {
     /// Redacts the envelope, then encodes it as one JSON object plus a trailing newline.
     /// Keys are sorted and `/` is not escaped (deterministic output).
     public static func render(_ envelope: Envelope, redacting literals: [String] = []) throws -> String {
-        let redacted = Redactor(literals: literals).redact(envelope.json)
+        let redacted = Redactor(literals: literals, keepsUserPaths: envelope.keepsUserPaths).redact(envelope.json)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return String(decoding: try encoder.encode(redacted), as: UTF8.self) + "\n"
