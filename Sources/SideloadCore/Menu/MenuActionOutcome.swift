@@ -200,8 +200,6 @@ public struct MenuActionOutcome: Sendable, Equatable {
         return " · \(before) d → \(after) d"
     }
 
-    /// A skip that is the plan's ("not due", "not on the device"), not a stop.
-
     private static func skipText(_ code: String?) -> String {
         switch code {
         case RefreshPolicy.notDue: "Not due"

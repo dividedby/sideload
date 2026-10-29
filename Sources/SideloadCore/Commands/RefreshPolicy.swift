@@ -26,6 +26,7 @@ enum RefreshPolicy {
     static let interrupted = "INTERRUPTED"
     static let policySkipCodes: Set<String> = [notDue, notPresent, notInstalled, notSigned]
 
+    /// A skip that is the plan's ("not due", "not on the device"), not a stop.
     static func isPolicySkip(_ code: String?) -> Bool { code.map(policySkipCodes.contains) ?? false }
 
     /// A failure with one of these codes will not fix itself, so the install is marked `suspended` (the future auto-refresh
