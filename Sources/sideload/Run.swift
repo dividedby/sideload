@@ -35,6 +35,8 @@ private func help() -> Envelope {
             "ledger [refresh]",
             "portal [certificates|bundle-ids|devices|profiles] [--show-identifiers]",
             "status",
+            "status --notify",
+            "status --print-agent [--binary <absolute path>]",
         ],
         "docs": "docs/design.md",
         "note": "commands not listed under `built` are not built yet; see docs/design.md",
@@ -57,9 +59,8 @@ private let slotSpec = ArgSpec(values: ["device", "udid", "to", "app"], flags: [
 private let fetchSpec = ArgSpec(values: ["app", "version"], flags: ["approve"])
 private let updatesSpec = ArgSpec(values: ["app"], flags: ["force"])
 private let portalSpec = ArgSpec(flags: ["show-identifiers"])
-// `status` v1 is read-only; the designed `--notify` and `--print-agent` parse only so they can say they are not built.
-private let statusDeferredFlags = ["notify", "print-agent"]
-private let statusSpec = ArgSpec(flags: Set(statusDeferredFlags))
+// Plain `status` takes no option; `--notify` and `--print-agent` are alternatives, and `--binary` belongs to `--print-agent`.
+private let statusSpec = ArgSpec(values: ["binary"], flags: ["notify", "print-agent"])
 
 private func unexpectedPositionals(_ command: String) -> Envelope {
     .fail(command, code: "USAGE", message: "Unexpected positional arguments.", fix: "Run `sideload help`.")
@@ -136,10 +137,16 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
         return unexpectedPositionals(command)
     }
 
-    if command == "status", let flag = statusDeferredFlags.first(where: parsed.flags.contains) {
+    if command == "status", parsed.flags.contains("notify"), parsed.flags.contains("print-agent") {
         return .fail(
-            command, code: "USAGE", message: "status --\(flag) is not built yet (status v1 is read-only).",
-            fix: "Run `sideload status` with no options.")
+            command, code: "USAGE", message: "status --notify and status --print-agent are alternatives.",
+            fix: "Run `sideload status --notify` or `sideload status --print-agent [--binary <absolute path>]`, not both.")
+    }
+
+    if command == "status", parsed.values["binary"] != nil, !parsed.flags.contains("print-agent") {
+        return .fail(
+            command, code: "USAGE", message: "--binary belongs to status --print-agent.",
+            fix: "Run `sideload status --print-agent --binary <absolute path>`.")
     }
 
     if command == "refresh", parsed.flags.contains("print-agent"),
@@ -179,12 +186,16 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     if command == "refresh", parsed.flags.contains("print-agent") {
         return RefreshCommand.printAgent(services, binary: parsed.values["binary"])
     }
+    if command == "status", parsed.flags.contains("print-agent") {
+        return StatusCommand.printAgent(services, binary: parsed.values["binary"])
+    }
     do {
         try services.home.ensureHome()
     } catch {
         return .from(error, command: command)
     }
     if command == "doctor" { return await Doctor.run(services) }
+    if command == "status", parsed.flags.contains("notify") { return await StatusCommand.runNotify(services) }
     if command == "status" { return StatusCommand.run(services) }
     if command == "ledger" { return await LedgerCommand.run(services, LedgerOptions(sub: parsed.positionals.isEmpty ? .show : .refresh)) }
     if command == "fetch" {
