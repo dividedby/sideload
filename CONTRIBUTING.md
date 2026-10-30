@@ -58,9 +58,9 @@ automatically; if yours reads only another file (for example `CLAUDE.md`), point
   `AGENTS.md` lists under "Ask the owner first" is the device owner's to run, including (not limited to) `canary`,
   `provision`, `sign`, `install`, `refresh` in any mode, `app remove`, `slot restore`, `export-cert`, a live `portal`
   run, `device remove`, `device lendable`, `device slots`, `device auto-refresh`, `--register-device`,
-  `fetch --approve`, a new download source, `status --notify` against the real home, pairing and launchd agents. An agent
-  prepares and explains them; the owner runs them. The read-only commands `AGENTS.md` allows (`status`, `updates`,
-  `refresh --print-agent`, `status --print-agent`) are fine.
+  `fetch --approve`, a new download source, `status --notify` against the real home, `clean --yes`, pairing and
+  launchd agents. An agent prepares and explains them; the owner runs them. The read-only commands `AGENTS.md` allows (`status`, `updates`,
+  `refresh --print-agent`, `status --print-agent`, and `clean` without `--yes`) are fine.
 - **Tests stay hermetic:** fakes for the network, devices and keychain; temp homes; throwaway keys generated at runtime.
 - **Say what you ran.** In the pull request, say that an agent wrote or helped with the change, and list the checks it
   ran (`scripts/check.sh`, anything run by hand). Don't claim a device run that didn't happen.
