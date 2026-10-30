@@ -91,18 +91,30 @@ struct AutoEligibleTests {
                     for link in ["connected", "disconnected", "unavailable"] {
                         let saved = savedPhone(autoRefresh: optIn)
                         let entry = listed(transport: transport, paired: paired, link: link)
-                        let expected = optIn && transport != .unknown && paired && link == "connected"
-                        #expect(DeviceList.autoEligible(saved, listed: entry) == expected)
+                        let reach: DeviceList.AutoReach? = link == "connected" ? .connected : link == "disconnected" ? .probe : nil
+                        let expected = optIn && transport != .unknown && paired ? reach : nil
+                        #expect(DeviceList.autoReach(saved, listed: entry) == expected)
+                        #expect(DeviceList.autoEligible(saved, listed: entry) == (expected != nil))
                     }
                 }
             }
         }
     }
 
-    @Test("a disconnected or unrecognised link is not available for auto", arguments: ["disconnected", "unavailable", "unknown", "weird"])
+    @Test("an unavailable or unrecognised link is not available for auto", arguments: ["unavailable", "unknown", "weird", "Connected", ""])
     func notConnected(link: String) {
         for transport in [DeviceTransport.network, .wired] {
             #expect(!DeviceList.autoEligible(savedPhone(autoRefresh: true), listed: listed(transport: transport, link: link)))
+        }
+    }
+
+    @Test("a paired disconnected device over Wi-Fi or USB is a probe, a connected one is connected")
+    func reach() {
+        for transport in [DeviceTransport.network, .wired] {
+            let saved = savedPhone(autoRefresh: true)
+            #expect(DeviceList.autoReach(saved, listed: listed(transport: transport, link: "disconnected")) == .probe)
+            #expect(DeviceList.autoReach(saved, listed: listed(transport: transport)) == .connected)
+            #expect(DeviceList.autoReach(saved, listed: listed(transport: transport, paired: false, link: "disconnected")) == nil)
         }
     }
 

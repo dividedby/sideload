@@ -323,9 +323,10 @@ private let phoneAndTV: JSONValue = deviceListJSON(
 private func withAutoWorld(
     _ apps: [ProvisionApp] = [.stremioIOS], profileDays: Double = 2, optIn: [String] = ["iphone"],
     listing: JSONValue? = phoneAndTV, manifest seedVersions: Bool = true, ledger tweak: ((inout Ledger) -> Void)? = nil,
-    _ body: (AutoWorld) async throws -> Void
+    snapshotFailures: Set<Int> = [], _ body: (AutoWorld) async throws -> Void
 ) async throws {
     var script = DeviceScript()
+    script.snapshotFailures = snapshotFailures
     for app in apps { script.initial[bundleId(app)] = true }
     try await withInstallWorld(
         app: apps[0], alsoSigned: Array(apps.dropFirst()), script: script, profileDays: profileDays,
@@ -633,6 +634,51 @@ struct RefreshAutoTests {
                 #expect(log.value.isEmpty && a.runner.listCalls == 1 && a.runner.notices.isEmpty)
                 #expect(try a.w.ledger().installs == before)
             }
+        }
+    }
+
+    @Test("a paired device with no live connection is probed by its app list and renewed when it answers")
+    func disconnectedProbed() async throws {
+        try await withAutoWorld(profileDays: 2, listing: deviceListJSON(phoneEntryJSON(tunnel: "disconnected"))) { a in
+            let log = CallBox([])
+            let out = await auto(a, autoSteps(log))
+            #expect(out.ok, "\(out.errors)")
+            #expect(autoResult(out, .stremioIOS)?["status"] == "renewed")
+            #expect(log.value == ["provision stremio-ios", "sign stremio-ios", "install stremio-ios"])
+            #expect(skippedCount(out, "DEVICE_NOT_VISIBLE") == 0)
+        }
+    }
+
+    @Test("a probe that gets no answer is DEVICE_NOT_VISIBLE: nothing provisioned, not an attempt, silent, the code logged")
+    func disconnectedProbeFails() async throws {
+        try await withAutoWorld(
+            profileDays: 2, listing: deviceListJSON(phoneEntryJSON(tunnel: "disconnected")), snapshotFailures: [1]
+        ) { a in
+            let before = try a.w.ledger().installs
+            let log = CallBox([])
+            let out = await auto(a, autoSteps(log))
+            #expect(out.ok && out.errors.isEmpty, "\(out.errors)")
+            #expect(autoResult(out, .stremioIOS)?["code"] == "DEVICE_NOT_VISIBLE")
+            #expect(skippedCount(out, "DEVICE_NOT_VISIBLE") == 1)
+            #expect(log.value.isEmpty && a.runner.notices.isEmpty && a.w.runner.installCalls.isEmpty)
+            #expect(try a.w.ledger().installs == before)
+            #expect(try fields(a).attemptsByDay.isEmpty)
+            let skip = try #require(try logged(a, "install").first { $0["app"] == "stremio-ios" })
+            #expect(skip["reason"] == "DEVICE_NOT_VISIBLE" && skip["daysLeft"] == 2)
+            #expect(skip["probe"]?.string?.isEmpty == false && skip["probe"] != "OTHER")
+        }
+    }
+
+    @Test("a connected device whose app list fails is still an attempt (the install is blocked), not DEVICE_NOT_VISIBLE")
+    func connectedSnapshotFails() async throws {
+        try await withAutoWorld(profileDays: 2, listing: deviceListJSON(phoneEntryJSON()), snapshotFailures: [1]) { a in
+            let log = CallBox([])
+            let out = await auto(a, autoSteps(log))
+            #expect(skippedCount(out, "DEVICE_NOT_VISIBLE") == 0)
+            #expect(autoResult(out, .stremioIOS)?["status"] != "skipped")
+            #expect(log.value.contains("provision stremio-ios"))
+            let decisions = try logged(a, "install")
+            #expect(decisions.allSatisfy { $0["probe"] == nil })
         }
     }
 

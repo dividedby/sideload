@@ -59,7 +59,7 @@ struct RefreshLog: Sendable {
         case .string(let text):
             switch key {
             case "device": return .string(alias(text))
-            case "code", "reason": return .string(code(text))
+            case "code", "reason", "probe": return .string(code(text))
             default: return .string(token(text))
             }
         case .object(let counts) where key == "skipped":
