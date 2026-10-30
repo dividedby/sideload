@@ -1,6 +1,6 @@
 import Foundation
 
-/// A macOS notification through `osascript` (design section 18), run by the `Runner` like every subprocess. The text is
+/// A macOS notification through `osascript` (design sections 11 and 18), run by the `Runner` like every subprocess. The text is
 /// the script's argument (`on run argv`), never part of the script, so no character of it can be code; it is also cleaned
 /// to the characters aliases, app names, numbers and codes are made of. A failure (no notification permission, a timeout,
 /// no `osascript`) is only reported to the caller, which logs it: a notification never fails a run.

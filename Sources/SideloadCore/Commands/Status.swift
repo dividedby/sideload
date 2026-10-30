@@ -24,6 +24,7 @@ public enum StatusState: String, Sendable, Equatable {
 /// and the app fills it from `device list`. Free installs on saved devices join `items` (kind `install`, the 3 and 1 day
 /// levels) and `installs`, and warn once due; a pending app-data restore is a warning too. The app-data backups are
 /// secrets-class: only their manifests are read (`PendingRestores`), and only aliases and app names are printed.
+/// `status --notify` (`runNotify`, `StatusNotify.swift`) is the exception: it runs `osascript` and writes `lastNotified`.
 public enum StatusCommand {
     static let command = "status"
 
