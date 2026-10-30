@@ -277,7 +277,7 @@ Icon: the **countdown ring** (owner decision 2026-10-24; a 16x16 SVG spec, drawn
  |--------------------------------------------|
  | Devices                                    |
  |  iphone   visible, paired       ...ab12    |
- |  appletv  not paired (atvloadly serves it) |
+ |  appletv  not paired (pair it in Xcode)    |
  |--------------------------------------------|
  | Run canary...    Export certificate...     |
  | Open ~/.sideload                     Quit  |

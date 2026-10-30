@@ -1,6 +1,6 @@
-/// Informational only. Never an error; atvloadly serves the Apple TV.
+/// Informational only. Never an error.
 public struct AppleTVCheck: Check {
-    public static let notPairedMessage = "not paired with this Mac (atvloadly serves it)"
+    public static let notPairedMessage = "not paired with this Mac (pair it in Xcode)"
 
     public let id = "appletv"
 

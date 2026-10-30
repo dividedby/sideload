@@ -200,7 +200,7 @@ struct DoctorDeviceTests {
             #expect(out.count == 1)
             #expect(out[0].status == "not-paired")
             #expect(out[0].severity == .info)
-            #expect(out[0].message == "not paired with this Mac (atvloadly serves it)")
+            #expect(out[0].message == "not paired with this Mac (pair it in Xcode)")
             #expect(out[0].message == AppleTVCheck.notPairedMessage)
             #expect(runner.calls.isEmpty)
         }

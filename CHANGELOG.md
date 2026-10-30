@@ -7,6 +7,10 @@ All notable changes to this project are documented here. Format follows
 
 ### Changed
 
+- CLI text no longer says atvloadly serves the Apple TV: `doctor`'s Apple TV row for an unpaired device reads "not
+  paired with this Mac (pair it in Xcode)", and the `FREE_CERT_CHANGED` fixes from `provision`, `sign`, `refresh`,
+  `install`, `app remove`, `slot` and `slot restore` tell the owner to check Xcode's Manage Certificates and the lab,
+  no longer atvloadly.
 - Docs: atvloadly is retired. It was stopped and its Stremio copy removed from the Apple TV on 2026-10-24, and the
   owner deleted its OrbStack VM `atv` on 2026-10-30. AGENTS.md, README, design section 18 (a step 7 on the takeover
   checklist) and `docs/research/tvos-install.md` now say sideload serves the Apple TV, and the agent rules about
