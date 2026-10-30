@@ -7,6 +7,13 @@ account (and, as an interim route, my own free team, narrowly; see below), using
 A native Apple Silicon Swift package: a shared core (`SideloadCore`), a JSON CLI (`sideload`) and, later, a
 SwiftUI menu bar app (see `docs/design.md`).
 
+**Who it's for.** Anyone with their own Apple Developer team, paid or free, who wants to sign and install apps on their
+own devices with Apple's tools. A paid team gets year-long profiles and no per-device app limit; a free team works with
+Apple's limits (3 apps per device, 10 App IDs per 7 days, 7-day profiles), which sideload tracks and renews around. It is
+written for one setup today: the team IDs are constants in `Sources/SideloadCore/Config/Config.swift` and the bundle ID
+prefix is set in `config.json`, so fork it and change those for your account. Support isn't guaranteed, but issues and
+contributions are welcome and I'll try to get to them; see `CONTRIBUTING.md`.
+
 **Status.** The `sideload` executable runs `doctor`, `device save|list|auto-refresh|slots|lendable|remove`, `canary`, `ledger`, `portal`, `export-cert`, `status`, `inspect`, `fetch`, `updates`, `provision`, `sign`, `install`, `refresh`, `app remove` and `slot lend|return`; the automatic `refresh --auto` and `refresh --print-agent` are built, and so are `status --notify` and `status --print-agent`; the owner loads the launchd agents ("Turning on auto-refresh", "Turning on expiry notifications"). The original Node CLI was removed on 2026-10-20 after the Swift
 port reached parity (`docs/design.md` section 14). The Swift `canary` is tested with fakes and has had one
 owner-run against the real device (2026-10-20: `blocked`, `0xe8008018`, guard passed).
@@ -268,3 +275,10 @@ CI enforce this.
 - `docs/design.md`: Swift design (core, CLI, menu bar app), owner decisions, migration record
 - `docs/research/`: Feather signing, app requirements, tvOS install, provisioning profiles, Stremio source
 - `AGENTS.md`: rules for agents working here
+- `CONTRIBUTING.md`: how to report issues and send changes, with guidance for AI agents
+
+## License and trademarks
+
+MIT (`LICENSE`). sideload is not affiliated with or endorsed by Apple Inc. Apple, iPhone, iPad, Apple TV, tvOS and Xcode
+are trademarks of Apple Inc., registered in the U.S. and other countries. Apollo, Stremio and Feather belong to their
+own authors; sideload signs and installs their public releases and ships none of them.
