@@ -1,14 +1,14 @@
 # sideload
 
-A personal CLI that signs and installs apps on **my own** Apple devices with **my own** paid Apple Developer
-account (and, as an interim route, my own free team, narrowly; see below), using only Apple's tools (Xcode,
-`xcodebuild`, `codesign`, `security`, `xcrun devicectl`).
+A CLI that signs and installs apps on your own Apple devices with your own Apple Developer team, using only Apple's
+tools (Xcode, `xcodebuild`, `codesign`, `security`, `xcrun devicectl`). This README describes the maintainer's own
+setup: **my** devices, **my** paid team, and, as an interim route, my free team, narrowly (see below).
 
 A native Apple Silicon Swift package: a shared core (`SideloadCore`), a JSON CLI (`sideload`) and, later, a
 SwiftUI menu bar app (see `docs/design.md`).
 
 **Who it's for.** Anyone with their own Apple Developer team, paid or free, who wants to sign and install apps on their
-own devices with Apple's tools. A paid team gets year-long profiles and no per-device app limit; a free team works with
+own devices with Apple's tools. A paid team gets profiles that last a year; a free team works with
 Apple's limits (3 apps per device, 10 App IDs per 7 days, 7-day profiles), which sideload tracks and renews around. It is
 written for one setup today: the team IDs are constants in `Sources/SideloadCore/Config/Config.swift` and the bundle ID
 prefix is set in `config.json`, so fork it and change those for your account. Support isn't guaranteed, but issues and

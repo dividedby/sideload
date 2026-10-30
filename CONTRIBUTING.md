@@ -30,8 +30,8 @@ I'll try to get to them.
 2. Branch off `main`. Keep the change focused.
 3. Follow the code rules in `AGENTS.md`:
    - Swift 6 language mode, zero third-party packages.
-   - Tests use Swift Testing (`import Testing`), never XCTest. Tests never touch the network, a real device, the
-     keychain or the real `~/.sideload`.
+   - Tests use Swift Testing (`import Testing`), never XCTest. Tests never touch the network, a real device, your
+     login keychain or the real `~/.sideload` (one opt-in keychain test uses a throwaway keychain).
    - `SideloadCore` imports no AppKit or SwiftUI.
    - Subprocesses go through the `Runner` only: argument arrays, never a shell string, a timeout on every call.
    - Every command prints exactly one JSON object `{ ok, command, ..., errors: [{ code, message, fix }] }` and exits 0
@@ -54,10 +54,13 @@ automatically; if yours reads only another file (for example `CLAUDE.md`), point
 - **No credentials.** Never ask for, type or store an Apple ID password, and never read, print or copy keys,
   `.p12` files, profiles, the App Store Connect key under `$SIDELOAD_HOME/asc/`, or app-data backups under
   `$SIDELOAD_HOME/backups/`.
-- **Ask before anything that changes a device, the developer portal or the keychain.** The commands that do (canary,
-  provision, sign, install, refresh, app remove, slot restore, export-cert, a live portal run, pairing, launchd agents)
-  are the device owner's to run. An agent prepares and explains them; the owner runs them. Read-only commands
-  (`status`, `doctor`, `device list`, `updates`, `--print-agent`) are fine.
+- **Ask before anything that changes a device, the developer portal, the keychain or the owner's state.** Everything
+  `AGENTS.md` lists under "Ask the owner first" is the device owner's to run, including (not limited to) `canary`,
+  `provision`, `sign`, `install`, `refresh` in any mode, `app remove`, `slot restore`, `export-cert`, a live `portal`
+  run, `device remove`, `device lendable`, `device slots`, `device auto-refresh`, `--register-device`,
+  `fetch --approve`, a new download source, `status --notify` against the real home, pairing and launchd agents. An agent
+  prepares and explains them; the owner runs them. The read-only commands `AGENTS.md` allows (`status`, `updates`,
+  `refresh --print-agent`, `status --print-agent`) are fine.
 - **Tests stay hermetic:** fakes for the network, devices and keychain; temp homes; throwaway keys generated at runtime.
 - **Say what you ran.** In the pull request, say that an agent wrote or helped with the change, and list the checks it
   ran (`scripts/check.sh`, anything run by hand). Don't claim a device run that didn't happen.
