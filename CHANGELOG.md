@@ -23,6 +23,15 @@ All notable changes to this project are documented here. Format follows
   app-data backups are kept and counted. Without `--yes` it previews the counts. Touches no device and no portal.
   `device save`'s `ALIAS_EXISTS` fix now points to it.
 
+### Fixed
+
+- `refresh --auto` skipped a paired Wi-Fi iPhone every run (`DEVICE_NOT_VISIBLE`, spike S9): devicectl reports an idle
+  Wi-Fi device as `disconnected` until a command opens its connection, and eligibility required `connected`. A paired
+  device over Wi-Fi or USB that reads `disconnected` is now probed by the run's app-list read (`device info apps`),
+  which opens the connection. If the probe gets no answer the device is still `DEVICE_NOT_VISIBLE`: not an attempt,
+  nothing provisioned, silent, with the probe's code logged as `probe`. `device list` shows such a device as
+  `autoEligible`. An `unavailable` or unrecognised link is still never eligible.
+
 ### Changed
 
 - Docs: README's command table and the owner spikes in `docs/design.md` section 18 now say what has run on the real Mac.

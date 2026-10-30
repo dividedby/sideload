@@ -188,15 +188,35 @@ public enum DeviceList {
         return .ok
     }
 
-    /// Whether `refresh --auto` may act on this device now (design section 18): the owner opted in
-    /// (`autoRefresh`), the listed entry is paired and its link is `connected`, and it is reached over Wi-Fi or USB.
-    /// An absent entry or an `unknown` transport is never eligible. Pure; says nothing about the install itself.
+    /// How `refresh --auto` may reach a saved device (design section 18).
+    public enum AutoReach: Sendable, Equatable {
+        /// devicectl holds a live connection to it.
+        case connected
+        /// Paired and reached over Wi-Fi or USB, but with no live connection: an idle Wi-Fi iPhone reads `disconnected`
+        /// until a devicectl command opens one. The run's first device call (the app list) is the probe; if it does not
+        /// answer, the device is `DEVICE_NOT_VISIBLE`, as if it were not listed (spike S9, 2026-10-29).
+        case probe
+    }
+
+    /// Whether `refresh --auto` may act on this device now, and how: the owner opted in (`autoRefresh`), the listed entry is a
+    /// physical device that is paired, reached over Wi-Fi or USB, and its link is `connected` (`.connected`) or `disconnected`
+    /// (`.probe`). An absent entry, an `unknown` transport, an `unavailable` link and any unrecognised link are nil. Pure; says
+    /// nothing about the install itself.
+    public static func autoReach(_ saved: SavedDevice, listed: ListedDevice?) -> AutoReach? {
+        guard saved.autoRefresh, saved.freeSlotsReserved != nil, let listed, listed.physical else { return nil }
+        guard listed.transport == .network || listed.transport == .wired else { return nil }
+        // Fail closed on anything but the two known states (visibility alone treats everything but `unavailable` as ok).
+        guard visibilityOf(listed) == .ok else { return nil }
+        switch listed.link {
+        case "connected": return .connected
+        case "disconnected": return .probe
+        default: return nil
+        }
+    }
+
+    /// `autoReach` is not nil: `refresh --auto` tries this device (`device list` shows it).
     public static func autoEligible(_ saved: SavedDevice, listed: ListedDevice?) -> Bool {
-        guard saved.autoRefresh, saved.freeSlotsReserved != nil, let listed, listed.physical else { return false }
-        guard listed.transport == .network || listed.transport == .wired else { return false }
-        // Fail closed: only an explicitly `connected` link counts; `disconnected`, `unavailable` and any
-        // unrecognised state do not (visibility alone treats everything but `unavailable` as ok).
-        return visibilityOf(listed) == .ok && listed.link == "connected"
+        autoReach(saved, listed: listed) != nil
     }
 
     // MARK: - Helpers

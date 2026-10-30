@@ -211,11 +211,8 @@ extension RefreshRun {
             for candidate in candidates { state.plans[index].results.append(stopped(candidate, stop, state.start, auto)) }
             return nil
         }
-        guard DeviceList.autoEligible(saved, listed: DeviceList.findSaved(listed, matching: saved)) else {
-            let skip = RefreshPolicy.AutoSkip.deviceNotVisible.code
-            for candidate in candidates {
-                state.plans[index].results.append(skipped(candidate.target, skip, candidate.expires, now: state.start, auto))
-            }
+        guard let reach = DeviceList.autoReach(saved, listed: DeviceList.findSaved(listed, matching: saved)) else {
+            notVisible(candidates, index, &state, probe: nil, auto)
             return nil
         }
 
@@ -224,13 +221,18 @@ extension RefreshRun {
         var installBlock: RefreshFailure?
         log("auto: reading the app list of \(RefreshLog.alias(alias))")
         let read = await steps.snapshot(services, alias, candidates[0].target.bundleId)
+        let readError = read.error ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read.")
         if let snapshot = read.snapshot {
             for candidate in candidates {
                 presence[candidate.target.app] = snapshot.ids.contains(candidate.target.bundleId) ? .present : .absent
             }
+        } else if reach == .probe {
+            // No live connection, and the call that would open one got no answer (locked, asleep, off the network): the
+            // device is not there for this run. Not an attempt, nothing provisioned; the code is logged for the owner.
+            notVisible(candidates, index, &state, probe: readError.code, auto)
+            return nil
         } else {
-            installBlock = RefreshFailure(
-                error: read.error ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read."))
+            installBlock = RefreshFailure(error: readError)
         }
 
         var entries: [Candidate] = []
@@ -260,6 +262,15 @@ extension RefreshRun {
                 deviceStop: &deviceStop, auto)
         }
         return nil
+    }
+
+    /// Every candidate of a device the run cannot reach is `DEVICE_NOT_VISIBLE`; `probe` is the failed app list's code, when
+    /// the app list was the probe.
+    private func notVisible(_ candidates: [Candidate], _ index: Int, _ state: inout AutoState, probe: String?, _ auto: RefreshAutoContext) {
+        let skip = RefreshPolicy.AutoSkip.deviceNotVisible.code
+        for candidate in candidates {
+            state.plans[index].results.append(skipped(candidate.target, skip, candidate.expires, now: state.start, probe: probe, auto))
+        }
     }
 
     /// One app of a device: the stops and the deadline, a fresh gate, the renewal, then what it means for the rest.
@@ -369,7 +380,8 @@ extension RefreshRun {
     /// A skipped result for an app, logged unless it is the quiet `NOT_DUE`. `stopped` marks a skip that a stop of the device or
     /// the run caused, as against one the app's own gates gave.
     private func skipped(
-        _ target: FreeTarget, _ code: String, _ expires: Date?, now: Date, stopped: Bool = false, _ auto: RefreshAutoContext
+        _ target: FreeTarget, _ code: String, _ expires: Date?, now: Date, stopped: Bool = false, probe: String? = nil,
+        _ auto: RefreshAutoContext
     ) -> AppResult {
         let result = AppResult.skipped(target.app, code: code, expires: expires, now: now)
         if code != RefreshPolicy.notDue {
@@ -378,6 +390,7 @@ extension RefreshRun {
             ]
             if let days = result.daysLeftBefore { fields["daysLeft"] = RefreshLog.int(days) }
             if stopped { fields["stopped"] = true }
+            if let probe { fields["probe"] = .string(probe) }
             auto.log.record("install", fields)
         }
         return result
