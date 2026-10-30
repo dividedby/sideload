@@ -7,6 +7,10 @@ All notable changes to this project are documented here. Format follows
 
 ### Changed
 
+- Docs: atvloadly is retired. It was stopped and its Stremio copy removed from the Apple TV on 2026-10-24, and the
+  owner deleted its OrbStack VM `atv` on 2026-10-30. AGENTS.md, README, design section 18 (a step 7 on the takeover
+  checklist) and `docs/research/tvos-install.md` now say sideload serves the Apple TV, and the agent rules about
+  touching atvloadly or `atv` are replaced by one: never set atvloadly up again.
 - Docs: spike S5 passed on 2026-10-30. A manual `refresh` renewed Apollo on the locked Wi-Fi iPhone (provision with its
   one `--renew` retry, sign and install, about 55 s, no new App ID, no keychain dialog); README and design section 18
   no longer call it open.

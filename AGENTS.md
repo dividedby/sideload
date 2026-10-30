@@ -18,7 +18,7 @@ team) before changing anything.
   and 7-day profiles only for `io.github.dividedby.free.*`. It never creates, revokes or exports a certificate of
   that team (a changed free identity set after a build is a hard stop). It never installs, uninstalls, re-signs
   or launches any bundle ID outside `io.github.dividedby.free.*` (WebDriverAgent and atvloadly's apps included),
-  and never touches mobile-safari-lab, atvloadly or the `atv` VM. `canary`, `export-cert`, `portal` and the
+  and never touches mobile-safari-lab. `canary`, `export-cert`, `portal` and the
   ledger's certificate/profile lists stay paid-only. Signing code matches identities by certificate OU, never by
   name. `provision`, `sign`, `install`, `refresh` (manual), `refresh --auto`, `app remove`, `slot restore` and `slot lend|return` are built (owner-run, or run by the lab for `slot lend|return`; `refresh --auto` is the command the owner's launchd agent runs, and agents never run it on a real device; `refresh --print-agent` is built and pure (no lock, subprocess or write), so an agent may run it, but only the owner runs the `launchctl` commands it prints, see `docs/design.md` section 18). `refresh` runs `provision`, `sign` and `install`, each taking `.op.lock` itself, and spends no new App ID on a renewal.
 - **One lock for the free team.** `$SIDELOAD_HOME/.op.lock` is the shared operation lock for any signing with
@@ -30,13 +30,12 @@ team) before changing anything.
 
 ## Apple TV
 
-- atvloadly (Docker in the OrbStack VM `atv`) serves the Apple TV today with the free Apple ID. Don't stop,
-  change, or re-pair atvloadly or the `atv` VM, and don't route the paid account through it.
-- The owner pairs the Apple TV in Xcode and stops atvloadly's Stremio refresh; agents never pair or unpair
-  devices and never touch atvloadly/`atv`. The route is Xcode pairing on the Mac + `xcrun devicectl`, with the
-  free team (side by side with atvloadly's copy under a distinct bundle ID) or the paid team once the canary
-  reports `working`. Migration off atvloadly needs owner sign-off (`docs/research/tvos-install.md`, the takeover
-  checklist in `docs/design.md` section 18).
+- sideload has served the Apple TV (`io.github.dividedby.free.stremio`, free team) since 2026-10-24. atvloadly (Docker
+  in the OrbStack VM `atv`) is retired: stopped and its Stremio copy removed from the Apple TV on 2026-10-24, the
+  `atv` VM deleted by the owner on 2026-10-30. Never set atvloadly up again or run it with the owner's Apple ID, and
+  leave OrbStack itself alone (other projects use its Docker).
+- The route is Xcode pairing on the Mac + `xcrun devicectl`, with the free team, or the paid team once the canary
+  reports `working`. The owner pairs the Apple TV in Xcode; agents never pair or unpair devices.
 
 ## Secrets
 
@@ -61,7 +60,7 @@ team) before changing anything.
 
 - Deleting anything from the keychain or the developer portal.
 - Installing anything system-wide, or anything that needs root/elevated privileges.
-- Pairing changes, atvloadly changes, and any new download source.
+- Pairing changes and any new download source.
 - Running `canary`, `provision`, `sign`, `install` or `refresh` (any mode) on a real device, from the CLI or from the menu
   bar app's buttons (they change the portal and/or the device), and `app remove` (it uninstalls one managed install to free a slot; owner-only, allowlisted
   to `io.github.dividedby.free.*`, `--yes` is the owner's), and `slot restore` (the owner's retry of an app-data restore: it
