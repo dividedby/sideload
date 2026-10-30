@@ -8,7 +8,8 @@ All notable changes to this project are documented here. Format follows
 ### Changed
 
 - Docs: spike S5 passed on 2026-10-30. A manual `refresh` renewed Apollo on the locked Wi-Fi iPhone (provision with its
-  one `--renew` retry, sign and install, about 55 s, no new App ID); README and design section 18 no longer call it open.
+  one `--renew` retry, sign and install, about 55 s, no new App ID, no keychain dialog); README and design section 18
+  no longer call it open.
 
 ## [0.4.0] - 2026-10-30
 
