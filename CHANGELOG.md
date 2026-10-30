@@ -5,6 +5,15 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-30
+
+Auto-refresh that reaches a Wi-Fi iPhone, and a backstop for when it cannot: `refresh --auto` now probes a paired
+device that devicectl lists as `disconnected` (an idle Wi-Fi iPhone) instead of skipping it, and its first automatic
+renewal and notification (spike S9) passed on 2026-10-30. `status --notify`, run daily by a second launchd agent from
+`status --print-agent`, notifies once per threshold when a free install, a paid certificate or profile nears expiry or
+an app-data restore is waiting. `device remove` retires a saved device. CLI changes in behaviour: `device list` shows a
+`disconnected` device over Wi-Fi or USB as `autoEligible`, and `status --notify` writes `lastNotified` to `config.json`.
+
 ### Added
 
 - `sideload status --notify` and `sideload status --print-agent`: a daily expiry notification, the backstop for
@@ -38,8 +47,8 @@ All notable changes to this project are documented here. Format follows
   `provision`, `sign` and `install` first ran on 2026-10-24, and the S2 and S7 spikes passed. `refresh` first ran on
   2026-10-28 from the menu's Renew…, while spike S5 (a run with the iPhone locked) is still open. The auto-refresh
   agent has run since 2026-10-29, and spike S9 (its first renewal and notification) passed on 2026-10-30: with the
-  Wi-Fi fix below installed, it renewed stremio-ios on the iPhone over Wi-Fi in 53 s and posted its notification. `export-cert` and
-  `slot restore` have still not been run.
+  Wi-Fi fix under Fixed installed, it renewed stremio-ios on the iPhone over Wi-Fi in 53 s and posted its
+  notification. `export-cert` and `slot restore` have still not been run.
 
 ## [0.3.0] - 2026-10-29
 
@@ -921,6 +930,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
 - The CLI no longer crashes with an `EPIPE` stack trace when its stdout reader closes early
   (e.g. `sideload doctor | head`).
 
-[Unreleased]: https://github.com/dividedby/sideload/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/dividedby/sideload/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/dividedby/sideload/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/dividedby/sideload/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dividedby/sideload/releases/tag/v0.2.0
