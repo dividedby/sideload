@@ -37,7 +37,8 @@ All notable changes to this project are documented here. Format follows
 - Docs: README's command table and the owner spikes in `docs/design.md` section 18 now say what has run on the real Mac.
   `provision`, `sign` and `install` first ran on 2026-10-24, and the S2 and S7 spikes passed. `refresh` first ran on
   2026-10-28 from the menu's Renew…, while spike S5 (a run with the iPhone locked) is still open. The auto-refresh
-  agent has run since 2026-10-29, while spike S9 (its first renewal and notification) is still open. `export-cert` and
+  agent has run since 2026-10-29, and spike S9 (its first renewal and notification) passed on 2026-10-30: with the
+  Wi-Fi fix below installed, it renewed stremio-ios on the iPhone over Wi-Fi in 53 s and posted its notification. `export-cert` and
   `slot restore` have still not been run.
 
 ## [0.3.0] - 2026-10-29
