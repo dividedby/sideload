@@ -24,10 +24,30 @@ public enum StatusState: String, Sendable, Equatable {
 /// and the app fills it from `device list`. Free installs on saved devices join `items` (kind `install`, the 3 and 1 day
 /// levels) and `installs`, and warn once due; a pending app-data restore is a warning too. The app-data backups are
 /// secrets-class: only their manifests are read (`PendingRestores`), and only aliases and app names are printed.
+/// `status --notify` (`runNotify`, `StatusNotify.swift`) is the exception: it runs `osascript` and writes `lastNotified`.
 public enum StatusCommand {
     static let command = "status"
 
     public static func run(_ services: Services) -> Envelope {
+        let snapshot = gather(services)
+        return .result(command, snapshot.data.merging(["warnings": .array(snapshot.warnings)]) { $1 })
+    }
+
+    /// What one read of the local files found: the envelope's fields, and the parts `--notify` needs beyond them.
+    struct Snapshot {
+        var data: [String: JSONValue]
+        var warnings: [JSONValue]
+        /// Paid and (once the ledger and the config are both read) free-install items, soonest first.
+        var items: [ExpiryItem]
+        /// The app-data restores waiting; empty when they could not be looked up.
+        var pending: [PendingRestores.Entry]
+        /// The config as read; nil when it could not be read.
+        var config: Config?
+        /// True when the ledger and the config were both read, so `items` and `pending` are the whole picture.
+        var complete: Bool
+    }
+
+    static func gather(_ services: Services) -> Snapshot {
         let now = services.clock.now()
         var warnings: [JSONValue] = []
 
@@ -119,6 +139,7 @@ public enum StatusCommand {
         // Free installs: only with both the ledger and the config read (the config says which devices are still saved).
         var installs: JSONValue = .null
         var pendingRestores: JSONValue = .null
+        var pendingFound: [PendingRestores.Entry] = []
         if ledgerReadable, let config = loadedConfig {
             let saved = Set(config.devices.keys)
             items = (items + ExpiryItems.installs(projected, devices: saved, now: now))
@@ -130,6 +151,7 @@ public enum StatusCommand {
                 if let w = Self.expiryWarning(install, now: now) { warnings.append(w) }
             }
             let pending = PendingRestores.find(services, config: config, ledger: ledgerRead, now: now)
+            pendingFound = pending
             pendingRestores = .array(pending.map { ["device": .string($0.device), "app": .string($0.app)] })
             for entry in pending {
                 let e = PendingRestores.warning(entry)
@@ -138,23 +160,23 @@ public enum StatusCommand {
         }
 
         let state = StatusState.worst(canaryStatus: canaryStatus, items: items)
-        return .result(
-            command,
-            [
-                "generated": .string(LedgerDates.string(now)),
-                "state": .string(state.rawValue),
-                "canary": .object(canary),
-                "items": .array(items.map(\.json)),
-                "ledger": ["updated": ledgerUpdated, "present": .bool(ledgerPresent)],
-                "devices": .array(devices),
-                "apps": .array(apps),
-                "lent": ledgerReadable ? .array(lent) : .null,
-                "slots": ["devices": .array(slotDevices), "appIdsLast7Days": appIdsLast7Days],
-                "appIdsLast7Days": appIdsLast7Days,
-                "installs": installs,
-                "pendingRestores": pendingRestores,
-                "warnings": .array(warnings),
-            ])
+        let data: [String: JSONValue] = [
+            "generated": .string(LedgerDates.string(now)),
+            "state": .string(state.rawValue),
+            "canary": .object(canary),
+            "items": .array(items.map(\.json)),
+            "ledger": ["updated": ledgerUpdated, "present": .bool(ledgerPresent)],
+            "devices": .array(devices),
+            "apps": .array(apps),
+            "lent": ledgerReadable ? .array(lent) : .null,
+            "slots": ["devices": .array(slotDevices), "appIdsLast7Days": appIdsLast7Days],
+            "appIdsLast7Days": appIdsLast7Days,
+            "installs": installs,
+            "pendingRestores": pendingRestores,
+        ]
+        return Snapshot(
+            data: data, warnings: warnings, items: items, pending: pendingFound, config: loadedConfig,
+            complete: ledgerReadable && loadedConfig != nil)
     }
 
     /// The free team's slots per saved device, from the ledger and the config only (no devicectl): every used slot record

@@ -7,6 +7,13 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
+- `sideload status --notify` and `sideload status --print-agent`: a daily expiry notification, the backstop for
+  auto-refresh (which skips a device it cannot see without notifying). The owner loads a second launchd agent
+  (`io.github.dividedby.sideload.status`, 09:00 daily and once at load) from `status --print-agent`. One notification
+  per run lists every item that first crossed a threshold: a free install at 3 days, 1 day or expired, a paid
+  certificate or profile at 60 days, 14 days or expired, and a pending app-data restore. Each is announced once per
+  threshold (`lastNotified` in `config.json`, written only after the notification was posted; a renewal re-arms it).
+  No lock, device, keychain or portal. `AgentPlist` now builds both agents; the refresh plist is unchanged.
 - `sideload device remove --alias <alias> --yes` (owner-only) retires a saved device without editing `config.json` by
   hand. Under `.op.lock` it drops the alias's records from `ledger.json`, deletes its cached profiles and signed builds,
   then removes its config entry. It also cleans up an alias that is only left in the ledger or in leftover folders, so a

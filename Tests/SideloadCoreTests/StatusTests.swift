@@ -206,8 +206,8 @@ struct StatusTests {
         #expect(w.json["state"] == "ok")
     }
 
-    @Test("--notify, --print-agent and --warn-days are USAGE", arguments: ["--notify", "--print-agent", "--warn-days"])
-    func deferredFlags(flag: String) async throws {
+    @Test("--warn-days is USAGE (--notify and --print-agent are built: StatusNotifyTests)", arguments: ["--warn-days"])
+    func unknownFlags(flag: String) async throws {
         let w = try await invoke(["status", flag])
         #expect(!w.envelope.ok && w.code == "USAGE")
         #expect(w.runner.calls.isEmpty)
