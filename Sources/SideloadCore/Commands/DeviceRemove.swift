@@ -40,9 +40,11 @@ enum DeviceRemove {
         let config = try services.store.load()
         let inConfig = config.devices[alias] != nil
         let ledger = try services.ledgerStore.load()
-        guard inConfig || hasRecords(ledger, alias: alias) else {
+        // Folders count too: a run that died after the ledger write left an alias with only those.
+        guard inConfig || hasRecords(ledger, alias: alias) || !aliasFolders(services.home, alias: alias).paths.isEmpty else {
             throw SideloadError(
-                "DEVICE_NOT_SAVED", "No saved device with alias \"\(alias)\", and the ledger holds nothing for it.",
+                "DEVICE_NOT_SAVED",
+                "No saved device with alias \"\(printableAlias(alias))\", and nothing is left for it in the ledger or on disk.",
                 fix: "sideload device list")
         }
 
@@ -183,18 +185,32 @@ enum DeviceRemove {
         return nil
     }
 
-    /// An app-data restore still waiting (`AppDataBackup.pending`, what `PendingRestores` reports) for an app of this saved
-    /// device. Read straight from the disk without `PendingRestores`' settle-window skip: under the lock no return is running.
-    /// An alias that is only in the ledger has no UDID or platform to resolve, so nothing is checked for it.
+    /// An app-data restore still waiting (`AppDataBackup.pending`, what `PendingRestores` reports) for any app of this alias,
+    /// saved or not: a backup is bound to the alias folder and the bundle ID, so a pending one left behind would otherwise be
+    /// restored onto a new device saved under the same alias. Read straight from the disk without `PendingRestores`'
+    /// settle-window skip: under the lock no return is running. Needs the bundle ID prefix; without a valid one the check
+    /// cannot run, and backups present refuse (`restore_unknown`) rather than being skipped.
     static func pendingRestore(_ services: Services, config: Config, alias: String) -> SideloadError? {
-        guard config.devices[alias] != nil else { return nil }
         let name = printableAlias(alias)
+        guard let prefix = config.bundleIdPrefix, CanaryCommand.isValidPrefix(prefix),
+            Config.isFreeBundleId(prefix + ".free.x", prefix: prefix)
+        else {
+            guard backupCount(services, alias: alias) > 0 else { return nil }
+            return SideloadError(
+                "DEVICE_BUSY",
+                "Saved app-data backups exist for device \"\(name)\", and bundleIdPrefix in config.json is missing or invalid, so whether a restore is waiting cannot be checked.",
+                fix: "Set \"bundleIdPrefix\" in $SIDELOAD_HOME/config.json, then retry.",
+                data: ["alias": .string(alias), "reason": "restore_unknown"])
+        }
         for app in ProvisionApp.allCases.sorted(by: { $0.rawValue < $1.rawValue }) {
-            guard let target = try? FreeTarget.resolve(app: app, alias: alias, config: config) else { continue }
-            if case .found = AppDataBackup.pending(services, target) {
+            let found = AppDataBackup.pending(
+                services, alias: alias, app: app.rawValue, bundleId: prefix + ".free." + app.suffix)
+            if case .found = found {
                 return SideloadError(
                     "DEVICE_BUSY", "Saved app data of \(app.rawValue) on device \"\(name)\" is waiting to be restored.",
-                    fix: "The owner runs `sideload slot restore --device \(name) --app \(app.rawValue) --yes`; retry after that.",
+                    fix: config.devices[alias] != nil
+                        ? "The owner runs `sideload slot restore --device \(name) --app \(app.rawValue) --yes`; retry after that."
+                        : "This alias is no longer saved, so `slot restore` cannot run for it. If the data is not wanted, the owner deletes backups/\(name)/\(app.rawValue) by hand; then retry.",
                     data: ["alias": .string(alias), "reason": "restore_pending", "app": .string(app.rawValue)])
             }
         }
@@ -217,36 +233,46 @@ enum DeviceRemove {
 
     // MARK: files
 
-    /// Deletes `profiles/free/<app>/<alias>/` and `builds/signed/<app>/<alias>/` for every `<app>` folder present. Every parent
-    /// must be a real folder (`lstat`), so nothing outside the home is reached; the alias entry itself, if a link, is unlinked,
-    /// never followed. Returns the entries deleted and the app folders skipped for being links.
-    private static func deleteDirectories(_ home: Paths, alias: String) throws -> (deleted: Int, skipped: Int) {
-        var deleted = 0
-        var skipped = 0
+    /// The folders `profiles/free/<app>/<alias>` and `builds/signed/<app>/<alias>` for every `<app>` folder present. Every
+    /// parent must be a real folder (`lstat`), so nothing outside the home is reached; the alias entry itself, if a link, is
+    /// listed to be unlinked, never followed. `links` counts the app folders and roots skipped for being links (a stray regular
+    /// file such as `.DS_Store` is ignored).
+    static func aliasFolders(_ home: Paths, alias: String) -> (paths: [String], links: Int) {
+        var paths: [String] = []
+        var links = 0
         for root in [home.freeProfiles, home.signedBuilds] {
             guard let parent = realParents(of: root, home: home.home) else {
-                if exists(root) { skipped += 1 }
+                if behindLink(root, home: home.home) { links += 1 }
                 continue
             }
             for app in names(in: parent) {
                 let appDir = parent + "/" + app
                 guard isRealDirectory(appDir) else {
-                    if exists(appDir) { skipped += 1 }
+                    if isLink(appDir) { links += 1 }
                     continue
                 }
                 let target = appDir + "/" + alias
-                guard exists(target) else { continue }
-                do {
-                    try FileManager.default.removeItem(atPath: target)
-                } catch {
-                    throw SideloadError(
-                        "DEVICE_REMOVE_INCOMPLETE", "A folder of this alias could not be deleted.",
-                        fix: "Check the permissions under $SIDELOAD_HOME, then re-run `sideload device remove`; the ledger records are already gone.")
-                }
-                deleted += 1
+                if exists(target) { paths.append(target) }
             }
         }
-        return (deleted, skipped)
+        return (paths, links)
+    }
+
+    /// Deletes what `aliasFolders` lists. Returns the entries deleted and the links skipped.
+    private static func deleteDirectories(_ home: Paths, alias: String) throws -> (deleted: Int, skipped: Int) {
+        let found = aliasFolders(home, alias: alias)
+        var deleted = 0
+        for target in found.paths {
+            do {
+                try FileManager.default.removeItem(atPath: target)
+            } catch {
+                throw SideloadError(
+                    "DEVICE_REMOVE_INCOMPLETE", "A folder of this alias could not be deleted.",
+                    fix: "Check the permissions under $SIDELOAD_HOME, then re-run `sideload device remove`; the ledger records are already gone.")
+            }
+            deleted += 1
+        }
+        return (deleted, found.links)
     }
 
     /// `root` when it and every folder between the home and it are real folders, else nil.
@@ -267,6 +293,22 @@ enum DeviceRemove {
     private static func isRealDirectory(_ path: String) -> Bool {
         var st = stat()
         return lstat(path, &st) == 0 && st.st_mode & S_IFMT == S_IFDIR
+    }
+
+    private static func isLink(_ path: String) -> Bool {
+        var st = stat()
+        return lstat(path, &st) == 0 && st.st_mode & S_IFMT == S_IFLNK
+    }
+
+    /// Whether `path` is cut off by a link: it, or a folder between the home and it, is one.
+    private static func behindLink(_ path: String, home: String) -> Bool {
+        guard path.hasPrefix(home + "/") else { return false }
+        var current = home
+        for part in path.dropFirst(home.count).split(separator: "/") {
+            current += "/" + part
+            if isLink(current) { return true }
+        }
+        return false
     }
 
     private static func exists(_ path: String) -> Bool {

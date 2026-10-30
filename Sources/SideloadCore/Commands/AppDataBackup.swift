@@ -429,7 +429,11 @@ enum AppDataBackup {
     }
 
     private static func appDirectory(_ services: Services, _ target: FreeTarget) -> String {
-        "\(services.home.backups)/\(target.alias)/\(target.app.rawValue)"
+        appDirectory(services, alias: target.alias, app: target.app.rawValue)
+    }
+
+    private static func appDirectory(_ services: Services, alias: String, app: String) -> String {
+        "\(services.home.backups)/\(alias)/\(app)"
     }
 
     private static func removeTree(_ path: String) {
@@ -627,9 +631,13 @@ enum AppDataBackup {
     /// The manifest of `directory` (a finished backup folder), only when the folder and the file are real, not links, and the
     /// manifest reads and is for this app's bundle ID. Nothing is followed.
     private static func trustedManifest(in directory: String, _ services: Services, _ target: FreeTarget) -> Manifest? {
+        trustedManifest(in: directory, services, bundleId: target.bundleId)
+    }
+
+    private static func trustedManifest(in directory: String, _ services: Services, bundleId: String) -> Manifest? {
         let root = services.home.backups
         guard isPlain(directory, root: root, regularFile: false), isPlain(directory + "/manifest.json", root: root, regularFile: true),
-            let manifest = readManifest(in: directory), manifest.bundleId == target.bundleId
+            let manifest = readManifest(in: directory), manifest.bundleId == bundleId
         else { return nil }
         return manifest
     }
@@ -679,7 +687,13 @@ enum AppDataBackup {
     /// read, listed or `lstat`ed, or that is a link at any level, is `unreadable`, never "no backup": only a real folder chain
     /// that stops at a missing part, or an app folder with no finished backup in it, is that.
     static func pending(_ services: Services, _ target: FreeTarget) -> PendingBackup {
-        let base = appDirectory(services, target)
+        pending(services, alias: target.alias, app: target.app.rawValue, bundleId: target.bundleId)
+    }
+
+    /// The same check from the parts a backup is bound to (alias, app folder, bundle ID), for a caller with no saved device to
+    /// resolve (`device remove` of an alias that is only in the ledger).
+    static func pending(_ services: Services, alias: String, app: String, bundleId: String) -> PendingBackup {
+        let base = appDirectory(services, alias: alias, app: app)
         let root = services.home.backups
         switch walk(base, root: root) {
         case .missing: return .nothing()
@@ -689,7 +703,7 @@ enum AppDataBackup {
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: base) else { return .nothing(unreadable: true) }
         guard let name = finished(names).first else { return .nothing() }
         let directory = base + "/" + name
-        guard let manifest = trustedManifest(in: directory, services, target) else { return .nothing(unreadable: true) }
+        guard let manifest = trustedManifest(in: directory, services, bundleId: bundleId) else { return .nothing(unreadable: true) }
         let readable = manifest.files.allSatisfy { entry in
             guard let local = localPath(directory, entry.path, services: services) else { return false }
             return isPlain(local, root: root, regularFile: true) && canOpen(local)

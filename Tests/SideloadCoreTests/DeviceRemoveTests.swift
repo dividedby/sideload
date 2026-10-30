@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 
@@ -253,6 +254,36 @@ struct DeviceRemoveTests {
         }
     }
 
+    @Test("a pending restore of an alias that is no longer saved still refuses, and the fix does not suggest slot restore")
+    func pendingRestoreUnsavedAlias() async throws {
+        var script = DeviceScript(initial: [stremioId: true])
+        script.container = [prefs: Data((sentinel + "prefs").utf8)]
+        try await withInstallWorld(
+            script: script, lendable: "stremio-ios", ledger: { $0.installs = [installRecord(.stremioIOS)] }
+        ) { w in
+            #expect(await w.slot("lend", device: "iphone", to: "lab").ok)
+            var failing = script
+            failing.dataFaults.copyToFails = [prefs]
+            w.runner.arm(failing)
+            #expect(await w.slot("return", device: "iphone").ok)
+            _ = try await w.store.update { $0.devices.removeValue(forKey: "iphone") }
+            try await expectRefused(w, reason: "restore_pending", fixContains: "no longer saved")
+        }
+    }
+
+    @Test("backups present and no readable bundleIdPrefix: restore_unknown refuses; without backups the check is not needed")
+    func restoreUnknown() async throws {
+        try await withInstallWorld(ledger: populate) { w in
+            try lay(w)
+            _ = try await w.store.update { $0.bundleIdPrefix = nil }
+            try await expectRefused(w, reason: "restore_unknown", fixContains: "bundleIdPrefix")
+            // The Apple TV has no backups.
+            #expect(await w.removeDevice("appletv").errorCodes == ["CONFIRM_REQUIRED"])
+            _ = try await w.store.update { $0.bundleIdPrefix = "not a prefix!" }
+            try await expectRefused(w, reason: "restore_unknown", fixContains: "bundleIdPrefix")
+        }
+    }
+
     // MARK: remove
 
     @Test("--yes drops the alias's records and files, keeps everyone else's and the backups, and forgets present installs")
@@ -419,6 +450,53 @@ struct DeviceRemoveTests {
             #expect(json(out)["removed"]?["installs"] == 0)
             #expect(json(out)["removed"]?["dirsDeleted"] == 4)
             #expect(try w.config().devices["iphone"] == nil)
+        }
+    }
+
+    @Test("a failed folder delete on a ledger-only alias is finished by a rerun, which still accepts the alias")
+    func rerunAfterIncomplete() async throws {
+        try await withInstallWorld(ledger: addGhost) { w in
+            try lay(w, aliases: ["iphone", "oldphone"])
+            let locked = w.paths.freeProfiles + "/stremio-ios"
+            #expect(chmod(locked, 0o500) == 0)
+            defer { _ = chmod(locked, 0o700) }
+            let failed = await w.removeDevice("oldphone", yes: true)
+            #expect(failed.errorCodes == ["DEVICE_REMOVE_INCOMPLETE"], "\(failed.errors)")
+            let ledger = try w.ledger()
+            #expect(!ledger.installs.contains { $0.device == "oldphone" }, "the records went first")
+            #expect(chmod(locked, 0o700) == 0)
+            let again = await w.removeDevice("oldphone", yes: true)
+            #expect(again.ok, "\(again.errors)")
+            #expect(json(again)["removed"]?["fromConfig"] == false)
+            #expect(json(again)["removed"]?["dirsDeleted"] == 1)
+            #expect(await w.removeDevice("oldphone", yes: true).errorCodes == ["DEVICE_NOT_SAVED"])
+        }
+    }
+
+    @Test("an alias with leftover folders only is accepted")
+    func leftoverFoldersOnly() async throws {
+        try await withInstallWorld(ledger: populate) { w in
+            try lay(w, aliases: ["iphone", "ghost"])
+            let preview = await w.removeDevice("ghost")
+            #expect(preview.errorCodes == ["CONFIRM_REQUIRED"])
+            #expect(json(preview)["preview"]?["installs"] == 0)
+            let out = await w.removeDevice("ghost", yes: true)
+            #expect(out.ok, "\(out.errors)")
+            #expect(json(out)["removed"]?["dirsDeleted"] == 2 && json(out)["removed"]?["fromConfig"] == false)
+            #expect(await w.removeDevice("ghost", yes: true).errorCodes == ["DEVICE_NOT_SAVED"])
+        }
+    }
+
+    @Test("stray regular files beside the app folders are ignored: no DIRECTORY_SKIPPED")
+    func strayFiles() async throws {
+        try await withInstallWorld(ledger: populate) { w in
+            try lay(w)
+            try write("x", to: w.paths.freeProfiles + "/.DS_Store")
+            try write("x", to: w.paths.signedBuilds + "/.DS_Store")
+            let out = await w.removeDevice(yes: true)
+            #expect(out.ok, "\(out.errors)")
+            #expect(!warningCodes(out).contains("DIRECTORY_SKIPPED"))
+            #expect(FileManager.default.fileExists(atPath: w.paths.freeProfiles + "/.DS_Store"))
         }
     }
 
