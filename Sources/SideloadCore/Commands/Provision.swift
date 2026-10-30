@@ -889,7 +889,7 @@ private struct ProvisionRun {
         return fail(
             "FREE_CERT_CHANGED",
             "The free team's signing identities changed \(when) (\(change.addedFp8.count) added, \(change.removedFp8.count) removed). Nothing was stored.",
-            "\(suspendedText) The owner checks Xcode > Settings > Accounts > Manage Certificates, atvloadly and the lab (something created or revoked a free certificate). sideload never creates or revokes one. Run provision by hand once satisfied.",
+            "\(suspendedText) The owner checks Xcode > Settings > Accounts > Manage Certificates and the lab (something created or revoked a free certificate). sideload never creates or revokes one. Run provision by hand once satisfied.",
             extra)
     }
 

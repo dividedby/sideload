@@ -265,7 +265,7 @@ private struct SignRun {
             return fail(
                 "FREE_CERT_CHANGED",
                 "The free team's signing identities changed during an earlier run that did not finish (\(change.addedFp8.count) added, \(change.removedFp8.count) removed). Nothing was signed.",
-                "Auto-refresh is suspended. The owner checks Xcode > Settings > Accounts > Manage Certificates, atvloadly and the lab (something created or revoked a free certificate). Run provision by hand once satisfied.",
+                "Auto-refresh is suspended. The owner checks Xcode > Settings > Accounts > Manage Certificates and the lab (something created or revoked a free certificate). Run provision by hand once satisfied.",
                 [
                     "identityChanged": true, "suspended": true,
                     "addedFp8": .array(change.addedFp8.map { .string($0) }),

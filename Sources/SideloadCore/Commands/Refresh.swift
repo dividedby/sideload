@@ -221,7 +221,7 @@ struct RefreshRun {
             throw SideloadError(
                 suspension.code == "IDENTITY_CHECK_FAILED" ? "IDENTITY_CHECK_FAILED" : "FREE_CERT_CHANGED",
                 "The free team's signing identities changed earlier (\(suspension.addedFp8.count) added, \(suspension.removedFp8.count) removed), so refresh does nothing.",
-                fix: "The owner checks Xcode > Settings > Accounts > Manage Certificates, atvloadly and the lab, then runs `sideload provision` by hand; a successful one clears the suspension. refresh never clears it.",
+                fix: "The owner checks Xcode > Settings > Accounts > Manage Certificates and the lab, then runs `sideload provision` by hand; a successful one clears the suspension. refresh never clears it.",
                 data: ["suspended": true, "device": .string(alias)])
         }
         let book = SlotBook(services: services, config: config, alias: alias)
