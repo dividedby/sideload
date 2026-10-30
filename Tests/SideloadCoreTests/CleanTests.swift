@@ -123,6 +123,7 @@ struct CleanBackupsTests {
             try w.backup(stamp: "20260101T000003Z", superseded: -13)  // kept
             try w.backup(stamp: "20260101T000004Z", superseded: -15)  // deleted
             try w.backup(stamp: "20260101T000005Z", restored: -14)  // exactly 14 days: not "more than"
+            try w.backup(stamp: "20260101T000010Z", restored: -14 - 1.0 / 86_400)  // 14 days and a second: deleted
             try w.backup(stamp: "20260101T000006Z", created: -60, restored: -1)  // old backup, recent restore: kept
             try w.backup(stamp: "20260101T000007Z", created: -1, restored: -15)  // new backup, old marker: deleted
             try w.backup(stamp: "20260101T000008Z", restored: -20, superseded: -2)  // the later marker counts: kept
@@ -130,8 +131,8 @@ struct CleanBackupsTests {
             let out = w.clean(yes: true)
             #expect(out.ok && out.exitCode == 0, "\(out.errors)")
             #expect(w.names() == [1, 3, 5, 6, 8, 9].map { "20260101T00000\($0)Z" })
-            #expect(number(out, "backups", "deleted") == 3 && number(out, "backups", "kept") == 6)
-            #expect(json(out)["backups"]?["byReason"] == ["restored": 2, "superseded": 1, "unsavedAlias": 0, "partial": 0])
+            #expect(number(out, "backups", "deleted") == 4 && number(out, "backups", "kept") == 6)
+            #expect(json(out)["backups"]?["byReason"] == ["restored": 3, "superseded": 1, "unsavedAlias": 0, "partial": 0])
             #expect(number(out, "backups", "unreadable") == 0 && number(out, "backups", "devicesSkippedBusy") == 0)
             #expect(json(out)["dryRun"] == false && json(out)["command"] == "clean")
             #expect(w.runner.calls.isEmpty)
@@ -194,7 +195,7 @@ struct CleanBackupsTests {
         }
     }
 
-    @Test("an alias that is no longer saved: the newest of createdAt, restoredAt and supersededAt decides, and emptied folders go")
+    @Test("an alias that is no longer saved: the newest of createdAt, restoredAt, supersededAt and uninstalledAt decides, and emptied folders go")
     func unsavedAlias() async throws {
         try await withInstallWorld { w in
             try w.backup("oldphone", stamp: "20260101T000001Z", created: -13)  // kept
@@ -202,14 +203,15 @@ struct CleanBackupsTests {
             try w.backup("oldphone", stamp: "20260101T000003Z", created: -20, uninstalled: -20)  // waiting for a restore that cannot run: deleted
             try w.backup("oldphone", stamp: "20260101T000004Z", created: -40, superseded: -2)  // kept
             try w.backup("oldphone", stamp: "20260101T000005Z", created: -40, restored: -3)  // kept
+            try w.backup("oldphone", stamp: "20260101T000006Z", created: -40, uninstalled: -2)  // uninstalledAt counts: kept
             try w.backup("gone", stamp: "20260101T000000Z", created: -30)
             let out = w.clean(yes: true)
             #expect(out.ok, "\(out.errors)")
-            #expect(w.names("oldphone") == [1, 4, 5].map { "20260101T00000\($0)Z" })
+            #expect(w.names("oldphone") == [1, 4, 5, 6].map { "20260101T00000\($0)Z" })
             #expect(!w.exists(w.paths.backups + "/gone"), "the emptied app and alias folders are removed")
             #expect(w.exists(w.paths.backups + "/oldphone/stremio-ios") && w.exists(w.paths.backups))
             #expect(json(out)["backups"]?["byReason"] == ["restored": 0, "superseded": 0, "unsavedAlias": 3, "partial": 0])
-            #expect(number(out, "backups", "deleted") == 3 && number(out, "backups", "kept") == 3)
+            #expect(number(out, "backups", "deleted") == 3 && number(out, "backups", "kept") == 4)
         }
     }
 

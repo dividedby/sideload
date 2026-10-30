@@ -75,30 +75,18 @@ public enum CleanCommand {
         return envelope(dryRun: !options.yes, backups: backups, downloads: downloads)
     }
 
+    // MARK: deleting
+
+    /// Deletes the folder at `path` only if it and every part between `root` and it is a real folder (`lstat`, nothing followed).
+    /// False when the chain is not plain or the removal failed.
+    static func removePlainFolder(_ path: String, root: String) -> Bool {
+        guard AppDataBackup.isPlain(path, root: root, regularFile: false) else { return false }
+        return (try? FileManager.default.removeItem(atPath: path)) != nil
+    }
+
     // MARK: output
 
     private static func envelope(dryRun: Bool, backups: CleanBackups.Counts, downloads: CleanDownloads.Plan) -> Envelope {
-        func number(_ value: Int) -> JSONValue { .number(Double(value)) }
-        var reasons: [String: JSONValue] = [:]
-        for reason in CleanBackups.Reason.allCases { reasons[reason.rawValue] = number(backups.byReason[reason] ?? 0) }
-        let backupObject: [String: JSONValue] = [
-            "deleted": number(backups.deleted), "kept": number(backups.kept), "unreadable": number(backups.unreadable),
-            "failed": number(backups.failed), "devicesSkippedBusy": number(backups.devicesSkippedBusy),
-            "linksSkipped": number(backups.linksSkipped), "byReason": .object(reasons),
-        ]
-        var perApp: [String: JSONValue] = [:]
-        for (app, counts) in downloads.apps {
-            perApp[app] = .object([
-                "versionsDeleted": number(counts.deleted), "versionsKept": number(counts.kept),
-                "bytesFreed": .number(Double(counts.bytesFreed)),
-            ])
-        }
-        let downloadObject: [String: JSONValue] = [
-            "versionsDeleted": number(downloads.deleted), "versionsKept": number(downloads.kept),
-            "bytesFreed": .number(Double(downloads.bytesFreed)), "versionsAlreadyGone": number(downloads.alreadyGone),
-            "skipped": number(downloads.skipped), "failed": number(downloads.failed), "apps": .object(perApp),
-        ]
-
         var warnings: [JSONValue] = []
         if backups.unreadable > 0 {
             warnings.append(
@@ -122,8 +110,8 @@ public enum CleanCommand {
                     "Check backups/ and downloads/ under $SIDELOAD_HOME."))
         }
         var data: [String: JSONValue] = [
-            "dryRun": .bool(dryRun), "retentionDays": number(retentionDays), "backups": .object(backupObject),
-            "downloads": .object(downloadObject), "warnings": .array(warnings),
+            "dryRun": .bool(dryRun), "retentionDays": .number(Double(retentionDays)), "backups": .object(backups.json),
+            "downloads": .object(downloads.json), "warnings": .array(warnings),
         ]
         if dryRun { data["next"] = .string("Nothing was deleted. The owner deletes with: sideload clean --yes") }
 

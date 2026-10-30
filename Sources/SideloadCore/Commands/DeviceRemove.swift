@@ -286,16 +286,16 @@ enum DeviceRemove {
         return root
     }
 
-    private static func names(in path: String) -> [String] {
+    static func names(in path: String) -> [String] {
         ((try? FileManager.default.contentsOfDirectory(atPath: path)) ?? []).sorted()
     }
 
-    private static func isRealDirectory(_ path: String) -> Bool {
+    static func isRealDirectory(_ path: String) -> Bool {
         var st = stat()
         return lstat(path, &st) == 0 && st.st_mode & S_IFMT == S_IFDIR
     }
 
-    private static func isLink(_ path: String) -> Bool {
+    static func isLink(_ path: String) -> Bool {
         var st = stat()
         return lstat(path, &st) == 0 && st.st_mode & S_IFMT == S_IFLNK
     }
@@ -311,7 +311,7 @@ enum DeviceRemove {
         return false
     }
 
-    private static func exists(_ path: String) -> Bool {
+    static func exists(_ path: String) -> Bool {
         var st = stat()
         return lstat(path, &st) == 0
     }

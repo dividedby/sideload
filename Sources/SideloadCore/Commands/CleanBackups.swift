@@ -28,6 +28,25 @@ enum CleanBackups {
         var devicesSkippedBusy = 0
         var linksSkipped = 0
         var byReason: [Reason: Int] = [:]
+
+        var json: [String: JSONValue] {
+            var reasons: [String: JSONValue] = [:]
+            for reason in Reason.allCases { reasons[reason.rawValue] = .number(Double(byReason[reason] ?? 0)) }
+            return [
+                "deleted": .number(Double(deleted)), "kept": .number(Double(kept)), "unreadable": .number(Double(unreadable)),
+                "failed": .number(Double(failed)), "devicesSkippedBusy": .number(Double(devicesSkippedBusy)),
+                "linksSkipped": .number(Double(linksSkipped)), "byReason": .object(reasons),
+            ]
+        }
+    }
+
+    /// What every folder of one app folder is judged against.
+    struct Context {
+        var services: Services
+        var saved: Bool
+        /// The folder `slot restore` would restore from, when it can be asked.
+        var pending: String?
+        var cutoff: Date
     }
 
     struct Plan: Equatable {
@@ -56,12 +75,11 @@ enum CleanBackups {
                     plan.counts.kept += entries.count
                     continue
                 }
-                let pending = saved ? pendingDirectory(services, config: config, alias: alias, app: app) : nil
+                let context = Context(
+                    services: services, saved: saved,
+                    pending: saved ? pendingDirectory(services, config: config, alias: alias, app: app) : nil, cutoff: cutoff)
                 for name in entries {
-                    let directory = appDir + "/" + name
-                    decide(
-                        directory, partial: name.hasSuffix(".partial"), saved: saved, pending: pending, cutoff: cutoff,
-                        services: services, plan: &plan)
+                    decide(appDir + "/" + name, partial: name.hasSuffix(".partial"), context, plan: &plan)
                 }
             }
             if busy && found > 0 { plan.counts.devicesSkippedBusy += 1 }
@@ -69,15 +87,14 @@ enum CleanBackups {
         return plan
     }
 
-    private static func decide(
-        _ directory: String, partial: Bool, saved: Bool, pending: String?, cutoff: Date, services: Services, plan: inout Plan
-    ) {
+    private static func decide(_ directory: String, partial: Bool, _ context: Context, plan: inout Plan) {
+        let (saved, pending, cutoff) = (context.saved, context.pending, context.cutoff)
         func doom(_ reason: Reason) {
             plan.doomed.append(Doomed(directory: directory, reason: reason))
             plan.counts.deleted += 1
             plan.counts.byReason[reason, default: 0] += 1
         }
-        let root = services.home.backups
+        let root = context.services.home.backups
         if partial {
             // Nothing writes one while the lock is held, so any left is abandoned; the age keeps the rule as cautious as the rest.
             if let stamp = modified(directory), stamp < cutoff { doom(.partial) } else { plan.counts.kept += 1 }
@@ -101,7 +118,8 @@ enum CleanBackups {
             }
             doom(latest.1)
         } else {
-            let newest = [manifest.createdAt, manifest.restoredAt, manifest.supersededAt].compactMap { $0 }.max() ?? manifest.createdAt
+            let newest = [manifest.createdAt, manifest.restoredAt, manifest.supersededAt, manifest.uninstalledAt].compactMap { $0 }.max()
+                ?? manifest.createdAt
             if newest < cutoff { doom(.unsavedAlias) } else { plan.counts.kept += 1 }
         }
     }
@@ -128,11 +146,9 @@ enum CleanBackups {
         let root = services.home.backups
         var parents = Set<String>()
         for item in plan.doomed {
-            do {
-                guard AppDataBackup.isPlain(item.directory, root: root, regularFile: false) else { throw CocoaError(.fileWriteUnknown) }
-                try FileManager.default.removeItem(atPath: item.directory)
+            if CleanCommand.removePlainFolder(item.directory, root: root) {
                 parents.insert(parentPath(item.directory))
-            } catch {
+            } else {
                 counts.deleted -= 1
                 counts.failed += 1
                 counts.byReason[item.reason, default: 0] -= 1
@@ -151,21 +167,18 @@ enum CleanBackups {
     /// The names of the real, non-hidden folders directly inside `directory`, sorted. Counts a link met (the folder itself or an
     /// entry) in `links`. Nothing inside is opened.
     private static func folders(in directory: String, root: String, links: inout Int) -> [String] {
-        var st = stat()
-        guard lstat(directory, &st) == 0 else { return [] }
-        if st.st_mode & S_IFMT == S_IFLNK {
+        if DeviceRemove.isLink(directory) {
             links += 1
             return []
         }
         guard AppDataBackup.isPlain(directory, root: root, regularFile: false) else { return [] }
-        let names = ((try? FileManager.default.contentsOfDirectory(atPath: directory)) ?? []).sorted()
         var found: [String] = []
-        for name in names where !name.hasPrefix(".") {
-            guard lstat(directory + "/" + name, &st) == 0 else { continue }
-            switch st.st_mode & S_IFMT {
-            case S_IFDIR: found.append(name)
-            case S_IFLNK: links += 1
-            default: break
+        for name in DeviceRemove.names(in: directory) where !name.hasPrefix(".") {
+            let path = directory + "/" + name
+            if DeviceRemove.isRealDirectory(path) {
+                found.append(name)
+            } else if DeviceRemove.isLink(path) {
+                links += 1
             }
         }
         return found

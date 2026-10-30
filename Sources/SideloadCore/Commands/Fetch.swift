@@ -69,6 +69,13 @@ private struct FetchRun {
     let registry: ScratchRegistry
     var store: ManifestStore { ManifestStore(paths: services.home) }
 
+    /// The entry's file is on disk and still hashes to the manifest's value. A pruned entry (`clean`) is not stored, whatever a
+    /// crash left behind: the download replaces it and clears the mark.
+    private func isStored(_ entry: ManifestEntry) -> Bool {
+        guard entry.prunedAt == nil, let stored = try? FileDigest.sha256(path: store.path(of: entry)) else { return false }
+        return stored.hex == entry.sha256
+    }
+
     // MARK: fetch
 
     func download() async throws -> [String: JSONValue] {
@@ -80,8 +87,7 @@ private struct FetchRun {
         let prior = manifest.entry(app: asset.app, version: asset.version)
         if let prior {
             guard prior.upstreamDigest == asset.upstreamDigest else { throw Self.contentChanged(asset) }
-            // A pruned entry (`clean`) is not stored, whatever a crash left behind: the download below replaces it and clears the mark.
-            if prior.prunedAt == nil, let stored = try? FileDigest.sha256(path: store.path(of: prior)), stored.hex == prior.sha256 {
+            if isStored(prior) {
                 services.log("fetch: \(asset.app) \(asset.version) is already stored")
                 // A file an earlier busy run kept for this digest is no longer needed.
                 if isHex(asset.upstreamDigest, count: 64, lowercaseOnly: true) { unlink(FetchStaging.path(digest: asset.upstreamDigest, tmp: services.home.tmp)) }
@@ -179,7 +185,7 @@ private struct FetchRun {
         if let prior {
             guard prior.upstreamDigest == asset.upstreamDigest else { throw Self.contentChanged(asset) }
             // Another fetch recorded this version while ours downloaded: keep theirs.
-            if prior.prunedAt == nil, let stored = try? FileDigest.sha256(path: store.path(of: prior)), stored.hex == prior.sha256 {
+            if isStored(prior) {
                 services.log("fetch: \(asset.app) \(asset.version) was stored by another run")
                 return Self.data(prior, store: store, downloaded: false, alreadyApproved: prior.approved, inspected: inspected)
             }

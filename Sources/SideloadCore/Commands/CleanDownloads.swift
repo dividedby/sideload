@@ -14,6 +14,18 @@ enum CleanDownloads {
         var deleted = 0
         var kept = 0
         var bytesFreed: Int64 = 0
+
+        var json: JSONValue {
+            .object([
+                "versionsDeleted": .number(Double(deleted)), "versionsKept": .number(Double(kept)),
+                "bytesFreed": .number(Double(bytesFreed)),
+            ])
+        }
+    }
+
+    struct Mark: Equatable {
+        var app: String
+        var version: String
     }
 
     struct Folder: Equatable {
@@ -25,7 +37,7 @@ enum CleanDownloads {
     struct Plan: Equatable {
         var apps: [String: AppCounts] = [:]
         /// Entries to mark `prunedAt` (not yet marked), as (app, version).
-        var marks: [[String]] = []
+        var marks: [Mark] = []
         /// Folders to delete, including those of entries a crashed run already marked.
         var folders: [Folder] = []
         /// Pruned entries whose folder was already gone (they are only marked).
@@ -33,6 +45,15 @@ enum CleanDownloads {
         /// Folders behind a link, and entries whose file path is not `<app>/<version>/<name>`: left alone, never marked.
         var skipped = 0
         var failed = 0
+
+        var json: [String: JSONValue] {
+            [
+                "versionsDeleted": .number(Double(deleted)), "versionsKept": .number(Double(kept)),
+                "bytesFreed": .number(Double(bytesFreed)), "versionsAlreadyGone": .number(Double(alreadyGone)),
+                "skipped": .number(Double(skipped)), "failed": .number(Double(failed)),
+                "apps": .object(apps.mapValues(\.json)),
+            ]
+        }
 
         var deleted: Int { apps.values.reduce(0) { $0 + $1.deleted } }
         var kept: Int { apps.values.reduce(0) { $0 + $1.kept } }
@@ -65,7 +86,7 @@ enum CleanDownloads {
                     // Gone by hand (or never there): the mark is all that is left to do. Nothing is deleted.
                     if errno == ENOENT {
                         if entry.prunedAt == nil {
-                            plan.marks.append([entry.app, entry.version])
+                            plan.marks.append(Mark(app: entry.app, version: entry.version))
                             plan.alreadyGone += 1
                         }
                     } else {
@@ -78,7 +99,7 @@ enum CleanDownloads {
                     continue
                 }
                 let bytes = treeBytes(folder)
-                if entry.prunedAt == nil { plan.marks.append([entry.app, entry.version]) }
+                if entry.prunedAt == nil { plan.marks.append(Mark(app: entry.app, version: entry.version)) }
                 plan.folders.append(Folder(app: entry.app, path: folder, bytes: bytes))
                 counts.deleted += 1
                 counts.bytesFreed += bytes
@@ -107,7 +128,7 @@ enum CleanDownloads {
     static func marked(_ manifest: Manifest, plan: Plan, at now: Date) -> Manifest {
         var copy = manifest
         for mark in plan.marks {
-            guard let index = copy.entries.firstIndex(where: { $0.app == mark[0] && $0.version == mark[1] }) else { continue }
+            guard let index = copy.entries.firstIndex(where: { $0.app == mark.app && $0.version == mark.version }) else { continue }
             copy.entries[index].prunedAt = now
         }
         return copy
@@ -119,10 +140,7 @@ enum CleanDownloads {
         var result = plan
         let downloads = services.home.downloads
         for folder in plan.folders {
-            do {
-                guard AppDataBackup.isPlain(folder.path, root: downloads, regularFile: false) else { throw CocoaError(.fileWriteUnknown) }
-                try FileManager.default.removeItem(atPath: folder.path)
-            } catch {
+            if !CleanCommand.removePlainFolder(folder.path, root: downloads) {
                 result.failed += 1
                 result.apps[folder.app]?.deleted -= 1
                 result.apps[folder.app]?.bytesFreed -= folder.bytes
