@@ -5,8 +5,16 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- `LICENSE` (MIT) and `CONTRIBUTING.md`: how to report issues (no device IDs, names or credentials) and send changes
+  (`scripts/check.sh`, the pre-commit secrets hook, merge commits), with a section of rules for AI agents that points at
+  `AGENTS.md`.
+
 ### Changed
 
+- Docs: README says who sideload is for (paid and free teams alike, one setup's team IDs to change in a fork; support
+  not guaranteed, contributions welcome) and adds license and Apple trademark notices. `package.json` names the license.
 - CLI text no longer says atvloadly serves the Apple TV: `doctor`'s Apple TV row for an unpaired device reads "not
   paired with this Mac (pair it in Xcode)", and the `FREE_CERT_CHANGED` fixes from `provision`, `sign`, `refresh`,
   `install`, `app remove`, `slot` and `slot restore` tell the owner to check Xcode's Manage Certificates and the lab,
