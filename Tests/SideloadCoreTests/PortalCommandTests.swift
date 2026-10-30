@@ -184,10 +184,10 @@ struct PortalCommandTests {
     @Test("help lists portal as built, with its usage line")
     func help() async throws {
         let out = try await invoke(["help"], script: allRows)
-        #expect(out.json["built"] == ["doctor", "device", "canary", "ledger", "portal", "export-cert", "status", "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot", "updates"])
+        #expect(out.json["built"] == ["doctor", "device", "canary", "ledger", "portal", "export-cert", "status", "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot", "updates", "clean"])
         let usage = out.json["usage"]?.array?.compactMap(\.string) ?? []
         #expect(usage.contains { $0.hasPrefix("portal") && $0.contains("--show-identifiers") })
-        #expect(out.json["commands"]?.array?.count == 16)
+        #expect(out.json["commands"]?.array?.count == 17)
         #expect(out.transport.requests.isEmpty)
     }
 }

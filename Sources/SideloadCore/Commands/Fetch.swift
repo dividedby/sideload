@@ -80,7 +80,8 @@ private struct FetchRun {
         let prior = manifest.entry(app: asset.app, version: asset.version)
         if let prior {
             guard prior.upstreamDigest == asset.upstreamDigest else { throw Self.contentChanged(asset) }
-            if let stored = try? FileDigest.sha256(path: store.path(of: prior)), stored.hex == prior.sha256 {
+            // A pruned entry (`clean`) is not stored, whatever a crash left behind: the download below replaces it and clears the mark.
+            if prior.prunedAt == nil, let stored = try? FileDigest.sha256(path: store.path(of: prior)), stored.hex == prior.sha256 {
                 services.log("fetch: \(asset.app) \(asset.version) is already stored")
                 // A file an earlier busy run kept for this digest is no longer needed.
                 if isHex(asset.upstreamDigest, count: 64, lowercaseOnly: true) { unlink(FetchStaging.path(digest: asset.upstreamDigest, tmp: services.home.tmp)) }
@@ -178,7 +179,7 @@ private struct FetchRun {
         if let prior {
             guard prior.upstreamDigest == asset.upstreamDigest else { throw Self.contentChanged(asset) }
             // Another fetch recorded this version while ours downloaded: keep theirs.
-            if let stored = try? FileDigest.sha256(path: store.path(of: prior)), stored.hex == prior.sha256 {
+            if prior.prunedAt == nil, let stored = try? FileDigest.sha256(path: store.path(of: prior)), stored.hex == prior.sha256 {
                 services.log("fetch: \(asset.app) \(asset.version) was stored by another run")
                 return Self.data(prior, store: store, downloaded: false, alreadyApproved: prior.approved, inspected: inspected)
             }
@@ -235,6 +236,11 @@ private struct FetchRun {
 
     /// The stored file must still hash to the manifest's value; then it is inspected.
     private func verifiedInspection(of entry: ManifestEntry) async throws -> Inspected {
+        if entry.prunedAt != nil {
+            throw SideloadError(
+                "IPA_PRUNED", "The fetched file for \(entry.app) \(printableCut(entry.version)) was deleted by `sideload clean`.",
+                fix: "Run `sideload fetch --app \(entry.app)` to download it again.")
+        }
         let path = try store.path(of: entry)
         guard let stored = try FileDigest.sha256(path: path) else {
             throw SideloadError(

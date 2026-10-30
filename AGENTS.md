@@ -70,6 +70,8 @@ team) before changing anything.
   clicks: the confirm click is the owner's `--yes`, Add app… and Update… run fetch, approve, provision, sign and install on a real device
   (their second confirm is the owner's approval of that exact version and file; Update… goes over an installed app), and agents never click them, never run the built app and never drive it
   (no computer-use clicks, no UI scripting), exactly as for the commands behind them.
+- `clean --yes` (it deletes app-data backups past 14 days and downloaded IPAs no longer needed; `--yes` is the owner's). `clean` without `--yes` is a preview that deletes
+  nothing and prints counts only; agents may run it. It takes `.op.lock`, so a busy lock is `OPERATION_IN_PROGRESS`.
 - `device remove --yes` (it retires a saved device: drops its config entry, ledger records, cached profiles and signed
   builds; it touches no device).
 - `device lendable` (it chooses which app the lab may borrow the slot of). `slot lend` and `slot return` are run by
