@@ -5,6 +5,17 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- `sideload device remove --alias <alias> --yes` (owner-only) retires a saved device without editing `config.json` by
+  hand. Under `.op.lock` it drops the alias's records from `ledger.json`, deletes its cached profiles and signed builds,
+  then removes its config entry. It also cleans up an alias that is only left in the ledger or in leftover folders, so a
+  new device saved under that alias does not inherit old records. It refuses (`DEVICE_BUSY`) while the lab holds a slot,
+  a device operation may be in flight, or an app-data restore is waiting under the alias (`restore_unknown` when no
+  valid `bundleIdPrefix` lets it check). Installs still recorded present are forgotten, not uninstalled, and
+  app-data backups are kept and counted. Without `--yes` it previews the counts. Touches no device and no portal.
+  `device save`'s `ALIAS_EXISTS` fix now points to it.
+
 ### Changed
 
 - Docs: README's command table and the owner spikes in `docs/design.md` section 18 now say what has run on the real Mac.
