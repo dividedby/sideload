@@ -74,6 +74,8 @@ struct TransportParsingTests {
 @Suite("autoEligible")
 struct AutoEligibleTests {
     private static let transports: [DeviceTransport] = [.network, .wired, .unknown]
+    /// The reach of an eligible device by its link; a link not here is never eligible.
+    private static let reach: [String: DeviceList.AutoReach] = ["connected": .connected, "disconnected": .probe]
 
     private func listed(
         transport: DeviceTransport, paired: Bool = true, link: String = "connected", physical: Bool = true
@@ -91,8 +93,7 @@ struct AutoEligibleTests {
                     for link in ["connected", "disconnected", "unavailable"] {
                         let saved = savedPhone(autoRefresh: optIn)
                         let entry = listed(transport: transport, paired: paired, link: link)
-                        let reach: DeviceList.AutoReach? = link == "connected" ? .connected : link == "disconnected" ? .probe : nil
-                        let expected = optIn && transport != .unknown && paired ? reach : nil
+                        let expected = optIn && transport != .unknown && paired ? Self.reach[link] : nil
                         #expect(DeviceList.autoReach(saved, listed: entry) == expected)
                         #expect(DeviceList.autoEligible(saved, listed: entry) == (expected != nil))
                     }
