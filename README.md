@@ -21,7 +21,7 @@ owner-run against the real device (2026-10-20: `blocked`, `0xe8008018`, guard pa
 4. Track certificate/profile expiry (one year on a paid account) and warn well ahead.
 5. Interim, while the paid block stands (`provision`, `sign`, `install`, `refresh` (manual, `--auto` and `--print-agent`) and `app remove` are built; the owner loads the launchd agent that runs the automatic refresh, see "Turning on auto-refresh"): re-sign Stremio (iOS and tvOS) and Apollo with the
    free team under `io.github.dividedby.free.*`, and keep them alive across the free profile's 7-day expiry with a
-   guarded auto-refresh (`docs/design.md` section 18). The Apple TV takeover from atvloadly is owner-driven.
+   guarded auto-refresh (`docs/design.md` section 18). sideload has served the Apple TV since 2026-10-24; atvloadly is retired.
 
 ## Account status
 
@@ -39,7 +39,7 @@ tools with this Apple ID (see `AGENTS.md`).
 (6ZU5Z6ZKK7) may be used in a narrow way: sideload signs with that team's existing, pinned Apple Development
 identity and lets `xcodebuild -allowProvisioningUpdates` create App IDs and 7-day profiles only for
 `io.github.dividedby.free.*`. It never creates, revokes or exports that team's certificates, never touches any
-other bundle ID, mobile-safari-lab, WebDriverAgent, atvloadly or the `atv` VM, and shares `$SIDELOAD_HOME/.op.lock`
+other bundle ID, mobile-safari-lab or WebDriverAgent, and shares `$SIDELOAD_HOME/.op.lock`
 with mobile-safari-lab. The limits that shape it: 3 apps per device, 10 App IDs per 7 days, 7-day profiles. Today
 `provision` (gets the profile), `sign` (re-signs an approved IPA with it), `install`, `refresh` (renews what is close to expiring), `app remove` and `slot lend|return`
 (the lab borrows a slot) are built, and so are `refresh --auto` and `refresh --print-agent` (the launchd agent's plist; see "Turning on auto-refresh"). The slot count is our apps, plus
@@ -48,9 +48,10 @@ are developer-built too but belong to other teams, so they never count), with th
 slot lent to it; `freeSlotsReserved` is a floor, and the whole unmanaged count when the profile list cannot be read (it then falls back to the reserve). installd is the final check: a full device is
 only certain once it refuses. Full design, guard rails and owner spikes: `docs/design.md` section 18.
 
-The Apple TV is served by atvloadly (free Apple ID, OrbStack VM `atv`) today. Taking it over is owner-driven: the
-owner pairs it in Xcode and stops atvloadly's Stremio refresh, then sideload installs its own copy side by side;
-see the checklist in `docs/design.md` section 18 and `docs/research/tvos-install.md` before pairing it with Xcode.
+sideload serves the Apple TV: the owner paired it in Xcode, and Stremio has been installed on it under
+`io.github.dividedby.free.stremio` since 2026-10-24 (spike S7). atvloadly (free Apple ID, OrbStack VM `atv`), which
+served it before, is retired: stopped and its Stremio copy removed on 2026-10-24, the `atv` VM deleted on 2026-10-30.
+The takeover checklist is in `docs/design.md` section 18.
 
 ## Setup
 
@@ -150,7 +151,7 @@ Every command prints one JSON object (`ok`, data, `errors[{code,message,fix}]`) 
 | `doctor` | Implemented, read-only: Xcode, command-line tools (`clt`: `codesign`/`clang`/`swiftc` resolve; standalone CLT package reported as info), paid-team cert + expiry (plus an `info` row with the fingerprint prefix and expiry for each valid free-team identity, if any), saved iPhone visible, Apple TV pairing state, disk space |
 | `device save` / `device list` | Implemented. `device list` also shows each saved device's `transport` (`network` for Wi-Fi, `wired` for USB, else `unknown`; the devicectl key is unverified until spike S1), `autoRefresh`, `freeSlotsReserved` and `autoEligible` (opted in, paired, link `connected` or `disconnected`, and over Wi-Fi or USB; an `unknown` transport or an `unavailable` link is never eligible) |
 | `device auto-refresh --alias <alias> --on\|--off --yes` | Implemented; **owner-only** (`--yes` is the owner's). Sets the device's `autoRefresh` opt-in in `config.json`; touches no device. `refresh --auto` acts only on opted-in devices. Unknown alias: `DEVICE_NOT_SAVED`; no `--yes`: `CONFIRM_REQUIRED` |
-| `device slots --alias <alias> --reserved <0-3> --yes` | Implemented; **owner-only**. Sets `freeSlotsReserved`, a floor for the free-team apps on the device that sideload does not manage and the profile list does not show (and the whole count when it cannot be read; Apple TV 1 for atvloadly's copy); the free team allows 3 apps per device. Touches no device |
+| `device slots --alias <alias> --reserved <0-3> --yes` | Implemented; **owner-only**. Sets `freeSlotsReserved`, a floor for the free-team apps on the device that sideload does not manage and the profile list does not show (and the whole count when it cannot be read; the Apple TV had 1 for atvloadly's copy until it was removed, now 0); the free team allows 3 apps per device. Touches no device |
 | `canary` | Implemented; owner-run once against the real device (2026-10-20: `blocked`, `0xe8008018`). `--evidence` writes `evidence/canary-<ts>/` (`evidence.json` + `evidence.txt`) for a `blocked` or `error` result; sideload sends nothing |
 | `canary history` | Implemented, read-only: summary of `logs/canary.jsonl` (runs, last `working`, first `blocked` after it, version and certificate changes) |
 | `ledger` / `ledger refresh` | Implemented. `ledger` is read-only: prints `ledger.json` (paid-team certificates, provisioning profiles, exports) and expiry `items` (`ok` above 60 days, `warn` at 60 or fewer, `critical` at 14 or fewer, `expired`). `ledger refresh` reads the public certificates (no private key, no keychain prompt) and Xcode's profile folders (`security cms -D -i`), merges them into the ledger, and needs no `--yes`; no device, portal or network |

@@ -2,6 +2,8 @@
 
 Researched 2026-10-19. Web research plus local `--help` output only. Nothing was run against a device.
 
+**Status 2026-10-30:** historical. The free-team route took over the Apple TV on 2026-10-24 (`docs/design.md` section 18, spike S7), and atvloadly is retired: stopped and its Stremio copy removed on 2026-10-24, the `atv` VM deleted on 2026-10-30. The coexistence questions below are moot.
+
 ## Summary
 
 - Install on a paired Apple TV with `xcrun devicectl device install app --device <id> <path.app>`. It takes a `.app` bundle, not an `.ipa` (local `--help`). Unzip the IPA's `Payload/*.app` first.
