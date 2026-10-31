@@ -27,6 +27,8 @@ private final class SlowSource: HTTPTransport {
     func get(_ request: HTTPRequest) async throws -> HTTPResponse {
         state.withLock { $0.gets.append(request.url.absoluteString) }
         while !state.withLock({ $0.open }) { try await Task.sleep(for: .milliseconds(5)) }
+        // A sleep that ended before the cancel can see the release after it: the cancelled request must still not answer.
+        try Task.checkCancellation()
         return HTTPResponse(status: 200, body: body)
     }
 }
