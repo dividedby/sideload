@@ -22,7 +22,7 @@ private func help() -> Envelope {
             "updates [--app <apollo|stremio-ios|stremio-tvos>] [--force]",
             "provision --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> [--register-device] [--renew] --yes",
             "provision --renew-ack --yes",
-            "sign --app <apollo|stremio-ios|stremio-tvos> --device <alias> --yes",
+            "sign --app <apollo|stremio-ios|stremio-tvos> --device <alias> [--version <v>] --yes",
             "install --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> --yes",
             .string("refresh --device <alias> [--app <apollo|stremio-ios|stremio-tvos|filler>] [--within 1-\(RefreshCommand.maxWithin) | --force] --yes"),
             "refresh --auto",
@@ -49,7 +49,7 @@ private let canarySpec = ArgSpec(values: ["device"], flags: ["yes", "keep", "evi
 
 private let exportCertSpec = ArgSpec(values: ["device", "profile", "out"], flags: ["yes", "copy-password"])
 private let provisionSpec = ArgSpec(values: ["app", "device"], flags: ["yes", "register-device", "renew", "renew-ack"])
-private let signSpec = ArgSpec(values: ["app", "device"], flags: ["yes"])
+private let signSpec = ArgSpec(values: ["app", "device", "version"], flags: ["yes"])
 private let installSpec = ArgSpec(values: ["app", "device"], flags: ["yes"])
 private let refreshSpec = ArgSpec(values: ["device", "app", "within", "binary"], flags: ["yes", "force", "auto", "print-agent"])
 // `--auto` and `--print-agent` each take no other option (`--binary` belongs to `--print-agent`).
@@ -219,7 +219,9 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     if command == "sign" {
         return await SignCommand.run(
             services,
-            SignOptions(app: parsed.values["app"], device: parsed.values["device"], yes: parsed.flags.contains("yes")))
+            SignOptions(
+                app: parsed.values["app"], device: parsed.values["device"], yes: parsed.flags.contains("yes"),
+                version: parsed.values["version"]))
     }
     if command == "install" {
         return await InstallCommand.run(
