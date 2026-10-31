@@ -27,9 +27,9 @@ enum AgentPlist {
         static let refresh = Agent(
             label: "io.github.dividedby.sideload.refresh", arguments: ["refresh", "--auto"], schedule: .interval(seconds: 1800),
             runAtLoad: false, errorFile: "launchd-refresh.err", hasKillSwitch: true)
-        /// `status --notify` daily at 09:00, and once when it is loaded.
+        /// `status --notify --check-updates` daily at 09:00, and once when it is loaded.
         static let status = Agent(
-            label: "io.github.dividedby.sideload.status", arguments: ["status", "--notify"],
+            label: "io.github.dividedby.sideload.status", arguments: ["status", "--notify", "--check-updates"],
             schedule: .daily(hour: 9, minute: 0), runAtLoad: true, errorFile: "launchd-status.err", hasKillSwitch: false)
     }
 
@@ -161,7 +161,7 @@ extension RefreshCommand {
 }
 
 extension StatusCommand {
-    /// `status --print-agent [--binary <abs path>]` (design section 11): the daily `status --notify` agent. Pure, like the
+    /// `status --print-agent [--binary <abs path>]` (design section 11): the daily `status --notify --check-updates` agent. Pure, like the
     /// refresh one.
     public static func printAgent(_ services: Services, binary: String?) -> Envelope {
         AgentPlist.printed(.status, command: command, services, binary: binary)
