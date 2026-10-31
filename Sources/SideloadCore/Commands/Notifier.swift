@@ -72,6 +72,9 @@ struct Notifier: Sendable {
     /// "restore waiting: stremio-ios @ iphone".
     static func restoreWaiting(app: String, alias: String) -> String { "restore waiting: \(app) @ \(alias)" }
 
+    /// "Apollo 4.0.2 available", "Stremio 1.9.6b142 available" (the app's display name, the manifest's version spelling).
+    static func updateAvailable(app: String, version: String) -> String { "\(MenuFormat.appName(app)) \(version) available" }
+
     /// The parts, in the order given, as one message that `sanitised` leaves whole: when they would not all fit in
     /// `maxLength`, the last ones are left out and the message ends with ", +N more". When even the first part alone
     /// does not fit, it is that part alone (cut by `sanitised`), with no count.

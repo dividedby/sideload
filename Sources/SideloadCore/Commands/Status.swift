@@ -24,7 +24,8 @@ public enum StatusState: String, Sendable, Equatable {
 /// and the app fills it from `device list`. Free installs on saved devices join `items` (kind `install`, the 3 and 1 day
 /// levels) and `installs`, and warn once due; a pending app-data restore is a warning too. The app-data backups are
 /// secrets-class: only their manifests are read (`PendingRestores`), and only aliases and app names are printed.
-/// `status --notify` (`runNotify`, `StatusNotify.swift`) is the exception: it runs `osascript` and writes `lastNotified`.
+/// `status --notify` (`runNotify`, `StatusNotify.swift`) is the exception: it runs `osascript`, writes `lastNotified` and reads
+/// `updates.json`; with `--check-updates` it also makes the `updates` metadata GETs (one per approved source) and writes that file.
 public enum StatusCommand {
     static let command = "status"
 
@@ -41,6 +42,8 @@ public enum StatusCommand {
         var items: [ExpiryItem]
         /// The app-data restores waiting; empty when they could not be looked up.
         var pending: [PendingRestores.Entry]
+        /// The free installs recorded present on a saved device; empty unless `complete`.
+        var installs: [LedgerInstall]
         /// The config as read; nil when it could not be read.
         var config: Config?
         /// True when the ledger and the config were both read, so `items` and `pending` are the whole picture.
@@ -140,11 +143,13 @@ public enum StatusCommand {
         var installs: JSONValue = .null
         var pendingRestores: JSONValue = .null
         var pendingFound: [PendingRestores.Entry] = []
+        var presentFound: [LedgerInstall] = []
         if ledgerReadable, let config = loadedConfig {
             let saved = Set(config.devices.keys)
             items = (items + ExpiryItems.installs(projected, devices: saved, now: now))
                 .sorted { ($0.notAfter, $0.name) < ($1.notAfter, $1.name) }
             let present = ExpiryItems.presentInstalls(projected, devices: saved)
+            presentFound = present
             installs = .array(
                 present.map { Self.installRow($0, autoRefresh: config.devices[$0.device]?.autoRefresh ?? false, now: now) })
             for install in present {
@@ -175,7 +180,7 @@ public enum StatusCommand {
             "pendingRestores": pendingRestores,
         ]
         return Snapshot(
-            data: data, warnings: warnings, items: items, pending: pendingFound, config: loadedConfig,
+            data: data, warnings: warnings, items: items, pending: pendingFound, installs: presentFound, config: loadedConfig,
             complete: ledgerReadable && loadedConfig != nil)
     }
 
