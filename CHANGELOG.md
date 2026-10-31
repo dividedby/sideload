@@ -7,6 +7,15 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
+- Roll back to the previous version. `sign --version <v>` signs exactly that fetched, approved version instead of the newest
+  one (`NOT_APPROVED`, `IPA_PRUNED` and the other checks apply as before; an empty value is `USAGE`); when it is older than the
+  version `installs[]` records for the device, the envelope carries the warning `OLDER_THAN_INSTALLED` (never a block:
+  `install` goes over the app and keeps its data, and iOS may refuse an older build, which leaves the installed app as it is).
+  The menu bar app's "Reinstall previous version (3.8.0)…" (a row's "…" menu, offered when an older approved IPA is still on
+  disk) has one confirm with the version and its full SHA-256, then runs provision (unless the profile is fresh), sign of exactly
+  that version and install, with no fetch or approval; a failed install says iOS may refuse an older build and that Renew or
+  Update… returns to the installed or newest version. Renewals keep the older version until you update. The menu's load now
+  also reads `manifest.json` and checks that each approved file is on disk.
 - `LICENSE` (MIT) and `CONTRIBUTING.md`: how to report issues (no device IDs, names or credentials) and send changes
   (`scripts/check.sh`, the pre-commit secrets hook, merge commits), with a section of rules for AI agents that points at
   `AGENTS.md`.
