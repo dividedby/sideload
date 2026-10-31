@@ -31,9 +31,9 @@ All notable changes to this project are documented here. Format follows
 ### Changed
 
 - Docs: the first live rollback passed on 2026-10-31. From the menu, "Reinstall previous version (4.0.0)…" put Apollo
-  4.0.0 over 4.0.1 on the iPhone: iOS accepted the lower build, the fresh profile was reused (no `provision`, no App
-  ID), `install` finished 19 s after `sign`, and the app stayed signed in with its data. README and design section 12 record
-  it; only Apollo has been tried, so the warning that iOS may refuse an older build stays.
+  4.0.0 over 4.0.1 on the Wi-Fi iPhone: iOS accepted the lower build, the fresh profile was reused (no `provision`, no App
+  ID), `install` finished 19 s after `sign`, and the app stayed signed in with its data; Update… then took it back to 4.0.1 the same way.
+  README and design section 12 record it; only Apollo has been tried, so the warning that iOS may refuse an older build stays.
 - Docs: README says who sideload is for (paid and free teams alike, one setup's team IDs to change in a fork; support
   not guaranteed, contributions welcome) and adds license and Apple trademark notices. `package.json` names the license.
 - CLI text no longer says atvloadly serves the Apple TV: `doctor`'s Apple TV row for an unpaired device reads "not
