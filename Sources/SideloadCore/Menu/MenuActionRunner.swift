@@ -55,9 +55,18 @@ public enum MenuActionRunner {
                 return
             }
             // Update is the same chain: the app is already installed, so `install` goes over it and keeps its data.
-            envelope = await addEach(
-                app, device: device, fetched: fetched, chain: action.chain ?? .add, services: services, steps: steps,
-                isCancelled: isCancelled)
+            envelope = await runChain(
+                app, device: device, version: fetched.version, sha256: fetched.sha256, command: (action.chain ?? .add).command,
+                approve: true, services: services, steps: steps, isCancelled: isCancelled)
+        case .reinstallPrevious(let device, let app, _, let to):
+            if let reason = reinstallStop(app: app, to: to, services: services) {
+                await deliver(.notRun(reason))
+                return
+            }
+            // Already fetched and approved: only the tail of the Update chain, signing exactly `to`.
+            envelope = await runChain(
+                app, device: device, version: to.version, sha256: to.sha256, command: "reinstall", approve: false,
+                services: services, steps: steps, isCancelled: isCancelled)
         case .lendable(let device, let app):
             // `device lendable` takes no `.op.lock`, so a lab `slot lend` can land after the panel was drawn: the ledger is
             // read again here, and the setting is not written while the device has a lent or pending slot.
@@ -138,13 +147,33 @@ public enum MenuActionRunner {
         return nil
     }
 
-    /// Add app and Update, stage 2: approve exactly the confirmed version, then only the steps still needed, then install, folded
-    /// into one `add`- (or `update`-) shaped envelope with a status per step. Each command takes `.op.lock` itself, so the lab can interleave between
+    /// Why Reinstall previous version must not run: the manifest as it is on disk has no approved, unpruned entry for `to`, its
+    /// file is not the one the owner saw (a different SHA-256), or the file is gone. Nil when it matches.
+    static func reinstallStop(app: String, to: MenuPrevious, services: Services) -> String? {
+        let store = ManifestStore(paths: services.home)
+        let manifest: Manifest
+        do {
+            manifest = try store.load()
+        } catch {
+            return "The stored file could not be checked. Fetch it again."
+        }
+        let name = "\(MenuFormat.appName(app)) \(MenuFormat.version(to.version))"
+        guard let entry = manifest.entry(app: app, version: to.version), entry.approved, store.hasFile(entry) else {
+            return "\(name) is no longer stored and approved."
+        }
+        guard entry.sha256 == to.sha256 else { return "The stored file for \(name) changed since you reviewed it." }
+        return nil
+    }
+
+    /// Add app and Update, stage 2 (`approve`): approve exactly the confirmed version, then only the steps still needed, then
+    /// install, folded into one `add`- (or `update`-) shaped envelope with a status per step. Reinstall previous version is the
+    /// same tail without the approval (`approve` false: the build is already approved, and no `approve` step is recorded). Each
+    /// command takes `.op.lock` itself, so the lab can interleave between
     /// steps. A step that is already done (a profile with 6 days or more left, a signed build for this version and profile) is
     /// skipped, so a run that stopped halfway resumes. Stops between steps when cancelled, and on the first failure.
-    private static func addEach(
-        _ app: String, device: String, fetched: MenuFetched, chain: AddChain, services: Services, steps: MenuActionSteps,
-        isCancelled: @Sendable () -> Bool
+    private static func runChain(
+        _ app: String, device: String, version: String, sha256: String, command: String, approve: Bool, services: Services,
+        steps: MenuActionSteps, isCancelled: @Sendable () -> Bool
     ) async -> Envelope {
         var results: [JSONValue] = []
         var warnings: [JSONValue] = []
@@ -156,12 +185,12 @@ public enum MenuActionRunner {
         func finish(_ failed: AddStep? = nil, _ error: Envelope.Entry? = nil) -> Envelope {
             if let failed { record(failed, .failed) }
             var data: [String: JSONValue] = [
-                "device": .string(device), "app": .string(app), "version": .string(fetched.version),
+                "device": .string(device), "app": .string(app), "version": .string(version),
                 "steps": .array(results), "warnings": .array(warnings),
             ]
             if let appIdNew { data["appIdNew"] = .bool(appIdNew) }
             if installStarted { data["installStarted"] = true }
-            return Envelope(ok: failed == nil, command: chain.command, data: data, errors: error.map { [$0] } ?? [])
+            return Envelope(ok: failed == nil, command: command, data: data, errors: error.map { [$0] } ?? [])
         }
         func stop(_ step: AddStep, _ envelope: Envelope) -> Envelope {
             finish(step, envelope.errors.first ?? .init(code: "INTERNAL_ERROR", message: "\(step.rawValue) failed.", fix: nil))
@@ -176,16 +205,18 @@ public enum MenuActionRunner {
         func signed(in ledger: Ledger) -> LedgerFreeSigned? { ledger.freeSigned.first { $0.id == id } }
 
         // 1. Approve this exact version (offline: it re-hashes and inspects the stored file).
-        let approved = await steps.fetch(services, FetchOptions(app: app, approve: true, version: fetched.version))
-        guard approved.ok else { return stop(.approve, approved) }
-        guard approved.data["sha256"] == .string(fetched.sha256) else {
-            return finish(
-                .approve,
-                .init(
-                    code: "DIGEST_MISMATCH", message: "The approved file is not the one you reviewed. Nothing was signed.",
-                    fix: "Fetch it again and review the SHA-256."))
+        if approve {
+            let approved = await steps.fetch(services, FetchOptions(app: app, approve: true, version: version))
+            guard approved.ok else { return stop(.approve, approved) }
+            guard approved.data["sha256"] == .string(sha256) else {
+                return finish(
+                    .approve,
+                    .init(
+                        code: "DIGEST_MISMATCH", message: "The approved file is not the one you reviewed. Nothing was signed.",
+                        fix: "Fetch it again and review the SHA-256."))
+            }
+            record(.approve, approved.data["alreadyApproved"] == .bool(true) ? .skipped : .done)
         }
-        record(.approve, approved.data["alreadyApproved"] == .bool(true) ? .skipped : .done)
 
         // 2. Provision, unless a stored profile is still fresh.
         if let stopped = interrupted(.provision) { return stopped }
@@ -205,36 +236,38 @@ public enum MenuActionRunner {
                 record(.provision, .done)
             }
         } catch {
-            return stop(.provision, .from(error, command: chain.command))
+            return stop(.provision, .from(error, command: command))
         }
 
         // 3. Sign exactly this version, unless the signed build already is this version on the stored profile.
         if let stopped = interrupted(.sign) { return stopped }
         do {
             let ledger = try loadLedger()
-            let prefix = String(fetched.sha256.prefix(8))
+            let prefix = String(sha256.prefix(8))
             let current = signed(in: ledger).map { build in
-                build.version == fetched.version && build.sha256Prefix == prefix
+                build.version == version && build.sha256Prefix == prefix
                     && build.profileUuid == profile(in: ledger)?.profileUuid
             }
             var status = AddStepStatus.skipped
             if current != true {
-                let envelope = await steps.sign(services, SignOptions(app: app, device: device, yes: true, version: fetched.version))
+                let envelope = await steps.sign(services, SignOptions(app: app, device: device, yes: true, version: version))
                 guard envelope.ok else { return stop(.sign, envelope) }
                 status = .done
             }
             // `install` puts whatever `freeSigned` holds on the device: it must be what the owner approved.
             let after = signed(in: try loadLedger())
-            guard after?.version == fetched.version, after?.sha256Prefix == prefix else {
+            guard after?.version == version, after?.sha256Prefix == prefix else {
                 return finish(
                     .sign,
                     .init(
                         code: "SIGNED_BUILD_MISMATCH", message: "The signed build is not the version you approved. Nothing was installed.",
-                        fix: "Don't install this build. Re-sign with `sideload sign --app \(app) --device \(device) --yes` (it signs the newest approved version), then use Install."))
+                        fix: approve
+                            ? "Don't install this build. Re-sign with `sideload sign --app \(app) --device \(device) --yes` (it signs the newest approved version), then use Install."
+                            : "Don't install this build. Re-sign with `sideload sign --app \(app) --device \(device) --version \(version) --yes`, then `sideload install --app \(app) --device \(device) --yes`."))
             }
             record(.sign, status)
         } catch {
-            return stop(.sign, .from(error, command: chain.command))
+            return stop(.sign, .from(error, command: command))
         }
 
         // 4. Install.

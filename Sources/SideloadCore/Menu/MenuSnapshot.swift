@@ -260,6 +260,9 @@ public struct MenuAppRow: Sendable, Equatable, Identifiable {
     public var update: MenuUpdateInfo?
     /// What a `provision` for this row would do and what the installed build lost; nil without an `installs[]` record.
     public var profile: MenuRowProfile?
+    /// The newest approved version on disk that is older than `installedVersion` (`MenuPrevious.pick`); nil without an
+    /// `installs[]` record or when there is none.
+    public var previous: MenuPrevious?
 
     /// "Update available · 3.9.0 → 3.10.0" (Stremio: "1.9.2 (45)"), drawn under a row that is, or may be, on the device;
     /// nil when there is no newer version to offer.
@@ -271,6 +274,16 @@ public struct MenuAppRow: Sendable, Equatable, Identifiable {
     /// The row offers "Update to …": a newer listed version for a recorded install that is, or may be, on the device.
     public var offersUpdate: Bool {
         guard update?.state == .newer else { return false }
+        switch presence {
+        case .installed, .unconfirmed, .checking: return true
+        case .notInstalled, .lent, .pending: return false
+        }
+    }
+
+    /// The row offers "Reinstall previous version…": an older stored build for a recorded install that is, or may be, on the
+    /// device.
+    public var offersPrevious: Bool {
+        guard previous != nil, installedVersion != nil else { return false }
         switch presence {
         case .installed, .unconfirmed, .checking: return true
         case .notInstalled, .lent, .pending: return false
