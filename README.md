@@ -126,7 +126,7 @@ and installing it), Update… (an installed app whose approved source lists a ne
 keeps its data), Reinstall previous version… (an installed app with an older approved IPA still on disk: "Reinstall previous
 version (3.8.0)…" in the row's menu; one confirm with the version and its full SHA-256, then provision, sign that exact version
 and install over the app, which keeps its data; no fetch; iOS may refuse an older build, which leaves the installed app as it
-is, and renewals keep the version until you update), Remove and "Lendable: <App>". Each opens an inline confirm that says what it will do
+is, and renewals keep the version until you update; first run on 2026-10-31: Apollo 4.0.0 over 4.0.1, accepted, still signed in), Remove and "Lendable: <App>". Each opens an inline confirm that says what it will do
 (slots, App IDs, the keychain prompt); the confirm button is the owner's `--yes`, and only then does the app run the same
 in-process command as the CLI. A running action shows Cancel; the result lists each app with its code, message and fix and a
 Retry, or says the lock was busy. A disabled control says why ("Connect iphone over Wi-Fi or USB", "renewable at 6 d left",
