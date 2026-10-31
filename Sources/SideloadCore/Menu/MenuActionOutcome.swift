@@ -68,11 +68,14 @@ public struct MenuActionOutcome: Sendable, Equatable {
         case .updateFetch(_, let app, let from):
             readFetch(app, alias: alias, envelope: envelope, action: action, cancelled: cancelled, chain: .update(from: from))
         case .addApprove(_, let app, let fetched):
-            readAdd(app, fetched: fetched, alias: alias, envelope: envelope, chain: .add)
+            let done = "Added \(MenuFormat.appName(app)) \(fetched.version) to \(alias)"
+            readChain(action, app: app, done: done, envelope: envelope)
         case .updateApprove(_, let app, let from, let fetched):
-            readAdd(app, fetched: fetched, alias: alias, envelope: envelope, chain: .update(from: from))
+            let versions = "\(MenuFormat.version(from)) → \(MenuFormat.version(fetched.version))"
+            readChain(action, app: app, done: "Updated \(MenuFormat.appName(app)) \(versions) on \(alias)", envelope: envelope)
         case .reinstallPrevious(_, let app, _, let to):
-            readReinstall(app, to: to, alias: alias, envelope: envelope, action: action)
+            let done = "Reinstalled \(MenuFormat.appName(app)) \(MenuFormat.version(to.version)) on \(alias)"
+            readChain(action, app: app, done: done, envelope: envelope)
         }
         // A run that finished cleanly despite the click lost nothing, so it is reported as done.
         if cancelled, !envelope.ok {
@@ -83,16 +86,12 @@ public struct MenuActionOutcome: Sendable, Equatable {
             switch action {
             case .install, .remove: notes.append(Self.deviceNote)
             case .addFetch, .updateFetch: notes = ["Nothing was signed or installed."]
-            case .addApprove, .updateApprove:
-                let steps = Self.addSteps(envelope)
+            case .addApprove, .updateApprove, .reinstallPrevious:
+                let steps = Self.chainSteps(envelope)
                 // Only an install that started may have finished on the device.
                 if steps.installStarted { notes.append(Self.deviceNote) }
-                if !steps.done.isEmpty, let chain = action.chain { notes.append(Self.keptNote(chain)) }
-            case .reinstallPrevious:
-                let steps = Self.addSteps(envelope)
-                if steps.installStarted { notes.append(Self.deviceNote) }
-                if !steps.done.isEmpty { notes.append(Self.reinstallKeptNote) }
-            default: break
+                if !steps.done.isEmpty, let chain = action.chainKind { notes.append(chain.keptNote) }
+            case .renew, .lendable: break
             }
             // What finished before the stop stays visible; what was cut short is not a failure to retry.
             lines = lines.filter { $0.tone == .good }
@@ -258,17 +257,14 @@ public struct MenuActionOutcome: Sendable, Equatable {
         return notes
     }
 
-    // MARK: add app
+    // MARK: add app, update, reinstall previous version
 
     static let addKeptNote = "Steps already done are kept; Add app again resumes where this stopped."
     static let updateKeptNote = "Steps already done are kept; Update again resumes where this stopped."
-
-    private static func keptNote(_ chain: AddChain) -> String {
-        switch chain {
-        case .add: addKeptNote
-        case .update: updateKeptNote
-        }
-    }
+    static let reinstallKeptNote = "Steps already done are kept; Reinstall previous version again resumes where this stopped."
+    /// Added to a failed install of Reinstall previous version: an older build over a newer one is iOS's to refuse.
+    static let rollbackFix =
+        "iOS may refuse an older build over a newer one. The installed app is unchanged; Renew or Update… returns to the installed or newest version."
 
     /// Stage 1: the fetched version's facts for the second confirm. No result card on success.
     private mutating func readFetch(
@@ -315,21 +311,21 @@ public struct MenuActionOutcome: Sendable, Equatable {
             alreadyApproved: envelope.data["alreadyApproved"] == .bool(true))
     }
 
-    struct AddSteps {
-        var done: [MenuActionRunner.AddStep: MenuActionRunner.AddStepStatus] = [:]
-        var failed: MenuActionRunner.AddStep?
+    struct ChainSteps {
+        var done: [MenuActionRunner.ChainStep: MenuActionRunner.ChainStepStatus] = [:]
+        var failed: MenuActionRunner.ChainStep?
         var appIdNew = false
         /// `install` was called (a cancel before it never reached the device).
         var installStarted = false
     }
 
-    /// The per-step status the runner folded into the add envelope: step -> done or skipped; the step that failed.
-    static func addSteps(_ envelope: Envelope) -> AddSteps {
-        var result = AddSteps()
+    /// The per-step status the runner folded into the chain's envelope: step -> done or skipped; the step that failed.
+    static func chainSteps(_ envelope: Envelope) -> ChainSteps {
+        var result = ChainSteps()
         if case .array(let items)? = envelope.data["steps"] {
             for case .object(let item) in items {
-                guard case .string(let name)? = item["step"], let step = MenuActionRunner.AddStep(rawValue: name),
-                    case .string(let raw)? = item["status"], let status = MenuActionRunner.AddStepStatus(rawValue: raw)
+                guard case .string(let name)? = item["step"], let step = MenuActionRunner.ChainStep(rawValue: name),
+                    case .string(let raw)? = item["status"], let status = MenuActionRunner.ChainStepStatus(rawValue: raw)
                 else { continue }
                 if status == .failed { result.failed = step } else { result.done[step] = status }
             }
@@ -339,58 +335,67 @@ public struct MenuActionOutcome: Sendable, Equatable {
         return result
     }
 
-    /// Stage 2 of Add app and of Update: one line per step that ran or was skipped, as the run's own record of what is now done.
-    private mutating func readAdd(_ app: String, fetched: MenuFetched, alias: String, envelope: Envelope, chain: AddChain) {
-        let name = MenuFormat.appName(app)
-        let action = chain.approval(device: alias, app: app, fetched: fetched)
-        let steps = Self.addSteps(envelope)
-        // Busy before anything was approved changed nothing: the plain busy card. Later it is a stop with partial state.
-        if !envelope.ok, steps.failed == .approve, envelope.errors.first?.code == OperationLock.busyCode {
+    /// Stage 2 of Add app and of Update, and Reinstall previous version: one line per step that ran or was skipped, as the run's own
+    /// record of what is now done. `done` is the headline of a success.
+    private mutating func readChain(_ action: MenuAction, app: String, done: String, envelope: Envelope) {
+        guard let chain = action.chainKind else { return }
+        let alias = action.device
+        let steps = Self.chainSteps(envelope)
+        // Busy before the first step did anything changed nothing: the plain busy card. Later it is a stop with partial state.
+        if !envelope.ok, steps.failed == chain.steps.first, steps.done.isEmpty, envelope.errors.first?.code == OperationLock.busyCode {
             becomeBusy(action)
             return
         }
-        // Approval done: the retry's confirm says so. Past sign the row is "Signed · not installed" (Update: it has a newer
-        // signed build) and the chain is off for it, so the retry is Install, through its own confirm. A signed build that is
-        // not the approved one gets no retry: the chain is off for its row and Install would put that build on the device.
+        // Approval done: the retry's confirm says so. Past sign the row of Add app is "Signed · not installed" (Update: it has a
+        // newer signed build) and the chain is off for it, so the retry is Install, through its own confirm; an older build is
+        // not offered as an Install, so Reinstall previous version retries the same confirm (a signed build for its version is
+        // skipped). A signed build that is not the approved one gets no retry: the chain is off for its row and Install would
+        // put that build on the device.
         var retry: MenuAction? = action
         if envelope.errors.first?.code == "SIGNED_BUILD_MISMATCH" {
             retry = nil
-        } else if steps.done[.sign] != nil {
+        } else if chain.approves, steps.done[.sign] != nil {
             retry = .install(device: alias, app: app)
-        } else if steps.done[.approve] != nil, !fetched.alreadyApproved {
-            var approved = fetched
-            approved.alreadyApproved = true
-            retry = chain.approval(device: alias, app: app, fetched: approved)
+        } else if steps.done[.approve] != nil, let approved = Self.approvedAgain(action) {
+            retry = approved
         }
-        appendStepLines(envelope, steps: steps, retry: retry, installFix: nil)
+        appendStepLines(chain, envelope, steps: steps, retry: retry)
         if envelope.ok {
             kind = .done
-            switch chain {
-            case .add: headline = "Added \(name) \(fetched.version) to \(alias)"
-            case .update(let from):
-                headline = "Updated \(name) \(MenuFormat.version(from)) → \(MenuFormat.version(fetched.version)) on \(alias)"
-            }
+            headline = done
             notes += Self.warningNotes(envelope)
             return
         }
         kind = .failed
-        headline = "\(chain == .add ? "Add" : "Update") stopped at \(steps.failed?.rawValue ?? "the start")"
-        notes = steps.done.isEmpty ? [] : [Self.keptNote(chain)]
-        if steps.failed == .install {
-            notes.append("The signed build is kept: \(chain == .add ? "Install" : "Install update") on the app's row also finishes it.")
+        headline = "\(chain.verb) stopped at \(steps.failed?.rawValue ?? "the start")"
+        notes = steps.done.isEmpty ? [] : [chain.keptNote]
+        if steps.failed == .install, let note = chain.installFailedNote { notes.append(note) }
+    }
+
+    /// The second confirm again with its version marked approved, so the retry skips what is done; nil when it already was.
+    private static func approvedAgain(_ action: MenuAction) -> MenuAction? {
+        switch action {
+        case .addApprove(let device, let app, var fetched) where !fetched.alreadyApproved:
+            fetched.alreadyApproved = true
+            return .addApprove(device: device, app: app, fetched: fetched)
+        case .updateApprove(let device, let app, let from, var fetched) where !fetched.alreadyApproved:
+            fetched.alreadyApproved = true
+            return .updateApprove(device: device, app: app, from: from, fetched: fetched)
+        default: return nil
         }
     }
 
-    /// One line per step that ran, was skipped or failed, in the chain's order. `installFix` is added to the fix of a failed install.
-    private mutating func appendStepLines(_ envelope: Envelope, steps: AddSteps, retry: MenuAction?, installFix: String?) {
-        for step in MenuActionRunner.AddStep.allCases {
+    /// One line per step the chain has that ran, was skipped or failed, in its order. A failed install of Reinstall previous
+    /// version gets the rollback text added to its own fix.
+    private mutating func appendStepLines(_ chain: ChainKind, _ envelope: Envelope, steps: ChainSteps, retry: MenuAction?) {
+        for step in chain.steps {
             if let status = steps.done[step] {
                 let skipped = status == .skipped
                 lines.append(line(step.rawValue, step.title, skipped ? .neutral : .good, step.text(skipped: skipped, appIdNew: steps.appIdNew)))
             } else if step == steps.failed {
                 let entry = envelope.errors.first
                 let code = entry?.code ?? "INTERNAL_ERROR"
-                let fix = [entry?.fix, step == .install ? installFix : nil].compactMap { $0 }.joined(separator: " ")
+                let fix = [entry?.fix, step == .install ? chain.installFix : nil].compactMap { $0 }.joined(separator: " ")
                 let issue = MenuIssue(code: code, message: entry?.message ?? "The step did not finish.", fix: fix.isEmpty ? nil : fix)
                 if code == RefreshPolicy.interrupted {
                     lines.append(line(step.rawValue, step.title, .neutral, "Stopped", retry: retry))
@@ -399,37 +404,6 @@ public struct MenuActionOutcome: Sendable, Equatable {
                 }
             }
         }
-    }
-
-    // MARK: reinstall previous version
-
-    static let reinstallKeptNote = "Steps already done are kept; Reinstall previous version again resumes where this stopped."
-    /// Added to a failed install of Reinstall previous version: an older build over a newer one is iOS's to refuse.
-    static let rollbackFix =
-        "iOS may refuse an older build over a newer one. The installed app is unchanged; Renew or Update… returns to the installed or newest version."
-
-    /// Reinstall previous version: provision, sign and install with no approval, so the step lines start at provision.
-    private mutating func readReinstall(_ app: String, to: MenuPrevious, alias: String, envelope: Envelope, action: MenuAction) {
-        let name = MenuFormat.appName(app)
-        let steps = Self.addSteps(envelope)
-        // Busy before anything was done changed nothing: the plain busy card.
-        if !envelope.ok, steps.failed == .provision, steps.done.isEmpty, envelope.errors.first?.code == OperationLock.busyCode {
-            becomeBusy(action)
-            return
-        }
-        // A signed build that is not the confirmed one gets no retry: the chain is off for its row. Otherwise the same confirm
-        // resumes (a signed build for `to` is skipped, and Install is not offered for an older build).
-        let retry: MenuAction? = envelope.errors.first?.code == "SIGNED_BUILD_MISMATCH" ? nil : action
-        appendStepLines(envelope, steps: steps, retry: retry, installFix: Self.rollbackFix)
-        if envelope.ok {
-            kind = .done
-            headline = "Reinstalled \(name) \(MenuFormat.version(to.version)) on \(alias)"
-            notes += Self.warningNotes(envelope)
-            return
-        }
-        kind = .failed
-        headline = "Reinstall stopped at \(steps.failed?.rawValue ?? "the start")"
-        notes = steps.done.isEmpty ? [] : [Self.reinstallKeptNote]
     }
 
     // MARK: shared
@@ -456,4 +430,35 @@ public enum MenuActionState: Sendable, Equatable {
     /// `cancelling` is set once Cancel was pressed and the command has not returned yet.
     case running(label: String, cancellable: Bool, cancelling: Bool)
     case finished(MenuActionOutcome)
+}
+
+extension ChainKind {
+    /// "Add" in "Add stopped at install".
+    fileprivate var verb: String {
+        switch self {
+        case .add: "Add"
+        case .update: "Update"
+        case .reinstall: "Reinstall"
+        }
+    }
+
+    fileprivate var keptNote: String {
+        switch self {
+        case .add: MenuActionOutcome.addKeptNote
+        case .update: MenuActionOutcome.updateKeptNote
+        case .reinstall: MenuActionOutcome.reinstallKeptNote
+        }
+    }
+
+    /// After a failed install the chain has signed: Add app's and Update's row then has a build that Install finishes.
+    fileprivate var installFailedNote: String? {
+        switch self {
+        case .add: "The signed build is kept: Install on the app's row also finishes it."
+        case .update: "The signed build is kept: Install update on the app's row also finishes it."
+        case .reinstall: nil
+        }
+    }
+
+    /// Added to the fix of a failed install.
+    fileprivate var installFix: String? { self == .reinstall ? MenuActionOutcome.rollbackFix : nil }
 }

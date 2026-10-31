@@ -272,21 +272,18 @@ public struct MenuAppRow: Sendable, Equatable, Identifiable {
     }
 
     /// The row offers "Update to …": a newer listed version for a recorded install that is, or may be, on the device.
-    public var offersUpdate: Bool {
-        guard update?.state == .newer else { return false }
-        switch presence {
-        case .installed, .unconfirmed, .checking: return true
-        case .notInstalled, .lent, .pending: return false
-        }
-    }
+    public var offersUpdate: Bool { update?.state == .newer && mayBeOnDevice }
 
     /// The row offers "Reinstall previous version…": an older stored build for a recorded install that is, or may be, on the
     /// device.
-    public var offersPrevious: Bool {
-        guard previous != nil, installedVersion != nil else { return false }
+    public var offersPrevious: Bool { previous != nil && installedVersion != nil && mayBeOnDevice }
+
+    /// The app is, or may be, on the device and can be installed over: Update and Reinstall previous version are offered only
+    /// then (not for a row that is not installed, lent or changing).
+    var mayBeOnDevice: Bool {
         switch presence {
-        case .installed, .unconfirmed, .checking: return true
-        case .notInstalled, .lent, .pending: return false
+        case .installed, .unconfirmed, .checking: true
+        case .notInstalled, .lent, .pending: false
         }
     }
 }

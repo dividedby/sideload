@@ -34,6 +34,16 @@ public enum MenuAction: Hashable, Sendable {
         }
     }
 
+    /// Which chain an approval or a reinstall runs; nil for the other actions.
+    var chainKind: ChainKind? {
+        switch self {
+        case .addApprove: .add
+        case .updateApprove: .update
+        case .reinstallPrevious: .reinstall
+        default: nil
+        }
+    }
+
     /// A fetch downloads and checks a file; it changes neither the device nor the ledger, so the model neither cancels a load
     /// for it nor reads the device again when it ends.
     public var isFetchStage: Bool {
@@ -60,13 +70,15 @@ enum AddChain: Sendable, Equatable {
     /// An Update over the installed version `from`.
     case update(from: String)
 
-    /// The envelope's `command`.
-    var command: String {
+    var kind: ChainKind {
         switch self {
-        case .add: "add"
-        case .update: "update"
+        case .add: .add
+        case .update: .update
         }
     }
+
+    /// The envelope's `command`.
+    var command: String { kind.command }
 
     /// The menu item the owner chooses again, and what the second confirm does.
     var menuName: String {
@@ -92,9 +104,57 @@ enum AddChain: Sendable, Equatable {
     }
 }
 
+/// The chain a run signs and installs one version through: Add app and Update approve the fetched version first, Reinstall previous
+/// version goes back to a build that is already approved and has no approval step.
+enum ChainKind: Sendable, Equatable {
+    case add, update, reinstall
+
+    /// The envelope's `command`.
+    var command: String {
+        switch self {
+        case .add: "add"
+        case .update: "update"
+        case .reinstall: "reinstall"
+        }
+    }
+
+    /// The run approves the version first (the fetch of stage 1 stored it unapproved).
+    var approves: Bool { self != .reinstall }
+
+    /// The steps the run records, in order.
+    var steps: [MenuActionRunner.ChainStep] {
+        approves ? [.approve, .provision, .sign, .install] : [.provision, .sign, .install]
+    }
+}
+
+/// The facts a confirm shows about a build file, whether it was just fetched (`MenuFetched`) or is stored and approved
+/// (`MenuPrevious`).
+protocol MenuBuildFacts: Sendable {
+    var version: String { get }
+    var build: String? { get }
+    /// The full SHA-256 of the file.
+    var sha256: String { get }
+    var size: Int64 { get }
+    /// The stricter of the source's declared minimum OS and the one the binary says; nil when neither is known.
+    var minOS: String? { get }
+}
+
+/// What a chain signs: exactly this version, and the file the owner saw (its SHA-256).
+struct ChainTarget: Sendable, Equatable {
+    var kind: ChainKind
+    var version: String
+    var sha256: String
+
+    init(_ kind: ChainKind, _ build: some MenuBuildFacts) {
+        self.kind = kind
+        version = build.version
+        sha256 = build.sha256
+    }
+}
+
 /// What stage 1 of Add app fetched and checked: the facts the second confirm shows, and the exact version and file the owner
 /// approves. The runner approves nothing whose manifest entry has a different SHA-256.
-public struct MenuFetched: Sendable, Hashable {
+public struct MenuFetched: Sendable, Hashable, MenuBuildFacts {
     public var version: String
     public var build: String?
     /// The full SHA-256 of the file.
@@ -683,25 +743,25 @@ public enum MenuActions {
     /// The first lines of both second confirms: the file's version and build, size and minimum OS, the full SHA-256 and who
     /// vouches for it. The build is written once: Stremio's spelling ("1.9.6b142" is "1.9.6 (142)") already carries it.
     private static func fetchedLines(_ app: String, _ fetched: MenuFetched, card: MenuDeviceCard, snapshot: MenuSnapshot) -> [String] {
-        let facts = factsLine(
-            app, version: fetched.version, build: fetched.build, size: fetched.size, minOS: fetched.minOS, card: card)
         let thirdParty = snapshot.addSources.first { $0.app == app }?.thirdParty == true
-        return [
-            facts, "SHA-256 \(fetched.sha256)",
+        let vouched =
             thirdParty
-                ? "Matches the index's; a third party, so this guards against corruption, not a bad index"
-                : "Matches the publisher's",
-        ]
+            ? "Matches the index's; a third party, so this guards against corruption, not a bad index"
+            : "Matches the publisher's"
+        return buildLines(app, fetched, card: card) + [vouched]
+    }
+
+    /// The build's facts and its full SHA-256 (at `hashLineIndex`): the first two lines of every confirm that names a file.
+    private static func buildLines(_ app: String, _ build: some MenuBuildFacts, card: MenuDeviceCard) -> [String] {
+        [factsLine(app, build, card: card), "SHA-256 \(build.sha256)"]
     }
 
     /// "Apollo 3.9.0 · 45.2 MB · iOS 15.0 or later".
-    private static func factsLine(
-        _ app: String, version: String, build: String?, size: Int64, minOS: String?, card: MenuDeviceCard
-    ) -> String {
-        var facts = "\(MenuFormat.appName(app)) \(MenuFormat.version(version))"
-        if let build, !facts.hasSuffix(")") { facts += " (build \(build))" }
-        facts += " · " + MenuFormat.size(size)
-        if let minOS { facts += " · \(ProvisionApp.osName(devicePlatform: card.platform)) \(minOS) or later" }
+    private static func factsLine(_ app: String, _ build: some MenuBuildFacts, card: MenuDeviceCard) -> String {
+        var facts = "\(MenuFormat.appName(app)) \(MenuFormat.version(build.version))"
+        if let number = build.build, !facts.hasSuffix(")") { facts += " (build \(number))" }
+        facts += " · " + MenuFormat.size(build.size)
+        if let minOS = build.minOS { facts += " · \(ProvisionApp.osName(devicePlatform: card.platform)) \(minOS) or later" }
         return facts
     }
 
@@ -759,17 +819,16 @@ public enum MenuActions {
         let name = MenuFormat.appName(app)
         let before = MenuFormat.version(from)
         let after = MenuFormat.version(to.version)
-        let lines = [
-            factsLine(app, version: to.version, build: to.build, size: to.size, minOS: to.minOS, card: card),
-            "SHA-256 \(to.sha256)",
-            profileLine(card.row(for: app), snapshot: snapshot, now: now),
-            "Installs over the existing app: its data is kept, slots unchanged",
-            "An older version may not read data the newer one wrote",
-            "If iOS refuses the older build, the installed app is left as it is",
-            "Renewals keep this version until you update",
-            "Keep the device unlocked and connected",
-            keychain,
-        ]
+        let lines =
+            buildLines(app, to, card: card) + [
+                profileLine(card.row(for: app), snapshot: snapshot, now: now),
+                "Installs over the existing app: its data is kept, slots unchanged",
+                "An older version may not read data the newer one wrote",
+                "If iOS refuses the older build, the installed app is left as it is",
+                "Renewals keep this version until you update",
+                "Keep the device unlocked and connected",
+                keychain,
+            ]
         return MenuPrompt(
             title: "Reinstall \(name) \(after) on \(alias) (now \(before))", lines: lines,
             confirmLabel: "Reinstall \(after)", destructive: false, runningLabel: "Reinstalling \(name) \(after) on \(alias)…",

@@ -2,7 +2,7 @@ import Foundation
 
 /// A fetched, approved IPA that is still on disk: what "Reinstall previous version" shows and signs. The rule that picks one
 /// for a row is `pick`; the loader reads the manifest once (`stored`), the snapshot builder only applies the rule.
-public struct MenuPrevious: Sendable, Hashable {
+public struct MenuPrevious: Sendable, Hashable, MenuBuildFacts {
     /// The manifest's spelling ("3.9.0", "1.9.6b142").
     public var version: String
     public var build: String?

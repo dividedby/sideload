@@ -50,23 +50,21 @@ public enum MenuActionRunner {
         case .addFetch(_, let app), .updateFetch(_, let app, _):
             envelope = await steps.fetch(services, FetchOptions(app: app))
         case .addApprove(let device, let app, let fetched), .updateApprove(let device, let app, _, let fetched):
-            if let reason = addStop(app: app, fetched: fetched, services: services) {
-                await deliver(.notRun(reason))
-                return
-            }
             // Update is the same chain: the app is already installed, so `install` goes over it and keeps its data.
-            envelope = await runChain(
-                app, device: device, version: fetched.version, sha256: fetched.sha256, command: (action.chain ?? .add).command,
-                approve: true, services: services, steps: steps, isCancelled: isCancelled)
-        case .reinstallPrevious(let device, let app, _, let to):
-            if let reason = reinstallStop(app: app, to: to, services: services) {
+            let target = ChainTarget(action.chainKind ?? .add, fetched)
+            if let reason = manifestStop(app: app, target: target, services: services) {
                 await deliver(.notRun(reason))
                 return
             }
+            envelope = await runChain(app, device: device, target: target, services: services, steps: steps, isCancelled: isCancelled)
+        case .reinstallPrevious(let device, let app, _, let to):
             // Already fetched and approved: only the tail of the Update chain, signing exactly `to`.
-            envelope = await runChain(
-                app, device: device, version: to.version, sha256: to.sha256, command: "reinstall", approve: false,
-                services: services, steps: steps, isCancelled: isCancelled)
+            let target = ChainTarget(.reinstall, to)
+            if let reason = manifestStop(app: app, target: target, services: services) {
+                await deliver(.notRun(reason))
+                return
+            }
+            envelope = await runChain(app, device: device, target: target, services: services, steps: steps, isCancelled: isCancelled)
         case .lendable(let device, let app):
             // `device lendable` takes no `.op.lock`, so a lab `slot lend` can land after the panel was drawn: the ledger is
             // read again here, and the setting is not written while the device has a lent or pending slot.
@@ -101,8 +99,8 @@ public enum MenuActionRunner {
         return busy ? MenuActions.lentOrChanging(device) : nil
     }
 
-    /// The steps of the second Add app (and Update) confirm, in order.
-    enum AddStep: String, CaseIterable, Sendable {
+    /// The steps a chain can record (`ChainKind.steps` says which it does), in order.
+    enum ChainStep: String, CaseIterable, Sendable {
         case approve, provision, sign, install
 
         var title: String { MenuFormat.capitalised(rawValue) }
@@ -117,8 +115,8 @@ public enum MenuActionRunner {
         }
     }
 
-    /// The status the runner records for a step in the add envelope.
-    enum AddStepStatus: String, Sendable {
+    /// The status the runner records for a step in the chain's envelope.
+    enum ChainStepStatus: String, Sendable {
         case done, skipped, failed
     }
 
@@ -134,55 +132,54 @@ public enum MenuActionRunner {
     /// Why the approval must not run: the manifest as it is on disk has no such entry, or its file is not the one the owner
     /// saw (a different SHA-256). Nil when it matches.
     static func addStop(app: String, fetched: MenuFetched, services: Services) -> String? {
-        let manifest: Manifest
-        do {
-            manifest = try ManifestStore(paths: services.home).load()
-        } catch {
-            return "The fetched file could not be checked. Fetch it again."
-        }
-        guard let entry = manifest.entry(app: app, version: fetched.version), entry.prunedAt == nil else {
-            return "\(MenuFormat.appName(app)) \(fetched.version) is no longer fetched. Fetch it again."
-        }
-        guard entry.sha256 == fetched.sha256 else { return "The fetched file changed since you reviewed it. Fetch it again." }
-        return nil
+        manifestStop(app: app, target: ChainTarget(.add, fetched), services: services)
     }
 
-    /// Why Reinstall previous version must not run: the manifest as it is on disk has no approved, unpruned entry for `to`, its
-    /// file is not the one the owner saw (a different SHA-256), or the file is gone. Nil when it matches.
-    static func reinstallStop(app: String, to: MenuPrevious, services: Services) -> String? {
+    /// Why the chain must not run, from the manifest as it is on disk: no entry for the version, or a file that is not the one
+    /// the owner saw (a different SHA-256). Add app and Update just fetched the file, so it must still be there unpruned;
+    /// Reinstall previous version goes back to a stored build, which must still be approved and on disk. Nil when it matches.
+    static func manifestStop(app: String, target: ChainTarget, services: Services) -> String? {
+        let fetched = target.kind.approves
         let store = ManifestStore(paths: services.home)
         let manifest: Manifest
         do {
             manifest = try store.load()
         } catch {
-            return "The stored file could not be checked. Fetch it again."
+            return fetched
+                ? "The fetched file could not be checked. Fetch it again." : "The stored file could not be checked. Fetch it again."
         }
-        let name = "\(MenuFormat.appName(app)) \(MenuFormat.version(to.version))"
-        guard let entry = manifest.entry(app: app, version: to.version), entry.approved, store.hasFile(entry) else {
-            return "\(name) is no longer stored and approved."
+        let name = MenuFormat.appName(app)
+        let shown = fetched ? target.version : MenuFormat.version(target.version)
+        let present: (ManifestEntry) -> Bool = { fetched ? $0.prunedAt == nil : $0.approved && store.hasFile($0) }
+        guard let entry = manifest.entry(app: app, version: target.version), present(entry) else {
+            return fetched ? "\(name) \(shown) is no longer fetched. Fetch it again." : "\(name) \(shown) is no longer stored and approved."
         }
-        guard entry.sha256 == to.sha256 else { return "The stored file for \(name) changed since you reviewed it." }
+        guard entry.sha256 == target.sha256 else {
+            return fetched
+                ? "The fetched file changed since you reviewed it. Fetch it again."
+                : "The stored file for \(name) \(shown) changed since you reviewed it."
+        }
         return nil
     }
 
     /// Add app and Update, stage 2 (`approve`): approve exactly the confirmed version, then only the steps still needed, then
     /// install, folded into one `add`- (or `update`-) shaped envelope with a status per step. Reinstall previous version is the
-    /// same tail without the approval (`approve` false: the build is already approved, and no `approve` step is recorded). Each
-    /// command takes `.op.lock` itself, so the lab can interleave between
-    /// steps. A step that is already done (a profile with 6 days or more left, a signed build for this version and profile) is
+    /// same tail without the approval (`ChainKind.approves` is false: the build is already approved, and no `approve` step is
+    /// recorded). Each command takes `.op.lock` itself, so the lab can interleave between steps. A step that is already done (a profile with 6 days or more left, a signed build for this version and profile) is
     /// skipped, so a run that stopped halfway resumes. Stops between steps when cancelled, and on the first failure.
     private static func runChain(
-        _ app: String, device: String, version: String, sha256: String, command: String, approve: Bool, services: Services,
-        steps: MenuActionSteps, isCancelled: @Sendable () -> Bool
+        _ app: String, device: String, target: ChainTarget, services: Services, steps: MenuActionSteps,
+        isCancelled: @Sendable () -> Bool
     ) async -> Envelope {
+        let (version, sha256, command, approve) = (target.version, target.sha256, target.kind.command, target.kind.approves)
         var results: [JSONValue] = []
         var warnings: [JSONValue] = []
         var appIdNew: Bool?
         var installStarted = false
-        func record(_ step: AddStep, _ status: AddStepStatus) {
+        func record(_ step: ChainStep, _ status: ChainStepStatus) {
             results.append(["step": .string(step.rawValue), "status": .string(status.rawValue)])
         }
-        func finish(_ failed: AddStep? = nil, _ error: Envelope.Entry? = nil) -> Envelope {
+        func finish(_ failed: ChainStep? = nil, _ error: Envelope.Entry? = nil) -> Envelope {
             if let failed { record(failed, .failed) }
             var data: [String: JSONValue] = [
                 "device": .string(device), "app": .string(app), "version": .string(version),
@@ -192,10 +189,10 @@ public enum MenuActionRunner {
             if installStarted { data["installStarted"] = true }
             return Envelope(ok: failed == nil, command: command, data: data, errors: error.map { [$0] } ?? [])
         }
-        func stop(_ step: AddStep, _ envelope: Envelope) -> Envelope {
+        func stop(_ step: ChainStep, _ envelope: Envelope) -> Envelope {
             finish(step, envelope.errors.first ?? .init(code: "INTERNAL_ERROR", message: "\(step.rawValue) failed.", fix: nil))
         }
-        func interrupted(_ step: AddStep) -> Envelope? {
+        func interrupted(_ step: ChainStep) -> Envelope? {
             guard isCancelled() else { return nil }
             return finish(step, .init(code: RefreshPolicy.interrupted, message: "The run was interrupted.", fix: nil))
         }
@@ -248,7 +245,7 @@ public enum MenuActionRunner {
                 build.version == version && build.sha256Prefix == prefix
                     && build.profileUuid == profile(in: ledger)?.profileUuid
             }
-            var status = AddStepStatus.skipped
+            var status = ChainStepStatus.skipped
             if current != true {
                 let envelope = await steps.sign(services, SignOptions(app: app, device: device, yes: true, version: version))
                 guard envelope.ok else { return stop(.sign, envelope) }
