@@ -32,12 +32,17 @@ public struct MenuInputs: Sendable {
     public var deviceApps: [String: DeviceAppsProbe]
     /// What each approved source last listed, by app key (`MenuUpdates`); empty when nothing was ever checked.
     public var upstream: [String: MenuUpstream]
+    /// The approved builds still on disk, by app key (`MenuPrevious.stored`); empty when there are none or the manifest cannot
+    /// be read.
+    public var stored: [String: [MenuPrevious]]
 
     public init(
         now: Date, canaryStatus: String?, config: Config, ledger: Ledger, probe: DeviceProbe,
         notices: [MenuIssue] = [], ledgerReadable: Bool = true, autoRefreshAvailable: Bool = false, renewing: Bool = false,
-        renewFailed: Bool = false, deviceApps: [String: DeviceAppsProbe] = [:], upstream: [String: MenuUpstream] = [:]
+        renewFailed: Bool = false, deviceApps: [String: DeviceAppsProbe] = [:], upstream: [String: MenuUpstream] = [:],
+        stored: [String: [MenuPrevious]] = [:]
     ) {
+        self.stored = stored
         self.upstream = upstream
         self.ledgerReadable = ledgerReadable
         self.renewing = renewing
@@ -281,6 +286,7 @@ public enum MenuSnapshotBuilder {
                 built.profile = MenuRowProfile(
                     storedExpires: ledger.freeProfiles.first { $0.id == built.id }?.expires, newAppId: use.isNew,
                     appIdAllowed: use.allowed, installedExtensions: install.strippedExtensions.count)
+                built.previous = MenuPrevious.pick(inputs.stored[candidate.app] ?? [], installed: install.version)
                 // Only a source the owner approved is offered, whatever an older `updates.json` still holds.
                 if addSources.contains(where: { $0.app == candidate.app }), let listed = inputs.upstream[candidate.app] {
                     built.update = MenuUpdateInfo(

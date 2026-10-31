@@ -73,6 +73,20 @@ struct CLITests {
         #expect(approved.code == "FETCH_NETWORK")
     }
 
+    @Test("sign takes --version: it reaches SignOptions (an empty one is USAGE from sign itself), a missing value and strays are USAGE")
+    func signVersion() async throws {
+        let config = Config(devices: [:], bundleIdPrefix: "io.github.dividedby")
+        let empty = try await invoke(["sign", "--app", "apollo", "--device", "iphone", "--version=", "--yes"], config: config)
+        #expect(empty.code == "USAGE" && empty.envelope.command == "sign" && empty.envelope.errors.first?.message == "--version needs a version.")
+        #expect(try await invoke(["sign", "--app", "apollo", "--device", "iphone", "--version"], config: config).code == "USAGE")
+        #expect(try await invoke(["sign", "--app", "apollo", "--device", "iphone", "--versions", "3.9.0"], config: config).code == "USAGE")
+        // A version is accepted by the parser: the run goes on to the device, which is not saved here.
+        let named = try await invoke(["sign", "--app", "apollo", "--device", "iphone", "--version", "3.9.0", "--yes"], config: config)
+        #expect(named.code == "DEVICE_NOT_SAVED" && named.envelope.command == "sign" && named.runner.calls.isEmpty)
+        let usage = try await invoke(["help"]).json["usage"]?.array?.compactMap(\.string) ?? []
+        #expect(usage.contains("sign --app <apollo|stremio-ios|stremio-tvos> --device <alias> [--version <v>] --yes"))
+    }
+
     @Test("unknown commands and bad flags return JSON errors")
     func unknownAndBad() async throws {
         #expect(try await invoke(["bogus"]).code == "UNKNOWN_COMMAND")

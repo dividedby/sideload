@@ -267,6 +267,65 @@ struct SignVersionTests {
             #expect(signed.isEmpty)
         }
     }
+
+    @Test("an approved version whose file `clean` pruned is IPA_PRUNED and nothing is signed")
+    func pruned() async throws {
+        try await withSignWorld(app: .apollo, manifest: .newerApproved) { w in
+            let store = ManifestStore(paths: w.paths)
+            var manifest = try store.load()
+            let index = try #require(manifest.entries.firstIndex { $0.version == "1.0.0" })
+            manifest.entries[index].prunedAt = testNow
+            try store.save(manifest)
+            let out = await w.run(version: "1.0.0")
+            #expect(out.errors.first?.code == "IPA_PRUNED")
+            #expect(w.runner.signingArgs.isEmpty)
+        }
+    }
+
+    @Test("an empty --version is USAGE, before anything is read")
+    func empty() async throws {
+        try await withSignWorld(app: .apollo, manifest: .newerApproved) { w in
+            let out = await w.run(version: "")
+            #expect(out.errors.first?.code == "USAGE" && out.errors.first?.message == "--version needs a version.")
+            #expect(w.runner.signingArgs.isEmpty)
+        }
+    }
+
+    private func installed(_ version: String) -> (inout Ledger) -> Void {
+        { ledger in
+            var record = menuInstall("iphone", "apollo", days: 5)
+            record.version = version
+            ledger.installs = [record]
+        }
+    }
+
+    @Test("a version older than the installed one signs with the OLDER_THAN_INSTALLED warning; it is never a block")
+    func olderWarning() async throws {
+        try await withSignWorld(app: .apollo, manifest: .newerApproved, ledger: installed("3.9.0")) { w in
+            let out = await w.run(version: "1.0.0")
+            #expect(out.ok, "\(out.errors)")
+            #expect(out.data["version"] == "1.0.0")
+            let warnings = out.data["warnings"]?.array ?? []
+            let older = try #require(warnings.first { $0["code"]?.string == "OLDER_THAN_INSTALLED" })
+            let message = try #require(older["message"]?.string)
+            #expect(message.hasPrefix("Signing 1.0.0, older than the installed 3.9.0;"))
+            #expect(message.contains("`install` goes over it and keeps the app's data") && message.contains("iOS may refuse an older build"))
+            #expect(older["fix"]?.string?.isEmpty == false)
+            let signed = try w.ledger().freeSigned.first { $0.id == w.key }
+            #expect(signed?.version == "1.0.0")
+        }
+    }
+
+    @Test("the same or a newer version: no warning")
+    func noWarning() async throws {
+        for (installed, version) in [("3.9.0", "3.9.0"), ("1.0.0", "3.9.0")] {
+            try await withSignWorld(app: .apollo, manifest: .newerApproved, ledger: self.installed(installed)) { w in
+                let out = await w.run(version: version)
+                #expect(out.ok, "\(out.errors)")
+                #expect(!warningCodes(out).contains("OLDER_THAN_INSTALLED"), "\(installed) -> \(version)")
+            }
+        }
+    }
 }
 
 @Suite("sign: every kind of extension")

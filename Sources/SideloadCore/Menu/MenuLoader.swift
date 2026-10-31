@@ -1,7 +1,8 @@
 import Foundation
 
 /// Reads what the panel shows (design section 12). Local files first (instant: the config, the ledger, the canary log, the
-/// app-data backups' manifests for the pending-restore notice and `updates.json`), then one `devicectl list devices`
+/// app-data backups' manifests for the pending-restore notice, `updates.json` and the IPA manifest with one `lstat` per approved
+/// file for Reinstall previous version), then one `devicectl list devices`
 /// (about 1 to 2 s) for visibility and transport, then one `device info apps` per visible device. Nothing here writes, locks,
 /// or touches the keychain, the portal or the network (the update check is `MenuUpdates.check`, run by the view model as a
 /// task of its own); there are no timers: the app calls it at launch, when the panel opens and on "Check status now".
@@ -58,7 +59,7 @@ public enum MenuLoader {
             MenuInputs(
                 now: services.clock.now(), canaryStatus: canaryStatus, config: config, ledger: ledger,
                 probe: .checking, notices: notices, ledgerReadable: ledgerReadable, autoRefreshAvailable: true,
-                upstream: MenuUpdates.cached(services)))
+                upstream: MenuUpdates.cached(services), stored: MenuPrevious.stored(services)))
     }
 
     /// `devicectl list devices` through `DeviceCtl` (read-only). With no saved device there is nothing to ask.

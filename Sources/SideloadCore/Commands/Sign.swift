@@ -6,8 +6,9 @@ public struct SignOptions: Sendable, Equatable {
     public var device: String?
     /// Owner confirmation; agents must not pass it (signing uses the free certificate's private key).
     public var yes: Bool
-    /// Core-only (no CLI flag): sign exactly this fetched, approved version instead of the newest approved one. The menu's
-    /// Add app sets it so a newer approved version never replaces the one the owner confirmed. Nil is today's behaviour.
+    /// `--version <v>`: sign exactly this fetched, approved version instead of the newest approved one. The menu's Add app,
+    /// Update and Reinstall previous version set it so a different approved version never replaces the one the owner
+    /// confirmed. Nil signs the newest approved version.
     public var version: String?
 
     public init(app: String? = nil, device: String? = nil, yes: Bool = false, version: String? = nil) {
@@ -51,7 +52,12 @@ public enum SignCommand {
         guard let appName = options.app, !appName.isEmpty, let alias = options.device, !alias.isEmpty else {
             return .fail(
                 command, code: "USAGE", message: "sign needs --app and --device <alias>.",
-                fix: "sideload sign --app <\(ProvisionApp.signedBySign.map(\.rawValue).joined(separator: "|"))> --device iphone --yes")
+                fix: "sideload sign --app <\(ProvisionApp.signedBySign.map(\.rawValue).joined(separator: "|"))> --device iphone [--version <v>] --yes")
+        }
+        if options.version?.isEmpty == true {
+            return .fail(
+                command, code: "USAGE", message: "--version needs a version.",
+                fix: "sideload sign --app <app> --device <alias> --version <v> --yes")
         }
         guard let app = ProvisionApp(rawValue: appName) else {
             return .fail(
@@ -326,6 +332,16 @@ private struct SignRun {
                     "NEWER_VERSION_NOT_APPROVED",
                     "A newer fetched version of \(app.rawValue) is not approved; the newest approved version is signed.",
                     "The owner reviews and approves the newer version to sign it."))
+        }
+        // Never a block: `install` goes over a newer app and keeps its data, and iOS decides whether it takes the older build.
+        if let installed = (try? services.ledgerStore.load())?.installs.first(where: { $0.id == key })?.version,
+            VersionOrder.compare(installed: installed, upstream: entry.version) == .older
+        {
+            warnings.append(
+                CanaryCommand.warning(
+                    "OLDER_THAN_INSTALLED",
+                    "Signing \(printableCut(entry.version)), older than the installed \(printableCut(installed)); `install` goes over it and keeps the app's data. iOS may refuse an older build, which leaves the installed app as it is.",
+                    "Renew or update to return to the installed or newest version."))
         }
         let ipaPath = try manifestStore.path(of: entry)
         if entry.prunedAt != nil {

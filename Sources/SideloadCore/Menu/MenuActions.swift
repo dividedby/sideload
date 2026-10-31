@@ -21,12 +21,25 @@ public enum MenuAction: Hashable, Sendable {
     /// Update, stage 2: approve exactly `fetched`, then provision (when the profile is not fresh), sign and install it over the
     /// installed `from`.
     case updateApprove(device: String, app: String, from: String, fetched: MenuFetched)
+    /// Reinstall previous version: one confirm, no fetch and no approval. Provision (when the profile is not fresh), sign `to` (an
+    /// approved build already on disk) and install it over the installed `from`.
+    case reinstallPrevious(device: String, app: String, from: String, to: MenuPrevious)
 
     /// Which chain a fetch or approval belongs to: Add app's first install or an Update over the installed version.
     var chain: AddChain? {
         switch self {
         case .addFetch, .addApprove: .add
         case .updateFetch(_, _, let from), .updateApprove(_, _, let from, _): .update(from: from)
+        default: nil
+        }
+    }
+
+    /// Which chain an approval or a reinstall runs; nil for the other actions.
+    var chainKind: ChainKind? {
+        switch self {
+        case .addApprove: .add
+        case .updateApprove: .update
+        case .reinstallPrevious: .reinstall
         default: nil
         }
     }
@@ -44,7 +57,7 @@ public enum MenuAction: Hashable, Sendable {
         switch self {
         case .renew(let device, _), .install(let device, _), .remove(let device, _), .lendable(let device, _),
             .addFetch(let device, _), .addApprove(let device, _, _), .updateFetch(let device, _, _),
-            .updateApprove(let device, _, _, _):
+            .updateApprove(let device, _, _, _), .reinstallPrevious(let device, _, _, _):
             device
         }
     }
@@ -57,13 +70,15 @@ enum AddChain: Sendable, Equatable {
     /// An Update over the installed version `from`.
     case update(from: String)
 
-    /// The envelope's `command`.
-    var command: String {
+    var kind: ChainKind {
         switch self {
-        case .add: "add"
-        case .update: "update"
+        case .add: .add
+        case .update: .update
         }
     }
+
+    /// The envelope's `command`.
+    var command: String { kind.command }
 
     /// The menu item the owner chooses again, and what the second confirm does.
     var menuName: String {
@@ -89,9 +104,57 @@ enum AddChain: Sendable, Equatable {
     }
 }
 
+/// The chain a run signs and installs one version through: Add app and Update approve the fetched version first, Reinstall previous
+/// version goes back to a build that is already approved and has no approval step.
+enum ChainKind: Sendable, Equatable {
+    case add, update, reinstall
+
+    /// The envelope's `command`.
+    var command: String {
+        switch self {
+        case .add: "add"
+        case .update: "update"
+        case .reinstall: "reinstall"
+        }
+    }
+
+    /// The run approves the version first (the fetch of stage 1 stored it unapproved).
+    var approves: Bool { self != .reinstall }
+
+    /// The steps the run records, in order.
+    var steps: [MenuActionRunner.ChainStep] {
+        approves ? [.approve, .provision, .sign, .install] : [.provision, .sign, .install]
+    }
+}
+
+/// The facts a confirm shows about a build file, whether it was just fetched (`MenuFetched`) or is stored and approved
+/// (`MenuPrevious`).
+protocol MenuBuildFacts: Sendable {
+    var version: String { get }
+    var build: String? { get }
+    /// The full SHA-256 of the file.
+    var sha256: String { get }
+    var size: Int64 { get }
+    /// The stricter of the source's declared minimum OS and the one the binary says; nil when neither is known.
+    var minOS: String? { get }
+}
+
+/// What a chain signs: exactly this version, and the file the owner saw (its SHA-256).
+struct ChainTarget: Sendable, Equatable {
+    var kind: ChainKind
+    var version: String
+    var sha256: String
+
+    init(_ kind: ChainKind, _ build: some MenuBuildFacts) {
+        self.kind = kind
+        version = build.version
+        sha256 = build.sha256
+    }
+}
+
 /// What stage 1 of Add app fetched and checked: the facts the second confirm shows, and the exact version and file the owner
 /// approves. The runner approves nothing whose manifest entry has a different SHA-256.
-public struct MenuFetched: Sendable, Hashable {
+public struct MenuFetched: Sendable, Hashable, MenuBuildFacts {
     public var version: String
     public var build: String?
     /// The full SHA-256 of the file.
@@ -134,7 +197,7 @@ public struct MenuPrompt: Sendable, Equatable {
 }
 
 public enum MenuOfferKind: Sendable, Equatable {
-    case retry, install, installUpdate, update, remove
+    case retry, install, installUpdate, update, reinstallPrevious, remove
 }
 
 /// One button a row offers.
@@ -194,6 +257,9 @@ public enum MenuActions {
         case .updateApprove(_, let app, let from, let fetched):
             if let stop = freeStop(card: card, snapshot: snapshot) { return stop }
             return update(app, from: from, fetched: fetched, card: card, snapshot: snapshot, now: now)
+        case .reinstallPrevious(_, let app, let from, let to):
+            if let stop = freeStop(card: card, snapshot: snapshot) { return stop }
+            return reinstall(app, from: from, to: to, card: card, snapshot: snapshot, now: now)
         }
     }
 
@@ -349,20 +415,11 @@ public enum MenuActions {
         _ app: String, from: String, fetched: MenuFetched?, card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date
     ) -> MenuAvailability {
         let name = MenuFormat.appName(app)
-        guard let row = card.row(for: app) else { return .disabled("Not on \(card.alias)") }
-        switch row.presence {
-        case .installed: break
-        case .lent: return .disabled(why(.lent))
-        case .pending: return .disabled(why(.pending))
-        case .notInstalled: return .disabled("Signed · not installed: use Install")
-        case .unconfirmed, .checking: break
-        }
-        if let stop = deviceStop(card: card) { return stop }
-        if row.presence == .unconfirmed { return .disabled(why(.unconfirmed)) }
-        if row.presence == .checking { return .disabled(checkingApps) }
-        guard row.recorded, let installed = row.installedVersion else { return .disabled("Installed by hand: no update check") }
-        guard installed == from else {
-            return .disabled("\(name) is now \(MenuFormat.version(installed)), not \(MenuFormat.version(from))")
+        let row: MenuAppRow
+        let installed: String
+        switch installedGate(app, from: from, card: card) {
+        case .stop(let stop): return stop
+        case .open(let found, let version): (row, installed) = (found, version)
         }
         guard snapshot.addSources.contains(where: { $0.app == app }) else { return .disabled("Not an approved source") }
         let target: (version: String, minOS: String?)
@@ -383,14 +440,71 @@ public enum MenuActions {
         }
         let os = minimumOS(app, version: MenuFormat.version(target.version), minOS: target.minOS, card: card)
         if !os.isEnabled { return os }
-        // A fresh stored profile skips `provision`, so the budget does not matter; otherwise only a new App ID is gated on it.
-        if let profile = row.profile, !profileIsFresh(row, now: now), profile.newAppId {
-            guard let ids = snapshot.appIds else { return .disabled("App ID budget unknown") }
-            if !profile.appIdAllowed {
-                return .disabled("App ID limit: \(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved")
-            }
+        return appIdStop(row, snapshot: snapshot, now: now) ?? .enabled
+    }
+
+    /// Where Update and Reinstall previous version start, first match wins: a row and where it is (lent, changing, not
+    /// installed), a readable device, a recorded install still at the version `from` the owner saw.
+    private enum InstalledGate {
+        case stop(MenuAvailability)
+        case open(row: MenuAppRow, installed: String)
+    }
+
+    private static func installedGate(_ app: String, from: String, card: MenuDeviceCard) -> InstalledGate {
+        let name = MenuFormat.appName(app)
+        guard let row = card.row(for: app) else { return .stop(.disabled("Not on \(card.alias)")) }
+        switch row.presence {
+        case .installed: break
+        case .lent: return .stop(.disabled(why(.lent)))
+        case .pending: return .stop(.disabled(why(.pending)))
+        case .notInstalled: return .stop(.disabled("Signed · not installed: use Install"))
+        case .unconfirmed, .checking: break
         }
-        return .enabled
+        if let stop = deviceStop(card: card) { return .stop(stop) }
+        if row.presence == .unconfirmed { return .stop(.disabled(why(.unconfirmed))) }
+        if row.presence == .checking { return .stop(.disabled(checkingApps)) }
+        guard row.recorded, let installed = row.installedVersion else {
+            return .stop(.disabled("Installed by hand: no update check"))
+        }
+        guard installed == from else {
+            return .stop(.disabled("\(name) is now \(MenuFormat.version(installed)), not \(MenuFormat.version(from))"))
+        }
+        return .open(row: row, installed: installed)
+    }
+
+    /// A fresh stored profile skips `provision`, so the budget does not matter; otherwise only a new App ID is gated on it.
+    private static func appIdStop(_ row: MenuAppRow, snapshot: MenuSnapshot, now: Date) -> MenuAvailability? {
+        guard let profile = row.profile, !profileIsFresh(row, now: now), profile.newAppId else { return nil }
+        guard let ids = snapshot.appIds else { return .disabled("App ID budget unknown") }
+        if !profile.appIdAllowed {
+            return .disabled("App ID limit: \(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved")
+        }
+        return nil
+    }
+
+    /// Reinstall previous version, first match wins: Update's row gate, the previous version the owner saw still being the
+    /// row's (the same version and file), the minimum OS, and the App ID budget only when `provision` will run.
+    private static func reinstall(
+        _ app: String, from: String, to: MenuPrevious, card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date
+    ) -> MenuAvailability {
+        let name = MenuFormat.appName(app)
+        let row: MenuAppRow
+        switch installedGate(app, from: from, card: card) {
+        case .stop(let stop): return stop
+        case .open(let found, _): row = found
+        }
+        guard let current = row.previous else {
+            return .disabled("No previous version of \(name) is stored")
+        }
+        guard current.version == to.version else {
+            return .disabled("The previous version of \(name) is now \(MenuFormat.version(current.version))")
+        }
+        guard current == to else {
+            return .disabled("The stored file of \(name) \(MenuFormat.version(to.version)) changed since you reviewed it")
+        }
+        let os = minimumOS(app, version: MenuFormat.version(to.version), minOS: to.minOS, card: card)
+        if !os.isEnabled { return os }
+        return appIdStop(row, snapshot: snapshot, now: now) ?? .enabled
     }
 
     /// The lab's borrowing is a setting; it changes nothing on the device. It stays put while an app is lent or changing,
@@ -434,6 +548,11 @@ public enum MenuActions {
                 .update, .updateFetch(device: card.alias, app: row.app, from: installed),
                 "Update to \(MenuFormat.version(update.version))…")
         }
+        if row.offersPrevious, let previous = row.previous, let installed = row.installedVersion {
+            offer(
+                .reinstallPrevious, .reinstallPrevious(device: card.alias, app: row.app, from: installed, to: previous),
+                "Reinstall previous version (\(MenuFormat.version(previous.version)))…")
+        }
         if row.presence != .notInstalled {
             offer(.remove, .remove(device: card.alias, app: row.app), "Remove", destructive: true)
         }
@@ -457,6 +576,8 @@ public enum MenuActions {
         case .updateFetch(_, let app, let from): return updateFetchPrompt(app, from: from, card: card, snapshot: snapshot)
         case .updateApprove(_, let app, let from, let fetched):
             return updateApprovePrompt(app, from: from, fetched: fetched, card: card, snapshot: snapshot, now: now)
+        case .reinstallPrevious(_, let app, let from, let to):
+            return reinstallPrompt(app, from: from, to: to, card: card, snapshot: snapshot, now: now)
         }
     }
 
@@ -622,17 +743,26 @@ public enum MenuActions {
     /// The first lines of both second confirms: the file's version and build, size and minimum OS, the full SHA-256 and who
     /// vouches for it. The build is written once: Stremio's spelling ("1.9.6b142" is "1.9.6 (142)") already carries it.
     private static func fetchedLines(_ app: String, _ fetched: MenuFetched, card: MenuDeviceCard, snapshot: MenuSnapshot) -> [String] {
-        var facts = "\(MenuFormat.appName(app)) \(MenuFormat.version(fetched.version))"
-        if let build = fetched.build, !facts.hasSuffix(")") { facts += " (build \(build))" }
-        facts += " · " + MenuFormat.size(fetched.size)
-        if let minOS = fetched.minOS { facts += " · \(ProvisionApp.osName(devicePlatform: card.platform)) \(minOS) or later" }
         let thirdParty = snapshot.addSources.first { $0.app == app }?.thirdParty == true
-        return [
-            facts, "SHA-256 \(fetched.sha256)",
+        let vouched =
             thirdParty
-                ? "Matches the index's; a third party, so this guards against corruption, not a bad index"
-                : "Matches the publisher's",
-        ]
+            ? "Matches the index's; a third party, so this guards against corruption, not a bad index"
+            : "Matches the publisher's"
+        return buildLines(app, fetched, card: card) + [vouched]
+    }
+
+    /// The build's facts and its full SHA-256 (at `hashLineIndex`): the first two lines of every confirm that names a file.
+    private static func buildLines(_ app: String, _ build: some MenuBuildFacts, card: MenuDeviceCard) -> [String] {
+        [factsLine(app, build, card: card), "SHA-256 \(build.sha256)"]
+    }
+
+    /// "Apollo 3.9.0 · 45.2 MB · iOS 15.0 or later".
+    private static func factsLine(_ app: String, _ build: some MenuBuildFacts, card: MenuDeviceCard) -> String {
+        var facts = "\(MenuFormat.appName(app)) \(MenuFormat.version(build.version))"
+        if let number = build.build, !facts.hasSuffix(")") { facts += " (build \(number))" }
+        facts += " · " + MenuFormat.size(build.size)
+        if let minOS = build.minOS { facts += " · \(ProvisionApp.osName(devicePlatform: card.platform)) \(minOS) or later" }
+        return facts
     }
 
     /// "2 extensions will be removed", nil when none. An Update adds how it differs from the installed build's `installed`
@@ -667,6 +797,44 @@ public enum MenuActions {
             ], confirmLabel: "Fetch", destructive: false, runningLabel: "Fetching \(name) update…", apps: [])
     }
 
+    /// What `provision` will do for an installed row: reuse a fresh stored profile, or renew it (with a new App ID or the existing one).
+    private static func profileLine(_ row: MenuAppRow?, snapshot: MenuSnapshot, now: Date) -> String {
+        if let row, profileIsFresh(row, now: now), let expires = row.profile?.storedExpires,
+            case .days(let days) = FreeInstallExpiry.timeLeft(expires.timeIntervalSince(now))
+        {
+            return "Profile reused (\(days) d left), no portal change"
+        }
+        guard row?.profile?.newAppId == true else { return "Renews the 7-day profile; existing App ID" }
+        var portal = "Renews the 7-day profile; creates one App ID"
+        if let ids = snapshot.appIds {
+            portal += " (\(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved)"
+        }
+        return portal
+    }
+
+    private static func reinstallPrompt(
+        _ app: String, from: String, to: MenuPrevious, card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date
+    ) -> MenuPrompt {
+        let alias = card.alias
+        let name = MenuFormat.appName(app)
+        let before = MenuFormat.version(from)
+        let after = MenuFormat.version(to.version)
+        let lines =
+            buildLines(app, to, card: card) + [
+                profileLine(card.row(for: app), snapshot: snapshot, now: now),
+                "Installs over the existing app: its data is kept, slots unchanged",
+                "An older version may not read data the newer one wrote",
+                "If iOS refuses the older build, the installed app is left as it is",
+                "Renewals keep this version until you update",
+                "Keep the device unlocked and connected",
+                keychain,
+            ]
+        return MenuPrompt(
+            title: "Reinstall \(name) \(after) on \(alias) (now \(before))", lines: lines,
+            confirmLabel: "Reinstall \(after)", destructive: false, runningLabel: "Reinstalling \(name) \(after) on \(alias)…",
+            apps: [], monospacedLines: [hashLineIndex])
+    }
+
     private static func updateApprovePrompt(
         _ app: String, from: String, fetched: MenuFetched, card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date
     ) -> MenuPrompt {
@@ -680,19 +848,7 @@ public enum MenuActions {
             lines.append(extensions)
         }
         lines.append("Approves this exact version for signing" + (fetched.alreadyApproved ? " (approved earlier)" : ""))
-        if let row, profileIsFresh(row, now: now), let expires = row.profile?.storedExpires,
-            case .days(let days) = FreeInstallExpiry.timeLeft(expires.timeIntervalSince(now))
-        {
-            lines.append("Profile reused (\(days) d left), no portal change")
-        } else if row?.profile?.newAppId == true {
-            var portal = "Renews the 7-day profile; creates one App ID"
-            if let ids = snapshot.appIds {
-                portal += " (\(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved)"
-            }
-            lines.append(portal)
-        } else {
-            lines.append("Renews the 7-day profile; existing App ID")
-        }
+        lines.append(profileLine(row, snapshot: snapshot, now: now))
         lines.append("Installs over the existing app: its data is kept, slots unchanged")
         lines.append("Keep the device unlocked and connected")
         lines.append(keychain)
