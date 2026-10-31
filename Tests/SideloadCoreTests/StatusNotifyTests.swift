@@ -443,17 +443,17 @@ struct StatusNotifyRuleTests {
             StatusNotify.Current(key: "cert b", threshold: 60, text: "", notAfter: testNow),
         ]
         var stored = ["cert a": 60, "cert b": 14, "cert gone": 0, "foreign": 5]
-        #expect(StatusNotify.apply(to: &stored, announced: [current[0]], current: current, prune: true))
+        #expect(StatusNotify.apply(to: &stored, announced: [current[0]], current: current, prune: true, pruneUpdates: true))
         // `cert a` lowered to 14, `cert b` (14, below its current 60) re-armed to 60.
         #expect(stored == ["cert a": 14, "cert b": 60, "foreign": 5])
-        #expect(!StatusNotify.apply(to: &stored, announced: [], current: current, prune: true))
+        #expect(!StatusNotify.apply(to: &stored, announced: [], current: current, prune: true, pruneUpdates: true))
         // A concurrent lower value is not raised by an announcement.
         var raced = ["cert a": 0]
-        StatusNotify.apply(to: &raced, announced: [current[0]], current: [], prune: false)
+        StatusNotify.apply(to: &raced, announced: [current[0]], current: [], prune: false, pruneUpdates: true)
         #expect(raced == ["cert a": 0])
         // Without `prune`, vanished keys stay.
         var kept = ["cert gone": 0]
-        #expect(!StatusNotify.apply(to: &kept, announced: [], current: [], prune: false) && kept == ["cert gone": 0])
+        #expect(!StatusNotify.apply(to: &kept, announced: [], current: [], prune: false, pruneUpdates: true) && kept == ["cert gone": 0])
     }
 
     @Test("the texts, and sanitised keeps the + of +N more")
@@ -801,15 +801,45 @@ struct StatusNotifyUpdateTests {
         }
     }
 
-    @Test("an unreadable updates.json prunes no update key")
-    func noPruneWithoutTheFile() async throws {
+    @Test("a missing, corrupt, unreadable or version-less updates.json prunes no update key", arguments: [
+        "missing", "corrupt", "wrong schema", "folder", "errors only",
+    ])
+    func noPruneWithoutTheFile(file: String) async throws {
         try await withNotifyHome(config: updateConfig(), ledger: Ledger(installs: [versioned(.apollo, "4.0.1")])) { home in
             try await home.setStored([apolloUpdateKey: 0])
-            // updates.json is a folder: reading it fails with an I/O error.
-            try FileManager.default.createDirectory(atPath: home.paths.updates, withIntermediateDirectories: true)
+            let path = home.paths.updates
+            switch file {
+            case "corrupt": try Data("{ not json".utf8).write(to: URL(fileURLWithPath: path))
+            case "wrong schema": try Data(#"{"schema": 99, "apps": {}}"#.utf8).write(to: URL(fileURLWithPath: path))
+            // Reading a folder fails with an I/O error.
+            case "folder": try FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+            case "errors only":
+                var cache = UpdateCache()
+                cache.apps["apollo"] = UpdateCacheEntry().failed(code: "FETCH_HTTP_ERROR", retryAfter: nil, at: testNow)
+                try UpdateCacheStore(paths: home.paths).save(cache)
+            default: break
+            }
             let runner = PostRunner()
             let out = try await home.notify(runner)
-            #expect(out.envelope.ok && runner.calls.isEmpty && home.stored() == [apolloUpdateKey: 0])
+            #expect(out.envelope.ok && runner.calls.isEmpty && home.stored() == [apolloUpdateKey: 0], "\(file)")
+            // A real listing that is not newer does prune it.
+            try? FileManager.default.removeItem(atPath: path)
+            try writeListing(home.paths, ["apollo": "4.0.1"])
+            _ = try await home.notify(runner)
+            #expect(home.stored().isEmpty, "\(file)")
+        }
+    }
+
+    @Test("the same version newer on both Stremio builds is said once and recorded twice")
+    func stremioBothBuilds() async throws {
+        let ledger = Ledger(installs: [versioned(.stremioIOS, "1.9.5b100"), versioned(.stremioTVOS, "1.9.5b100", alias: "appletv")])
+        try await withNotifyHome(config: updateConfig(), ledger: ledger) { home in
+            try writeListing(home.paths, ["stremio-ios": "1.9.6b142", "stremio-tvos": "1.9.6b142"])
+            let runner = PostRunner()
+            let out = try await home.notify(runner)
+            #expect(runner.message == "Stremio 1.9.6b142 available")
+            #expect(out.notified == ["update stremio-ios 1.9.6b142", "update stremio-tvos 1.9.6b142"])
+            #expect(home.stored() == ["update stremio-ios 1.9.6b142": 0, "update stremio-tvos 1.9.6b142": 0])
         }
     }
 

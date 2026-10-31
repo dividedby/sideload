@@ -25,10 +25,21 @@ enum StatusNotify {
     }
 
     /// The prefixes of the keys this feature writes. Every other key in `lastNotified` is someone else's.
-    static let updatePrefix = "update "
-    static let ownedPrefixes = ["install ", "cert ", "profile ", "restore ", updatePrefix]
+    static let ownedPrefixes = ["install ", "cert ", "profile ", "restore ", "update "]
 
-    static func owns(_ key: String) -> Bool { ownedPrefixes.contains { key.hasPrefix($0) } }
+    static func owns(_ key: String, among prefixes: [String] = ownedPrefixes) -> Bool {
+        prefixes.contains { key.hasPrefix($0) }
+    }
+
+    /// A new-version key, `update <app> <version>`.
+    static func isUpdate(_ key: String) -> Bool { owns(key, among: ["update "]) }
+
+    /// The words of the items in order, each text once: `stremio-ios` and `stremio-tvos` both read "Stremio", so the same
+    /// version newer on both would otherwise be said twice. Every item is still recorded.
+    static func texts(_ items: [Current]) -> [String] {
+        var seen = Set<String>()
+        return items.map(\.text).filter { seen.insert($0).inserted }
+    }
 
     static func threshold(of item: ExpiryItem) -> Int? {
         switch (item.kind, item.level) {
@@ -81,7 +92,7 @@ enum StatusNotify {
             guard newer else { continue }
             out.append(
                 Current(
-                    key: updatePrefix + "\(app) \(version)", threshold: 0,
+                    key: "update \(app) \(version)", threshold: 0,
                     text: Notifier.updateAvailable(app: app, version: version), notAfter: nil))
         }
         return out.sorted { $0.key < $1.key }
@@ -105,12 +116,13 @@ enum StatusNotify {
     ///   one without a notification, so the next crossing is announced;
     /// - with `prune` (the ledger and the config were both read), an owned key with no item at a threshold any more (renewed
     ///   above the top threshold, or gone) is removed. A key not owned by this feature is never touched. An `update` key
-    ///   is only pruned when `pruneUpdates` too (`updates.json` was read as well): a missing cache must not re-arm it.
+    ///   is only pruned when `pruneUpdates` too (`updates.json` was read and lists at least one version): a file that
+    ///   is missing, corrupt or unreadable says nothing, and pruning on it would announce the same version again later.
     ///   An `update` key goes once no install is older than that version (the owner updated), so a rollback that makes the
     ///   version newer again is announced once more.
     @discardableResult
     static func apply(
-        to stored: inout [String: Int], announced: [Current], current: [Current], prune: Bool, pruneUpdates: Bool = true
+        to stored: inout [String: Int], announced: [Current], current: [Current], prune: Bool, pruneUpdates: Bool
     ) -> Bool {
         let before = stored
         for item in announced { stored[item.key] = min(stored[item.key] ?? .max, item.threshold) }
@@ -119,7 +131,7 @@ enum StatusNotify {
         }
         if prune {
             let live = Set(current.map(\.key))
-            for key in stored.keys where owns(key) && !live.contains(key) && (pruneUpdates || !key.hasPrefix(updatePrefix)) {
+            for key in stored.keys where owns(key) && !live.contains(key) && (pruneUpdates || !isUpdate(key)) {
                 stored[key] = nil
             }
         }
@@ -143,33 +155,10 @@ extension StatusCommand {
     /// `delivered` (true only when a notification was posted) and `updateCheck` (`{ran, checked, replayed, failed}`: whether
     /// the check was asked for, the sources asked this run, the ones answered from `updates.json` and the ones that failed).
     public static func runNotify(_ services: Services, checkUpdates: Bool = false) async -> Envelope {
-        var checkWarnings: [JSONValue] = []
-        var counts = (checked: 0, replayed: 0, failed: 0)
-        if checkUpdates {
-            do {
-                let report = try await UpdateCheck.run(services, app: nil, force: false)
-                var codes = Set<String>()
-                for source in report.sources where source.status != .skipped {
-                    if source.fromCache { counts.replayed += 1 } else { counts.checked += 1 }
-                    if source.status == .error {
-                        counts.failed += 1
-                        codes.insert(source.failure?.code ?? "UNKNOWN")
-                    }
-                }
-                if !codes.isEmpty {
-                    checkWarnings.append(
-                        updateCheckWarning(
-                            "The update check failed for \(counts.failed) source(s) (\(codes.sorted().joined(separator: ", ")))."))
-                }
-            } catch {
-                counts.failed = 1
-                let code = (error as? SideloadError)?.code ?? "UNKNOWN"
-                checkWarnings.append(updateCheckWarning("The update check could not run (\(code))."))
-            }
-        }
+        let check = checkUpdates ? await updateCheck(services) : UpdateCheckOutcome()
 
         var snapshot = gather(services)
-        var warnings = snapshot.warnings + checkWarnings
+        var warnings = snapshot.warnings + check.warnings
         var announced: [StatusNotify.Current] = []
         var delivered = false
 
@@ -178,18 +167,11 @@ extension StatusCommand {
         }
 
         if let config = snapshot.config {
-            var current = StatusNotify.current(items: snapshot.items, pending: snapshot.pending)
-            // The new-version items need the installs (ledger and config both read) and the file of last listings.
-            var cacheRead = false
-            if snapshot.complete, let loaded = try? UpdateCacheStore(paths: services.home).load(now: services.clock.now()) {
-                cacheRead = true
-                let approved = Set(FetchCatalog.appNames.filter { (try? FetchCatalog.approved(app: $0, config: config)) != nil })
-                let upstream = loaded.cache.apps.compactMapValues { $0.upstream?.version }
-                current += StatusNotify.updates(installs: snapshot.installs, approved: approved, upstream: upstream)
-            }
+            let updates = updateItems(services, snapshot: snapshot, config: config)
+            let current = StatusNotify.current(items: snapshot.items, pending: snapshot.pending) + (updates ?? [])
             let due = StatusNotify.due(current, stored: config.lastNotified)
             if !due.isEmpty {
-                let posted = await Notifier(runner: services.runner).notify(Notifier.combined(due.map(\.text)))
+                let posted = await Notifier(runner: services.runner).notify(Notifier.combined(StatusNotify.texts(due)))
                 if posted {
                     delivered = true
                     announced = due
@@ -200,14 +182,14 @@ extension StatusCommand {
                 }
             }
             let prune = snapshot.complete
-            let pruneUpdates = cacheRead
-            let live = current
+            // `update` keys are pruned only when updates.json listed a version (see `updateItems`).
+            let pruneUpdates = updates != nil
             var preview = config.lastNotified
-            if StatusNotify.apply(to: &preview, announced: announced, current: live, prune: prune, pruneUpdates: pruneUpdates) {
+            if StatusNotify.apply(to: &preview, announced: announced, current: current, prune: prune, pruneUpdates: pruneUpdates) {
                 do {
                     try await services.store.update { config in
                         StatusNotify.apply(
-                            to: &config.lastNotified, announced: announced, current: live, prune: prune,
+                            to: &config.lastNotified, announced: announced, current: current, prune: prune,
                             pruneUpdates: pruneUpdates)
                     }
                 } catch {
@@ -228,11 +210,61 @@ extension StatusCommand {
             announced.map { ["item": .string($0.key), "threshold": .number(Double($0.threshold))] })
         snapshot.data["delivered"] = .bool(delivered)
         snapshot.data["updateCheck"] = [
-            "ran": .bool(checkUpdates), "checked": .number(Double(counts.checked)),
-            "replayed": .number(Double(counts.replayed)), "failed": .number(Double(counts.failed)),
+            "ran": .bool(checkUpdates), "checked": .number(Double(check.checked)),
+            "replayed": .number(Double(check.replayed)), "failed": .number(Double(check.failed)),
         ]
         snapshot.data["warnings"] = .array(warnings)
         return .result(command, snapshot.data)
+    }
+
+    /// What `--check-updates` did: counts only, and the warning when it failed.
+    private struct UpdateCheckOutcome {
+        var checked = 0
+        var replayed = 0
+        var failed = 0
+        var warnings: [JSONValue] = []
+    }
+
+    /// `--check-updates`: the `updates` check, one metadata GET per approved source with an install on a saved device when the
+    /// cadence allows. Nothing here throws; a failure of any kind is `UPDATE_CHECK_FAILED` with the error codes only.
+    private static func updateCheck(_ services: Services) async -> UpdateCheckOutcome {
+        var outcome = UpdateCheckOutcome()
+        do {
+            let report = try await UpdateCheck.run(services, app: nil, force: false)
+            var codes = Set<String>()
+            for source in report.sources where source.status != .skipped {
+                if source.fromCache { outcome.replayed += 1 } else { outcome.checked += 1 }
+                if source.status == .error {
+                    outcome.failed += 1
+                    codes.insert(source.failure?.code ?? "UNKNOWN")
+                }
+            }
+            if !codes.isEmpty {
+                outcome.warnings = [
+                    updateCheckWarning(
+                        "The update check failed for \(outcome.failed) source(s) (\(codes.sorted().joined(separator: ", ")))."),
+                ]
+            }
+        } catch {
+            outcome.failed = 1
+            let code = (error as? SideloadError)?.code ?? "UNKNOWN"
+            outcome.warnings = [updateCheckWarning("The update check could not run (\(code)).")]
+        }
+        return outcome
+    }
+
+    /// The new-version items from the last good listings in `updates.json`. Nil when they cannot be judged, which also means
+    /// no `update` key may be pruned: the ledger or the config was not read, `updates.json` could not be read, or it lists no
+    /// version at all (missing, corrupt, wrong schema, or only errors). An empty array is a real answer: nothing is newer.
+    private static func updateItems(
+        _ services: Services, snapshot: Snapshot, config: Config
+    ) -> [StatusNotify.Current]? {
+        guard snapshot.complete,
+            let listed = try? UpdateCacheStore(paths: services.home).listings(now: services.clock.now()), !listed.isEmpty
+        else { return nil }
+        let approved = Set(FetchCatalog.approvedSources(config).map(\.app))
+        let upstream = listed.compactMapValues { $0.upstream?.version }
+        return StatusNotify.updates(installs: snapshot.installs, approved: approved, upstream: upstream)
     }
 
     private static func updateCheckWarning(_ message: String) -> JSONValue {
