@@ -131,7 +131,7 @@ public enum MenuActionRunner {
         } catch {
             return "The fetched file could not be checked. Fetch it again."
         }
-        guard let entry = manifest.entry(app: app, version: fetched.version) else {
+        guard let entry = manifest.entry(app: app, version: fetched.version), entry.prunedAt == nil else {
             return "\(MenuFormat.appName(app)) \(fetched.version) is no longer fetched. Fetch it again."
         }
         guard entry.sha256 == fetched.sha256 else { return "The fetched file changed since you reviewed it. Fetch it again." }

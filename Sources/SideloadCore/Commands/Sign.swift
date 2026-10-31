@@ -328,6 +328,11 @@ private struct SignRun {
                     "The owner reviews and approves the newer version to sign it."))
         }
         let ipaPath = try manifestStore.path(of: entry)
+        if entry.prunedAt != nil {
+            return fail(
+                "IPA_PRUNED", "The fetched file for \(entry.app) \(printableCut(entry.version)) was deleted by `sideload clean`.",
+                "Run `sideload fetch --app \(entry.app)` to download it again; the same file keeps its approval.")
+        }
         guard let stored = try FileDigest.sha256(path: ipaPath) else {
             return fail(
                 "IPA_MISSING", "The fetched file for \(entry.app) \(printableCut(entry.version)) is gone.",

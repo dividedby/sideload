@@ -1,7 +1,7 @@
 import SideloadCore
 
-let allCommands: [JSONValue] = ["doctor", "device", "canary", "portal", "export-cert", "fetch", "sign", "install", "status", "ledger", "inspect", "provision", "app", "slot", "refresh", "updates"]
-let builtCommands: [JSONValue] = ["doctor", "device", "canary", "ledger", "portal", "export-cert", "status", "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot", "updates"]
+let allCommands: [JSONValue] = ["doctor", "device", "canary", "portal", "export-cert", "fetch", "sign", "install", "status", "ledger", "inspect", "provision", "app", "slot", "refresh", "updates", "clean"]
+let builtCommands: [JSONValue] = ["doctor", "device", "canary", "ledger", "portal", "export-cert", "status", "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot", "updates", "clean"]
 
 private let helpFlags: Set<String> = ["-h", "--help"]
 
@@ -31,6 +31,7 @@ private func help() -> Envelope {
             "slot lend --device <alias>|--udid <id> --to lab",
             "slot return --device <alias>|--udid <id>",
             "slot restore --device <alias> [--app <apollo|stremio-ios|stremio-tvos|filler>] --yes",
+            "clean [--yes]",
             "export-cert --device <alias> [--profile <uuid>] [--out <dir>] [--copy-password] --yes",
             "ledger [refresh]",
             "portal [certificates|bundle-ids|devices|profiles] [--show-identifiers]",
@@ -58,6 +59,7 @@ private let appSpec = ArgSpec(values: ["app", "device"], flags: ["yes"])
 private let slotSpec = ArgSpec(values: ["device", "udid", "to", "app"], flags: ["yes"])
 private let fetchSpec = ArgSpec(values: ["app", "version"], flags: ["approve"])
 private let updatesSpec = ArgSpec(values: ["app"], flags: ["force"])
+private let cleanSpec = ArgSpec(flags: ["yes"])
 private let portalSpec = ArgSpec(flags: ["show-identifiers"])
 // Plain `status` takes no option; `--notify` and `--print-agent` are alternatives, and `--binary` belongs to `--print-agent`.
 private let statusSpec = ArgSpec(values: ["binary"], flags: ["notify", "print-agent"])
@@ -101,6 +103,7 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     case "inspect": spec = ArgSpec()
     case "fetch": spec = fetchSpec
     case "updates": spec = updatesSpec
+    case "clean": spec = cleanSpec
     case "provision": spec = provisionSpec
     case "sign": spec = signSpec
     case "install": spec = installSpec
@@ -204,6 +207,7 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     if command == "updates" {
         return await UpdatesCommand.run(services, UpdatesOptions(app: parsed.values["app"], force: parsed.flags.contains("force")))
     }
+    if command == "clean" { return CleanCommand.run(services, CleanOptions(yes: parsed.flags.contains("yes"))) }
     if command == "provision" {
         return await ProvisionCommand.run(
             services,

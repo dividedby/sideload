@@ -10,6 +10,14 @@ All notable changes to this project are documented here. Format follows
 - `LICENSE` (MIT) and `CONTRIBUTING.md`: how to report issues (no device IDs, names or credentials) and send changes
   (`scripts/check.sh`, the pre-commit secrets hook, merge commits), with a section of rules for AI agents that points at
   `AGENTS.md`.
+- `sideload clean [--yes]`: owner-run cleanup of `$SIDELOAD_HOME` (`--yes` is the owner's; without it a preview that deletes
+  nothing and that an agent may run). It deletes app-data backups 14 days after they were restored or superseded (for a
+  device that is no longer saved, 14 days after the newest of their dates; old `.partial` folders too) and downloaded IPAs
+  no longer needed, keeping per app every installed version, the newest two approved ones and a newer unapproved one.
+  Backups that `slot restore` would still push, devices the lab holds or that have an operation in flight, unreadable
+  manifests and anything behind a link are kept. Manifest entries of deleted IPAs stay, marked `prunedAt`; `sign`,
+  `refresh` and `fetch --approve` treat them as not on disk (`IPA_PRUNED`), and a later `fetch` stores the file again.
+  Takes `.op.lock`; output is counts only.
 
 ### Changed
 

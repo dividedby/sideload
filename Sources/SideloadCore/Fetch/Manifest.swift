@@ -28,6 +28,10 @@ public struct ManifestEntry: Codable, Sendable, Equatable {
     /// The minimum OS `inspect` read from the app's binary (the value the OS enforces). `sign` checks this
     /// against the device's OS for every app.
     public var inspectMinOS: String?
+    /// Set by `clean` under `.op.lock`, in one manifest write before the entry's folder under `downloads/` is deleted: the file is
+    /// gone (or about to be) and the entry stays as the record of what was downloaded. A pruned entry counts as not on disk for
+    /// `sign`, `refresh` and `fetch --approve`; a later `fetch` of the same version stores the file again and clears it.
+    public var prunedAt: Date?
 }
 
 extension ManifestEntry {
@@ -99,9 +103,9 @@ public struct ManifestStore: Sendable {
     }
 
     /// Whether the entry's file is on disk as a regular file (a link or a missing file is not), the way `FileDigest` reads it.
-    /// It does not hash the file; `sign` does that.
+    /// It does not hash the file; `sign` does that. A pruned entry (`clean`) has none, even if a crash left the file behind.
     func hasFile(_ entry: ManifestEntry) -> Bool {
-        guard let path = try? path(of: entry) else { return false }
+        guard entry.prunedAt == nil, let path = try? path(of: entry) else { return false }
         var st = stat()
         return lstat(path, &st) == 0 && st.st_mode & S_IFMT == S_IFREG
     }

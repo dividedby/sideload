@@ -423,7 +423,7 @@ enum AppDataBackup {
         try AtomicFile.write(try encoder().encode(manifest), to: directory + "/manifest.json", mode: 0o600)
     }
 
-    private static func readManifest(in directory: String) -> Manifest? {
+    static func readManifest(in directory: String) -> Manifest? {
         guard let data = try? readFile(directory + "/manifest.json") else { return nil }
         return try? decoder().decode(Manifest.self, from: data)
     }
