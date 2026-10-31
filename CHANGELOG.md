@@ -27,6 +27,13 @@ All notable changes to this project are documented here. Format follows
   one `--renew` retry, sign and install, about 55 s, no new App ID, no keychain dialog); README and design section 18
   no longer call it open.
 
+### Fixed
+
+- Tests: the menu test "an action that starts cancels the check in flight…" failed at random under load. Its fake
+  source could answer a request the action had already cancelled, when the poll's sleep ended before the cancel and saw
+  the release after it; that check then wrote `updates.json`, and the forced check after the action stayed inside the
+  5-minute floor and asked nothing. A cancelled request now never answers. Test-only; the app is unchanged.
+
 ## [0.4.0] - 2026-10-30
 
 Auto-refresh that reaches a Wi-Fi iPhone, and a backstop for when it cannot: `refresh --auto` now probes a paired
