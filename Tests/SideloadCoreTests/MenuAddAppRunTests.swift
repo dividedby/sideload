@@ -408,3 +408,107 @@ struct MenuAddFetchOutcomeTests {
         #expect(outcome.kind == .failed && outcome.proceed == nil)
     }
 }
+
+private func notRegistered() -> Envelope {
+    .fail(
+        "provision", code: ProvisionClassifier.deviceNotRegistered, message: "The device is not registered with the free team.",
+        fix: "The owner registers it once: sideload provision --app <app> --device <alias> --register-device --yes.")
+}
+
+private let registerAction = MenuAction.addRegister(device: "iphone", app: "apollo", fetched: addFetched)
+private let registerCall = "provision \(ProvisionOptions(app: "apollo", device: "iphone", registerDevice: true, yes: true))"
+
+@Suite("menu add app: registering the device")
+struct MenuAddRegisterTests {
+    @Test("Add app never registers by itself: a not-registered device stops at provision and offers Register and retry…")
+    func offers() async throws {
+        let ran = try await run(approve, script: Script(fail: ["provision": notRegistered()]))
+        #expect(ran.calls == ["approve apollo 3.9.0", provisionCall])
+        let outcome = try #require(ran.outcomes.first)
+        #expect(outcome.kind == .failed && outcome.headline == "Add stopped at provision")
+        let line = try #require(outcome.lines.first { $0.app == "provision" })
+        var approved = addFetched
+        approved.alreadyApproved = true
+        #expect(line.retry == .addRegister(device: "iphone", app: "apollo", fetched: approved))
+        #expect(line.retryLabel == "Register and retry…")
+        // The menu's own button replaces the CLI command.
+        #expect(line.issue?.fix == MenuActionOutcome.registerFix && line.issue?.code == "DEVICE_NOT_REGISTERED")
+    }
+
+    @Test("the confirmed retry passes --register-device, on its one renewal retry too, and carries on to install")
+    func registers() async throws {
+        let ran = try await run(registerAction)
+        #expect(ran.calls == ["approve apollo 3.9.0", registerCall, signCall, installCall])
+        #expect(ran.outcomes[0].kind == .done && ran.outcomes[0].headline == "Added Apollo 3.9.0 to iphone")
+
+        let retried = try await run(registerAction, script: Script(notRenewed: 1))
+        let renewRegister = "provision \(ProvisionOptions(app: "apollo", device: "iphone", registerDevice: true, renew: true, yes: true))"
+        #expect(retried.calls.filter { $0.hasPrefix("provision") } == [registerCall, renewRegister])
+    }
+
+    @Test("still not registered after asking: the retry is the same confirm, with the classifier's own fix")
+    func stillRefused() async throws {
+        let refused = Envelope.fail(
+            "provision", code: ProvisionClassifier.deviceNotRegistered, message: "Refused.", fix: "Connect the device, unlock it and retry.")
+        let ran = try await run(registerAction, script: Script(fail: ["provision": refused]))
+        let line = try #require(ran.outcomes[0].lines.first { $0.app == "provision" })
+        var approved = addFetched
+        approved.alreadyApproved = true
+        #expect(line.retry == .addRegister(device: "iphone", app: "apollo", fetched: approved))
+        #expect(line.issue?.fix == "Connect the device, unlock it and retry.")
+    }
+
+    @Test("registered, then sign fails: the retry is Add app's plain one and does not ask to register again")
+    func registeredThenSignFails() async throws {
+        let failed = Envelope.fail("sign", code: "SIGN_FAILED", message: "No.", fix: "Retry.")
+        let ran = try await run(registerAction, script: Script(fail: ["sign": failed]))
+        #expect(ran.calls.contains(registerCall))
+        let line = try #require(ran.outcomes[0].lines.first { $0.app == "sign" })
+        var approved = addFetched
+        approved.alreadyApproved = true
+        #expect(line.retry == .addApprove(device: "iphone", app: "apollo", fetched: approved) && line.retryLabel == "Retry")
+    }
+
+    @Test("Add app's other provision failures, and an Update or a Reinstall refused the same way, never offer to register")
+    func onlyAddApp() async throws {
+        let locked = Envelope.fail("provision", code: "DEVICE_LOCKED", message: "Locked.", fix: "Unlock it.")
+        let other = try await run(approve, script: Script(fail: ["provision": locked]))
+        let otherLine = try #require(other.outcomes[0].lines.first { $0.app == "provision" })
+        #expect(otherLine.retryLabel == "Retry")
+        if case .addRegister? = otherLine.retry { Issue.record("must not offer to register") }
+
+        let update = try await run(
+            .updateApprove(device: "iphone", app: "apollo", from: "3.8.0", fetched: addFetched),
+            script: Script(fail: ["provision": notRegistered()]))
+        #expect(update.calls.filter { $0.hasPrefix("provision") } == [provisionCall])
+        let updateLine = try #require(update.outcomes[0].lines.first { $0.app == "provision" })
+        #expect(updateLine.retryLabel == "Retry" && updateLine.issue?.fix?.contains("--register-device") == true)
+
+        // Reinstall needs a stored, approved file to get as far as `provision`, so its result is read directly.
+        let reinstall = MenuAction.reinstallPrevious(
+            device: "iphone", app: "apollo", from: "3.10.0", to: MenuPrevious(version: "3.9.0", sha256: addSha, size: 1))
+        let failed = Envelope(
+            ok: false, command: "reinstall", data: ["steps": [["step": "provision", "status": "failed"]]],
+            errors: notRegistered().errors)
+        let reinstallLine = try #require(MenuActionOutcome(action: reinstall, envelope: failed, cancelled: false).lines.first { $0.app == "provision" })
+        #expect(reinstallLine.retry == reinstall && reinstallLine.retryLabel == "Retry")
+    }
+
+    @Test("the confirm says plainly that it registers the device on the free team, and is otherwise Add app's")
+    func prompt() throws {
+        let snapshot = addBuild()
+        let prompt = try #require(MenuActions.prompt(for: registerAction, in: snapshot, now: testNow))
+        #expect(prompt.title == "Register iphone and install Apollo 3.9.0")
+        #expect(prompt.confirmLabel == "Register and install" && !prompt.destructive)
+        #expect(prompt.lines.contains("Registers iphone on your free Apple team; sideload can't remove it"))
+        #expect(prompt.lines.contains("SHA-256 \(addSha)") && prompt.monospacedLines == [1])
+        #expect(prompt.lines[1] == "SHA-256 \(addSha)")
+
+        let plain = try #require(MenuActions.prompt(for: approve, in: snapshot, now: testNow))
+        #expect(!plain.lines.joined().contains("Registers"))
+        #expect(MenuActions.availability(registerAction, in: snapshot, now: testNow) == .enabled)
+        // It stops for what Add app stops for.
+        let suspended = addBuild(ledger: Ledger(freeSuspended: LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow)))
+        #expect(MenuActions.availability(registerAction, in: suspended, now: testNow).reason == "Free certificate changed")
+    }
+}

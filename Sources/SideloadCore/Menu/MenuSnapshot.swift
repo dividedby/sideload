@@ -449,7 +449,7 @@ public struct MenuSnapshot: Sendable, Equatable {
     public var icon: MenuIcon
     public var strip: MenuStrip
     public var devices: [MenuDeviceCard]
-    /// The Apps section stays hidden until something is installed.
+    /// The Apps section stays hidden until a device is saved: a saved device with no apps still needs its Add app… menu.
     public var showsApps: Bool
     /// The Feather cert kit Export is hidden while the paid account is blocked.
     public var showsCertKitExport: Bool
@@ -474,7 +474,7 @@ public enum MenuPanel: Sendable, Equatable {
     case loading
     case loaded(MenuSnapshot)
     case failed(MenuIssue)
-    /// No `config.json` yet: carries the doctor's fix text.
+    /// No `config.json` yet: carries the pointer to Add device….
     case firstRun(MenuIssue)
 
     /// The icon for this panel: unknown until something loaded.

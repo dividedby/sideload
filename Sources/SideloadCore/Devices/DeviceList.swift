@@ -45,12 +45,14 @@ public struct ListedDevice: Sendable, Equatable {
     /// `connectionProperties.lastConnectionDate` (ISO 8601): when this Mac last connected to the device. The menu bar
     /// shows it as "seen N h ago" for an offline device. Nil when absent or unparseable.
     public var lastConnection: Date?
+    /// `hardware.deviceType` (`iPhone`, `iPad`, `appleTV`): the generic kind, not the owner's name for the device. Nil when absent.
+    public var deviceType: String?
 
     public init(
         name: String = "", udid: String? = nil, coreDeviceId: String? = nil, platform: String = "",
         physical: Bool = true, paired: Bool = false, hostnames: [String] = [], link: String = "unknown",
         osVersion: String? = nil, osBuild: String? = nil, transport: DeviceTransport = .unknown,
-        lastConnection: Date? = nil
+        lastConnection: Date? = nil, deviceType: String? = nil
     ) {
         self.name = name
         self.udid = udid
@@ -64,6 +66,7 @@ public struct ListedDevice: Sendable, Equatable {
         self.osBuild = osBuild
         self.transport = transport
         self.lastConnection = lastConnection
+        self.deviceType = deviceType
     }
 }
 
@@ -133,7 +136,8 @@ public enum DeviceList {
                 osVersion: validVersion(state["osVersionNumber"]?.stringValue ?? legacyState?["osVersionNumber"]?.stringValue),
                 osBuild: validBuild(state["osBuildUpdate"]?.stringValue ?? legacyState?["osBuildUpdate"]?.stringValue),
                 transport: transportType(conn),
-                lastConnection: conn["lastConnectionDate"]?.stringValue.flatMap(parseDate))
+                lastConnection: conn["lastConnectionDate"]?.stringValue.flatMap(parseDate),
+                deviceType: hw["deviceType"]?.stringValue)
         }
     }
 

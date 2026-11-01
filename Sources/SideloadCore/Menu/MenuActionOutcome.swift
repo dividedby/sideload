@@ -15,6 +15,12 @@ public struct MenuResultLine: Sendable, Equatable, Identifiable {
     public var issue: MenuIssue?
     /// Offered on a failed or busy line; it goes through the inline confirm again.
     public var retry: MenuAction?
+
+    /// What the retry button says: "Register and retry…" is the one that changes the free team.
+    public var retryLabel: String {
+        if case .addRegister = retry { return "Register and retry…" }
+        return "Retry"
+    }
 }
 
 public struct MenuActionOutcome: Sendable, Equatable {
@@ -34,6 +40,10 @@ public struct MenuActionOutcome: Sendable, Equatable {
     public static let busyHeadline = "Busy — another sideload or lab run is signing. Try again."
     static let cancelNote = "A stopped build leaves a marker the next free command settles."
     static let deviceNote = "The device may have finished; the row shows Change in progress until the window ends."
+    static let savedDeviceNote =
+        "Next: Add app… on its card, with Developer Mode on. If Apple says it is not registered, the result offers to register it. After the first install, trust the developer on the device: Settings › General › VPN & Device Management."
+    /// Replaces `provision`'s CLI fix when the result offers "Register and retry…".
+    static let registerFix = "Register and retry… asks first, then registers it on the free team and carries on."
 
     /// - Parameter cancelled: the menu's Cancel was used. The model's flag decides, not the `INTERRUPTED` code: `refresh`
     ///   looks at the task only between apps, so a cancel in the middle of a step comes back as that step's failure.
@@ -67,7 +77,10 @@ public struct MenuActionOutcome: Sendable, Equatable {
             readFetch(app, alias: alias, envelope: envelope, action: action, cancelled: cancelled, chain: .add)
         case .updateFetch(_, let app, let from):
             readFetch(app, alias: alias, envelope: envelope, action: action, cancelled: cancelled, chain: .update(from: from))
-        case .addApprove(_, let app, let fetched):
+        case .saveDevice(let alias, _):
+            readSingle(envelope, action: action, app: "", done: "Saved \(alias)", failed: "Device not saved")
+            if envelope.ok { notes = [Self.savedDeviceNote] }
+        case .addApprove(_, let app, let fetched), .addRegister(_, let app, let fetched):
             let done = "Added \(MenuFormat.appName(app)) \(fetched.version) to \(alias)"
             readChain(action, app: app, done: done, envelope: envelope)
         case .updateApprove(_, let app, let from, let fetched):
@@ -86,12 +99,12 @@ public struct MenuActionOutcome: Sendable, Equatable {
             switch action {
             case .install, .remove: notes.append(Self.deviceNote)
             case .addFetch, .updateFetch: notes = ["Nothing was signed or installed."]
-            case .addApprove, .updateApprove, .reinstallPrevious:
+            case .addApprove, .addRegister, .updateApprove, .reinstallPrevious:
                 let steps = Self.chainSteps(envelope)
                 // Only an install that started may have finished on the device.
                 if steps.installStarted { notes.append(Self.deviceNote) }
                 if !steps.done.isEmpty, let chain = action.chainKind { notes.append(chain.keptNote) }
-            case .renew, .lendable: break
+            case .renew, .lendable, .saveDevice: break
             }
             // What finished before the stop stays visible; what was cut short is not a failure to retry.
             lines = lines.filter { $0.tone == .good }
@@ -354,12 +367,18 @@ public struct MenuActionOutcome: Sendable, Equatable {
         var retry: MenuAction? = action
         if envelope.errors.first?.code == "SIGNED_BUILD_MISMATCH" {
             retry = nil
+        } else if let register = Self.registerRetry(action, envelope, steps: steps) {
+            retry = register
         } else if chain.approves, steps.done[.sign] != nil {
             retry = .install(device: alias, app: app)
+        } else if case .addRegister(_, _, var fetched) = action, steps.done[.provision] != nil {
+            // Registered already: the retry must not ask to register again.
+            fetched.alreadyApproved = true
+            retry = .addApprove(device: alias, app: app, fetched: fetched)
         } else if steps.done[.approve] != nil, let approved = Self.approvedAgain(action) {
             retry = approved
         }
-        appendStepLines(chain, envelope, steps: steps, retry: retry)
+        appendStepLines(action, chain, envelope, steps: steps, retry: retry)
         if envelope.ok {
             kind = .done
             headline = done
@@ -372,12 +391,25 @@ public struct MenuActionOutcome: Sendable, Equatable {
         if steps.failed == .install, let note = chain.installFailedNote { notes.append(note) }
     }
 
+    /// Add app's own confirm that registers the device, when Apple refused the device at `provision` and nothing asked for
+    /// registration yet. Only here: Update, Reinstall and Renew never offer it.
+    private static func registerRetry(_ action: MenuAction, _ envelope: Envelope, steps: ChainSteps) -> MenuAction? {
+        guard case .addApprove(let device, let app, var fetched) = action, steps.failed == .provision,
+            envelope.errors.first?.code == ProvisionClassifier.deviceNotRegistered
+        else { return nil }
+        if steps.done[.approve] != nil { fetched.alreadyApproved = true }
+        return .addRegister(device: device, app: app, fetched: fetched)
+    }
+
     /// The second confirm again with its version marked approved, so the retry skips what is done; nil when it already was.
     private static func approvedAgain(_ action: MenuAction) -> MenuAction? {
         switch action {
         case .addApprove(let device, let app, var fetched) where !fetched.alreadyApproved:
             fetched.alreadyApproved = true
             return .addApprove(device: device, app: app, fetched: fetched)
+        case .addRegister(let device, let app, var fetched) where !fetched.alreadyApproved:
+            fetched.alreadyApproved = true
+            return .addRegister(device: device, app: app, fetched: fetched)
         case .updateApprove(let device, let app, let from, var fetched) where !fetched.alreadyApproved:
             fetched.alreadyApproved = true
             return .updateApprove(device: device, app: app, from: from, fetched: fetched)
@@ -387,7 +419,9 @@ public struct MenuActionOutcome: Sendable, Equatable {
 
     /// One line per step the chain has that ran, was skipped or failed, in its order. A failed install of Reinstall previous
     /// version gets the rollback text added to its own fix.
-    private mutating func appendStepLines(_ chain: ChainKind, _ envelope: Envelope, steps: ChainSteps, retry: MenuAction?) {
+    private mutating func appendStepLines(
+        _ action: MenuAction, _ chain: ChainKind, _ envelope: Envelope, steps: ChainSteps, retry: MenuAction?
+    ) {
         for step in chain.steps {
             if let status = steps.done[step] {
                 let skipped = status == .skipped
@@ -395,7 +429,10 @@ public struct MenuActionOutcome: Sendable, Equatable {
             } else if step == steps.failed {
                 let entry = envelope.errors.first
                 let code = entry?.code ?? "INTERNAL_ERROR"
-                let fix = [entry?.fix, step == .install ? chain.installFix : nil].compactMap { $0 }.joined(separator: " ")
+                var fix = [entry?.fix, step == .install ? chain.installFix : nil].compactMap { $0 }.joined(separator: " ")
+                if code == ProvisionClassifier.deviceNotRegistered, case .addRegister? = retry, case .addApprove = action {
+                    fix = Self.registerFix
+                }
                 let issue = MenuIssue(code: code, message: entry?.message ?? "The step did not finish.", fix: fix.isEmpty ? nil : fix)
                 if code == RefreshPolicy.interrupted {
                     lines.append(line(step.rawValue, step.title, .neutral, "Stopped", retry: retry))
@@ -429,6 +466,8 @@ public enum MenuActionState: Sendable, Equatable {
     case confirming(MenuAction, MenuPrompt)
     /// `cancelling` is set once Cancel was pressed and the command has not returned yet.
     case running(label: String, cancellable: Bool, cancelling: Bool)
+    /// Add device: looking for devices, or the list to pick from. Read-only; the save goes through `confirming`.
+    case addingDevice(MenuDevicePicker)
     case finished(MenuActionOutcome)
 }
 

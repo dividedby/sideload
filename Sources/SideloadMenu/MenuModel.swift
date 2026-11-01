@@ -43,6 +43,10 @@ final class MenuModel {
     private var pendingUpdateForce = false
     /// What the checks of this session listed; `MenuLoader.panel` lays it over `updates.json`.
     private var checked: [String: MenuUpstream] = [:]
+    /// Add device: the one `devicectl list devices` the picker is waiting for.
+    private var pickerTask: Task<Void, Never>?
+    /// Bumped when a look starts and when the picker closes: only the latest look may write its result.
+    private var pickerGeneration = 0
     /// Add app: the second confirm a successful fetch opened, held until the fetch task has ended.
     private var proceed: MenuAction?
     /// Bumped when an action starts: a load that began earlier must not write anything after it.
@@ -148,15 +152,16 @@ final class MenuModel {
     /// Opens the inline confirm for `action`. Nothing runs. Ignored while an action runs or when the action is not
     /// available in the current panel.
     func request(_ action: MenuAction) {
-        guard actionTask == nil, case .loaded(let snapshot) = panel else { return }
+        guard actionTask == nil, let snapshot = actionSnapshot else { return }
         guard let prompt = MenuActions.prompt(for: action, in: snapshot, now: services.clock.now()) else { return }
+        closePicker()
         actionState = .confirming(action, prompt)
     }
 
     /// The owner's click on the confirm button. The action is checked again against the panel as it is now.
     func confirm() {
         guard actionTask == nil, case .confirming(let action, let shown) = actionState else { return }
-        guard case .loaded(let snapshot) = panel else {
+        guard let snapshot = actionSnapshot else {
             actionState = .finished(.notRun("The panel is not loaded."))
             return
         }
@@ -248,6 +253,50 @@ final class MenuModel {
         return nil
     }
 
+    /// The panel actions are checked against; on first run, one with no devices, so Add device can save the first.
+    private var actionSnapshot: MenuSnapshot? { panel.actionSnapshot(now: services.clock.now()) }
+
+    // MARK: Add device
+
+    /// Add device… takes a click once the panel has read the config.
+    var canAddDevice: Bool { controlsEnabled && actionSnapshot != nil }
+
+    /// The aliases the picker's field may not use.
+    var savedAliases: [String] { actionSnapshot?.devices.map(\.alias) ?? [] }
+
+    /// Opens the picker and lists the devices. Read-only: nothing is saved until the confirm.
+    func openAddDevice() {
+        guard canAddDevice else { return }
+        findDevices()
+    }
+
+    /// Also the picker's Check again.
+    func findDevices() {
+        guard actionTask == nil else { return }
+        pickerTask?.cancel()
+        pickerGeneration += 1
+        let generation = pickerGeneration
+        actionState = .addingDevice(.looking)
+        pickerTask = Task { [services] in
+            let found = await MenuAddDevice.find(services)
+            guard generation == pickerGeneration else { return }
+            pickerTask = nil
+            actionState = .addingDevice(found)
+        }
+    }
+
+    /// The picker's Continue: opens the save confirm for this device and alias.
+    func chooseDevice(_ candidate: MenuDeviceCandidate, alias: String) {
+        guard case .addingDevice = actionState else { return }
+        request(.saveDevice(alias: MenuAddDevice.trimmedAlias(alias), candidate: candidate))
+    }
+
+    private func closePicker() {
+        pickerGeneration += 1
+        pickerTask?.cancel()
+        pickerTask = nil
+    }
+
     func cancelAction() {
         guard case .running(let label, let cancellable, false) = actionState, cancellable else { return }
         actionState = .running(label: label, cancellable: cancellable, cancelling: true)
@@ -258,6 +307,7 @@ final class MenuModel {
     /// dismissed (the on-card Cancel is gone by then, so `cancelAction` alone would leave the task running until the kill).
     func cancelForShutdown() {
         updateTask?.cancel()
+        pickerTask?.cancel()
         if case .running = actionState { cancelAction() } else { actionTask?.cancel() }
     }
 
@@ -265,6 +315,9 @@ final class MenuModel {
     func dismiss() {
         switch actionState {
         case .confirming, .finished: actionState = .idle
+        case .addingDevice:
+            closePicker()
+            actionState = .idle
         case .idle, .running: break
         }
     }
@@ -275,7 +328,7 @@ final class MenuModel {
         case .idle: true
         // A result is replaced by the next action, but not while the command's post-result work still runs.
         case .finished: actionTask == nil
-        case .confirming, .running: false
+        case .confirming, .running, .addingDevice: false
         }
     }
 
@@ -286,7 +339,7 @@ final class MenuModel {
 
     /// A result's Retry, against the panel as it is now (it goes through the confirm, which checks again).
     func retryAvailability(_ action: MenuAction) -> MenuAvailability {
-        guard case .loaded(let snapshot) = panel else { return .disabled("Panel not loaded") }
+        guard let snapshot = actionSnapshot else { return .disabled("Panel not loaded") }
         return availability(action, in: snapshot)
     }
 

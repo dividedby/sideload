@@ -14,8 +14,8 @@ public enum MenuLoader {
         case failed(MenuIssue)
     }
 
-    /// The doctor's fix for a Mac with no saved device, shown on first run.
-    public static let firstRunFix = DeviceCheck.fixSave
+    /// Shown on first run, above the Add device… button.
+    public static let firstRunFix = "Choose Add device… to save your first device."
 
     public static func loadLocal(_ services: Services) -> Local {
         // No config at all is a first run, not a failure. The file may exist and not parse; that is a failure.

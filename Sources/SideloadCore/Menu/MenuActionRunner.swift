@@ -1,12 +1,13 @@
 import Foundation
 
 /// What each menu action calls. The defaults are the real commands (the same in-process entry points the CLI runs, each
-/// taking `.op.lock` itself, except `device lendable`, which only writes config); tests replace them.
+/// taking `.op.lock` itself, except `device lendable` and `device save`, which only write config); tests replace them.
 public struct MenuActionSteps: Sendable {
     public var refresh: @Sendable (Services, RefreshOptions) async -> Envelope = { await RefreshCommand.run($0, $1) }
     public var install: @Sendable (Services, InstallOptions) async -> Envelope = { await InstallCommand.run($0, $1) }
     public var remove: @Sendable (Services, AppOptions) async -> Envelope = { await AppCommand.run($0, $1) }
     public var lendable: @Sendable (Services, DeviceOptions) async -> Envelope = { await DeviceCommand.run($0, $1) }
+    public var saveDevice: @Sendable (Services, DeviceOptions) async -> Envelope = { await DeviceCommand.run($0, $1) }
     /// Add app: `fetch` (stage 1, and `--approve --version` in stage 2), then `provision`, `sign` and `install`.
     public var fetch: @Sendable (Services, FetchOptions) async -> Envelope = { await FetchCommand.run($0, $1) }
     public var provision: @Sendable (Services, ProvisionOptions) async -> Envelope = { await ProvisionCommand.run($0, $1) }
@@ -49,9 +50,11 @@ public enum MenuActionRunner {
             envelope = await steps.remove(services, AppOptions(sub: "remove", app: app, device: device, yes: true))
         case .addFetch(_, let app), .updateFetch(_, let app, _):
             envelope = await steps.fetch(services, FetchOptions(app: app))
-        case .addApprove(let device, let app, let fetched), .updateApprove(let device, let app, _, let fetched):
+        case .addApprove(let device, let app, let fetched), .updateApprove(let device, let app, _, let fetched),
+            .addRegister(let device, let app, let fetched):
             // Update is the same chain: the app is already installed, so `install` goes over it and keeps its data.
-            let target = ChainTarget(action.chainKind ?? .add, fetched)
+            var target = ChainTarget(action.chainKind ?? .add, fetched)
+            if case .addRegister = action { target.registerDevice = true }
             if let reason = manifestStop(app: app, target: target, services: services) {
                 await deliver(.notRun(reason))
                 return
@@ -65,6 +68,14 @@ public enum MenuActionRunner {
                 return
             }
             envelope = await runChain(app, device: device, target: target, services: services, steps: steps, isCancelled: isCancelled)
+        case .saveDevice(let alias, let candidate):
+            // The panel may be older than the file: `device save` would refuse a taken alias, but not this device under a second one.
+            if let reason = MenuAddDevice.saveStop(alias: alias, candidate: candidate, services: services) {
+                await deliver(.notRun(reason))
+                return
+            }
+            envelope = await steps.saveDevice(
+                services, DeviceOptions(sub: "save", alias: alias, match: candidate.match, platform: candidate.platform, yes: true))
         case .lendable(let device, let app):
             // `device lendable` takes no `.op.lock`, so a lab `slot lend` can land after the panel was drawn: the ledger is
             // read again here, and the setting is not written while the device has a lent or pending slot.
@@ -223,10 +234,12 @@ public enum MenuActionRunner {
             if fresh == true {
                 record(.provision, .skipped)
             } else {
-                var envelope = await steps.provision(services, ProvisionOptions(app: app, device: device, yes: true))
+                let register = target.registerDevice
+                var envelope = await steps.provision(services, ProvisionOptions(app: app, device: device, registerDevice: register, yes: true))
                 // Like `refresh`: only a profile that did not move is retried, once, with the renewal of our own cached copy.
                 if !envelope.ok, envelope.errors.first?.code == "PROFILE_NOT_RENEWED" {
-                    envelope = await steps.provision(services, ProvisionOptions(app: app, device: device, renew: true, yes: true))
+                    envelope = await steps.provision(
+                        services, ProvisionOptions(app: app, device: device, registerDevice: register, renew: true, yes: true))
                 }
                 guard envelope.ok else { return stop(.provision, envelope) }
                 if case .bool(let isNew)? = envelope.data["appIdNew"] { appIdNew = isNew }

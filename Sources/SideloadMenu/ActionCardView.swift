@@ -25,6 +25,8 @@ struct ActionCardView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .card()
+        case .addingDevice(let picker):
+            DevicePickerView(picker: picker, model: model)
         case .finished(let outcome):
             ResultView(outcome: outcome, model: model)
         }
@@ -116,7 +118,7 @@ private struct LineView: View {
                 Spacer()
                 if let retry = line.retry {
                     let availability = model.retryAvailability(retry)
-                    Button("Retry") { model.request(retry) }
+                    Button(line.retryLabel) { model.request(retry) }
                         .buttonStyle(.link)
                         .disabled(!availability.isEnabled)
                         .help(availability.reason ?? "")

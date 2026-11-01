@@ -5,6 +5,26 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- Add device… in the menu bar app, so a paired device can be added without the terminal. It lists the physical iOS and tvOS
+  devices `devicectl` sees that are not saved, each as its type, connection and last four UDID characters, never its name;
+  you pick one, edit the suggested alias, and an inline confirm saves it, the same as `device save --yes`. It never pairs or
+  unpairs: an unpaired device is greyed out and says to pair it in Xcode. It also shows on first run, where the panel now
+  points at it instead of the CLI command.
+- Register and retry…, in Add app…'s result, when `provision` answers `DEVICE_NOT_REGISTERED`. Its own confirm says it registers
+  the device on the free team, then runs the chain with `--register-device`. It is the only menu path that passes that flag, and
+  a device already on the team is never asked.
+- Spike S6 passed on 2026-11-01: from the menu bar app, the owner saved the iPad with Add device… and installed Stremio and Apollo
+  on it with Add app…; the only step on the iPad was trusting the developer.
+
+### Changed
+
+- The panel's Apps section shows once a device is saved, not once something is installed, so a device with no apps has its Add
+  app… menu.
+- `provision` also reads "isn't registered in your developer account" and "the device must be registered" as
+  `DEVICE_NOT_REGISTERED` (Xcode's wording as far as it is known; unverified).
+
 ### Fixed
 
 - `URLSessionTransport.get` (the metadata and API requests of `fetch`, `updates` and `portal`) could report `timedOut` on an answer

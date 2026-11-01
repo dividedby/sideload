@@ -2,7 +2,8 @@ import Foundation
 
 // The menu's mutating actions (design section 12): which are available, why not, and what the inline confirm says. The
 // snapshot builder emits facts; the rules are here. Nothing runs from this file. Text never carries a device name, a
-// UDID, a CoreDevice ID or an identity name: a device is its saved alias, an app is its display name.
+// UDID, a CoreDevice ID or an identity name: a device is its saved alias, an app is its display name, and a device not saved
+// yet is its type, connection and last four UDID characters (`MenuDeviceCandidate.title`).
 
 public enum MenuAction: Hashable, Sendable {
     /// `app` nil is "All apps".
@@ -24,6 +25,11 @@ public enum MenuAction: Hashable, Sendable {
     /// Reinstall previous version: one confirm, no fetch and no approval. Provision (when the profile is not fresh), sign `to` (an
     /// approved build already on disk) and install it over the installed `from`.
     case reinstallPrevious(device: String, app: String, from: String, to: MenuPrevious)
+    /// Add device: `device save` for a device `devicectl` lists that is not saved yet. Nothing changes on the device or the portal.
+    case saveDevice(alias: String, candidate: MenuDeviceCandidate)
+    /// Add app, stage 2 again after Apple said the device is not registered: the same chain, and `provision` also gets
+    /// `--register-device`. The only menu path that passes that flag; only `addApprove`'s result offers it.
+    case addRegister(device: String, app: String, fetched: MenuFetched)
 
     /// Which chain a fetch or approval belongs to: Add app's first install or an Update over the installed version.
     var chain: AddChain? {
@@ -37,7 +43,7 @@ public enum MenuAction: Hashable, Sendable {
     /// Which chain an approval or a reinstall runs; nil for the other actions.
     var chainKind: ChainKind? {
         switch self {
-        case .addApprove: .add
+        case .addApprove, .addRegister: .add
         case .updateApprove: .update
         case .reinstallPrevious: .reinstall
         default: nil
@@ -57,7 +63,8 @@ public enum MenuAction: Hashable, Sendable {
         switch self {
         case .renew(let device, _), .install(let device, _), .remove(let device, _), .lendable(let device, _),
             .addFetch(let device, _), .addApprove(let device, _, _), .updateFetch(let device, _, _),
-            .updateApprove(let device, _, _, _), .reinstallPrevious(let device, _, _, _):
+            .updateApprove(let device, _, _, _), .reinstallPrevious(let device, _, _, _),
+            .saveDevice(let device, _), .addRegister(let device, _, _):
             device
         }
     }
@@ -144,11 +151,14 @@ struct ChainTarget: Sendable, Equatable {
     var kind: ChainKind
     var version: String
     var sha256: String
+    /// `provision` also gets `--register-device` (`MenuAction.addRegister`).
+    var registerDevice: Bool
 
-    init(_ kind: ChainKind, _ build: some MenuBuildFacts) {
+    init(_ kind: ChainKind, _ build: some MenuBuildFacts, registerDevice: Bool = false) {
         self.kind = kind
         version = build.version
         sha256 = build.sha256
+        self.registerDevice = registerDevice
     }
 }
 
@@ -218,10 +228,12 @@ public enum MenuActions {
     static func lentOrChanging(_ alias: String) -> String { "An app is lent or changing on \(alias)" }
 
     /// Install, Remove, Renew and both stages of Add app and of Update stop for the owner's Cancel; saving the lendable setting
-    /// is instant.
+    /// or a device is instant.
     public static func cancellable(_ action: MenuAction) -> Bool {
-        if case .lendable = action { return false }
-        return true
+        switch action {
+        case .lendable, .saveDevice: false
+        default: true
+        }
     }
 
     /// "Stremio", "Apollo": how the panel names an app key.
@@ -230,10 +242,15 @@ public enum MenuActions {
     // MARK: availability
 
     public static func availability(_ action: MenuAction, in snapshot: MenuSnapshot, now: Date) -> MenuAvailability {
+        // The one action with no card yet.
+        if case .saveDevice(let alias, let candidate) = action {
+            return MenuAddDevice.availability(alias: alias, candidate: candidate, taken: snapshot.devices.map(\.alias))
+        }
         guard let card = snapshot.devices.first(where: { $0.alias == action.device }) else {
             return .disabled("Device not found")
         }
         switch action {
+        case .saveDevice: return .disabled("Already saved")  // Answered above: a saved device has a card.
         case .lendable(_, let app): return lendable(app, card: card, snapshot: snapshot)
         case .renew(_, let app):
             if let stop = freeStop(card: card, snapshot: snapshot) { return stop }
@@ -247,7 +264,7 @@ public enum MenuActions {
         case .addFetch(_, let app):
             if let stop = freeStop(card: card, snapshot: snapshot) { return stop }
             return add(app, card: card, snapshot: snapshot)
-        case .addApprove(_, let app, let fetched):
+        case .addApprove(_, let app, let fetched), .addRegister(_, let app, let fetched):
             if let stop = freeStop(card: card, snapshot: snapshot) { return stop }
             if let stop = add(app, card: card, snapshot: snapshot).reason { return .disabled(stop) }
             return minimumOS(app, version: fetched.version, minOS: fetched.minOS, card: card)
@@ -563,16 +580,20 @@ public enum MenuActions {
 
     /// The confirm for an available action; nil when it is not available (or the card is gone).
     public static func prompt(for action: MenuAction, in snapshot: MenuSnapshot, now: Date) -> MenuPrompt? {
-        guard availability(action, in: snapshot, now: now).isEnabled,
-            let card = snapshot.devices.first(where: { $0.alias == action.device })
+        guard availability(action, in: snapshot, now: now).isEnabled else { return nil }
+        if case .saveDevice(let alias, let candidate) = action { return MenuAddDevice.prompt(alias: alias, candidate: candidate) }
+        guard let card = snapshot.devices.first(where: { $0.alias == action.device })
         else { return nil }
         switch action {
+        case .saveDevice: return nil  // Answered above.
         case .renew(_, let app): return renewPrompt(app, card: card, snapshot: snapshot)
         case .install(_, let app): return installPrompt(app, card: card)
         case .remove(_, let app): return removePrompt(app, card: card)
         case .lendable(_, let app): return lendablePrompt(app, card: card)
         case .addFetch(_, let app): return addFetchPrompt(app, card: card, snapshot: snapshot)
         case .addApprove(_, let app, let fetched): return addApprovePrompt(app, fetched: fetched, card: card, snapshot: snapshot)
+        case .addRegister(_, let app, let fetched):
+            return addApprovePrompt(app, fetched: fetched, card: card, snapshot: snapshot, registers: true)
         case .updateFetch(_, let app, let from): return updateFetchPrompt(app, from: from, card: card, snapshot: snapshot)
         case .updateApprove(_, let app, let from, let fetched):
             return updateApprovePrompt(app, from: from, fetched: fetched, card: card, snapshot: snapshot, now: now)
@@ -711,11 +732,15 @@ public enum MenuActions {
             ], confirmLabel: "Fetch", destructive: false, runningLabel: "Fetching \(name)…", apps: [])
     }
 
-    private static func addApprovePrompt(_ app: String, fetched: MenuFetched, card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuPrompt {
+    /// `registers` is the confirm of `MenuAction.addRegister`, which says plainly that the device joins the free team.
+    private static func addApprovePrompt(
+        _ app: String, fetched: MenuFetched, card: MenuDeviceCard, snapshot: MenuSnapshot, registers: Bool = false
+    ) -> MenuPrompt {
         let alias = card.alias
         let name = MenuFormat.appName(app)
         var lines = fetchedLines(app, fetched, card: card, snapshot: snapshot)
         if let extensions = extensionsLine(fetched.extensionCount) { lines.append(extensions) }
+        if registers { lines.append("Registers \(alias) on your free Apple team; sideload can't remove it") }
         lines.append("Approves this exact version for signing" + (fetched.alreadyApproved ? " (approved earlier)" : ""))
         let option = card.addable.first { $0.app == app }
         var portal: String
@@ -732,9 +757,12 @@ public enum MenuActions {
         lines.append("Keep the device unlocked and connected")
         lines.append(keychain)
         return MenuPrompt(
-            title: "Approve and install \(name) \(fetched.version) on \(alias)", lines: lines,
-            confirmLabel: "Approve and install", destructive: false,
-            runningLabel: "Adding \(name) \(fetched.version) to \(alias)…", apps: [], monospacedLines: [hashLineIndex])
+            title: registers
+                ? "Register \(alias) and install \(name) \(fetched.version)" : "Approve and install \(name) \(fetched.version) on \(alias)",
+            lines: lines, confirmLabel: registers ? "Register and install" : "Approve and install", destructive: false,
+            runningLabel: registers
+                ? "Registering \(alias) and adding \(name) \(fetched.version)…" : "Adding \(name) \(fetched.version) to \(alias)…",
+            apps: [], monospacedLines: [hashLineIndex])
     }
 
     /// Where the SHA-256 is in the lines `fetchedLines` returns (monospaced and selectable).

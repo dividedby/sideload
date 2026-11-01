@@ -73,7 +73,7 @@ swift test            # Swift Testing suite
 scripts/check.sh      # local gate: swift build + test, release build (debug-only hook check), pnpm test (secrets suite), check-secrets --all
 ```
 
-Save the iPhone once (reads IDs from `devicectl`; nothing is typed into config by hand):
+Save the iPhone once (reads IDs from `devicectl`; nothing is typed into config by hand; the menu bar app's Add device… does the same):
 
 ```sh
 .build/debug/sideload device save --alias iphone --match "<device name>" --platform ios --yes
@@ -126,11 +126,22 @@ and installing it), Update… (an installed app whose approved source lists a ne
 keeps its data), Reinstall previous version… (an installed app with an older approved IPA still on disk: "Reinstall previous
 version (3.8.0)…" in the row's menu; one confirm with the version and its full SHA-256, then provision, sign that exact version
 and install over the app, which keeps its data; no fetch; iOS may refuse an older build, which leaves the installed app as it
-is, and renewals keep the version until you update; first run on 2026-10-31: Apollo 4.0.0 over 4.0.1, accepted, still signed in, and Update… back to 4.0.1 after), Remove and "Lendable: <App>". Each opens an inline confirm that says what it will do
+is, and renewals keep the version until you update; first run on 2026-10-31: Apollo 4.0.0 over 4.0.1, accepted, still signed in, and Update… back to 4.0.1 after), Remove, "Lendable: <App>" and Add device… (below). Each opens an inline confirm that says what it will do
 (slots, App IDs, the keychain prompt); the confirm button is the owner's `--yes`, and only then does the app run the same
 in-process command as the CLI. A running action shows Cancel; the result lists each app with its code, message and fix and a
 Retry, or says the lock was busy. A disabled control says why ("Connect iphone over Wi-Fi or USB", "renewable at 6 d left",
 "No free slot: remove an app first"). The cert kit Export stays disabled. A pending app-data restore shows as an orange notice with the owner's `slot restore` command. Light and dark follow the system.
+
+Add device… (under the panel's content, also on first run) adds a device without the terminal. It lists the physical iOS and
+tvOS devices `devicectl` sees that are not saved yet, each as its type, connection and last four UDID characters ("iPad · USB ·
+…ab12", never its name). Pick one, edit the suggested alias, and an inline confirm saves it, the same as `device save --yes`;
+nothing changes on the device or the portal. It never pairs or unpairs anything: an unpaired device is greyed out with "pair it
+in Xcode first". Registering on the free team is a separate decision: Add app… on the new device runs without it, and if Apple
+says the device is not registered, the result offers "Register and retry…", whose own confirm says "Registers ipad on your free
+Apple team; sideload can't remove it" and then runs the chain with `--register-device`. A device already on the team is never
+asked. If Xcode's wording isn't recognised the failure is a plain `PROVISION_FAILED`, and `provision --register-device --yes`
+in a terminal does the same. After the first install, trust the developer on the device (Settings › General › VPN & Device
+Management). First run on 2026-11-01: the iPad, then Stremio and Apollo on it (spike S6). On a fresh Mac, Add app… also needs `bundleIdPrefix` and `approvedSources` in `config.json`.
 
 The live check is one read-only `devicectl device info apps` per visible device, at launch, on Check status now, and on a panel
 open only when the last attempt is 5 minutes old; it takes no lock and writes nothing (`docs/design.md` section 12). When a device
