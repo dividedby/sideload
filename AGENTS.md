@@ -22,7 +22,7 @@ team) before changing anything.
   ledger's certificate/profile lists stay paid-only. Signing code matches identities by certificate OU, never by
   name. `provision`, `sign`, `install`, `refresh` (manual), `refresh --auto`, `app remove`, `slot restore` and `slot lend|return` are built (owner-run, or run by the lab for `slot lend|return`; `refresh --auto` is the command the owner's launchd agent runs, and agents never run it on a real device; `refresh --print-agent` is built and pure (no lock, subprocess or write), so an agent may run it, but only the owner runs the `launchctl` commands it prints, see `docs/design.md` section 18). `refresh` runs `provision`, `sign` and `install`, each taking `.op.lock` itself, and spends no new App ID on a renewal.
 - **One lock for the free team.** `$SIDELOAD_HOME/.op.lock` is the shared operation lock for any signing with
-  6ZU5Z6ZKK7. mobile-safari-lab takes it too (dividedby/mobile-safari-lab#63, sideload #2), so a sideload run
+  6ZU5Z6ZKK7. mobile-safari-lab takes it too (`dividedby/mobile-safari-lab-archive` issue 63, the lab's private repo from before it went public on 2026-10-31, sideload #2), so a sideload run
   and a lab run never sign at the same time. Take it before touching that team's identity or profiles. A busy
   lock means a manual run reports `OPERATION_IN_PROGRESS` and auto-refresh logs a skip; never wait on it or
   delete the file. The lock is a BSD `flock` (`LOCK_EX|LOCK_NB`) and
@@ -52,7 +52,7 @@ team) before changing anything.
 - App-data backups under `$SIDELOAD_HOME/backups/` (`slot lend` saves the lent app's data container) are secrets-class: they hold
   session tokens. Directories 0700, files 0600; never print, log, put in JSON, the ledger or the repo, and agents never open,
   read or copy them. Output carries counts and booleans only. `copy to` (the restore, in `slot return` and in `slot restore`) was
-  first checked live on 2026-10-25 (mobile-safari-lab#63, Stage 2: an iPhone on Wi-Fi, stremio-ios, a backup of 11 of 13 files; after the return the app was still signed in with its library and add-ons); `slot restore` itself has not been run on a device.
+  first checked live on 2026-10-25 (mobile-safari-lab-archive issue 63, Stage 2: an iPhone on Wi-Fi, stremio-ios, a backup of 11 of 13 files; after the return the app was still signed in with its library and add-ons); `slot restore` itself has not been run on a device.
 - The pre-commit hook (`.githooks/pre-commit` → `scripts/check-secrets.mjs --staged`) must stay enabled.
   `pnpm install` sets `core.hooksPath`. Never bypass it with `--no-verify`.
 
