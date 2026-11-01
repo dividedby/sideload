@@ -94,38 +94,51 @@ struct DownloadFlowTests {
         #expect(task.suspends == 1)
     }
 
-    @Test("a producer and a consumer on separate threads finish with no lost wakeup", .timeLimit(.minutes(1)))
-    func noLostWakeup() async throws {
+    @Test("a producer and a consumer on separate threads finish with no lost wakeup")
+    func noLostWakeup() async {
         let task = FakeTask()
         let flow = DownloadFlow(maxBytes: 1 << 40, high: 8192, low: 2048)
         flow.attach(task.controls)
         let queue = Mutex<[Int]>([])
         let blocks = 20_000
-        let done = Mutex(false)
+        let stop = Mutex(false)
 
-        let deadline = Date().addingTimeInterval(30)
         let producer = Thread {
             for _ in 0..<blocks {
-                // A suspended task delivers nothing until it is resumed; a missed resume ends the loop at the
-                // deadline instead of spinning forever.
-                while task.suspended, Date() < deadline { Thread.sleep(forTimeInterval: 0.00002) }
-                if Date() >= deadline { break }
+                // A suspended task delivers nothing until it is resumed.
+                while task.suspended, !stop.withLock({ $0 }) { Thread.sleep(forTimeInterval: 0.00002) }
+                if stop.withLock({ $0 }) { break }
                 _ = flow.received(512) { queue.withLock { $0.append(512) } }
             }
-            done.withLock { $0 = true }
         }
-        var consumed = 0
-        let finished = Date().addingTimeInterval(30)
-        producer.start()
-        while consumed < blocks, Date() < finished {
-            if let next = queue.withLock({ $0.isEmpty ? nil : $0.removeFirst() }) {
-                flow.consumed(next)
-                consumed += 1
-            } else {
-                try await Task.sleep(for: .microseconds(50))
+        // A real thread, not a task: a task would wait its turn on the pool at every wake, behind the rest of a full test
+        // run, and this test would measure that queue. The verdict needs no clock: only this thread can drain the queue
+        // or cause a resume, so a task suspended before an empty queue was found is a lost wakeup, however slow the run.
+        // The time limit only keeps a broken test from hanging the run.
+        let outcome = await withCheckedContinuation { (finished: CheckedContinuation<(consumed: Int, lost: Bool), Never>) in
+            let consumer = Thread {
+                var consumed = 0
+                var lost = false
+                let giveUp = Date().addingTimeInterval(300)
+                while consumed < blocks, !lost, Date() < giveUp {
+                    let wasSuspended = task.suspended
+                    if let next = queue.withLock({ $0.isEmpty ? nil : $0.removeFirst() }) {
+                        flow.consumed(next)
+                        consumed += 1
+                    } else if wasSuspended {
+                        lost = true
+                    } else {
+                        Thread.sleep(forTimeInterval: 0.00005)
+                    }
+                }
+                stop.withLock { $0 = true }
+                finished.resume(returning: (consumed, lost))
             }
+            producer.start()
+            consumer.start()
         }
-        #expect(consumed == blocks, "the producer was left waiting for a resume")
+        #expect(!outcome.lost, "the task stayed suspended with nothing left to consume")
+        #expect(outcome.consumed == blocks)
         #expect(!task.suspended && task.suspends == task.resumes && !task.misused)
         #expect(flow.maxPending <= 8192 + 512)
     }
