@@ -97,11 +97,11 @@ public struct DisabledTransport: HTTPTransport {
 }
 
 /// The real client (design section 8): an ephemeral `URLSession` (no cookies, no cache, no credential
-/// storage), 20 s per request, 30 s overall, redirects refused (the bearer token never follows one), response
-/// bodies capped at 4 MiB.
+/// storage), 20 s per request, 30 s overall (both measure the network, not how soon our own task gets a thread),
+/// redirects refused (the bearer token never follows one), response bodies capped at 4 MiB.
 public struct URLSessionTransport: HTTPTransport {
-    static let requestTimeout: TimeInterval = 20
-    static let resourceTimeout: TimeInterval = 30
+    static let defaultRequestTimeout: TimeInterval = 20
+    static let defaultResourceTimeout: TimeInterval = 30
     static let maxBodyBytes = 4 << 20
 
     /// `URLProtocol` classes put in front of the real loader; tests inject a stub so no socket is opened.
@@ -112,31 +112,86 @@ public struct URLSessionTransport: HTTPTransport {
     let flowLow: Int
     /// Tests only: told the most unconsumed bytes a download ever held, when it ends.
     let pendingProbe: (@Sendable (Int) -> Void)?
+    /// `get`'s limits; tests shorten them to see the timers fire.
+    let requestTimeout: TimeInterval
+    let resourceTimeout: TimeInterval
 
     public init() {
         protocolClasses = []
         flowHigh = Self.defaultFlowHigh
         flowLow = Self.defaultFlowLow
         pendingProbe = nil
+        requestTimeout = Self.defaultRequestTimeout
+        resourceTimeout = Self.defaultResourceTimeout
     }
 
     init(
         protocolClasses: [AnyClass], flowHigh: Int = URLSessionTransport.defaultFlowHigh,
-        flowLow: Int = URLSessionTransport.defaultFlowLow, pendingProbe: (@Sendable (Int) -> Void)? = nil
+        flowLow: Int = URLSessionTransport.defaultFlowLow, pendingProbe: (@Sendable (Int) -> Void)? = nil,
+        requestTimeout: TimeInterval = URLSessionTransport.defaultRequestTimeout,
+        resourceTimeout: TimeInterval = URLSessionTransport.defaultResourceTimeout
     ) {
         self.protocolClasses = protocolClasses
         self.flowHigh = flowHigh
         self.flowLow = flowLow
         self.pendingProbe = pendingProbe
+        self.requestTimeout = requestTimeout
+        self.resourceTimeout = resourceTimeout
     }
 
-    /// Completes a redirect with `nil`, so the task ends with the 3xx response instead of following it.
-    private final class NoRedirect: NSObject, URLSessionTaskDelegate, Sendable {
+    /// Collects a GET's body on URLSession's own queue and hands over the finished response. `session.bytes(for:)` is
+    /// not used: it delivers only as its reader asks, so the request's timers keep running on an answer already here
+    /// until the reader gets a thread, and a busy process reads a finished response as `timedOut`.
+    private final class GetDelegate: NSObject, URLSessionDataDelegate, Sendable {
+        private let body = Mutex(Data())
+        private let results: AsyncThrowingStream<HTTPResponse, any Error>.Continuation
+
+        init(results: AsyncThrowingStream<HTTPResponse, any Error>.Continuation) {
+            self.results = results
+        }
+
+        /// Completes a redirect with `nil`, so the task ends with the 3xx response instead of following it.
         func urlSession(
             _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
             newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
         ) {
             completionHandler(nil)
+        }
+
+        func urlSession(
+            _ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+            completionHandler: @escaping @Sendable (URLSession.ResponseDisposition) -> Void
+        ) {
+            if response.expectedContentLength > Int64(URLSessionTransport.maxBodyBytes) {
+                results.finish(throwing: HTTPTransportError.bodyTooLarge)
+                completionHandler(.cancel)
+                return
+            }
+            completionHandler(.allow)
+        }
+
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+            let fits = body.withLock { body -> Bool in
+                guard body.count + data.count <= URLSessionTransport.maxBodyBytes else { return false }
+                body.append(data)
+                return true
+            }
+            if !fits {
+                results.finish(throwing: HTTPTransportError.bodyTooLarge)
+                dataTask.cancel()
+            }
+        }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+            if let error {
+                results.finish(throwing: error)
+            } else if let http = task.response as? HTTPURLResponse {
+                let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap { Int($0) }
+                results.yield(HTTPResponse(status: http.statusCode, body: body.withLock { $0 }, retryAfter: retryAfter))
+                results.finish()
+            } else {
+                results.finish(throwing: HTTPTransportError.failed)
+            }
         }
     }
 
@@ -147,11 +202,12 @@ public struct URLSessionTransport: HTTPTransport {
         config.urlCache = nil
         config.urlCredentialStorage = nil
         config.requestCachePolicy = .reloadIgnoringLocalCacheData
-        config.timeoutIntervalForRequest = Self.requestTimeout
-        config.timeoutIntervalForResource = Self.resourceTimeout
+        config.timeoutIntervalForRequest = requestTimeout
+        config.timeoutIntervalForResource = resourceTimeout
         config.waitsForConnectivity = false
         if !protocolClasses.isEmpty { config.protocolClasses = protocolClasses }
-        let session = URLSession(configuration: config, delegate: NoRedirect(), delegateQueue: nil)
+        let (results, continuation) = AsyncThrowingStream.makeStream(of: HTTPResponse.self, throwing: (any Error).self)
+        let session = URLSession(configuration: config, delegate: GetDelegate(results: continuation), delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
 
         var urlRequest = URLRequest(url: request.url)
@@ -159,17 +215,15 @@ public struct URLSessionTransport: HTTPTransport {
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
         request.bearer?.reveal { urlRequest.setValue("Bearer " + $0, forHTTPHeaderField: "Authorization") }
 
+        let task = session.dataTask(with: urlRequest)
+        // Leaving the wait for any reason (answered, failed, cancelled task) stops the transfer.
+        continuation.onTermination = { _ in task.cancel() }
+        task.resume()
+
         do {
-            let (bytes, response) = try await session.bytes(for: urlRequest)
-            guard let http = response as? HTTPURLResponse else { throw HTTPTransportError.failed }
-            if http.expectedContentLength > Int64(Self.maxBodyBytes) { throw HTTPTransportError.bodyTooLarge }
-            var body = Data()
-            for try await byte in bytes {
-                body.append(byte)
-                if body.count > Self.maxBodyBytes { throw HTTPTransportError.bodyTooLarge }
-            }
-            let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap { Int($0) }
-            return HTTPResponse(status: http.statusCode, body: body, retryAfter: retryAfter)
+            for try await response in results { return response }
+            // A cancelled task ends the stream quietly; the delegate never finishes it without a result or an error.
+            throw HTTPTransportError.cancelled
         } catch let error as HTTPTransportError {
             throw error
         } catch let error as URLError where error.code == .timedOut {

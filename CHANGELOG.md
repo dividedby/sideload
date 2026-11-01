@@ -64,6 +64,11 @@ All notable changes to this project are documented here. Format follows
 
 ### Fixed
 
+- `URLSessionTransport.get` (the metadata and API requests of `fetch`, `updates` and `portal`) could report `timedOut` on an answer
+  that had already arrived. It read through `session.bytes(for:)`, which delivers only as its reader asks, so the 20 s and 30 s
+  timers kept running until our own task got a thread. It now collects the body in the session's delegate, as `download` does,
+  so the timers measure the network; the limits, the 4 MiB cap and the refused redirects are unchanged. This was the random
+  failure of three `URLSessionTransportTests` in full `swift test` runs, where about 1900 tests queue on the cooperative pool.
 - Tests: the menu test "an action that starts cancels the check in flight…" failed at random under load. Its fake
   source could answer a request the action had already cancelled, when the poll's sleep ended before the cancel and saw
   the release after it; that check then wrote `updates.json`, and the forced check after the action stayed inside the

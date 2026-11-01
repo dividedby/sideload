@@ -50,6 +50,38 @@ private func request(host: String) -> HTTPRequest {
 
 private let transport = URLSessionTransport(protocolClasses: [StubProtocol.self])
 
+/// A task executor that can hold its jobs: what a request's consumer sees when no pool thread is free for it. Only
+/// tasks that prefer this executor wait, so the other tests running in parallel are not slowed.
+private final class GateExecutor: TaskExecutor, @unchecked Sendable {
+    private let queue = DispatchQueue(label: "sideload.tests.gate")
+    private let held = Mutex<[UnownedJob]?>(nil)
+
+    var isHolding: Bool { held.withLock { $0 != nil } }
+
+    func hold() { held.withLock { $0 = $0 ?? [] } }
+
+    func release() {
+        let jobs = held.withLock { held -> [UnownedJob] in
+            defer { held = nil }
+            return held ?? []
+        }
+        jobs.forEach(run)
+    }
+
+    func enqueue(_ job: consuming ExecutorJob) {
+        let job = UnownedJob(job)
+        let kept = held.withLock { held -> Bool in
+            held?.append(job)
+            return held != nil
+        }
+        if !kept { run(job) }
+    }
+
+    private func run(_ job: UnownedJob) {
+        queue.async { job.runSynchronously(on: self.asUnownedTaskExecutor()) }
+    }
+}
+
 @Suite("URLSession transport")
 struct URLSessionTransportTests {
     @Test("sends a GET with the bearer header and returns status, body and Retry-After")
@@ -136,6 +168,43 @@ struct URLSessionTransportTests {
             proto.client?.urlProtocol(proto, didFailWithError: URLError(.notConnectedToInternet))
         }
         await #expect(throws: HTTPTransportError.failed) { try await transport.get(request(host: down)) }
+    }
+
+    @Test("the timers cover the network, not our own scheduling: a consumer held past both of them still gets the answer")
+    func lateConsumer() async throws {
+        // A full test run queues about 1900 tests on the cooperative pool, so a consumer can wait tens of seconds for a
+        // thread. The timeouts are long enough that the stub answers well inside them under any load.
+        let host = "late.consumer.stub.invalid"
+        let gate = GateExecutor()
+        StubProtocol.install(host: host) { _, proto in
+            gate.hold()
+            proto.respond(200, headers: ["Retry-After": "7"], body: Data("{}".utf8))
+        }
+        let short = URLSessionTransport(protocolClasses: [StubProtocol.self], requestTimeout: 5, resourceTimeout: 6)
+        let answer = Task(executorPreference: gate) { try await short.get(request(host: host)) }
+        while !gate.isHolding { try await Task.sleep(for: .milliseconds(5)) }
+        try await Task.sleep(for: .seconds(7))
+        gate.release()
+        let response = try await answer.value
+        #expect(response.status == 200)
+        #expect(String(decoding: response.body, as: UTF8.self) == "{}")
+        #expect(response.retryAfter == 7)
+    }
+
+    @Test("a server that never answers, or stalls mid-body, still times out")
+    func stalledServerTimesOut() async {
+        let short = URLSessionTransport(protocolClasses: [StubProtocol.self], requestTimeout: 0.2, resourceTimeout: 0.4)
+        let silent = "silent.stub.invalid"
+        StubProtocol.install(host: silent) { _, _ in }
+        await #expect(throws: HTTPTransportError.timedOut) { try await short.get(request(host: silent)) }
+
+        let stalled = "stalled.stub.invalid"
+        StubProtocol.install(host: stalled) { _, proto in
+            let response = HTTPURLResponse(url: proto.request.url!, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: nil)!
+            proto.client?.urlProtocol(proto, didReceive: response, cacheStoragePolicy: .notAllowed)
+            proto.client?.urlProtocol(proto, didLoad: Data("{".utf8))
+        }
+        await #expect(throws: HTTPTransportError.timedOut) { try await short.get(request(host: stalled)) }
     }
 
     // MARK: download (fetch)
