@@ -111,11 +111,11 @@ public enum MenuAddDevice {
         return open.count == 1 ? open[0] : nil
     }
 
-    public static func cleaned(_ alias: String) -> String { alias.trimmingCharacters(in: .whitespacesAndNewlines) }
+    public static func trimmedAlias(_ alias: String) -> String { alias.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     /// Why this alias cannot be used; nil when it can. The rule is `device save`'s, and an alias differing only in case counts as taken.
     public static func aliasProblem(_ alias: String, taken: [String]) -> String? {
-        let alias = cleaned(alias)
+        let alias = trimmedAlias(alias)
         if alias.isEmpty { return "Type an alias" }
         guard DeviceCommand.isValidAlias(alias) else {
             return "Use up to 32 letters, digits, \"-\" or \"_\", starting with a letter or digit"

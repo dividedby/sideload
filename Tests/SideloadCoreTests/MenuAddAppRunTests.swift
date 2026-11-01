@@ -458,6 +458,17 @@ struct MenuAddRegisterTests {
         #expect(line.issue?.fix == "Connect the device, unlock it and retry.")
     }
 
+    @Test("registered, then sign fails: the retry is Add app's plain one and does not ask to register again")
+    func registeredThenSignFails() async throws {
+        let failed = Envelope.fail("sign", code: "SIGN_FAILED", message: "No.", fix: "Retry.")
+        let ran = try await run(registerAction, script: Script(fail: ["sign": failed]))
+        #expect(ran.calls.contains(registerCall))
+        let line = try #require(ran.outcomes[0].lines.first { $0.app == "sign" })
+        var approved = addFetched
+        approved.alreadyApproved = true
+        #expect(line.retry == .addApprove(device: "iphone", app: "apollo", fetched: approved) && line.retryLabel == "Retry")
+    }
+
     @Test("Add app's other provision failures, and an Update or a Reinstall refused the same way, never offer to register")
     func onlyAddApp() async throws {
         let locked = Envelope.fail("provision", code: "DEVICE_LOCKED", message: "Locked.", fix: "Unlock it.")

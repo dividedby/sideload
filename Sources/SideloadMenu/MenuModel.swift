@@ -288,7 +288,7 @@ final class MenuModel {
     /// The picker's Continue: opens the save confirm for this device and alias.
     func chooseDevice(_ candidate: MenuDeviceCandidate, alias: String) {
         guard case .addingDevice = actionState else { return }
-        request(.saveDevice(alias: MenuAddDevice.cleaned(alias), candidate: candidate))
+        request(.saveDevice(alias: MenuAddDevice.trimmedAlias(alias), candidate: candidate))
     }
 
     private func closePicker() {

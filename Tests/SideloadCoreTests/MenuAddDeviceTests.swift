@@ -143,7 +143,7 @@ struct MenuAddDeviceConfirmTests {
     func alias() {
         #expect(MenuAddDevice.aliasProblem("ipad", taken: ["iphone"]) == nil)
         #expect(MenuAddDevice.aliasProblem("  ipad \n", taken: []) == nil)
-        #expect(MenuAddDevice.cleaned("  ipad \n") == "ipad")
+        #expect(MenuAddDevice.trimmedAlias("  ipad \n") == "ipad")
         #expect(MenuAddDevice.aliasProblem("", taken: []) == "Type an alias")
         #expect(MenuAddDevice.aliasProblem("   ", taken: []) == "Type an alias")
         for bad in ["-ipad", "my ipad", "ipad!", String(repeating: "a", count: 33), "iPäd"] {

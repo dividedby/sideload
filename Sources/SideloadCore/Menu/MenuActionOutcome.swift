@@ -371,6 +371,10 @@ public struct MenuActionOutcome: Sendable, Equatable {
             retry = register
         } else if chain.approves, steps.done[.sign] != nil {
             retry = .install(device: alias, app: app)
+        } else if case .addRegister(_, _, var fetched) = action, steps.done[.provision] != nil {
+            // Registered already: the retry must not ask to register again.
+            fetched.alreadyApproved = true
+            retry = .addApprove(device: alias, app: app, fetched: fetched)
         } else if steps.done[.approve] != nil, let approved = Self.approvedAgain(action) {
             retry = approved
         }
