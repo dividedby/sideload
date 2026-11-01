@@ -49,6 +49,8 @@ final class MenuModel {
     private var pickerGeneration = 0
     /// Add app: the second confirm a successful fetch opened, held until the fetch task has ended.
     private var proceed: MenuAction?
+    /// A config-only action ended while a load ran: the load draws the config once more when it ends.
+    private var pendingConfigRedraw = false
     /// Bumped when an action starts: a load that began earlier must not write anything after it.
     private var loadGeneration = 0
     /// The last local read, so the icon can be redrawn (`renewing`) without reading again.
@@ -110,6 +112,10 @@ final class MenuModel {
             lastLoadFinished = services.clock.now()
             loadTask = nil
             if case .ready = local { checkUpdates(force: force) }
+            if pendingConfigRedraw {
+                pendingConfigRedraw = false
+                redrawConfig()
+            }
             if pendingForce {
                 pendingForce = false
                 reload(force: true)
@@ -177,8 +183,9 @@ final class MenuModel {
             return
         }
         // A load in flight must not write over the action's state or store a read cut short by it. The fetch of Add app
-        // changes neither the device nor the ledger, so it leaves the load alone and the panel stays current for stage 2.
-        if !action.isFetchStage {
+        // changes neither the device nor the ledger, so it leaves the load alone and the panel stays current for stage 2; so
+        // does a setting that only writes config.
+        if !action.isFetchStage, !action.isConfigOnly {
             loadGeneration += 1
             loadTask?.cancel()
             loadTask = nil
@@ -228,7 +235,28 @@ final class MenuModel {
             checkUpdates(force: false)
             return
         }
+        // A setting in `config.json` changed nothing on the device: its cache stays and the card shows the new setting.
+        if action.isConfigOnly {
+            redrawConfig()
+            checkUpdates(force: false)
+            return
+        }
         invalidateAndReload(action)
+    }
+
+    /// Reads the local files again and draws them over what the last load learned of the devices (no `devicectl`).
+    private func redrawConfig() {
+        if loadTask != nil {
+            pendingConfigRedraw = true
+            return
+        }
+        Task { [services] in
+            let local = await Task.detached { MenuLoader.loadLocal(services) }.value
+            // A load or an action that started meanwhile reads the files itself.
+            guard loadTask == nil, actionTask == nil else { return }
+            lastLocal = local
+            repaint(renewing: false)
+        }
     }
 
     private func openApproval(_ action: MenuAction) {

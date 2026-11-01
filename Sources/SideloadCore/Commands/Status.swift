@@ -218,7 +218,7 @@ public enum StatusCommand {
     }
 
     /// One free install on a saved device: its expiry and the refresh bookkeeping `refresh` keeps on the record.
-    /// `autoRefresh` is the device's opt-in (the automatic mode itself is not built).
+    /// `autoRefresh` is the device's auto-renew setting.
     static func installRow(_ install: LedgerInstall, autoRefresh: Bool, now: Date) -> JSONValue {
         let (days, level) = FreeInstallExpiry.assess(expires: install.profileExpires, now: now)
         return [

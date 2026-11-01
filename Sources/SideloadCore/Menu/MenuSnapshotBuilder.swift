@@ -21,7 +21,7 @@ public struct MenuInputs: Sendable {
     /// False when `ledger.json` could not be read: `ledger` is then empty and says nothing about the slots.
     public var ledgerReadable: Bool
     /// Whether `refresh --auto` exists (`loadLocal` sets it true). False: auto-renew state is not shown at all (no per-row
-    /// exception, no "renews when back" wording). True: a visible device that is not opted in shows "Auto-renew off" and an
+    /// exception, no "renews when back" wording). True: a visible device whose auto-renew is off shows "Auto-renew off" and an
     /// offline device's line says whether it renews when back.
     public var autoRefreshAvailable: Bool
     /// A renewal started from the menu is running.
@@ -340,7 +340,7 @@ public enum MenuSnapshotBuilder {
             refreshSet: renewSet,
             hasPending: rows.contains { $0.presence == .pending }, liveRead: liveRead(presence: presence, probe: probe),
             addable: addable(addSources, platform: saved.platform, rows: rows, inputs: inputs),
-            osVersion: osVersion(of: saved, probe: inputs.probe))
+            osVersion: osVersion(of: saved, probe: inputs.probe), autoRenew: saved.autoRefresh)
         return DeviceBuild(card: card, expiring: expiring, renewFailed: renewFailed)
     }
 

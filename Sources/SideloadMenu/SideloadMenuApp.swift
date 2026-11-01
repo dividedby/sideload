@@ -3,7 +3,7 @@ import SideloadCore
 import SwiftUI
 
 /// The sideload menu bar app (design section 12): a window-style `MenuBarExtra`, no Dock icon (`LSUIElement`), no timers.
-/// Renew, Install, Remove and the lendable setting run only after the inline confirm.
+/// Renew, Install, Remove and the lendable and auto-renew settings run only after the inline confirm.
 @main
 struct SideloadMenuApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate

@@ -426,6 +426,8 @@ public struct MenuDeviceCard: Sendable, Equatable, Identifiable {
     public var addable: [MenuAddOption] = []
     /// The device's OS (`devicectl list devices`) while it is visible; nil when not known.
     public var osVersion: String?
+    /// Auto-renew is on for the device (`config.json` `autoRefresh`).
+    public var autoRenew: Bool = false
 
     /// The row of one app, by its app key.
     public func row(for app: String) -> MenuAppRow? { apps.first { $0.app == app } }

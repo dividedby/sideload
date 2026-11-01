@@ -126,7 +126,7 @@ and installing it), Update… (an installed app whose approved source lists a ne
 keeps its data), Reinstall previous version… (an installed app with an older approved IPA still on disk: "Reinstall previous
 version (3.8.0)…" in the row's menu; one confirm with the version and its full SHA-256, then provision, sign that exact version
 and install over the app, which keeps its data; no fetch; iOS may refuse an older build, which leaves the installed app as it
-is, and renewals keep the version until you update; first run on 2026-10-31: Apollo 4.0.0 over 4.0.1, accepted, still signed in, and Update… back to 4.0.1 after), Remove, "Lendable: <App>" and Add device… (below). Each opens an inline confirm that says what it will do
+is, and renewals keep the version until you update; first run on 2026-10-31: Apollo 4.0.0 over 4.0.1, accepted, still signed in, and Update… back to 4.0.1 after), Remove, "Lendable: <App>", "Auto-renew: on|off" (its "Change…" menu holds "Turn auto-renew on…" or "Turn auto-renew off…": one confirm, config only, the same as `device auto-refresh --on|--off --yes`, no device read, provision, sign, install or lock; added 2026-11-01, not yet run on a device) and Add device… (below). Each opens an inline confirm that says what it will do
 (slots, App IDs, the keychain prompt); the confirm button is the owner's `--yes`, and only then does the app run the same
 in-process command as the CLI. A running action shows Cancel; the result lists each app with its code, message and fix and a
 Retry, or says the lock was busy. A disabled control says why ("Connect iphone over Wi-Fi or USB", "renewable at 6 d left",
@@ -135,7 +135,7 @@ Retry, or says the lock was busy. A disabled control says why ("Connect iphone o
 Add device… (under the panel's content, also on first run) adds a device without the terminal. It lists the physical iOS and
 tvOS devices `devicectl` sees that are not saved yet, each as its type, connection and last four UDID characters ("iPad · USB ·
 …ab12", never its name). Pick one, edit the suggested alias, and an inline confirm saves it, the same as `device save --yes`;
-nothing changes on the device or the portal. It never pairs or unpairs anything: an unpaired device is greyed out with "pair it
+nothing changes on the device or the portal, and the new device starts with auto-renew on (owner decision 2026-11-01; the confirm says so, and the card's "Auto-renew: on" menu turns it off). It never pairs or unpairs anything: an unpaired device is greyed out with "pair it
 in Xcode first". Registering on the free team is a separate decision: Add app… on the new device runs without it, and if Apple
 says the device is not registered, the result offers "Register and retry…", whose own confirm says "Registers ipad on your free
 Apple team; sideload can't remove it" and then runs the chain with `--register-device`. A device already on the team is never
@@ -170,8 +170,8 @@ Every command prints one JSON object (`ok`, data, `errors[{code,message,fix}]`) 
 | Command | Status |
 |---|---|
 | `doctor` | Implemented, read-only: Xcode, command-line tools (`clt`: `codesign`/`clang`/`swiftc` resolve; standalone CLT package reported as info), paid-team cert + expiry (plus an `info` row with the fingerprint prefix and expiry for each valid free-team identity, if any), saved iPhone visible, Apple TV pairing state, disk space |
-| `device save` / `device list` | Implemented. `device list` also shows each saved device's `transport` (`network` for Wi-Fi, `wired` for USB, else `unknown`; the devicectl key is unverified until spike S1), `autoRefresh`, `freeSlotsReserved` and `autoEligible` (opted in, paired, link `connected` or `disconnected`, and over Wi-Fi or USB; an `unknown` transport or an `unavailable` link is never eligible) |
-| `device auto-refresh --alias <alias> --on\|--off --yes` | Implemented; **owner-only** (`--yes` is the owner's). Sets the device's `autoRefresh` opt-in in `config.json`; touches no device. `refresh --auto` acts only on opted-in devices. Unknown alias: `DEVICE_NOT_SAVED`; no `--yes`: `CONFIRM_REQUIRED` |
+| `device save` / `device list` | Implemented. `device save` writes `autoRefresh: true` for a device with no saved entry (owner decision 2026-11-01) and prints it; a re-save keeps the entry's setting exactly, so a device turned off stays off, and an entry with no `autoRefresh` key (older config) stays off. `device list` also shows each saved device's `transport` (`network` for Wi-Fi, `wired` for USB, else `unknown`; the devicectl key is unverified until spike S1), `autoRefresh`, `freeSlotsReserved` and `autoEligible` (auto-renew on, paired, link `connected` or `disconnected`, and over Wi-Fi or USB; an `unknown` transport or an `unavailable` link is never eligible) |
+| `device auto-refresh --alias <alias> --on\|--off --yes` | Implemented; **owner-only** (`--yes` is the owner's). Sets the device's `autoRefresh` in `config.json` (on for a new device since 2026-11-01; this turns it off or back on); touches no device. `refresh --auto` acts only on devices with it on. The menu bar app's "Turn auto-renew on…/off…" runs it. Unknown alias: `DEVICE_NOT_SAVED`; no `--yes`: `CONFIRM_REQUIRED` |
 | `device slots --alias <alias> --reserved <0-3> --yes` | Implemented; **owner-only**. Sets `freeSlotsReserved`, a floor for the free-team apps on the device that sideload does not manage and the profile list does not show (and the whole count when it cannot be read; the Apple TV had 1 for atvloadly's copy until it was removed, now 0); the free team allows 3 apps per device. Touches no device |
 | `canary` | Implemented; owner-run once against the real device (2026-10-20: `blocked`, `0xe8008018`). `--evidence` writes `evidence/canary-<ts>/` (`evidence.json` + `evidence.txt`) for a `blocked` or `error` result; sideload sends nothing |
 | `canary history` | Implemented, read-only: summary of `logs/canary.jsonl` (runs, last `working`, first `blocked` after it, version and certificate changes) |
@@ -198,7 +198,7 @@ Every command prints one JSON object (`ok`, data, `errors[{code,message,fix}]`) 
 ## Turning on auto-refresh
 
 Owner steps, in order (agents never run the `launchctl` or `device auto-refresh` steps). `refresh --auto` renews, on
-the devices you opt in, the free-team installs with 5 days or fewer left, every 30 minutes while you are logged in.
+the devices with auto-renew on (a newly saved device starts on; one saved earlier keeps its setting), the free-team installs with 5 days or fewer left, every 30 minutes while you are logged in.
 It never installs an app the device does not have, and it stays silent unless something needs you (a notification for
 each renewal attempt, and for an install it gives up on).
 
@@ -212,7 +212,7 @@ each renewal attempt, and for an install it gives up on).
    ~/.local/bin/sideload status
    ```
 
-2. Opt a device in (writes `config.json` only): `~/.local/bin/sideload device auto-refresh --alias iphone --on --yes`.
+2. Turn a device on (writes `config.json` only; a device saved since 2026-11-01 is already on, so this is for one saved earlier or turned off; the menu bar app's "Turn auto-renew on…" does the same): `~/.local/bin/sideload device auto-refresh --alias iphone --on --yes`.
 3. Print the agent: `~/.local/bin/sideload refresh --print-agent` (add `--binary <absolute path>` if the binary is
    elsewhere). Read the `plist` and `install` fields; nothing has been written yet.
 4. Run the `install` commands in order: they create `~/Library/LaunchAgents` and the logs folder, write the plist, lint
@@ -224,8 +224,8 @@ each renewal attempt, and for an install it gives up on).
 
 To pause, `touch ~/.sideload/refresh.disabled` (every run skips with `KILL_SWITCH`; `rm` the file to resume). To remove the
 agent, `launchctl bootout gui/$(id -u)/io.github.dividedby.sideload.refresh` and delete the plist; to take a device
-out, `device auto-refresh --alias iphone --off --yes`. After a new release build, `rm` the old binary, then copy the
-new one in (copying over a signed binary in place can get it killed by macOS); the agent needs no reload. The menu bar app shows "Auto-renew off" under the rows of a device that is not opted in.
+out, `device auto-refresh --alias iphone --off --yes` (or "Turn auto-renew off…" on its card). After a new release build, `rm` the old binary, then copy the
+new one in (copying over a signed binary in place can get it killed by macOS); the agent needs no reload. The menu bar app shows "Auto-renew off" under the rows of a device that has it off, and "Auto-renew: on|off" with its toggle on every card.
 
 ## Turning on expiry notifications
 

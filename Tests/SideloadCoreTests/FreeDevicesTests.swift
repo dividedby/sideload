@@ -415,6 +415,34 @@ struct DeviceConfigCommandTests {
         }
     }
 
+    @Test("a new device is saved with auto-renew on (owner decision 2026-11-01), and the envelope says so")
+    func saveNewDeviceIsOn() async throws {
+        let save = DeviceOptions(sub: "save", alias: "iphone", match: "Test iPhone", platform: "ios", yes: true)
+        try await invoke(save, config: Config(devices: [:])) { out in
+            #expect(out.envelope.ok)
+            #expect(out.saved?.autoRefresh == true && out.saved?.freeSlotsReserved == 0)
+            #expect(out.json["device"]?["autoRefresh"] == true)
+        }
+    }
+
+    @Test("re-saving keeps auto-renew exactly: off stays off, on stays on, and a missing key stays off")
+    func saveKeepsAutoRenew() async throws {
+        let save = DeviceOptions(sub: "save", alias: "iphone", match: "Test iPhone", platform: "ios", yes: true)
+        let missingKey = try Config.parse(
+            Data(#"{"devices":{"iphone":{"udid":"\#(savedUdid("1"))","coreDeviceId":"\#(savedCoreId("1"))","platform":"ios"}}}"#.utf8))
+        let cases: [(Config, Bool)] = [
+            (configWith(savedPhone(autoRefresh: false)), false), (configWith(savedPhone(autoRefresh: true)), true),
+            (missingKey, false),
+        ]
+        for (config, expected) in cases {
+            try await invoke(save, config: config) { out in
+                #expect(out.envelope.ok)
+                #expect(out.saved?.autoRefresh == expected)
+                #expect(out.json["device"]?["autoRefresh"] == .bool(expected))
+            }
+        }
+    }
+
     @Test("device list shows transport, the settings and eligibility", arguments: [
         ("localNetwork", "network", true), ("wired", "wired", true), ("bluetooth", "unknown", false),
     ])

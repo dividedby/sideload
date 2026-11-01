@@ -39,6 +39,7 @@ struct DeviceCardView: View {
                 .foregroundStyle(.secondary)
             }
             LendableLine(card: device, snapshot: snapshot, model: model)
+            AutoRenewLine(card: device, snapshot: snapshot, model: model)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .card()
@@ -143,6 +144,34 @@ struct LendableLine: View {
                 .fixedSize()
                 .disabled(!model.controlsEnabled)
             }
+        }
+    }
+}
+
+/// "Auto-renew: on" and the menu that turns it off or on. A setting only: it says whether the owner's launchd agent renews
+/// this device's installs.
+struct AutoRenewLine: View {
+    var card: MenuDeviceCard
+    var snapshot: MenuSnapshot
+    var model: MenuModel
+
+    var body: some View {
+        let offer = MenuActions.autoRenewOffer(card, snapshot: snapshot, now: model.services.clock.now())
+        let availability = model.availability(offer.action, in: snapshot)
+        HStack {
+            Text("Auto-renew: \(card.autoRenew ? "on" : "off")").font(.callout).foregroundStyle(.secondary)
+            Spacer()
+            PanelMenu(
+                label: .title("Change…"),
+                items: [
+                    PanelMenuItem(title: offer.label, enabled: availability.isEnabled, help: availability.reason) {
+                        model.request(offer.action)
+                    }
+                ],
+                small: true
+            )
+            .fixedSize()
+            .disabled(!model.controlsEnabled)
         }
     }
 }

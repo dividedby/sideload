@@ -12,6 +12,8 @@ public enum MenuAction: Hashable, Sendable {
     case remove(device: String, app: String)
     /// `app` nil is none: the lab may not borrow a slot.
     case lendable(device: String, app: String?)
+    /// Auto-renew on or off for the device: `device auto-refresh --on|--off`. `on` is the setting it changes to. Config only.
+    case autoRenew(device: String, on: Bool)
     /// Add app, stage 1: `fetch` downloads and checks an approved source's latest release. Nothing is signed or installed.
     case addFetch(device: String, app: String)
     /// Add app, stage 2: approve exactly `fetched`, then provision, sign and install it.
@@ -59,10 +61,19 @@ public enum MenuAction: Hashable, Sendable {
         }
     }
 
+    /// `device auto-refresh` writes `config.json` and nothing else: it changes neither the device nor the ledger, so the model
+    /// neither cancels a load for it nor reads the device again when it ends; it only draws the config again.
+    public var isConfigOnly: Bool {
+        switch self {
+        case .autoRenew: true
+        default: false
+        }
+    }
+
     public var device: String {
         switch self {
         case .renew(let device, _), .install(let device, _), .remove(let device, _), .lendable(let device, _),
-            .addFetch(let device, _), .addApprove(let device, _, _), .updateFetch(let device, _, _),
+            .autoRenew(let device, _), .addFetch(let device, _), .addApprove(let device, _, _), .updateFetch(let device, _, _),
             .updateApprove(let device, _, _, _), .reinstallPrevious(let device, _, _, _),
             .saveDevice(let device, _), .addRegister(let device, _, _):
             device
@@ -208,6 +219,8 @@ public struct MenuPrompt: Sendable, Equatable {
 
 public enum MenuOfferKind: Sendable, Equatable {
     case retry, install, installUpdate, update, reinstallPrevious, remove
+    /// The device card's own button, not a row's.
+    case autoRenew
 }
 
 /// One button a row offers.
@@ -227,11 +240,11 @@ public enum MenuActions {
     static let ledgerUnreadable = "Can't read the ledger"
     static func lentOrChanging(_ alias: String) -> String { "An app is lent or changing on \(alias)" }
 
-    /// Install, Remove, Renew and both stages of Add app and of Update stop for the owner's Cancel; saving the lendable setting
-    /// or a device is instant.
+    /// Install, Remove, Renew and both stages of Add app and of Update stop for the owner's Cancel; saving the lendable setting,
+    /// the auto-renew setting or a device is instant.
     public static func cancellable(_ action: MenuAction) -> Bool {
         switch action {
-        case .lendable, .saveDevice: false
+        case .lendable, .autoRenew, .saveDevice: false
         default: true
         }
     }
@@ -252,6 +265,7 @@ public enum MenuActions {
         switch action {
         case .saveDevice: return .disabled("Already saved")  // Answered above: a saved device has a card.
         case .lendable(_, let app): return lendable(app, card: card, snapshot: snapshot)
+        case .autoRenew(_, let on): return autoRenew(on, card: card)
         case .renew(_, let app):
             if let stop = freeStop(card: card, snapshot: snapshot) { return stop }
             return renew(app, card: card)
@@ -539,6 +553,21 @@ public enum MenuActions {
         return .enabled
     }
 
+    /// Auto-renew is a setting in `config.json`: it needs no device, no ledger and no lock, and changes nothing while an app is
+    /// lent or changing (the lab does not read it). The one rule is that it changes something, so a confirm left open across a
+    /// change made elsewhere (the CLI, another click) is blocked, not run again.
+    private static func autoRenew(_ on: Bool, card: MenuDeviceCard) -> MenuAvailability {
+        on == card.autoRenew ? .disabled(on ? "Already on" : "Already off") : .enabled
+    }
+
+    /// The device card's auto-renew button: it flips the current setting.
+    public static func autoRenewOffer(_ card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date) -> MenuOffer {
+        let action = MenuAction.autoRenew(device: card.alias, on: !card.autoRenew)
+        return MenuOffer(
+            kind: .autoRenew, action: action, label: card.autoRenew ? "Turn auto-renew off…" : "Turn auto-renew on…",
+            availability: availability(action, in: snapshot, now: now), destructive: false)
+    }
+
     /// The apps that run on the card's platform, in the order `device lendable` names them.
     public static func lendableChoices(_ card: MenuDeviceCard) -> [String] {
         ProvisionApp.allCases.filter { $0.devicePlatform == card.platform }.map(\.rawValue)
@@ -590,6 +619,7 @@ public enum MenuActions {
         case .install(_, let app): return installPrompt(app, card: card)
         case .remove(_, let app): return removePrompt(app, card: card)
         case .lendable(_, let app): return lendablePrompt(app, card: card)
+        case .autoRenew(_, let on): return autoRenewPrompt(on, card: card)
         case .addFetch(_, let app): return addFetchPrompt(app, card: card, snapshot: snapshot)
         case .addApprove(_, let app, let fetched): return addApprovePrompt(app, fetched: fetched, card: card, snapshot: snapshot)
         case .addRegister(_, let app, let fetched):
@@ -718,6 +748,25 @@ public enum MenuActions {
             title: "Make \(name) lendable on \(alias)",
             lines: ["Setting only: the lab may uninstall \(name) and put it back"], confirmLabel: "Make lendable",
             destructive: false, runningLabel: "Saving…", apps: [])
+    }
+
+    private static func autoRenewPrompt(_ on: Bool, card: MenuDeviceCard) -> MenuPrompt {
+        let alias = card.alias
+        if on {
+            return MenuPrompt(
+                title: "Turn auto-renew on for \(alias)",
+                lines: [
+                    "Renews the free-team installs on \(alias) while you are logged in and it is reachable over Wi-Fi or USB",
+                    "Spends no new App ID",
+                    "Setting only: nothing is renewed or changed on the device now",
+                ], confirmLabel: "Turn on", destructive: false, runningLabel: "Saving…", apps: [])
+        }
+        return MenuPrompt(
+            title: "Turn auto-renew off for \(alias)",
+            lines: [
+                "Installs on \(alias) expire after 7 days unless you renew them by hand",
+                "Setting only: nothing is changed on the device",
+            ], confirmLabel: "Turn off", destructive: false, runningLabel: "Saving…", apps: [])
     }
 
     private static func addFetchPrompt(_ app: String, card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuPrompt {

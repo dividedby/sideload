@@ -62,7 +62,7 @@ extension RefreshPolicy {
         return nil
     }
 
-    /// The saved devices the owner opted in (valid alias) whose slot reserve is valid, and those opted in whose reserve is out
+    /// The saved devices with auto-renew on (valid alias) whose slot reserve is valid, and those with it on whose reserve is out
     /// of range. Both sorted, so a run is deterministic.
     static func autoDevices(_ devices: [String: SavedDevice]) -> (eligible: [String], invalid: [String]) {
         let optedIn = devices.filter { $0.value.autoRefresh && DeviceCommand.isValidAlias($0.key) }
@@ -72,7 +72,7 @@ extension RefreshPolicy {
         )
     }
 
-    /// The per-install gates of one app on an opted-in device, in this order. Nil means the install may be renewed (the device
+    /// The per-install gates of one app on a device with auto-renew on, in this order. Nil means the install may be renewed (the device
     /// still has to be visible). `slotPending` is the device's (`SlotBook.pending`); `deviceAttempts` is
     /// `deviceAttempts(_:device:today:)` as of now.
     static func autoGate(

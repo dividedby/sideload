@@ -65,9 +65,10 @@ struct DeviceCommandTests {
             #expect(!out.text.contains(savedUdid("1")) && !out.text.contains(savedCoreId("1")))
             #expect(out.config?["devices"]?["iphone"] == [
                 "udid": .string(savedUdid("1")), "coreDeviceId": .string(savedCoreId("1")), "platform": "ios",
-                "name": "Test iPhone",
+                "name": "Test iPhone", "autoRefresh": true,
             ])
             #expect(out.json["device"]?["name"] == "<device>")
+            #expect(out.json["device"]?["autoRefresh"] == true)
             #expect(out.json["device"]?["alias"] == "iphone")
             #expect(out.json["device"]?["coreDeviceId"] == .string("…" + savedCoreId("1").suffix(4)))
             #expect(modeOf(out.paths.config) == 0o600)

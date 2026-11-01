@@ -149,22 +149,27 @@ public enum DeviceCommand {
         }
 
         // Names and hostnames are kept only so canary logs can be scrubbed; never echoed in output.
-        try await services.store.update { config in
+        // Auto-renew is on for a device with no entry yet (owner decision 2026-11-01). A re-save keeps whatever the entry holds,
+        // including a missing key, which decodes as off: the default is never applied to a saved device.
+        let saved = try await services.store.update { config -> SavedDevice in
             let prior = config.devices[alias]
             if let prior, prior.udid != udid || prior.coreDeviceId != coreDeviceId {
                 throw SideloadError(
                     "ALIAS_EXISTS", "Alias \"\(alias)\" is already saved for a different device.",
                     fix: "Pick another alias, or retire this one with `sideload device remove --alias \(alias) --yes` (owner).")
             }
-            config.devices[alias] = SavedDevice(
+            let device = SavedDevice(
                 udid: udid, coreDeviceId: coreDeviceId, platform: platform,
                 name: prior?.name ?? nonEmpty(dev.name),
                 hostnames: (prior?.hostnames.isEmpty == false ? prior?.hostnames : nil) ?? dev.hostnames,
-                autoRefresh: prior?.autoRefresh ?? false, freeSlotsReserved: prior?.freeSlotsReservedRaw ?? 0,
+                autoRefresh: prior?.autoRefresh ?? true, freeSlotsReserved: prior?.freeSlotsReservedRaw ?? 0,
                 lendableApp: prior?.lendableApp, extra: prior?.extra ?? [:])
+            config.devices[alias] = device
+            return device
         }
         var device = redacted(dev)
         device["alias"] = .string(alias)
+        device["autoRefresh"] = .bool(saved.autoRefresh)
         return .result(command, ["device": .object(device)])
     }
 
@@ -244,7 +249,8 @@ public enum DeviceCommand {
             ])
     }
 
-    /// `device auto-refresh --alias a --on|--off --yes`: the owner's opt-in for `refresh --auto` (design section 18).
+    /// `device auto-refresh --alias a --on|--off --yes`: the owner's setting for `refresh --auto` (design section 18). A new
+    /// device starts on (`device save`); this turns it off or back on.
     private static func autoRefresh(_ services: Services, _ options: DeviceOptions) async throws -> Envelope {
         let command = "device auto-refresh"
         let usageFix = "sideload device auto-refresh --alias <alias> --on|--off --yes"

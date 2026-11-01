@@ -1,13 +1,14 @@
 import Foundation
 
 /// What each menu action calls. The defaults are the real commands (the same in-process entry points the CLI runs, each
-/// taking `.op.lock` itself, except `device lendable` and `device save`, which only write config); tests replace them.
+/// taking `.op.lock` itself, except `device lendable`, `device auto-refresh` and `device save`, which only write config); tests replace them.
 public struct MenuActionSteps: Sendable {
     public var refresh: @Sendable (Services, RefreshOptions) async -> Envelope = { await RefreshCommand.run($0, $1) }
     public var install: @Sendable (Services, InstallOptions) async -> Envelope = { await InstallCommand.run($0, $1) }
     public var remove: @Sendable (Services, AppOptions) async -> Envelope = { await AppCommand.run($0, $1) }
     public var lendable: @Sendable (Services, DeviceOptions) async -> Envelope = { await DeviceCommand.run($0, $1) }
     public var saveDevice: @Sendable (Services, DeviceOptions) async -> Envelope = { await DeviceCommand.run($0, $1) }
+    public var autoRenew: @Sendable (Services, DeviceOptions) async -> Envelope = { await DeviceCommand.run($0, $1) }
     /// Add app: `fetch` (stage 1, and `--approve --version` in stage 2), then `provision`, `sign` and `install`.
     public var fetch: @Sendable (Services, FetchOptions) async -> Envelope = { await FetchCommand.run($0, $1) }
     public var provision: @Sendable (Services, ProvisionOptions) async -> Envelope = { await ProvisionCommand.run($0, $1) }
@@ -76,6 +77,11 @@ public enum MenuActionRunner {
             }
             envelope = await steps.saveDevice(
                 services, DeviceOptions(sub: "save", alias: alias, match: candidate.match, platform: candidate.platform, yes: true))
+        case .autoRenew(let device, let on):
+            // The same config-only command the CLI runs, with the owner's click as `--yes`. It takes no `.op.lock` and reads no
+            // ledger: auto-renew does not collide with the lab, and `refresh --auto` reads the setting afresh at each run.
+            envelope = await steps.autoRenew(
+                services, DeviceOptions(sub: "auto-refresh", alias: device, on: on, off: !on, yes: true))
         case .lendable(let device, let app):
             // `device lendable` takes no `.op.lock`, so a lab `slot lend` can land after the panel was drawn: the ledger is
             // read again here, and the setting is not written while the device has a lent or pending slot.

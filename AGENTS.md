@@ -66,8 +66,8 @@ team) before changing anything.
   to `io.github.dividedby.free.*`, `--yes` is the owner's), and `slot restore` (the owner's retry of an app-data restore: it
   pushes a saved backup into the app on the device; owner-only, `--yes` is the owner's, and it takes `--device <alias>`, never
   `--udid`).
-- The menu bar app's action buttons (Renew…, Add app…, Update…, Reinstall previous version…, Install, Remove, Lendable, Add device…, Register and retry… and the confirm that follows them). They are owner
-  clicks: the confirm click is the owner's `--yes` (Add device…'s is `device save --yes`; Register and retry…'s also is `--register-device`), Add app… and Update… run fetch, approve, provision, sign and install on a real device
+- The menu bar app's action buttons (Renew…, Add app…, Update…, Reinstall previous version…, Install, Remove, Lendable, Turn auto-renew on…/off…, Add device…, Register and retry… and the confirm that follows them). They are owner
+  clicks: the confirm click is the owner's `--yes` (Add device…'s is `device save --yes`, which turns auto-renew on for a new device; Turn auto-renew on…/off…'s is `device auto-refresh --on|--off --yes`, config only; Register and retry…'s also is `--register-device`), Add app… and Update… run fetch, approve, provision, sign and install on a real device
   (their second confirm is the owner's approval of that exact version and file; Update… goes over an installed app; Reinstall previous version… has one confirm and
   signs and installs an older, already approved build over the installed app, and `sign --version` is owner-run like `sign`), and agents never click them, never run the built app and never drive it
   (no computer-use clicks, no UI scripting), exactly as for the commands behind them.
