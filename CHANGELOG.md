@@ -40,6 +40,10 @@ All notable changes to this project are documented here. Format follows
 
 ### Changed
 
+- Docs: the references to the lab's coordination thread now say `mobile-safari-lab-archive` issue 63. The lab's repo went
+  public on 2026-10-31 with its issue numbers starting again at 1, so the old `#63` reference would point at an unrelated
+  issue; the old repo, with that thread, is private as `dividedby/mobile-safari-lab-archive`. Nothing about the lock or the
+  lending contract changed.
 - Docs: the first live rollback passed on 2026-10-31. From the menu, "Reinstall previous version (4.0.0)…" put Apollo
   4.0.0 over 4.0.1 on the Wi-Fi iPhone: iOS accepted the lower build, the fresh profile was reused (no `provision`, no App
   ID), `install` finished 19 s after `sign`, and the app stayed signed in with its data; Update… then took it back to 4.0.1 the same way.
@@ -745,7 +749,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
   Allow the lab up to about 2 more minutes per call. Backups are secrets-class (session tokens): `check-secrets` refuses a
   `backups` path segment and AGENTS.md says so. The `DeviceCtl` allowlist gained exactly three argument shapes (free scope,
   `appDataContainer` for the scoped `<prefix>.free.*` app only, relative device paths, local paths under `backups/`), with a
-  Sources scan test. **The restore (`copy to`) was first checked live on 2026-10-25 (mobile-safari-lab#63, Stage 2: an iPhone on Wi-Fi, stremio-ios, a backup of 11 of 13 files; after the return the app was still signed in with its library and add-ons).** The owner-only `slot restore` (below) retries a
+  Sources scan test. **The restore (`copy to`) was first checked live on 2026-10-25 (mobile-safari-lab-archive issue 63, Stage 2: an iPhone on Wi-Fi, stremio-ios, a backup of 11 of 13 files; after the return the app was still signed in with its library and add-ons).** The owner-only `slot restore` (below) retries a
   failed or crashed restore.
 - The backup manifest gains an optional `supersededAt`: `slot lend` marks every older, unrestored backup of the app superseded
   (whether or not the new lend saved a backup), so `slot restore` never pushes data from an earlier lend. Older manifests
@@ -832,7 +836,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
   (owner decision 2026-10-23; build order in `docs/design.md` section 18). `AGENTS.md` replaces "leave the free account alone" with a narrow-use
   rule (the pinned existing identity, App IDs and 7-day profiles only for `io.github.dividedby.free.*`, never a new,
   revoked or exported certificate, never another bundle ID, mobile-safari-lab, atvloadly or the `atv` VM), documents
-  `$SIDELOAD_HOME/.op.lock` as the lock shared with mobile-safari-lab (dividedby/mobile-safari-lab#63, sideload #2),
+  `$SIDELOAD_HOME/.op.lock` as the lock shared with mobile-safari-lab (mobile-safari-lab-archive issue 63, sideload #2),
   updates the Apple TV section, and adds `provision`, `refresh`, `app remove`, `--register-device`,
   `device auto-refresh`, launchd bootstrap and the slot/App ID budgets to "Ask the owner first".
   `docs/design.md` drops "free teams are unsupported", adds the 2026-10-23 decisions to section 2, makes the guard
@@ -871,7 +875,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
   an object is now refused as well, where `parseListing` alone accepted it: the backup is `DATA_BACKUP_FAILED`, a restore
   relisting is `DATA_RESTORE_UNVERIFIED`. An exit 0 with no document, or with neither `info.outcome` nor `error`, is still a
   success (the callers check the file left, or relist). Counts only; no output field changes meaning.
-- The live free-slot count no longer counts TestFlight betas (mobile-safari-lab#63): `devicectl device info apps` marks them
+- The live free-slot count no longer counts TestFlight betas (mobile-safari-lab-archive issue 63): `devicectl device info apps` marks them
   `builtByDeveloper` like free-team apps, so the owner's iPhone read `used: 8` and the filler install and every `slot return`
   would have stopped with `FREE_APP_LIMIT`. Other free-team apps are now found by one read-only `devicectl device profile list
   --type provisioning` per command (an installed, non-managed app with a `6ZU5Z6ZKK7` profile for its bundle ID; expired
