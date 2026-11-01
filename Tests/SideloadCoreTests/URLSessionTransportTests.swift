@@ -52,7 +52,7 @@ private let transport = URLSessionTransport(protocolClasses: [StubProtocol.self]
 
 /// A task executor that can hold its jobs: what a request's consumer sees when no pool thread is free for it. Only
 /// tasks that prefer this executor wait, so the other tests running in parallel are not slowed.
-private final class GateExecutor: TaskExecutor, @unchecked Sendable {
+private final class GateExecutor: TaskExecutor, Sendable {
     private let queue = DispatchQueue(label: "sideload.tests.gate")
     private let held = Mutex<[UnownedJob]?>(nil)
 
@@ -182,7 +182,9 @@ struct URLSessionTransportTests {
         }
         let short = URLSessionTransport(protocolClasses: [StubProtocol.self], requestTimeout: 5, resourceTimeout: 6)
         let answer = Task(executorPreference: gate) { try await short.get(request(host: host)) }
-        while !gate.isHolding { try await Task.sleep(for: .milliseconds(5)) }
+        let deadline = Date().addingTimeInterval(60)
+        while !gate.isHolding, Date() < deadline { try await Task.sleep(for: .milliseconds(5)) }
+        try #require(gate.isHolding, "the stub never started")
         try await Task.sleep(for: .seconds(7))
         gate.release()
         let response = try await answer.value
