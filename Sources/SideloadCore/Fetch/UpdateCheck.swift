@@ -60,6 +60,7 @@ enum UpdateCheck {
         }
 
         let installed = installedRecords(ledger, saved: Set(config.devices.keys))
+        let approvedSources = Dictionary(uniqueKeysWithValues: FetchCatalog.approvedSources(config).map { ($0.app, $0) })
         var cancelled = false
         sources: for catalog in FetchCatalog.sources where named == nil || catalog.app == named {
             if Task.isCancelled {
@@ -67,7 +68,7 @@ enum UpdateCheck {
                 break sources
             }
             let app = catalog.app
-            guard let source = try? FetchCatalog.approved(app: app, config: config) else {
+            guard let source = approvedSources[app] else {
                 report.sources.append(skipped(app, skippedNotApproved, "\(app) is not in approvedSources in config.json."))
                 continue
             }

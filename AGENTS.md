@@ -79,8 +79,9 @@ team) before changing anything.
   mobile-safari-lab with no `--yes`; agents never run them against a real device, and they take `.op.lock`, accept
   `--udid` only for a saved device and never print it.
 - `--register-device` (registers a device on the free team), `device auto-refresh`, and bootstrapping launchd
-  agents (`launchctl`). `status --notify` against the real `$SIDELOAD_HOME` (it posts a notification and writes
-  `lastNotified` in `config.json`; the owner's status agent runs it). `status` and `status --print-agent` are read-only
+  agents (`launchctl`). `status --notify [--check-updates]` against the real `$SIDELOAD_HOME` (it posts a notification and
+  writes `lastNotified` in `config.json`; with `--check-updates` it also does one metadata GET per approved source, no
+  download, and writes `updates.json`; the owner's status agent runs it). `status` and `status --print-agent` are read-only
   and safe for an agent to run.
 - Changing `freeSlotsReserved` or `reservedAppIds` (the free team's slot and App ID budgets).
 - Running `portal` live (it uses the team's API key; owner-initiated).

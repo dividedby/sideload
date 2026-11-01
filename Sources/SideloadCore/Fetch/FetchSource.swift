@@ -99,6 +99,11 @@ enum FetchCatalog {
         })
         return source.narrowed(to: hosts)
     }
+
+    /// Every catalog source `approved(app:config:)` accepts, in catalog order.
+    static func approvedSources(_ config: Config) -> [FetchSource] {
+        sources.compactMap { try? approved(app: $0.app, config: config) }
+    }
 }
 
 /// Text from outside (an app key typed on the command line) cut to a printable length.

@@ -7,6 +7,16 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
+- New-version notifications. `status --notify` now also announces a new upstream version of an approved app that is
+  installed on a saved device ("Apollo 4.0.2 available"), once per version, from the last good listing in `updates.json`
+  (the key `update <app> <version>` in `lastNotified`, listed after the expiry items; it is dropped once every install has
+  caught up, so a rollback that makes the version newer again is announced once more). The new flag
+  `status --notify --check-updates` first does what `sideload updates` does: at most one metadata GET per approved source
+  with an install on a saved device, within the existing cadence, never an IPA download, no lock; a failed check is the
+  warning `UPDATE_CHECK_FAILED` and never stops the expiry notices. Output adds `updateCheck{ran,checked,replayed,failed}`
+  (counts only). The daily status agent now runs `status --notify --check-updates`: re-run `status --print-agent` and its
+  `bootout`, `bootstrap` and `kickstart` lines once to pick it up. Approving, fetching and installing the new version stay the
+  owner's. Plain `status` and `status --print-agent` are unchanged (file-only, read-only).
 - Roll back to the previous version. `sign --version <v>` signs exactly that fetched, approved version instead of the newest
   one (`NOT_APPROVED`, `IPA_PRUNED` and the other checks apply as before; an empty value is `USAGE`); when it is older than the
   version `installs[]` records for the device, the envelope carries the warning `OLDER_THAN_INSTALLED` (never a block:

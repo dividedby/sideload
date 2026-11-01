@@ -25,8 +25,8 @@ public enum MenuUpdates {
     /// The last good listing per app from `updates.json`, with the failure of the last attempt if it was one. Reads one
     /// local file; an unreadable or invalid file says nothing.
     public static func cached(_ services: Services) -> [String: MenuUpstream] {
-        guard let loaded = try? UpdateCacheStore(paths: services.home).load(now: services.clock.now()) else { return [:] }
-        return loaded.cache.apps.compactMapValues { upstream(version: $0.upstream, checkedAt: $0.checkedAt, errorCode: $0.errorCode) }
+        guard let listed = try? UpdateCacheStore(paths: services.home).listings(now: services.clock.now()) else { return [:] }
+        return listed.compactMapValues { upstream(version: $0.upstream, checkedAt: $0.checkedAt, errorCode: $0.errorCode) }
     }
 
     /// `sideload updates` in process: one metadata GET per approved source that has an install on a saved device, when the

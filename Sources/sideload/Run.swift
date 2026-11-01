@@ -36,7 +36,7 @@ private func help() -> Envelope {
             "ledger [refresh]",
             "portal [certificates|bundle-ids|devices|profiles] [--show-identifiers]",
             "status",
-            "status --notify",
+            "status --notify [--check-updates]",
             "status --print-agent [--binary <absolute path>]",
         ],
         "docs": "docs/design.md",
@@ -61,8 +61,9 @@ private let fetchSpec = ArgSpec(values: ["app", "version"], flags: ["approve"])
 private let updatesSpec = ArgSpec(values: ["app"], flags: ["force"])
 private let cleanSpec = ArgSpec(flags: ["yes"])
 private let portalSpec = ArgSpec(flags: ["show-identifiers"])
-// Plain `status` takes no option; `--notify` and `--print-agent` are alternatives, and `--binary` belongs to `--print-agent`.
-private let statusSpec = ArgSpec(values: ["binary"], flags: ["notify", "print-agent"])
+// Plain `status` takes no option; `--notify` and `--print-agent` are alternatives, `--binary` belongs to `--print-agent` and
+// `--check-updates` to `--notify`.
+private let statusSpec = ArgSpec(values: ["binary"], flags: ["notify", "print-agent", "check-updates"])
 
 private func unexpectedPositionals(_ command: String) -> Envelope {
     .fail(command, code: "USAGE", message: "Unexpected positional arguments.", fix: "Run `sideload help`.")
@@ -152,6 +153,12 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
             fix: "Run `sideload status --print-agent --binary <absolute path>`.")
     }
 
+    if command == "status", parsed.flags.contains("check-updates"), !parsed.flags.contains("notify") {
+        return .fail(
+            command, code: "USAGE", message: "--check-updates belongs to status --notify.",
+            fix: "Run `sideload status --notify --check-updates`; `sideload updates` is the plain check.")
+    }
+
     if command == "refresh", parsed.flags.contains("print-agent"),
         let option = refreshPrintAgentConflicts.first(where: { parsed.values[$0] != nil || parsed.flags.contains($0) })
     {
@@ -198,7 +205,9 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
         return .from(error, command: command)
     }
     if command == "doctor" { return await Doctor.run(services) }
-    if command == "status", parsed.flags.contains("notify") { return await StatusCommand.runNotify(services) }
+    if command == "status", parsed.flags.contains("notify") {
+        return await StatusCommand.runNotify(services, checkUpdates: parsed.flags.contains("check-updates"))
+    }
     if command == "status" { return StatusCommand.run(services) }
     if command == "ledger" { return await LedgerCommand.run(services, LedgerOptions(sub: parsed.positionals.isEmpty ? .show : .refresh)) }
     if command == "fetch" {

@@ -119,10 +119,8 @@ public enum MenuSnapshotBuilder {
 
     /// The catalog apps the owner approved in `approvedSources` that "Add app…" can fetch: never the filler, which has no IPA.
     static func addSources(_ config: Config) -> [MenuAddSource] {
-        FetchCatalog.sources.compactMap { catalog in
-            guard let app = ProvisionApp(rawValue: catalog.app), !app.signedByProvision,
-                let approved = try? FetchCatalog.approved(app: catalog.app, config: config)
-            else { return nil }
+        FetchCatalog.approvedSources(config).compactMap { approved in
+            guard let app = ProvisionApp(rawValue: approved.app), !app.signedByProvision else { return nil }
             let label: String
             switch approved.kind {
             case .githubRelease: label = "github.com"
