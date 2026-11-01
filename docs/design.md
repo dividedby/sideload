@@ -552,7 +552,7 @@ Each refresh changes the profile UUID and expiry, `embedded.mobileprovision` and
 
 **Update (menu, a newer version of an installed app).** The same chain over an app that is already installed (section 12, Update): `fetch --app <a>` (confirm 1), then after the owner approves that exact version and file, `fetch --approve --version <v>`, `provision` unless the stored profile has 6 days or more left (under 6 days it also renews the profile, and confirm 2 says so; the App ID is reused, and the budget is checked only if a new one would be registered), `sign` with `SignOptions.version` and `install` over the installed app (its data is kept, no slot is used). It is offered only for a recorded install (`installs[]`) whose approved source lists a strictly newer, parseable version (`updates.json`, `VersionOrder`). A run that stops halfway leaves approved only, a profile, or a signed build that the row's Install update finishes; `refresh` and Renew keep the installed version, so they never finish an update on their own. Run on a real device by the owner only; agents never click it.
 
-**Apple TV takeover (owner checklist; done: atvloadly's copy removed 2026-10-24, the `atv` VM deleted 2026-10-30; the owner removes atvloadly's host entry on the TV)**
+**Apple TV takeover (owner checklist; done: atvloadly's copy removed 2026-10-24, the `atv` VM deleted 2026-10-30; atvloadly's host entry removed from the TV by the owner, confirmed 2026-11-01)**
 1. Note atvloadly's Stremio expiry and last refresh; screenshot Remote App and Devices; do not update tvOS.
 2. Pair in Xcode > Devices and Simulators; keep both hosts listed.
 3. Stop atvloadly's Stremio refresh in its UI; keep the VM, the pair record and the app.

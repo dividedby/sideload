@@ -5,6 +5,17 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-01
+
+Cleanup, a way back, and word of new versions. `sideload clean` (owner-run, a preview without `--yes`) deletes app-data
+backups 14 days after they were restored or superseded and downloaded IPAs no longer needed. `sign --version` and the menu
+bar app's "Reinstall previous version…" go back to an older approved build; on 2026-10-31 that put Apollo 4.0.0 over 4.0.1
+on the iPhone and Update… took it back, still signed in. `status --notify` announces a new upstream version once, and the
+daily status agent now runs it with `--check-updates`, at most one metadata GET per approved source, so an owner who has
+loaded that agent reloads it once. The project gains an MIT `LICENSE` and `CONTRIBUTING.md`, spike S5 passed, and
+atvloadly is retired. CLI changes in behaviour: `status --notify` output adds `updateCheck` and writes `update` keys to
+`lastNotified`, and a manifest entry can carry `prunedAt`, for which `sign` and `fetch --approve` answer `IPA_PRUNED`.
+
 ### Added
 
 - New-version notifications. `status --notify` now also announces a new upstream version of an approved app that is
@@ -55,7 +66,8 @@ All notable changes to this project are documented here. Format follows
   `install`, `app remove`, `slot` and `slot restore` tell the owner to check Xcode's Manage Certificates and the lab,
   no longer atvloadly.
 - Docs: atvloadly is retired. It was stopped and its Stremio copy removed from the Apple TV on 2026-10-24, and the
-  owner deleted its OrbStack VM `atv` on 2026-10-30. AGENTS.md, README, design section 18 (a step 7 on the takeover
+  owner deleted its OrbStack VM `atv` on 2026-10-30 and confirmed on 2026-11-01 that its host entry is gone from the TV.
+  AGENTS.md, README, design section 18 (a step 7 on the takeover
   checklist) and `docs/research/tvos-install.md` now say sideload serves the Apple TV, and the agent rules about
   touching atvloadly or `atv` are replaced by one: never set atvloadly up again.
 - Docs: spike S5 passed on 2026-10-30. A manual `refresh` renewed Apollo on the locked Wi-Fi iPhone (provision with its
@@ -999,7 +1011,8 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
 - The CLI no longer crashes with an `EPIPE` stack trace when its stdout reader closes early
   (e.g. `sideload doctor | head`).
 
-[Unreleased]: https://github.com/dividedby/sideload/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/dividedby/sideload/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/dividedby/sideload/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/dividedby/sideload/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/dividedby/sideload/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/dividedby/sideload/releases/tag/v0.2.0
