@@ -12,6 +12,10 @@ All notable changes to this project are documented here. Format follows
   timers kept running until our own task got a thread. It now collects the body in the session's delegate, as `download` does,
   so the timers measure the network; the limits, the 4 MiB cap and the refused redirects are unchanged. This was the random
   failure of three `URLSessionTransportTests` in full `swift test` runs, where about 1900 tests queue on the cooperative pool.
+- Tests: the download flow test "a producer and a consumer on separate threads finish with no lost wakeup" failed at random
+  under heavy load and blamed a lost resume. Nothing was lost: its consumer was a task on the shared pool, so each of about
+  1100 wakes queued behind the rest of the run until its 30 s ran out. The consumer is now a real thread and the verdict needs
+  no clock (the task suspended with nothing left to consume), so a real lost wakeup fails at once. `DownloadFlow` is unchanged.
 
 ## [0.5.0] - 2026-11-01
 
