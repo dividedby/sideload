@@ -72,8 +72,11 @@ struct MenuAutoRenewRulesTests {
     @Test("it is instant, not cancellable, and names its device")
     func shape() {
         #expect(!MenuActions.cancellable(turnOn) && !MenuActions.cancellable(turnOff))
-        #expect(turnOn.device == "iphone" && turnOn.isConfigOnly && turnOff.isConfigOnly)
-        #expect(!MenuAction.lendable(device: "iphone", app: nil).isConfigOnly)
+        #expect(turnOn.device == "iphone" && turnOn.leavesDeviceReadAlone && turnOff.leavesDeviceReadAlone)
+        // Fetch stages leave the device read alone too; the other settings and the chains do not.
+        #expect(MenuAction.addFetch(device: "iphone", app: "apollo").leavesDeviceReadAlone)
+        #expect(!MenuAction.lendable(device: "iphone", app: nil).leavesDeviceReadAlone)
+        #expect(!MenuAction.renew(device: "iphone", app: nil).leavesDeviceReadAlone)
     }
 
     @Test("the confirm to turn it on says what it does and does not do")
@@ -85,6 +88,7 @@ struct MenuAutoRenewRulesTests {
             prompt.lines == [
                 "Renews the free-team installs on iphone while you are logged in and it is reachable over Wi-Fi or USB",
                 "Spends no new App ID",
+                "Needs the refresh agent loaded; `sideload refresh --print-agent` shows how",
                 "Setting only: nothing is renewed or changed on the device now",
             ])
     }
@@ -361,21 +365,33 @@ struct MenuAutoRenewModelTests {
         #expect(card(w.model)?.liveRead == .read)
     }
 
-    @Test("a load that is running is left alone; the card shows the new setting once it ends")
+    @Test("a load that is running is left alone, and its later repaints already carry the new setting")
     func duringLoad() async throws {
         let w = try await loadedWorld()
         defer { try? FileManager.default.removeItem(at: w.dir) }
+        let reads = w.runner.infoApps.count
         w.runner.holdList(true)
+        w.runner.holdApps(true)
         w.model.reload(force: true)
         try await until { w.model.loadTask != nil }
         w.model.request(turnOn)
         w.model.confirm()
         try await until { !w.model.actionBusy }
         #expect(w.model.loadTask != nil, "the load was not cancelled")
-        w.runner.holdList(false)
-        await w.model.loadTask?.value
+        // Redrawn at once, though the load is still waiting for the device list.
         try await until { self.card(w.model)?.autoRenew == true }
+        // The load goes on: the repaint it makes before it reads the device is built from the files as they are now.
+        w.runner.holdList(false)
+        try await until { w.runner.infoApps.count > reads }
+        #expect(w.model.loadTask != nil && card(w.model)?.autoRenew == true)
         #expect(card(w.model)?.apps.first?.exception == nil)
+        w.runner.holdApps(false)
+        await w.model.loadTask?.value
+        #expect(card(w.model)?.autoRenew == true && card(w.model)?.liveRead == .read)
+        // Nothing is left over to redraw later: a quiet moment changes nothing and starts no load.
+        let lists = w.runner.lists
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(w.model.loadTask == nil && w.runner.lists == lists && card(w.model)?.autoRenew == true)
     }
 
     @Test("turning it off from the card, then the offer flips back")

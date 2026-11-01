@@ -19,7 +19,7 @@ All notable changes to this project are documented here. Format follows
   on it with Add app…; the only step on the iPad was trusting the developer.
 - Auto-renew toggle in the menu bar app: every saved device's card shows "Auto-renew: on|off" and a "Change…" menu with "Turn
   auto-renew on…" or "Turn auto-renew off…". One inline confirm (on: renews the free-team installs on the device while you are
-  logged in and it is reachable, spends no new App ID; off: installs then expire after 7 days unless renewed by hand); the
+  logged in and it is reachable, spends no new App ID, and needs the refresh agent loaded; off: installs then expire after 7 days unless renewed by hand); the
   click is your `--yes` for `device auto-refresh --on|--off`. It writes `config.json` only: no provision, sign, install,
   portal, device command or `.op.lock`, and the card shows the new state without reading the device again. A confirm left open
   while the setting changed elsewhere is blocked ("Already on" / "Already off"). Built and tested with fakes; not yet run on a

@@ -61,13 +61,14 @@ public enum MenuAction: Hashable, Sendable {
         }
     }
 
-    /// `device auto-refresh` writes `config.json` and nothing else: it changes neither the device nor the ledger, so the model
-    /// neither cancels a load for it nor reads the device again when it ends; it only draws the config again.
-    public var isConfigOnly: Bool {
-        switch self {
-        case .autoRenew: true
-        default: false
-        }
+    /// The action changes nothing the panel's last read of the device or the ledger shows, so the model neither cancels a running
+    /// load for it nor forgets the device's app read: the fetch stages (a download) and the auto-renew setting (`device
+    /// auto-refresh` writes `config.json` only). `lendable` and `saveDevice` also write only config but stay false on purpose:
+    /// the lab may change the ledger around a lend setting, and a saved device has no read yet, so both read the device again.
+    /// What the model does when the action ends still differs (a fetch redraws nothing; the setting redraws the config).
+    public var leavesDeviceReadAlone: Bool {
+        if case .autoRenew = self { return true }
+        return isFetchStage
     }
 
     public var device: String {
@@ -758,6 +759,7 @@ public enum MenuActions {
                 lines: [
                     "Renews the free-team installs on \(alias) while you are logged in and it is reachable over Wi-Fi or USB",
                     "Spends no new App ID",
+                    "Needs the refresh agent loaded; `sideload refresh --print-agent` shows how",
                     "Setting only: nothing is renewed or changed on the device now",
                 ], confirmLabel: "Turn on", destructive: false, runningLabel: "Saving…", apps: [])
         }
