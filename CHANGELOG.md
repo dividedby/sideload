@@ -14,8 +14,9 @@ All notable changes to this project are documented here. Format follows
   points at it instead of the CLI command.
 - Register and retry…, in Add app…'s result, when `provision` answers `DEVICE_NOT_REGISTERED`. Its own confirm says it registers
   the device on the free team, then runs the chain with `--register-device`. It is the only menu path that passes that flag, and
-  a device already on the team is never asked. Not yet run against a real unregistered device: the first real run is the owner's
-  (spike S6).
+  a device already on the team is never asked.
+- Spike S6 passed on 2026-11-01: from the menu bar app, the owner saved the iPad with Add device… and installed Stremio and Apollo
+  on it with Add app…; the only step on the iPad was trusting the developer.
 
 ### Changed
 

@@ -140,7 +140,8 @@ in Xcode first". Registering on the free team is a separate decision: Add app…
 says the device is not registered, the result offers "Register and retry…", whose own confirm says "Registers ipad on your free
 Apple team; sideload can't remove it" and then runs the chain with `--register-device`. A device already on the team is never
 asked. If Xcode's wording isn't recognised the failure is a plain `PROVISION_FAILED`, and `provision --register-device --yes`
-in a terminal does the same. On a fresh Mac, Add app… also needs `bundleIdPrefix` and `approvedSources` in `config.json`.
+in a terminal does the same. After the first install, trust the developer on the device (Settings › General › VPN & Device
+Management). First run on 2026-11-01: the iPad, then Stremio and Apollo on it (spike S6). On a fresh Mac, Add app… also needs `bundleIdPrefix` and `approvedSources` in `config.json`.
 
 The live check is one read-only `devicectl device info apps` per visible device, at launch, on Check status now, and on a panel
 open only when the last attempt is 5 minutes old; it takes no lock and writes nothing (`docs/design.md` section 12). When a device

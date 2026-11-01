@@ -41,7 +41,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
     static let cancelNote = "A stopped build leaves a marker the next free command settles."
     static let deviceNote = "The device may have finished; the row shows Change in progress until the window ends."
     static let savedDeviceNote =
-        "Next: Add app… on its card, with Developer Mode on. If Apple says it is not registered, the result offers to register it."
+        "Next: Add app… on its card, with Developer Mode on. If Apple says it is not registered, the result offers to register it. After the first install, trust the developer on the device: Settings › General › VPN & Device Management."
     /// Replaces `provision`'s CLI fix when the result offers "Register and retry…".
     static let registerFix = "Register and retry… asks first, then registers it on the free team and carries on."
 
