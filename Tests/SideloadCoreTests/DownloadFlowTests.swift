@@ -114,7 +114,8 @@ struct DownloadFlowTests {
         // A real thread, not a task: a task would wait its turn on the pool at every wake, behind the rest of a full test
         // run, and this test would measure that queue. The verdict needs no clock: only this thread can drain the queue
         // or cause a resume, so a task suspended before an empty queue was found is a lost wakeup, however slow the run.
-        // The time limit only keeps a broken test from hanging the run.
+        // `giveUp` only keeps a broken test from hanging the run. It is here and not a `.timeLimit`, which could only
+        // cancel a task, and neither thread would see that.
         let outcome = await withCheckedContinuation { (finished: CheckedContinuation<(consumed: Int, lost: Bool), Never>) in
             let consumer = Thread {
                 var consumed = 0
