@@ -111,7 +111,7 @@ public enum MenuSnapshotBuilder {
             generated: now, state: state, icon: icon,
             strip: MenuStrip(
                 freeInUse: !ledger.freeSigned.isEmpty || !ledger.freeProfiles.isEmpty || !ledger.installs.isEmpty, paid: paid),
-            devices: cards, showsApps: cards.contains { !$0.apps.isEmpty }, showsCertKitExport: paid != .blocked,
+            devices: cards, showsApps: !cards.isEmpty, showsCertKitExport: paid != .blocked,
             checkingDevices: inputs.probe == .checking, checkingApps: checkingApps, notices: inputs.notices,
             ledgerReadable: inputs.ledgerReadable, appIds: appIds(inputs), suspended: ledger.freeSuspended != nil,
             addSources: addSources)

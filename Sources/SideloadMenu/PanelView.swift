@@ -22,6 +22,7 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 12) {
             header
             content
+            AddDeviceRow(model: model)
             DoctorResultView(model: model)
             Divider()
             FooterView(model: model)
@@ -61,6 +62,7 @@ struct PanelView: View {
         case .failed(let issue):
             IssueView(title: "sideload could not read its state", issue: issue)
         case .firstRun(let issue):
+            ActionCardView(model: model)
             IssueView(title: "Welcome to sideload", issue: issue)
         case .loaded(let snapshot):
             LoadedView(snapshot: snapshot, model: model)

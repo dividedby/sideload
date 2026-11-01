@@ -11,6 +11,8 @@ public enum ProvisionClassifier {
         public let fix: String
     }
 
+    public static let deviceNotRegistered = "DEVICE_NOT_REGISTERED"
+
     /// Nil when the build succeeded.
     public static func classify(_ input: BuildClassifier.Input, registerDevice: Bool) -> Failure? {
         if input.overflow {
@@ -48,10 +50,12 @@ public enum ProvisionClassifier {
                 fix: "Wait for the 7-day window to pass; the limit is shared with Xcode and the lab. Nothing was registered.")
         }
         if has(
-            "has no devices from which to generate", "include the currently selected device", "device is not registered")
+            "has no devices from which to generate", "include the currently selected device", "device is not registered",
+            "isn't registered in your developer account", "isn\u{2019}t registered in your developer account",
+            "the device must be registered")
         {
             return Failure(
-                code: "DEVICE_NOT_REGISTERED",
+                code: deviceNotRegistered,
                 message: "The device is not registered with the free team (or not in the profile).",
                 fix: registerDevice
                     ? "Connect the device, unlock it and retry; check that Developer Mode is on."

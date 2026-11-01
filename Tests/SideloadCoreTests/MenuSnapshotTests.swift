@@ -116,16 +116,16 @@ struct MenuSnapshotTests {
     func freeSignedAloneHasNoRow() {
         let snapshot = build(ledger: Ledger(freeSigned: [signed("iphone", "apollo", days: 6.5)]))
         #expect(snapshot.devices[0].apps.isEmpty)
-        #expect(!snapshot.showsApps)
         #expect(snapshot.icon == .unknown)
         #expect(snapshot.strip.freeInUse)
     }
 
-    @Test("the Apps section is hidden until something is installed")
+    @Test("the Apps section is hidden until a device is saved: a saved device with no apps needs its Add app… menu")
     func hiddenWhenEmpty() {
         let snapshot = build()
-        #expect(!snapshot.showsApps)
+        #expect(snapshot.showsApps && snapshot.devices[0].apps.isEmpty)
         #expect(!snapshot.strip.freeInUse)
+        #expect(!menuBuild(config: Config(devices: [:])).showsApps)
     }
 
     @Test("a hand-installed app: a stored profile with the same UUID is used; a newer one that is not installed does not move the date")
@@ -547,7 +547,7 @@ struct MenuRedactionTests {
 
 @Suite("menu: loader and doctor")
 struct MenuLoaderTests {
-    @Test("no config.json is a first run that carries the doctor's fix text")
+    @Test("no config.json is a first run that points at Add device…")
     func firstRun() async throws {
         try await withTestHome { paths, _ in
             let (services, runner) = fakeServices(paths)
@@ -555,7 +555,7 @@ struct MenuLoaderTests {
                 Issue.record("expected firstRun")
                 return
             }
-            #expect(issue.fix == DeviceCheck.fixSave)
+            #expect(issue.fix == MenuLoader.firstRunFix)
             #expect(runner.calls.isEmpty)
         }
     }
