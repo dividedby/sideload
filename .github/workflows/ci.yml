@@ -40,4 +40,5 @@ jobs:
         run: |
           xcrun swift-format format --in-place --recursive Sources Tests Package.swift
           git diff --exit-code
-      - run: swift test -j 2
+      # Serial: a parallel run starves the small runner enough to trip timing checks.
+      - run: swift test -j 2 --no-parallel

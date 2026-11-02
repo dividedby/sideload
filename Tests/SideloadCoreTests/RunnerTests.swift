@@ -457,7 +457,7 @@ struct RunnerTests {
         let returned = Mutex(false)
         let children = h.children
         Thread {
-            children.killAll(SIGKILL, closing: true, spawnWait: .seconds(10))
+            children.killAll(SIGKILL, closing: true, spawnWait: .seconds(300))
             returned.withLock { $0 = true }
         }.start()
         try? await Task.sleep(for: .milliseconds(200))
