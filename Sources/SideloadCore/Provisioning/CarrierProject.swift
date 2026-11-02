@@ -22,7 +22,8 @@ public enum CarrierProject {
     public static func write(to directory: String) throws -> String {
         let project = directory + "/" + projectName
         for dir in [
-            directory, project, project + "/xcshareddata", project + "/xcshareddata/xcschemes", directory + "/Carrier",
+            directory, project, project + "/xcshareddata", project + "/xcshareddata/xcschemes",
+            directory + "/Carrier",
         ] {
             try makeDirectories(dir, mode: 0o700)
             if chmod(dir, 0o700) != 0 { throw ioError("chmod") }

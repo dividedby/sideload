@@ -38,8 +38,12 @@ struct ProvisionArgumentTests {
     @Test("--app and --device are required, and the app must be one of ours")
     func usage() async throws {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
-            #expect(await w.run(ProvisionOptions(device: "iphone", yes: true)).errors.first?.code == "USAGE")
-            #expect(await w.run(ProvisionOptions(app: "stremio-ios", yes: true)).errors.first?.code == "USAGE")
+            #expect(
+                await w.run(ProvisionOptions(device: "iphone", yes: true)).errors.first?.code
+                    == "USAGE")
+            #expect(
+                await w.run(ProvisionOptions(app: "stremio-ios", yes: true)).errors.first?.code
+                    == "USAGE")
             #expect(await w.run(app: "bogus").errors.first?.code == "USAGE")
             #expect(await w.run(app: "com.example.free.x").errors.first?.code == "USAGE")
             #expect(w.runner.calls.isEmpty)
@@ -47,24 +51,30 @@ struct ProvisionArgumentTests {
         }
     }
 
-    @Test("an unsaved device is DEVICE_NOT_SAVED and a missing prefix is CONFIG_MISSING; nothing runs")
+    @Test(
+        "an unsaved device is DEVICE_NOT_SAVED and a missing prefix is CONFIG_MISSING; nothing runs"
+    )
     func deviceAndPrefix() async throws {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
             #expect(await w.run(device: "nope").errors.first?.code == "DEVICE_NOT_SAVED")
             #expect(w.runner.calls.isEmpty)
         }
-        try await withProvisionWorld(config: provisionConfig(prefix: nil)) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(config: provisionConfig(prefix: nil)) {
+            (w: ProvisionWorld) async throws in
             #expect(await w.run().errors.first?.code == "CONFIG_MISSING")
             #expect(w.runner.calls.isEmpty)
         }
-        try await withProvisionWorld(config: provisionConfig(prefix: "not valid!")) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(config: provisionConfig(prefix: "not valid!")) {
+            (w: ProvisionWorld) async throws in
             #expect(await w.run().errors.first?.code == "CONFIG_MISSING")
         }
     }
 
-    @Test("without --yes it asks for confirmation before any keychain, subprocess or lock", arguments: [
-        (false, false), (true, false), (false, true), (true, true),
-    ])
+    @Test(
+        "without --yes it asks for confirmation before any keychain, subprocess or lock",
+        arguments: [
+            (false, false), (true, false), (false, true), (true, true),
+        ])
     func confirm(register: Bool, renew: Bool) async throws {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
             let out = await w.run(register: register, renew: renew, yes: false)
@@ -81,17 +91,20 @@ struct ProvisionArgumentTests {
         }
     }
 
-    @Test("each app maps to its free bundle ID, checked against the allowlist", arguments: [
-        ("stremio-ios", "iphone", "io.github.dividedby.free.stremio"),
-        ("stremio-tvos", "appletv", "io.github.dividedby.free.stremio"),
-        ("apollo", "iphone", "io.github.dividedby.free.apollo"),
-    ])
+    @Test(
+        "each app maps to its free bundle ID, checked against the allowlist",
+        arguments: [
+            ("stremio-ios", "iphone", "io.github.dividedby.free.stremio"),
+            ("stremio-tvos", "appletv", "io.github.dividedby.free.stremio"),
+            ("apollo", "iphone", "io.github.dividedby.free.apollo"),
+        ])
     func bundleIds(app: String, device: String, expected: String) async throws {
         let tv = device == "appletv"
         try await withProvisionWorld(
             build: BuildScript(
                 profile: try freeProfileXML(
-                    bundleId: expected, devices: [tv ? udid2 : udid1], platform: [tv ? "tvOS" : "iOS"]),
+                    bundleId: expected, devices: [tv ? udid2 : udid1],
+                    platform: [tv ? "tvOS" : "iOS"]),
                 sdk: tv ? "appletvos" : "iphoneos")
         ) { (w: ProvisionWorld) async throws in
             let out = await w.run(app: app, device: device)
@@ -116,9 +129,11 @@ struct ProvisionArgumentTests {
         }
     }
 
-    @Test("the platform of the saved device must match the app", arguments: [
-        ("stremio-tvos", "iphone"), ("stremio-ios", "appletv"), ("apollo", "appletv"),
-    ])
+    @Test(
+        "the platform of the saved device must match the app",
+        arguments: [
+            ("stremio-tvos", "iphone"), ("stremio-ios", "appletv"), ("apollo", "appletv"),
+        ])
     func platformMismatch(app: String, device: String) async throws {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
             let out = await w.run(app: app, device: device)
@@ -133,7 +148,8 @@ struct ProvisionArgumentTests {
     @Test("a saved device with no recorded platform matches no app")
     func noPlatform() async throws {
         let config = Config(
-            devices: ["old": SavedDevice(udid: udid1, coreDeviceId: savedCoreId("1"))], bundleIdPrefix: carrierPrefix)
+            devices: ["old": SavedDevice(udid: udid1, coreDeviceId: savedCoreId("1"))],
+            bundleIdPrefix: carrierPrefix)
         try await withProvisionWorld(config: config) { (w: ProvisionWorld) async throws in
             #expect(await w.run(device: "old").errors.first?.code == "PLATFORM_MISMATCH")
         }
@@ -177,18 +193,26 @@ struct ProvisionBuildTests {
             #expect(
                 build.args == [
                     "-project", w.paths.builds + "/carrier/Carrier.xcodeproj", "-scheme", "Carrier",
-                    "-destination", "id=\(udid1)", "-derivedDataPath", w.paths.builds + "/carrier-dd",
-                    "-allowProvisioningUpdates", "CODE_SIGN_STYLE=Automatic", "DEVELOPMENT_TEAM=6ZU5Z6ZKK7",
-                    "CODE_SIGN_IDENTITY=Apple Development", "PRODUCT_BUNDLE_IDENTIFIER=\(stremioId)", "build",
+                    "-destination", "id=\(udid1)", "-derivedDataPath",
+                    w.paths.builds + "/carrier-dd",
+                    "-allowProvisioningUpdates", "CODE_SIGN_STYLE=Automatic",
+                    "DEVELOPMENT_TEAM=6ZU5Z6ZKK7",
+                    "CODE_SIGN_IDENTITY=Apple Development",
+                    "PRODUCT_BUNDLE_IDENTIFIER=\(stremioId)", "build",
                 ])
             #expect(build.timeout == .seconds(600))
             #expect(build.maxOutputBytes == 128 * 1024 * 1024)
             #expect(!build.args.contains("-allowProvisioningDeviceRegistration"))
-            #expect(build.args.filter { $0.contains("Apple Development") } == ["CODE_SIGN_IDENTITY=Apple Development"])
+            #expect(
+                build.args.filter { $0.contains("Apple Development") } == [
+                    "CODE_SIGN_IDENTITY=Apple Development"
+                ])
         }
     }
 
-    @Test("-allowProvisioningDeviceRegistration only with --register-device and --yes, right after -allowProvisioningUpdates")
+    @Test(
+        "-allowProvisioningDeviceRegistration only with --register-device and --yes, right after -allowProvisioningUpdates"
+    )
     func registerFlag() async throws {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
             #expect(await w.run(register: true, yes: true).ok)
@@ -199,7 +223,9 @@ struct ProvisionBuildTests {
         }
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
             _ = await w.run(register: false, yes: true)
-            #expect(try #require(w.builds.first).args.contains("-allowProvisioningDeviceRegistration") == false)
+            #expect(
+                try #require(w.builds.first).args.contains("-allowProvisioningDeviceRegistration")
+                    == false)
             let refused = await w.run(register: true, yes: false)
             #expect(refused.errors.first?.code == "CONFIRM_REQUIRED")
             #expect(w.builds.count == 1, "the refused run built nothing")
@@ -212,7 +238,9 @@ struct ProvisionBuildTests {
             _ = await w.run()
             #expect(!w.runner.calls.isEmpty)
             for call in w.runner.calls {
-                #expect(["xcodebuild", "/usr/bin/security"].contains(call.executable), "\(call.executable)")
+                #expect(
+                    ["xcodebuild", "/usr/bin/security"].contains(call.executable),
+                    "\(call.executable)")
                 #expect(call.timeout > .zero)
                 #expect(!call.args.contains("-c"))
             }
@@ -227,17 +255,21 @@ struct ProvisionBuildTests {
     func carrierWritten() async throws {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
             _ = await w.run()
-            #expect(FileManager.default.fileExists(atPath: w.paths.builds + "/carrier/Carrier.xcodeproj/project.pbxproj"))
+            #expect(
+                FileManager.default.fileExists(
+                    atPath: w.paths.builds + "/carrier/Carrier.xcodeproj/project.pbxproj"))
             #expect(!FileManager.default.fileExists(atPath: w.paths.builds + "/canary"))
         }
     }
 
     @Test("a profile left by an earlier build is never read: the products are cleared first")
     func staleProducts() async throws {
-        try await withProvisionWorld(build: BuildScript(profile: nil, createApp: false)) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(build: BuildScript(profile: nil, createApp: false)) {
+            (w: ProvisionWorld) async throws in
             let app = w.paths.builds + "/carrier-dd/Build/Products/Debug-iphoneos/Carrier.app"
             try FileManager.default.createDirectory(atPath: app, withIntermediateDirectories: true)
-            try Data(try freeProfileXML().utf8).write(to: URL(fileURLWithPath: app + "/embedded.mobileprovision"))
+            try Data(try freeProfileXML().utf8).write(
+                to: URL(fileURLWithPath: app + "/embedded.mobileprovision"))
             let out = await w.run()
             #expect(out.errors.first?.code == "BUILD_PRODUCT_MISSING")
             #expect(!FileManager.default.fileExists(atPath: app))
@@ -250,8 +282,14 @@ struct ProvisionBuildTests {
         try await withProvisionWorld(build: try tvScript()) { (w: ProvisionWorld) async throws in
             let out = await w.run(app: "stremio-tvos", device: "appletv")
             #expect(out.ok, "\(out.errors)")
-            #expect(FileManager.default.fileExists(atPath: w.paths.builds + "/carrier-dd/Build/Products/Debug-appletvos/Carrier.app"))
-            #expect(out.data["file"] == "profiles/free/stremio-tvos/appletv/0F0F0F0F-1111-2222-3333-444444444444.mobileprovision")
+            #expect(
+                FileManager.default.fileExists(
+                    atPath: w.paths.builds
+                        + "/carrier-dd/Build/Products/Debug-appletvos/Carrier.app"))
+            #expect(
+                out.data["file"]
+                    == "profiles/free/stremio-tvos/appletv/0F0F0F0F-1111-2222-3333-444444444444.mobileprovision"
+            )
         }
     }
 }
@@ -275,7 +313,9 @@ struct ProvisionPreflightTests {
         }
     }
 
-    @Test("with no pin, no valid free identity is FREE_IDENTITY_MISSING and several are FREE_IDENTITY_AMBIGUOUS")
+    @Test(
+        "with no pin, no valid free identity is FREE_IDENTITY_MISSING and several are FREE_IDENTITY_AMBIGUOUS"
+    )
     func unpinned() async throws {
         try await withProvisionWorld(reads: [[]]) { (w: ProvisionWorld) async throws in
             #expect(await w.run().errors.first?.code == "FREE_IDENTITY_MISSING")
@@ -283,10 +323,12 @@ struct ProvisionPreflightTests {
         }
         // A paid-team or expired free identity is not a candidate.
         let expired = otherFreeCert(notAfter: daysFromNow(-1))
-        try await withProvisionWorld(reads: [[try keychainCert(TestCerts.paid), expired]]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(reads: [[try keychainCert(TestCerts.paid), expired]]) {
+            (w: ProvisionWorld) async throws in
             #expect(await w.run().errors.first?.code == "FREE_IDENTITY_MISSING")
         }
-        try await withProvisionWorld(reads: [[try freeKeychainCert(), otherFreeCert()]]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(reads: [[try freeKeychainCert(), otherFreeCert()]]) {
+            (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.errors.first?.code == "FREE_IDENTITY_AMBIGUOUS")
             #expect(out.data["candidateFp8"]?.array?.count == 2)
@@ -298,18 +340,24 @@ struct ProvisionPreflightTests {
     @Test("a pinned identity must be present and valid, and exactly one")
     func pinned() async throws {
         let free = try freeKeychainCert()
-        try await withProvisionWorld(config: pinConfig("deadbeef"), reads: [[free]]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(config: pinConfig("deadbeef"), reads: [[free]]) {
+            (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.errors.first?.code == "FREE_IDENTITY_MISSING")
             #expect(out.data["pinnedFp8"] == "deadbeef")
             refused(w)
         }
         let expired = otherFreeCert(notAfter: daysFromNow(-1))
-        try await withProvisionWorld(config: pinConfig(fp8(expired)), reads: [[free, expired]]) { (w: ProvisionWorld) async throws in
-            #expect(await w.run().errors.first?.code == "FREE_IDENTITY_MISSING", "an expired pinned identity is not valid")
+        try await withProvisionWorld(config: pinConfig(fp8(expired)), reads: [[free, expired]]) {
+            (w: ProvisionWorld) async throws in
+            #expect(
+                await w.run().errors.first?.code == "FREE_IDENTITY_MISSING",
+                "an expired pinned identity is not valid")
         }
-        let twinA = otherFreeCert("AB", fp8: "abcdef01"), twinB = otherFreeCert("CD", fp8: "abcdef01")
-        try await withProvisionWorld(config: pinConfig("abcdef01"), reads: [[free, twinA, twinB]]) { (w: ProvisionWorld) async throws in
+        let twinA = otherFreeCert("AB", fp8: "abcdef01")
+        let twinB = otherFreeCert("CD", fp8: "abcdef01")
+        try await withProvisionWorld(config: pinConfig("abcdef01"), reads: [[free, twinA, twinB]]) {
+            (w: ProvisionWorld) async throws in
             #expect(await w.run().errors.first?.code == "FREE_IDENTITY_AMBIGUOUS")
             refused(w)
         }
@@ -318,7 +366,9 @@ struct ProvisionPreflightTests {
     @Test("with a pin, another free identity in the keychain does not make it ambiguous")
     func pinnedAmongOthers() async throws {
         let free = try freeKeychainCert()
-        try await withProvisionWorld(config: pinConfig(fp8(free)), reads: [[free, otherFreeCert()]]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            config: pinConfig(fp8(free)), reads: [[free, otherFreeCert()]]
+        ) { (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.ok, "\(out.errors)")
             #expect(out.data["pinnedFp8"] == .string(fp8(free)))
@@ -326,12 +376,16 @@ struct ProvisionPreflightTests {
         }
     }
 
-    @Test("a malformed freeTeam block is CONFIG_INVALID", arguments: [
-        JSONValue.string("x"), ["certFp8": "XYZ"], ["certFp8": 12], ["certFp8": "ABCDEF01"], ["reservedAppIds": "4"],
-        ["reservedAppIds": 11], ["reservedAppIds": -1], ["reservedAppIds": 2.5],
-    ])
+    @Test(
+        "a malformed freeTeam block is CONFIG_INVALID",
+        arguments: [
+            JSONValue.string("x"), ["certFp8": "XYZ"], ["certFp8": 12], ["certFp8": "ABCDEF01"],
+            ["reservedAppIds": "4"],
+            ["reservedAppIds": 11], ["reservedAppIds": -1], ["reservedAppIds": 2.5],
+        ])
     func badConfig(value: JSONValue) async throws {
-        try await withProvisionWorld(config: provisionConfig(extra: ["freeTeam": value])) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(config: provisionConfig(extra: ["freeTeam": value])) {
+            (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.errors.first?.code == "CONFIG_INVALID")
             refused(w)
@@ -341,7 +395,10 @@ struct ProvisionPreflightTests {
     @Test("the App ID budget: a new bundle ID needs recent + reserved + 1 <= 10")
     func budget() async throws {
         func epochs(_ n: Int) -> [LedgerFreeAppId] {
-            (0..<n).map { LedgerFreeAppId(bundleId: "io.github.dividedby.free.x\($0)", epochStart: daysFromNow(-1)) }
+            (0..<n).map {
+                LedgerFreeAppId(
+                    bundleId: "io.github.dividedby.free.x\($0)", epochStart: daysFromNow(-1))
+            }
         }
         // 5 + 4 + 1 = 10: allowed.
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
@@ -362,11 +419,13 @@ struct ProvisionPreflightTests {
             #expect(try w.ledger().freeAppIds.count == 6, "the ledger is unchanged")
         }
         // The owner's reserve moves the line.
-        try await withProvisionWorld(config: pinConfig(fp8(try freeKeychainCert()), reserved: 0)) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(config: pinConfig(fp8(try freeKeychainCert()), reserved: 0)) {
+            (w: ProvisionWorld) async throws in
             try await seed(w) { $0.freeAppIds = epochs(9) }
             #expect(await w.run().ok)
         }
-        try await withProvisionWorld(config: pinConfig(fp8(try freeKeychainCert()), reserved: 0)) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(config: pinConfig(fp8(try freeKeychainCert()), reserved: 0)) {
+            (w: ProvisionWorld) async throws in
             try await seed(w) { $0.freeAppIds = epochs(10) }
             #expect(await w.run().errors.first?.code == "FREE_APP_ID_LIMIT")
         }
@@ -376,37 +435,55 @@ struct ProvisionPreflightTests {
     func liveEpoch() async throws {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
             try await seed(w) {
-                $0.freeAppIds = (0..<9).map {
-                    LedgerFreeAppId(bundleId: "io.github.dividedby.free.x\($0)", epochStart: daysFromNow(-2))
-                } + [LedgerFreeAppId(bundleId: stremioId, epochStart: daysFromNow(-3))]
+                $0.freeAppIds =
+                    (0..<9).map {
+                        LedgerFreeAppId(
+                            bundleId: "io.github.dividedby.free.x\($0)", epochStart: daysFromNow(-2)
+                        )
+                    } + [LedgerFreeAppId(bundleId: stremioId, epochStart: daysFromNow(-3))]
             }
             let out = await w.run()
             #expect(out.ok, "\(out.errors)")
             #expect(out.data["appIdNew"] == false)
             #expect(out.data["appIdsLast7Days"] == 10)
-            #expect(try w.ledger().freeAppIds.first { $0.bundleId == stremioId }?.epochStart == daysFromNow(-3), "the epoch is kept")
+            #expect(
+                try w.ledger().freeAppIds.first { $0.bundleId == stremioId }?.epochStart
+                    == daysFromNow(-3), "the epoch is kept")
         }
     }
 
-    @Test("epochs roll over after 7 days: older ones stop counting and the bundle ID starts a new epoch")
+    @Test(
+        "epochs roll over after 7 days: older ones stop counting and the bundle ID starts a new epoch"
+    )
     func rollover() async throws {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
             try await seed(w) {
-                $0.freeAppIds = (0..<8).map {
-                    LedgerFreeAppId(bundleId: "io.github.dividedby.free.x\($0)", epochStart: daysFromNow(-7))
-                } + [LedgerFreeAppId(bundleId: stremioId, epochStart: daysFromNow(-8))]
+                $0.freeAppIds =
+                    (0..<8).map {
+                        LedgerFreeAppId(
+                            bundleId: "io.github.dividedby.free.x\($0)", epochStart: daysFromNow(-7)
+                        )
+                    } + [LedgerFreeAppId(bundleId: stremioId, epochStart: daysFromNow(-8))]
             }
             let out = await w.run()
             #expect(out.ok, "nine old epochs no longer count: \(out.errors)")
             #expect(out.data["appIdNew"] == true, "its own epoch ended")
             #expect(out.data["appIdsLast7Days"] == 1)
-            #expect(try w.ledger().freeAppIds == [LedgerFreeAppId(bundleId: stremioId, epochStart: testNow)])
+            #expect(
+                try w.ledger().freeAppIds == [
+                    LedgerFreeAppId(bundleId: stremioId, epochStart: testNow)
+                ])
         }
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
             try await seed(w) {
-                $0.freeAppIds = [LedgerFreeAppId(bundleId: stremioId, epochStart: testNow.addingTimeInterval(-7 * 86_400 + 1))]
+                $0.freeAppIds = [
+                    LedgerFreeAppId(
+                        bundleId: stremioId, epochStart: testNow.addingTimeInterval(-7 * 86_400 + 1)
+                    )
+                ]
             }
-            #expect(await w.run().data["appIdNew"] == false, "one second short of 7 days is still live")
+            #expect(
+                await w.run().data["appIdNew"] == false, "one second short of 7 days is still live")
         }
     }
 }
@@ -418,7 +495,9 @@ struct ProvisionIdentityTests {
     @Test("an unchanged identity set passes, and the keychain is read twice (before and after)")
     func unchanged() async throws {
         let free = try freeKeychainCert()
-        try await withProvisionWorld(reads: [[free, try keychainCert(TestCerts.paid)], [try keychainCert(TestCerts.paid), free]]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(reads: [
+            [free, try keychainCert(TestCerts.paid)], [try keychainCert(TestCerts.paid), free],
+        ]) { (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.ok, "\(out.errors)")
             #expect(out.data["identityChanged"] == false)
@@ -430,15 +509,20 @@ struct ProvisionIdentityTests {
     @Test("a paid-team certificate appearing is not a change to the free set")
     func paidNotCounted() async throws {
         let free = try freeKeychainCert()
-        try await withProvisionWorld(reads: [[free], [free, try keychainCert(TestCerts.paid)]]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(reads: [[free], [free, try keychainCert(TestCerts.paid)]]) {
+            (w: ProvisionWorld) async throws in
             #expect(await w.run().ok)
         }
     }
 
-    @Test("an added free identity is FREE_CERT_CHANGED: nothing is stored or pinned, auto-refresh is suspended")
+    @Test(
+        "an added free identity is FREE_CERT_CHANGED: nothing is stored or pinned, auto-refresh is suspended"
+    )
     func added() async throws {
-        let free = try freeKeychainCert(), extra = otherFreeCert()
-        try await withProvisionWorld(reads: [[free], [free, extra]]) { (w: ProvisionWorld) async throws in
+        let free = try freeKeychainCert()
+        let extra = otherFreeCert()
+        try await withProvisionWorld(reads: [[free], [free, extra]]) {
+            (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.errors.first?.code == "FREE_CERT_CHANGED")
             #expect(out.errors.first?.fix?.contains("suspended") == true)
@@ -455,20 +539,26 @@ struct ProvisionIdentityTests {
             #expect(suspended.at == testNow)
             #expect(try w.config().freeTeamCertFp8() == nil, "the first run did not pin")
             #expect(!FileManager.default.fileExists(atPath: w.paths.home + "/profiles"))
-            #expect(ledger.freeAppIds.map(\.bundleId) == [stremioId], "the build succeeded, so the App ID exists")
+            #expect(
+                ledger.freeAppIds.map(\.bundleId) == [stremioId],
+                "the build succeeded, so the App ID exists")
         }
     }
 
     @Test("a removed free identity, the pinned one included, is FREE_CERT_CHANGED")
     func removed() async throws {
-        let free = try freeKeychainCert(), other = otherFreeCert()
-        try await withProvisionWorld(config: pinConfig(fp8(free)), reads: [[free, other], [free]]) { (w: ProvisionWorld) async throws in
+        let free = try freeKeychainCert()
+        let other = otherFreeCert()
+        try await withProvisionWorld(config: pinConfig(fp8(free)), reads: [[free, other], [free]]) {
+            (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.errors.first?.code == "FREE_CERT_CHANGED")
             #expect(out.data["removedFp8"] == [.string(fp8(other))])
             #expect(out.data["addedFp8"] == [])
         }
-        try await withProvisionWorld(config: pinConfig(fp8(free)), reads: [[free, other], [other]]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            config: pinConfig(fp8(free)), reads: [[free, other], [other]]
+        ) { (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.errors.first?.code == "FREE_CERT_CHANGED")
             #expect(out.data["removedFp8"] == [.string(fp8(free))])
@@ -476,34 +566,44 @@ struct ProvisionIdentityTests {
         }
     }
 
-    @Test("an invalid (expired) free identity appearing counts too: the snapshot covers every free identity")
+    @Test(
+        "an invalid (expired) free identity appearing counts too: the snapshot covers every free identity"
+    )
     func invalidCounts() async throws {
         let free = try freeKeychainCert()
-        try await withProvisionWorld(reads: [[free], [free, otherFreeCert(notAfter: daysFromNow(-5))]]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(reads: [
+            [free], [free, otherFreeCert(notAfter: daysFromNow(-5))],
+        ]) { (w: ProvisionWorld) async throws in
             #expect(await w.run().errors.first?.code == "FREE_CERT_CHANGED")
         }
     }
 
     @Test("the check runs even when xcodebuild failed, and it outranks the build error")
     func afterFailedBuild() async throws {
-        let free = try freeKeychainCert(), extra = otherFreeCert()
+        let free = try freeKeychainCert()
+        let extra = otherFreeCert()
         let failing = BuildScript(result: RunResult(code: 65, stderr: "error: something odd\n"))
-        try await withProvisionWorld(reads: [[free], [free, extra]], build: failing) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(reads: [[free], [free, extra]], build: failing) {
+            (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.errors.first?.code == "FREE_CERT_CHANGED")
             #expect(out.data["buildSucceeded"] == false)
             #expect(w.keychain.readCount == 2)
             let ledger = try w.ledger()
             #expect(ledger.freeSuspended?.addedFp8 == [fp8(extra)])
-            #expect(ledger.freeAppIds.map(\.bundleId) == [stremioId], "xcodebuild ran, so the App ID is counted")
+            #expect(
+                ledger.freeAppIds.map(\.bundleId) == [stremioId],
+                "xcodebuild ran, so the App ID is counted")
         }
         // Timed out: the same.
         let timedOut = BuildScript(result: RunResult(code: nil, timedOut: true))
-        try await withProvisionWorld(reads: [[free], [free, extra]], build: timedOut) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(reads: [[free], [free, extra]], build: timedOut) {
+            (w: ProvisionWorld) async throws in
             #expect(await w.run().errors.first?.code == "FREE_CERT_CHANGED")
         }
         // Failed with an unchanged set: the build error, no suspension.
-        try await withProvisionWorld(reads: [[free], [free]], build: failing) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(reads: [[free], [free]], build: failing) {
+            (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.errors.first?.code == "PROVISION_FAILED")
             #expect(out.data["identityChanged"] == nil)
@@ -527,7 +627,10 @@ struct ProvisionIdentityTests {
     @Test("a manual success lifts a suspension; the output says so")
     func suspensionCleared() async throws {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
-            try await seed(w) { $0.freeSuspended = LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: daysFromNow(-1)) }
+            try await seed(w) {
+                $0.freeSuspended = LedgerFreeSuspension(
+                    code: "FREE_CERT_CHANGED", at: daysFromNow(-1))
+            }
             let out = await w.run()
             #expect(out.ok, "\(out.errors)")
             #expect(out.data["suspensionCleared"] == true)
@@ -540,10 +643,14 @@ struct ProvisionIdentityTests {
 
 @Suite("provision: pinning")
 struct ProvisionPinningTests {
-    @Test("the first success pins the one valid free identity; other freeTeam keys and config are kept")
+    @Test(
+        "the first success pins the one valid free identity; other freeTeam keys and config are kept"
+    )
     func firstRunPins() async throws {
         let free = try freeKeychainCert()
-        let config = provisionConfig(extra: ["freeTeam": ["reservedAppIds": 3, "future": "kept"], "other": 1])
+        let config = provisionConfig(extra: [
+            "freeTeam": ["reservedAppIds": 3, "future": "kept"], "other": 1,
+        ])
         try await withProvisionWorld(config: config) { (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.ok, "\(out.errors)")
@@ -563,7 +670,8 @@ struct ProvisionPinningTests {
     @Test("with a pin already set, a success changes no config")
     func pinKept() async throws {
         let free = try freeKeychainCert()
-        try await withProvisionWorld(config: pinConfig(fp8(free))) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(config: pinConfig(fp8(free))) {
+            (w: ProvisionWorld) async throws in
             let before = try Data(contentsOf: URL(fileURLWithPath: w.paths.config))
             #expect(await w.run().ok)
             #expect(try Data(contentsOf: URL(fileURLWithPath: w.paths.config)) == before)
@@ -572,7 +680,9 @@ struct ProvisionPinningTests {
 
     @Test("a profile that fails a check pins nothing")
     func noPinOnFailure() async throws {
-        try await withProvisionWorld(build: BuildScript(profile: try freeProfileXML(getTaskAllow: false))) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            build: BuildScript(profile: try freeProfileXML(getTaskAllow: false))
+        ) { (w: ProvisionWorld) async throws in
             #expect(await w.run().errors.first?.code == "PROFILE_INVALID")
             #expect(try w.config().freeTeamCertFp8() == nil)
         }
@@ -585,7 +695,8 @@ struct ProvisionPinningTests {
         let free = try freeKeychainCert()
         var expiredCopy = free
         expiredCopy.info.notAfter = daysFromNow(-1)
-        try await withProvisionWorld(reads: [[free], [expiredCopy]]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(reads: [[free], [expiredCopy]]) {
+            (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.errors.first?.code == "FREE_IDENTITY_AMBIGUOUS")
             #expect(try w.config().freeTeamCertFp8() == nil)
@@ -597,7 +708,8 @@ struct ProvisionPinningTests {
 // MARK: the profile checks
 
 enum BadProfile: CaseIterable, Sendable {
-    case paidTeam, wildcard, otherAppId, otherTeamPrefix, tvosPlatform, noTaskAllow, stringTaskAllow, otherDevice, noDevices,
+    case paidTeam, wildcard, otherAppId, otherTeamPrefix, tvosPlatform, noTaskAllow,
+        stringTaskAllow, otherDevice, noDevices,
         otherCert, noCerts, expired, expiresNow, tooLong
 
     var check: String {
@@ -614,10 +726,14 @@ enum BadProfile: CaseIterable, Sendable {
 
     func xml() throws -> String {
         switch self {
-        case .paidTeam: try freeProfileXML(team: Team.paid, applicationIdentifier: Team.paid + "." + stremioId)
+        case .paidTeam:
+            try freeProfileXML(team: Team.paid, applicationIdentifier: Team.paid + "." + stremioId)
         case .wildcard: try freeProfileXML(applicationIdentifier: Team.free + ".*")
-        case .otherAppId: try freeProfileXML(applicationIdentifier: Team.free + ".io.github.dividedby.free.apollo")
-        case .otherTeamPrefix: try freeProfileXML(applicationIdentifier: Team.paid + "." + stremioId)
+        case .otherAppId:
+            try freeProfileXML(
+                applicationIdentifier: Team.free + ".io.github.dividedby.free.apollo")
+        case .otherTeamPrefix:
+            try freeProfileXML(applicationIdentifier: Team.paid + "." + stremioId)
         case .tvosPlatform: try freeProfileXML(platform: ["tvOS"])
         case .noTaskAllow: try freeProfileXML(getTaskAllow: false)
         case .stringTaskAllow: try freeProfileXML(getTaskAllow: "true")
@@ -634,14 +750,19 @@ enum BadProfile: CaseIterable, Sendable {
 
 @Suite("provision: the embedded profile")
 struct ProvisionProfileTests {
-    @Test("each failed check is PROFILE_INVALID naming the check; nothing is stored", arguments: BadProfile.allCases)
+    @Test(
+        "each failed check is PROFILE_INVALID naming the check; nothing is stored",
+        arguments: BadProfile.allCases)
     func invalid(bad: BadProfile) async throws {
-        try await withProvisionWorld(build: BuildScript(profile: try bad.xml())) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(build: BuildScript(profile: try bad.xml())) {
+            (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.errors.first?.code == "PROFILE_INVALID")
             #expect(out.data["check"] == .string(bad.check))
             let text = try out.printed().text
-            #expect(!text.contains(udid1) && !text.contains(savedUdid("9")), "no profile content in the output")
+            #expect(
+                !text.contains(udid1) && !text.contains(savedUdid("9")),
+                "no profile content in the output")
             #expect(!FileManager.default.fileExists(atPath: w.paths.home + "/profiles"))
             #expect(try w.ledger().freeProfiles.isEmpty)
             #expect(try w.config().freeTeamCertFp8() == nil)
@@ -659,7 +780,9 @@ struct ProvisionProfileTests {
         }
     }
 
-    @Test("a symlink or a directory where the embedded profile belongs is PROFILE_INVALID (embedded-profile): never read through, never stored")
+    @Test(
+        "a symlink or a directory where the embedded profile belongs is PROFILE_INVALID (embedded-profile): never read through, never stored"
+    )
     func embeddedNotRegular() async throws {
         let elsewhere = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: elsewhere) }
@@ -676,34 +799,49 @@ struct ProvisionProfileTests {
                 #expect(out.errors.first?.code == "PROFILE_INVALID")
                 #expect(out.data["check"] == "embedded-profile")
                 #expect(w.securityCalls.isEmpty, "nothing was decoded")
-                #expect(!FileManager.default.fileExists(atPath: w.paths.home + "/profiles"), "nothing stored")
+                #expect(
+                    !FileManager.default.fileExists(atPath: w.paths.home + "/profiles"),
+                    "nothing stored")
                 #expect(try w.ledger().freeProfiles.isEmpty)
             }
         }
     }
 
-    @Test("a profile that expires in exactly 8 days passes; 6 hours short of now passes the lower bound")
+    @Test(
+        "a profile that expires in exactly 8 days passes; 6 hours short of now passes the lower bound"
+    )
     func boundaries() async throws {
-        try await withProvisionWorld(build: BuildScript(profile: try freeProfileXML(expires: testNow.addingTimeInterval(8 * 86_400)))) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            build: BuildScript(
+                profile: try freeProfileXML(expires: testNow.addingTimeInterval(8 * 86_400)))
+        ) { (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.ok, "\(out.errors)")
             #expect(out.data["profile"]?["daysLeft"] == 8)
         }
-        try await withProvisionWorld(build: BuildScript(profile: try freeProfileXML(expires: testNow.addingTimeInterval(1)))) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            build: BuildScript(profile: try freeProfileXML(expires: testNow.addingTimeInterval(1)))
+        ) { (w: ProvisionWorld) async throws in
             #expect(await w.run().ok)
         }
     }
 
-    @Test("the check order is team, application-identifier, platform, get-task-allow, device, certificate, expiry")
+    @Test(
+        "the check order is team, application-identifier, platform, get-task-allow, device, certificate, expiry"
+    )
     func order() throws {
         let good = ProvisioningProfile(
-            uuid: "0F0F0F0F-1111-2222-3333-444444444444", team: Team.free, applicationIdentifier: Team.free + "." + stremioId,
-            getTaskAllow: true, platforms: ["iOS"], created: testNow, expires: daysFromNow(7), devices: [udid1.lowercased()],
+            uuid: "0F0F0F0F-1111-2222-3333-444444444444", team: Team.free,
+            applicationIdentifier: Team.free + "." + stremioId,
+            getTaskAllow: true, platforms: ["iOS"], created: testNow, expires: daysFromNow(7),
+            devices: [udid1.lowercased()],
             certFingerprints: ["AA"])
         func check(_ mutate: (inout ProvisioningProfile) -> Void) -> String? {
             var p = good
             mutate(&p)
-            return ProvisionCommand.verify(p, bundleId: stremioId, platform: "iOS", udid: udid1, certificate: "aa", now: testNow)?.check
+            return ProvisionCommand.verify(
+                p, bundleId: stremioId, platform: "iOS", udid: udid1, certificate: "aa",
+                now: testNow)?.check
         }
         #expect(check { _ in } == nil)
         #expect(check { $0.team = nil } == "team")
@@ -714,10 +852,22 @@ struct ProvisionProfileTests {
         #expect(check { $0.certFingerprints = [] } == "certificate")
         #expect(check { $0.expires = nil } == "expiry")
         // Several wrong at once: the first in the order wins.
-        #expect(check { $0.team = Team.paid; $0.expires = nil; $0.devices = [] } == "team")
-        #expect(check { $0.devices = []; $0.expires = nil } == "device")
+        #expect(
+            check {
+                $0.team = Team.paid
+                $0.expires = nil
+                $0.devices = []
+            } == "team")
+        #expect(
+            check {
+                $0.devices = []
+                $0.expires = nil
+            } == "device")
         // The UDID match ignores case.
-        #expect(ProvisionCommand.verify(good, bundleId: stremioId, platform: "iOS", udid: udid1.uppercased(), certificate: "AA", now: testNow) == nil)
+        #expect(
+            ProvisionCommand.verify(
+                good, bundleId: stremioId, platform: "iOS", udid: udid1.uppercased(),
+                certificate: "AA", now: testNow) == nil)
     }
 }
 
@@ -725,18 +875,27 @@ struct ProvisionProfileTests {
 
 @Suite("provision: storage and ledger")
 struct ProvisionStorageTests {
-    @Test("the profile is copied to profiles/free/<app>/<device>/<uuid>.mobileprovision, files 0600 and folders 0700")
+    @Test(
+        "the profile is copied to profiles/free/<app>/<device>/<uuid>.mobileprovision, files 0600 and folders 0700"
+    )
     func storage() async throws {
         let xml = try freeProfileXML()
-        try await withProvisionWorld(build: BuildScript(profile: xml)) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(build: BuildScript(profile: xml)) {
+            (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.ok, "\(out.errors)")
-            let relative = "profiles/free/stremio-ios/iphone/0F0F0F0F-1111-2222-3333-444444444444.mobileprovision"
+            let relative =
+                "profiles/free/stremio-ios/iphone/0F0F0F0F-1111-2222-3333-444444444444.mobileprovision"
             #expect(out.data["file"] == .string(relative))
             let file = w.paths.home + "/" + relative
-            #expect(try Data(contentsOf: URL(fileURLWithPath: file)) == Data(xml.utf8), "the signed bytes Xcode embedded")
+            #expect(
+                try Data(contentsOf: URL(fileURLWithPath: file)) == Data(xml.utf8),
+                "the signed bytes Xcode embedded")
             #expect(modeOf(file) == 0o600)
-            for dir in ["profiles", "profiles/free", "profiles/free/stremio-ios", "profiles/free/stremio-ios/iphone"] {
+            for dir in [
+                "profiles", "profiles/free", "profiles/free/stremio-ios",
+                "profiles/free/stremio-ios/iphone",
+            ] {
                 #expect(modeOf(w.paths.home + "/" + dir) == 0o700, "\(dir)")
             }
             #expect(listing(w.paths.home + "/profiles/free/stremio-ios/iphone").count == 1)
@@ -745,43 +904,67 @@ struct ProvisionStorageTests {
 
     @Test("two apps and two devices keep separate folders")
     func separate() async throws {
-        try await withProvisionWorld(build: BuildScript(profile: try freeProfileXML(bundleId: apolloId))) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            build: BuildScript(profile: try freeProfileXML(bundleId: apolloId))
+        ) { (w: ProvisionWorld) async throws in
             #expect(await w.run(app: "apollo").ok)
-            #expect(FileManager.default.fileExists(atPath: w.paths.home + "/profiles/free/apollo/iphone"))
-            #expect(!FileManager.default.fileExists(atPath: w.paths.home + "/profiles/free/stremio-ios"))
+            #expect(
+                FileManager.default.fileExists(
+                    atPath: w.paths.home + "/profiles/free/apollo/iphone"))
+            #expect(
+                !FileManager.default.fileExists(atPath: w.paths.home + "/profiles/free/stremio-ios")
+            )
         }
     }
 
-    @Test("the ledger records the profile (keyed device/app), the App ID epoch and no device ID or content")
+    @Test(
+        "the ledger records the profile (keyed device/app), the App ID epoch and no device ID or content"
+    )
     func ledgerRecords() async throws {
         let free = try freeKeychainCert()
-        try await withProvisionWorld(build: BuildScript(profile: try freeProfileXML(created: daysFromNow(-0.5), expires: daysFromNow(6.5)))) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            build: BuildScript(
+                profile: try freeProfileXML(created: daysFromNow(-0.5), expires: daysFromNow(6.5)))
+        ) { (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.ok, "\(out.errors)")
             let ledger = try w.ledger()
             let entry = try #require(ledger.freeProfiles.first)
             #expect(ledger.freeProfiles.count == 1)
             #expect(entry.id == "iphone/stremio-ios")
-            #expect(entry.device == "iphone" && entry.app == "stremio-ios" && entry.bundleId == stremioId)
+            #expect(
+                entry.device == "iphone" && entry.app == "stremio-ios"
+                    && entry.bundleId == stremioId)
             #expect(entry.deviceTail == tail(udid1))
             #expect(entry.profileUuid == "0F0F0F0F-1111-2222-3333-444444444444")
             #expect(entry.created == daysFromNow(-0.5) && entry.expires == daysFromNow(6.5))
             #expect(entry.certFp8 == fp8(free))
-            #expect(entry.file == "profiles/free/stremio-ios/iphone/0F0F0F0F-1111-2222-3333-444444444444.mobileprovision")
-            #expect(ledger.freeAppIds == [LedgerFreeAppId(bundleId: stremioId, epochStart: testNow)])
+            #expect(
+                entry.file
+                    == "profiles/free/stremio-ios/iphone/0F0F0F0F-1111-2222-3333-444444444444.mobileprovision"
+            )
+            #expect(
+                ledger.freeAppIds == [LedgerFreeAppId(bundleId: stremioId, epochStart: testNow)])
             #expect(ledger.freeSuspended == nil)
             // Free profiles stay out of the paid lists.
             #expect(ledger.profiles.isEmpty && ledger.certificates.isEmpty)
             let raw = try String(contentsOfFile: w.paths.ledger, encoding: .utf8)
-            for secret in [udid1, savedCoreId("1"), "Test iPhone", free.reference] { #expect(!raw.contains(secret)) }
+            for secret in [udid1, savedCoreId("1"), "Test iPhone", free.reference] {
+                #expect(!raw.contains(secret))
+            }
             #expect(modeOf(w.paths.ledger) == 0o600)
         }
     }
 
-    @Test("the output: profile facts, App ID counts, the pin; no UDID, device name, identity name or full fingerprint")
+    @Test(
+        "the output: profile facts, App ID counts, the pin; no UDID, device name, identity name or full fingerprint"
+    )
     func output() async throws {
         let free = try freeKeychainCert()
-        try await withProvisionWorld(build: BuildScript(profile: try freeProfileXML(created: daysFromNow(0), expires: daysFromNow(6.5)))) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            build: BuildScript(
+                profile: try freeProfileXML(created: daysFromNow(0), expires: daysFromNow(6.5)))
+        ) { (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.ok)
             #expect(out.command == "provision")
@@ -798,7 +981,8 @@ struct ProvisionStorageTests {
             #expect(out.data["pinnedFp8"] == .string(fp8(free)))
             let text = try out.printed().text
             for forbidden in [
-                udid1, savedCoreId("1"), "Test iPhone", free.reference, free.commonName ?? "?", "TEST000002",
+                udid1, savedCoreId("1"), "Test iPhone", free.reference, free.commonName ?? "?",
+                "TEST000002",
             ] {
                 #expect(!text.contains(forbidden), "\(forbidden)")
             }
@@ -808,20 +992,30 @@ struct ProvisionStorageTests {
     @Test("no failure path prints a UDID, a device name or an identity name either")
     func failuresAreClean() async throws {
         let free = try freeKeychainCert()
-        let log = "error: build for \(udid1) / \(savedCoreId("1")) failed on Test iPhone, Apple Development: Test (TEST000002), a@b.example\n"
+        let log =
+            "error: build for \(udid1) / \(savedCoreId("1")) failed on Test iPhone, Apple Development: Test (TEST000002), a@b.example\n"
         let scripts: [(BuildScript, [[KeychainCertificate]?])] = [
             (BuildScript(result: RunResult(code: 65, stderr: log)), [[free], [free]]),
-            (BuildScript(result: RunResult(code: 65, stderr: log)), [[free], [free, otherFreeCert()]]),
+            (
+                BuildScript(result: RunResult(code: 65, stderr: log)),
+                [[free], [free, otherFreeCert()]]
+            ),
             (BuildScript(profile: try freeProfileXML(getTaskAllow: false)), [[free], [free]]),
             (BuildScript(profile: try freeProfileXML(), createApp: false), [[free], nil]),
         ]
         for (script, reads) in scripts {
-            try await withProvisionWorld(reads: reads, build: script) { (w: ProvisionWorld) async throws in
+            try await withProvisionWorld(reads: reads, build: script) {
+                (w: ProvisionWorld) async throws in
                 let out = await w.run()
                 #expect(!out.ok)
                 let text = try out.printed().text
-                for forbidden in [udid1, savedCoreId("1"), "Test iPhone", "TEST000002", "a@b.example", free.reference] {
-                    #expect(!text.contains(forbidden), "\(forbidden) in \(out.errors.first?.code ?? "")")
+                for forbidden in [
+                    udid1, savedCoreId("1"), "Test iPhone", "TEST000002", "a@b.example",
+                    free.reference,
+                ] {
+                    #expect(
+                        !text.contains(forbidden), "\(forbidden) in \(out.errors.first?.code ?? "")"
+                    )
                 }
             }
         }
@@ -832,12 +1026,17 @@ struct ProvisionStorageTests {
 
 @Suite("provision: renewal")
 struct ProvisionRenewalTests {
-    private func previous(_ w: ProvisionWorld, uuid: String = "AAAAAAAA-0000-0000-0000-000000000001", expires: Date, id: String = "iphone/stremio-ios") async throws {
+    private func previous(
+        _ w: ProvisionWorld, uuid: String = "AAAAAAAA-0000-0000-0000-000000000001", expires: Date,
+        id: String = "iphone/stremio-ios"
+    ) async throws {
         try await seed(w) {
             $0.freeProfiles = [
                 LedgerFreeProfile(
-                    id: id, device: "iphone", deviceTail: tail(udid1), app: "stremio-ios", bundleId: stremioId, profileUuid: uuid,
-                    created: expires.addingTimeInterval(-7 * 86_400), expires: expires, certFp8: "00000000", file: "profiles/free/old")
+                    id: id, device: "iphone", deviceTail: tail(udid1), app: "stremio-ios",
+                    bundleId: stremioId, profileUuid: uuid,
+                    created: expires.addingTimeInterval(-7 * 86_400), expires: expires,
+                    certFp8: "00000000", file: "profiles/free/old")
             ]
         }
     }
@@ -847,10 +1046,15 @@ struct ProvisionRenewalTests {
         try await withProvisionWorld { w in #expect(await w.run().ok) }
     }
 
-    @Test("a new expiry not more than 24 hours past the old one is PROFILE_NOT_RENEWED; the record and files stay")
+    @Test(
+        "a new expiry not more than 24 hours past the old one is PROFILE_NOT_RENEWED; the record and files stay"
+    )
     func notRenewed() async throws {
         // New expiry is testNow + 7 d.
-        for old in [daysFromNow(7), daysFromNow(7 - 0.5), daysFromNow(7 - 1), daysFromNow(8), daysFromNow(30)] {
+        for old in [
+            daysFromNow(7), daysFromNow(7 - 0.5), daysFromNow(7 - 1), daysFromNow(8),
+            daysFromNow(30),
+        ] {
             try await withProvisionWorld { (w: ProvisionWorld) async throws in
                 try await previous(w, expires: old)
                 let out = await w.run()
@@ -858,14 +1062,22 @@ struct ProvisionRenewalTests {
                 #expect(out.errors.first?.fix?.contains("--renew --yes") == true)
                 #expect(out.data["profile"]?["daysLeft"] == 7)
                 let ledger = try w.ledger()
-                #expect(ledger.freeProfiles.map(\.profileUuid) == ["AAAAAAAA-0000-0000-0000-000000000001"], "the record is unchanged")
-                #expect(!FileManager.default.fileExists(atPath: w.paths.home + "/profiles"), "nothing stored")
-                #expect(try w.config().freeTeamCertFp8() == nil, "no pin from a run that did not renew")
+                #expect(
+                    ledger.freeProfiles.map(\.profileUuid) == [
+                        "AAAAAAAA-0000-0000-0000-000000000001"
+                    ], "the record is unchanged")
+                #expect(
+                    !FileManager.default.fileExists(atPath: w.paths.home + "/profiles"),
+                    "nothing stored")
+                #expect(
+                    try w.config().freeTeamCertFp8() == nil, "no pin from a run that did not renew")
             }
         }
     }
 
-    @Test("more than 24 hours of movement is a renewal; the record is replaced and the old file is kept")
+    @Test(
+        "more than 24 hours of movement is a renewal; the record is replaced and the old file is kept"
+    )
     func renewed() async throws {
         for old in [daysFromNow(7 - 1.001), daysFromNow(2), daysFromNow(-3)] {
             try await withProvisionWorld { (w: ProvisionWorld) async throws in
@@ -873,7 +1085,10 @@ struct ProvisionRenewalTests {
                 let out = await w.run()
                 #expect(out.ok, "old \(old): \(out.errors)")
                 let ledger = try w.ledger()
-                #expect(ledger.freeProfiles.map(\.profileUuid) == ["0F0F0F0F-1111-2222-3333-444444444444"])
+                #expect(
+                    ledger.freeProfiles.map(\.profileUuid) == [
+                        "0F0F0F0F-1111-2222-3333-444444444444"
+                    ])
                 #expect(ledger.freeProfiles.count == 1)
             }
         }
@@ -882,7 +1097,8 @@ struct ProvisionRenewalTests {
     @Test("sameProfile says whether Xcode handed back the same UUID; --renew changes the advice")
     func sameProfile() async throws {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
-            try await previous(w, uuid: "0F0F0F0F-1111-2222-3333-444444444444", expires: daysFromNow(7))
+            try await previous(
+                w, uuid: "0F0F0F0F-1111-2222-3333-444444444444", expires: daysFromNow(7))
             let out = await w.run()
             #expect(out.data["sameProfile"] == true)
             let again = await w.run(renew: true)
@@ -908,12 +1124,16 @@ struct ProvisionRenewalTests {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
             let dir = w.paths.home + "/profiles/free/stremio-ios/iphone"
             try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-            try Data("old".utf8).write(to: URL(fileURLWithPath: dir + "/AAAAAAAA-0000-0000-0000-000000000001.mobileprovision"))
+            try Data("old".utf8).write(
+                to: URL(
+                    fileURLWithPath: dir + "/AAAAAAAA-0000-0000-0000-000000000001.mobileprovision"))
             try await previous(w, expires: daysFromNow(1))
             #expect(await w.run().ok)
-            #expect(listing(dir).sorted() == [
-                "0F0F0F0F-1111-2222-3333-444444444444.mobileprovision", "AAAAAAAA-0000-0000-0000-000000000001.mobileprovision",
-            ])
+            #expect(
+                listing(dir).sorted() == [
+                    "0F0F0F0F-1111-2222-3333-444444444444.mobileprovision",
+                    "AAAAAAAA-0000-0000-0000-000000000001.mobileprovision",
+                ])
         }
     }
 }
@@ -924,60 +1144,81 @@ struct ProvisionRenewalTests {
 struct ProvisionRenewTests {
     /// The profile Xcode would have cached for `bundleId`.
     private func cached(
-        _ bundleId: String = stremioId, uuid: String, team: String = Team.free, appId: String? = nil,
+        _ bundleId: String = stremioId, uuid: String, team: String = Team.free,
+        appId: String? = nil,
         platform: [String] = ["iOS"]
     ) throws -> String {
         try freeProfileXML(
-            bundleId: bundleId, uuid: uuid, team: team, applicationIdentifier: appId ?? team + "." + bundleId,
+            bundleId: bundleId, uuid: uuid, team: team,
+            applicationIdentifier: appId ?? team + "." + bundleId,
             platform: platform)
     }
 
-    @Test("it moves only sideload's own cached profile; decoys of other teams, apps, platforms and kinds stay")
+    @Test(
+        "it moves only sideload's own cached profile; decoys of other teams, apps, platforms and kinds stay"
+    )
     func movesOnlyOurs() async throws {
         let mine1 = try cached(uuid: "11111111-1111-1111-1111-111111111111")
         let mine2 = try cached(uuid: "22222222-2222-2222-2222-222222222222")
         let decoys: [String: String] = [
-            "paid.mobileprovision": try cached(uuid: "33333333-3333-3333-3333-333333333333", team: Team.paid),
-            "lab.mobileprovision": try cached("com.lab.WebDriverAgentRunner", uuid: "44444444-4444-4444-4444-444444444444"),
-            "atv.mobileprovision": try cached("com.atvloadly.app", uuid: "55555555-5555-5555-5555-555555555555"),
-            "apollo.mobileprovision": try cached(apolloId, uuid: "66666666-6666-6666-6666-666666666666"),
-            "tv.mobileprovision": try cached(uuid: "77777777-7777-7777-7777-777777777777", platform: ["tvOS"]),
-            "wild.mobileprovision": try cached(uuid: "88888888-8888-8888-8888-888888888888", appId: Team.free + ".*"),
-            "prefix.mobileprovision": try cached(uuid: "99999999-9999-9999-9999-999999999999", appId: Team.paid + "." + stremioId),
+            "paid.mobileprovision": try cached(
+                uuid: "33333333-3333-3333-3333-333333333333", team: Team.paid),
+            "lab.mobileprovision": try cached(
+                "com.lab.WebDriverAgentRunner", uuid: "44444444-4444-4444-4444-444444444444"),
+            "atv.mobileprovision": try cached(
+                "com.atvloadly.app", uuid: "55555555-5555-5555-5555-555555555555"),
+            "apollo.mobileprovision": try cached(
+                apolloId, uuid: "66666666-6666-6666-6666-666666666666"),
+            "tv.mobileprovision": try cached(
+                uuid: "77777777-7777-7777-7777-777777777777", platform: ["tvOS"]),
+            "wild.mobileprovision": try cached(
+                uuid: "88888888-8888-8888-8888-888888888888", appId: Team.free + ".*"),
+            "prefix.mobileprovision": try cached(
+                uuid: "99999999-9999-9999-9999-999999999999", appId: Team.paid + "." + stremioId),
             "garbage.mobileprovision": "not a plist",
             "notes.txt": mine1,
         ]
         var files: [String: String] = [
-            "xcode-cache-1/mine1.mobileprovision": mine1, "xcode-cache-2/mine2.mobileprovision": mine2,
+            "xcode-cache-1/mine1.mobileprovision": mine1,
+            "xcode-cache-2/mine2.mobileprovision": mine2,
         ]
         for (name, content) in decoys { files["xcode-cache-1/" + name] = content }
         try await withProvisionWorld(cache: files) { (w: ProvisionWorld) async throws in
             // A symlink named like a profile, pointing at a matching one: never followed, never moved.
             try FileManager.default.createSymbolicLink(
-                atPath: w.cacheDirs[1] + "/link.mobileprovision", withDestinationPath: w.cacheDirs[0] + "/mine1.mobileprovision")
+                atPath: w.cacheDirs[1] + "/link.mobileprovision",
+                withDestinationPath: w.cacheDirs[0] + "/mine1.mobileprovision")
             let out = await w.run(renew: true)
             #expect(out.ok, "\(out.errors)")
             #expect(out.data["cachedProfilesMoved"] == 2)
             #expect(out.data["cachedProfilesSkipped"] == 1, "the symlink was skipped and counted")
 
             // Gone from Xcode's folders, kept in tmp (0600), and gone before the build ran.
-            #expect(!FileManager.default.fileExists(atPath: w.cacheDirs[1] + "/mine2.mobileprovision"))
+            #expect(
+                !FileManager.default.fileExists(atPath: w.cacheDirs[1] + "/mine2.mobileprovision"))
             let seenAtBuild = try #require(w.cacheAtBuild.files)
             #expect(!seenAtBuild.contains { $0.hasSuffix("/mine2.mobileprovision") })
             let moved = listing(w.paths.tmp).filter { $0.hasPrefix("renewed-profile-") }.sorted()
             #expect(moved.count == 2)
-            let contents = try moved.map { try String(contentsOfFile: w.paths.tmp + "/" + $0, encoding: .utf8) }
+            let contents = try moved.map {
+                try String(contentsOfFile: w.paths.tmp + "/" + $0, encoding: .utf8)
+            }
             #expect(Set(contents) == [mine1, mine2])
             for name in moved { #expect(modeOf(w.paths.tmp + "/" + name) == 0o600) }
 
             // Everything else is exactly where it was, byte for byte.
             for (name, content) in decoys {
                 let path = w.cacheDirs[0] + "/" + name
-                #expect(try String(contentsOfFile: path, encoding: .utf8) == content, "\(name) was left alone")
+                #expect(
+                    try String(contentsOfFile: path, encoding: .utf8) == content,
+                    "\(name) was left alone")
                 #expect(seenAtBuild.contains(path), "\(name) was there at build time")
             }
-            #expect(!FileManager.default.fileExists(atPath: w.cacheDirs[0] + "/mine1.mobileprovision"), "mine1 moved")
-            let link = try FileManager.default.destinationOfSymbolicLink(atPath: w.cacheDirs[1] + "/link.mobileprovision")
+            #expect(
+                !FileManager.default.fileExists(atPath: w.cacheDirs[0] + "/mine1.mobileprovision"),
+                "mine1 moved")
+            let link = try FileManager.default.destinationOfSymbolicLink(
+                atPath: w.cacheDirs[1] + "/link.mobileprovision")
             #expect(link.hasSuffix("mine1.mobileprovision"), "the symlink is untouched")
             #expect(seenAtBuild.contains(w.cacheDirs[1] + "/link.mobileprovision"))
         }
@@ -989,7 +1230,9 @@ struct ProvisionRenewTests {
         let tv = try cached(uuid: "22222222-2222-2222-2222-222222222222", platform: ["tvOS"])
         try await withProvisionWorld(
             build: try tvScript(),
-            cache: ["xcode-cache-1/ios.mobileprovision": ios, "xcode-cache-1/tv.mobileprovision": tv]
+            cache: [
+                "xcode-cache-1/ios.mobileprovision": ios, "xcode-cache-1/tv.mobileprovision": tv,
+            ]
         ) { (w: ProvisionWorld) async throws in
             let out = await w.run(app: "stremio-tvos", device: "appletv", renew: true)
             #expect(out.ok, "\(out.errors)")
@@ -1002,11 +1245,15 @@ struct ProvisionRenewTests {
     @Test("without --renew nothing in Xcode's folders is touched, and the output has no count")
     func notWithoutFlag() async throws {
         let mine = try cached(uuid: "11111111-1111-1111-1111-111111111111")
-        try await withProvisionWorld(cache: ["xcode-cache-1/mine.mobileprovision": mine]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(cache: ["xcode-cache-1/mine.mobileprovision": mine]) {
+            (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.ok)
             #expect(out.data["cachedProfilesMoved"] == nil)
-            #expect(try String(contentsOfFile: w.cacheDirs[0] + "/mine.mobileprovision", encoding: .utf8) == mine)
+            #expect(
+                try String(
+                    contentsOfFile: w.cacheDirs[0] + "/mine.mobileprovision", encoding: .utf8)
+                    == mine)
             #expect(w.cacheAtBuild.files == [w.cacheDirs[0] + "/mine.mobileprovision"])
             #expect(listing(w.paths.tmp).isEmpty)
             #expect(w.securityCalls.count == 1, "only the embedded profile was decoded")
@@ -1016,9 +1263,11 @@ struct ProvisionRenewTests {
     @Test("--renew without --yes moves nothing")
     func needsYes() async throws {
         let mine = try cached(uuid: "11111111-1111-1111-1111-111111111111")
-        try await withProvisionWorld(cache: ["xcode-cache-1/mine.mobileprovision": mine]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(cache: ["xcode-cache-1/mine.mobileprovision": mine]) {
+            (w: ProvisionWorld) async throws in
             #expect(await w.run(renew: true, yes: false).errors.first?.code == "CONFIRM_REQUIRED")
-            #expect(FileManager.default.fileExists(atPath: w.cacheDirs[0] + "/mine.mobileprovision"))
+            #expect(
+                FileManager.default.fileExists(atPath: w.cacheDirs[0] + "/mine.mobileprovision"))
             #expect(w.runner.calls.isEmpty)
         }
     }
@@ -1034,10 +1283,13 @@ struct ProvisionRenewTests {
         }
     }
 
-    @Test("the default Services has no Xcode folders, so a test that forgets to set them cannot reach the real ones")
+    @Test(
+        "the default Services has no Xcode folders, so a test that forgets to set them cannot reach the real ones"
+    )
     func inertDefault() throws {
         let services = Services(
-            runner: FakeRunner(), fs: FakeFileSystem.free(gb: 1), clock: FixedClock(testNow), keychain: FakeKeychain(),
+            runner: FakeRunner(), fs: FakeFileSystem.free(gb: 1), clock: FixedClock(testNow),
+            keychain: FakeKeychain(),
             home: Paths(home: "/nonexistent"))
         #expect(services.xcodeProfileDirectories.isEmpty)
         #expect(
@@ -1047,7 +1299,10 @@ struct ProvisionRenewTests {
 
     @Test("running again straight away gets the same profile, which is not a renewal")
     func endToEnd() async throws {
-        try await withProvisionWorld(build: BuildScript(profile: try freeProfileXML(uuid: "0F0F0F0F-1111-2222-3333-444444444444"))) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            build: BuildScript(
+                profile: try freeProfileXML(uuid: "0F0F0F0F-1111-2222-3333-444444444444"))
+        ) { (w: ProvisionWorld) async throws in
             #expect(await w.run().ok)
             // Same profile again: not renewed.
             #expect(await w.run().errors.first?.code == "PROFILE_NOT_RENEWED")
@@ -1063,27 +1318,56 @@ struct ProvisionFailureTests {
     /// the App ID is counted (conservatively high) unless it never started.
     private func assertNothingRecorded(_ w: ProvisionWorld, appIds: [String] = [stremioId]) throws {
         let ledger = try w.ledger()
-        #expect(ledger.freeProfiles.isEmpty && ledger.freeSuspended == nil && ledger.freeProvisionInFlight == nil)
+        #expect(
+            ledger.freeProfiles.isEmpty && ledger.freeSuspended == nil
+                && ledger.freeProvisionInFlight == nil)
         #expect(ledger.freeAppIds.map(\.bundleId) == appIds)
         #expect(!FileManager.default.fileExists(atPath: w.paths.home + "/profiles"))
         #expect(try w.config().freeTeamCertFp8() == nil)
     }
 
-    @Test("the failures the owner can act on get their own code", arguments: [
-        ("error: No Account for Team \"6ZU5Z6ZKK7\". Add a new account in Accounts settings.", "ACCOUNT_NOT_SIGNED_IN"),
-        ("error: Your session has expired. Sign in again.", "ACCOUNT_NOT_SIGNED_IN"),
-        ("error: Your team has no devices from which to generate a provisioning profile.", "DEVICE_NOT_REGISTERED"),
-        ("error: Provisioning profile \"iOS Team Provisioning Profile\" doesn't include the currently selected device", "DEVICE_NOT_REGISTERED"),
-        ("error: Device \"x\" isn't registered in your developer account.", "DEVICE_NOT_REGISTERED"),
-        ("error: Device \"x\" isn\u{2019}t registered in your developer account.", "DEVICE_NOT_REGISTERED"),
-        ("error: The device must be registered in order to be included in a provisioning profile.", "DEVICE_NOT_REGISTERED"),
-        ("error: You have reached the maximum number of App IDs for this period.", "FREE_APP_ID_LIMIT"),
-        ("error: Failed Registering Bundle Identifier: you cannot register more than 10 App IDs.", "FREE_APP_ID_LIMIT"),
-        ("error: The device is locked. Unlock the device and try again.", "DEVICE_LOCKED"),
-        ("error: No signing certificate \"Apple Development\" found", "FREE_IDENTITY_MISSING"),
-    ])
+    @Test(
+        "the failures the owner can act on get their own code",
+        arguments: [
+            (
+                "error: No Account for Team \"6ZU5Z6ZKK7\". Add a new account in Accounts settings.",
+                "ACCOUNT_NOT_SIGNED_IN"
+            ),
+            ("error: Your session has expired. Sign in again.", "ACCOUNT_NOT_SIGNED_IN"),
+            (
+                "error: Your team has no devices from which to generate a provisioning profile.",
+                "DEVICE_NOT_REGISTERED"
+            ),
+            (
+                "error: Provisioning profile \"iOS Team Provisioning Profile\" doesn't include the currently selected device",
+                "DEVICE_NOT_REGISTERED"
+            ),
+            (
+                "error: Device \"x\" isn't registered in your developer account.",
+                "DEVICE_NOT_REGISTERED"
+            ),
+            (
+                "error: Device \"x\" isn\u{2019}t registered in your developer account.",
+                "DEVICE_NOT_REGISTERED"
+            ),
+            (
+                "error: The device must be registered in order to be included in a provisioning profile.",
+                "DEVICE_NOT_REGISTERED"
+            ),
+            (
+                "error: You have reached the maximum number of App IDs for this period.",
+                "FREE_APP_ID_LIMIT"
+            ),
+            (
+                "error: Failed Registering Bundle Identifier: you cannot register more than 10 App IDs.",
+                "FREE_APP_ID_LIMIT"
+            ),
+            ("error: The device is locked. Unlock the device and try again.", "DEVICE_LOCKED"),
+            ("error: No signing certificate \"Apple Development\" found", "FREE_IDENTITY_MISSING"),
+        ])
     func classified(log: String, code: String) async throws {
-        try await withProvisionWorld(build: BuildScript(result: RunResult(code: 65, stderr: log))) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(build: BuildScript(result: RunResult(code: 65, stderr: log))) {
+            (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.errors.first?.code == code)
             #expect(out.errors.first?.fix?.isEmpty == false)
@@ -1095,25 +1379,40 @@ struct ProvisionFailureTests {
 
     @Test("a stdout-only message is read too")
     func stdoutRead() async throws {
-        try await withProvisionWorld(build: BuildScript(result: RunResult(code: 65, stdout: "error: No Account for Team"))) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            build: BuildScript(result: RunResult(code: 65, stdout: "error: No Account for Team"))
+        ) { (w: ProvisionWorld) async throws in
             #expect(await w.run().errors.first?.code == "ACCOUNT_NOT_SIGNED_IN")
         }
     }
 
     @Test("an unregistered device points at --register-device unless it was already given")
     func registerAdvice() async throws {
-        let failing = BuildScript(result: RunResult(code: 65, stderr: "error: Your team has no devices from which to generate a provisioning profile."))
+        let failing = BuildScript(
+            result: RunResult(
+                code: 65,
+                stderr:
+                    "error: Your team has no devices from which to generate a provisioning profile."
+            ))
         try await withProvisionWorld(build: failing) { (w: ProvisionWorld) async throws in
             #expect(await w.run().errors.first?.fix?.contains("--register-device --yes") == true)
-            #expect(await w.run(register: true).errors.first?.fix?.contains("--register-device") == false)
+            #expect(
+                await w.run(register: true).errors.first?.fix?.contains("--register-device")
+                    == false)
         }
     }
 
     @Test("an App ID limit reported by Xcode shows the count we believe")
     func appIdLimitData() async throws {
-        let failing = BuildScript(result: RunResult(code: 65, stderr: "error: maximum number of App IDs"))
+        let failing = BuildScript(
+            result: RunResult(code: 65, stderr: "error: maximum number of App IDs"))
         try await withProvisionWorld(build: failing) { (w: ProvisionWorld) async throws in
-            try await seed(w) { $0.freeAppIds = [LedgerFreeAppId(bundleId: "io.github.dividedby.free.x", epochStart: daysFromNow(-1))] }
+            try await seed(w) {
+                $0.freeAppIds = [
+                    LedgerFreeAppId(
+                        bundleId: "io.github.dividedby.free.x", epochStart: daysFromNow(-1))
+                ]
+            }
             let out = await w.run()
             #expect(out.errors.first?.code == "FREE_APP_ID_LIMIT")
             #expect(out.data["appIdsLast7Days"] == 1)
@@ -1123,11 +1422,13 @@ struct ProvisionFailureTests {
     @Test("timeout, output overflow and a spawn failure")
     func hardFailures() async throws {
         let cases: [(RunResult, String)] = [
-            (RunResult(code: nil, timedOut: true), "BUILD_TIMEOUT"), (RunResult(code: nil, overflow: true), "OUTPUT_LIMIT"),
+            (RunResult(code: nil, timedOut: true), "BUILD_TIMEOUT"),
+            (RunResult(code: nil, overflow: true), "OUTPUT_LIMIT"),
             (RunResult(code: nil, spawnError: "ENOENT"), "PROVISION_FAILED"),
         ]
         for (result, code) in cases {
-            try await withProvisionWorld(build: BuildScript(result: result)) { (w: ProvisionWorld) async throws in
+            try await withProvisionWorld(build: BuildScript(result: result)) {
+                (w: ProvisionWorld) async throws in
                 #expect(await w.run().errors.first?.code == code)
                 try assertNothingRecorded(w, appIds: [stremioId])
             }
@@ -1139,9 +1440,12 @@ struct ProvisionFailureTests {
         let free = try freeKeychainCert()
         var lines = (1...30).map { "line \($0) of noise" }
         lines.append("error: build for \(udid1) and \(savedCoreId("1")) failed on Test iPhone")
-        lines.append("signing with Apple Development: Test (TEST000002) for a@b.example in /Users/someone/x")
+        lines.append(
+            "signing with Apple Development: Test (TEST000002) for a@b.example in /Users/someone/x")
         lines.append(String(repeating: "x", count: 500))
-        try await withProvisionWorld(build: BuildScript(result: RunResult(code: 65, stderr: lines.joined(separator: "\n")))) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            build: BuildScript(result: RunResult(code: 65, stderr: lines.joined(separator: "\n")))
+        ) { (w: ProvisionWorld) async throws in
             let out = await w.run()
             #expect(out.errors.first?.code == "PROVISION_FAILED")
             #expect(out.errors.first?.message.contains("65") == true)
@@ -1150,24 +1454,36 @@ struct ProvisionFailureTests {
             #expect(tailLines.count == 20, "the last 20 lines")
             #expect(tailLines.allSatisfy { $0.count <= 300 })
             #expect(tail.contains("line 30 of noise") && !tail.contains("line 5 of noise"))
-            for secret in [udid1, savedCoreId("1"), "Test iPhone", "TEST000002", free.commonName ?? "?", "a@b.example", "someone"] {
+            for secret in [
+                udid1, savedCoreId("1"), "Test iPhone", "TEST000002", free.commonName ?? "?",
+                "a@b.example", "someone",
+            ] {
                 #expect(!tail.contains(secret), "\(secret)")
             }
             try assertNothingRecorded(w)
         }
     }
 
-    @Test("an App ID is counted from the moment the build is about to start, whatever happens to it")
+    @Test(
+        "an App ID is counted from the moment the build is about to start, whatever happens to it")
     func appIdRecording() async throws {
-        try await withProvisionWorld(build: BuildScript(result: RunResult(code: 65, stderr: "error: x"))) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            build: BuildScript(result: RunResult(code: 65, stderr: "error: x"))
+        ) { (w: ProvisionWorld) async throws in
             _ = await w.run()
             #expect(try w.ledger().freeAppIds.map(\.bundleId) == [stremioId])
         }
-        try await withProvisionWorld(build: BuildScript(result: RunResult(code: nil, spawnError: "ENOENT"))) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            build: BuildScript(result: RunResult(code: nil, spawnError: "ENOENT"))
+        ) { (w: ProvisionWorld) async throws in
             _ = await w.run()
-            #expect(try w.ledger().freeAppIds.map(\.bundleId) == [stremioId], "counted with the marker, before the build starts")
+            #expect(
+                try w.ledger().freeAppIds.map(\.bundleId) == [stremioId],
+                "counted with the marker, before the build starts")
         }
-        try await withProvisionWorld(build: BuildScript(profile: try freeProfileXML(getTaskAllow: false))) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            build: BuildScript(profile: try freeProfileXML(getTaskAllow: false))
+        ) { (w: ProvisionWorld) async throws in
             #expect(await w.run().errors.first?.code == "PROFILE_INVALID")
             #expect(try w.ledger().freeAppIds.map(\.bundleId) == [stremioId])
         }
@@ -1178,19 +1494,23 @@ struct ProvisionFailureTests {
 
 @Suite("provision: ledger, config and CLI")
 struct ProvisionWiringTests {
-    @Test("a ledger that never used the free team encodes exactly as before, and unknown keys survive")
+    @Test(
+        "a ledger that never used the free team encodes exactly as before, and unknown keys survive"
+    )
     func ledgerCompat() throws {
         let plain = String(decoding: try LedgerStore.encode(Ledger()), as: UTF8.self)
         for key in ["freeAppIds", "freeProfiles", "freeSuspended"] { #expect(!plain.contains(key)) }
         let withFree = Ledger(
             freeAppIds: [LedgerFreeAppId(bundleId: stremioId, epochStart: testNow)],
-            freeSuspended: LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow, addedFp8: ["abcdef01"]),
+            freeSuspended: LedgerFreeSuspension(
+                code: "FREE_CERT_CHANGED", at: testNow, addedFp8: ["abcdef01"]),
             extra: ["future": "kept"])
         let round = try LedgerStore.parse(try LedgerStore.encode(withFree))
         #expect(round == withFree)
         #expect(round.extra["future"] == "kept")
         // An old ledger file (no free keys) loads with empty free state.
-        let old = try LedgerStore.parse(Data(#"{"schema":1,"certificates":[],"profiles":[],"exports":[]}"#.utf8))
+        let old = try LedgerStore.parse(
+            Data(#"{"schema":1,"certificates":[],"profiles":[],"exports":[]}"#.utf8))
         #expect(old.freeAppIds.isEmpty && old.freeProfiles.isEmpty && old.freeSuspended == nil)
     }
 
@@ -1198,31 +1518,50 @@ struct ProvisionWiringTests {
     func budgetMath() {
         let now = testNow
         func entries(_ ages: [Double]) -> [LedgerFreeAppId] {
-            ages.enumerated().map { LedgerFreeAppId(bundleId: "b\($0.offset)", epochStart: now.addingTimeInterval(-$0.element * 86_400)) }
+            ages.enumerated().map {
+                LedgerFreeAppId(
+                    bundleId: "b\($0.offset)",
+                    epochStart: now.addingTimeInterval(-$0.element * 86_400))
+            }
         }
-        #expect(FreeAppIdBudget.live(entries([0, 6.999, 7, 7.001, 30]), now: now).count == 2, "under 7 days only")
+        #expect(
+            FreeAppIdBudget.live(entries([0, 6.999, 7, 7.001, 30]), now: now).count == 2,
+            "under 7 days only")
         let none = FreeAppIdBudget.evaluate([], bundleId: "new", reserved: 4, now: now)
         #expect(none == .init(isNew: true, recent: 0, allowed: true))
         for (recent, allowed) in [(0, true), (4, true), (5, true), (6, false), (9, false)] {
             let e = entries(Array(repeating: 1, count: recent))
-            #expect(FreeAppIdBudget.evaluate(e, bundleId: "new", reserved: 4, now: now).allowed == allowed, "recent \(recent)")
+            #expect(
+                FreeAppIdBudget.evaluate(e, bundleId: "new", reserved: 4, now: now).allowed
+                    == allowed, "recent \(recent)")
         }
         for (reserved, allowed) in [(0, true), (4, true), (5, false), (10, false)] {
             let e = entries(Array(repeating: 1, count: 5))
-            #expect(FreeAppIdBudget.evaluate(e, bundleId: "new", reserved: reserved, now: now).allowed == allowed, "reserved \(reserved)")
+            #expect(
+                FreeAppIdBudget.evaluate(e, bundleId: "new", reserved: reserved, now: now).allowed
+                    == allowed, "reserved \(reserved)")
         }
-        let live = FreeAppIdBudget.evaluate(entries(Array(repeating: 1, count: 10)) + [LedgerFreeAppId(bundleId: "mine", epochStart: now)], bundleId: "mine", reserved: 4, now: now)
+        let live = FreeAppIdBudget.evaluate(
+            entries(Array(repeating: 1, count: 10)) + [
+                LedgerFreeAppId(bundleId: "mine", epochStart: now)
+            ], bundleId: "mine", reserved: 4, now: now)
         #expect(!live.isNew && live.allowed && live.recent == 11)
-        let expired = FreeAppIdBudget.evaluate([LedgerFreeAppId(bundleId: "mine", epochStart: now.addingTimeInterval(-7 * 86_400))], bundleId: "mine", reserved: 4, now: now)
+        let expired = FreeAppIdBudget.evaluate(
+            [LedgerFreeAppId(bundleId: "mine", epochStart: now.addingTimeInterval(-7 * 86_400))],
+            bundleId: "mine", reserved: 4, now: now)
         #expect(expired.isNew && expired.recent == 0)
         // Recording: a new epoch replaces an expired one; a live one is kept; old entries are dropped.
         let recorded = FreeAppIdBudget.recording(
-            [LedgerFreeAppId(bundleId: "mine", epochStart: now.addingTimeInterval(-8 * 86_400)),
-             LedgerFreeAppId(bundleId: "other", epochStart: now.addingTimeInterval(-86_400))],
+            [
+                LedgerFreeAppId(bundleId: "mine", epochStart: now.addingTimeInterval(-8 * 86_400)),
+                LedgerFreeAppId(bundleId: "other", epochStart: now.addingTimeInterval(-86_400)),
+            ],
             bundleId: "mine", now: now)
         #expect(recorded.map(\.bundleId) == ["other", "mine"])
         #expect(recorded.last?.epochStart == now)
-        #expect(FreeAppIdBudget.recording(recorded, bundleId: "mine", now: now.addingTimeInterval(3600)) == recorded)
+        #expect(
+            FreeAppIdBudget.recording(recorded, bundleId: "mine", now: now.addingTimeInterval(3600))
+                == recorded)
     }
 
     @Test("freeTeam config: defaults, validation and a pin that cannot be silently replaced")
@@ -1243,18 +1582,34 @@ struct ProvisionWiringTests {
     @Test("the CLI dispatches provision: usage, confirmation and flags")
     func cli() async throws {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
-            func invoke(_ argv: [String]) async -> Envelope { await run(argv: argv, services: w.services) }
+            func invoke(_ argv: [String]) async -> Envelope {
+                await run(argv: argv, services: w.services)
+            }
             #expect(await invoke(["provision"]).errors.first?.code == "USAGE")
             #expect(await invoke(["provision", "--bogus"]).errors.first?.code == "USAGE")
-            #expect(await invoke(["provision", "--app", "apollo", "--device", "iphone", "extra"]).errors.first?.code == "USAGE")
-            #expect(await invoke(["provision", "--app", "apollo", "--device", "iphone"]).errors.first?.code == "CONFIRM_REQUIRED")
-            #expect(await invoke(["provision", "--app", "apollo", "--device", "iphone", "--register-device"]).errors.first?.code == "CONFIRM_REQUIRED")
-            #expect(await invoke(["provision", "--app=apollo", "--device=iphone", "--renew"]).errors.first?.code == "CONFIRM_REQUIRED")
+            #expect(
+                await invoke(["provision", "--app", "apollo", "--device", "iphone", "extra"]).errors
+                    .first?.code == "USAGE")
+            #expect(
+                await invoke(["provision", "--app", "apollo", "--device", "iphone"]).errors.first?
+                    .code == "CONFIRM_REQUIRED")
+            #expect(
+                await invoke([
+                    "provision", "--app", "apollo", "--device", "iphone", "--register-device",
+                ]).errors.first?.code == "CONFIRM_REQUIRED")
+            #expect(
+                await invoke(["provision", "--app=apollo", "--device=iphone", "--renew"]).errors
+                    .first?.code == "CONFIRM_REQUIRED")
             #expect(w.runner.calls.isEmpty)
             let help = await invoke(["help"])
             #expect(help.data["built"]?.array?.contains("provision") == true)
-            #expect(help.data["usage"]?.array?.contains { $0.string?.hasPrefix("provision --app") == true } == true)
-            let done = await invoke(["provision", "--app", "stremio-ios", "--device", "iphone", "--yes"])
+            #expect(
+                help.data["usage"]?.array?.contains {
+                    $0.string?.hasPrefix("provision --app") == true
+                } == true)
+            let done = await invoke([
+                "provision", "--app", "stremio-ios", "--device", "iphone", "--yes",
+            ])
             #expect(done.command == "provision")
         }
     }
@@ -1262,8 +1617,13 @@ struct ProvisionWiringTests {
     @Test("the CLI passes --register-device and --renew through")
     func cliFlags() async throws {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
-            _ = await run(argv: ["provision", "--app", "stremio-ios", "--device", "iphone", "--register-device", "--yes"], services: w.services)
-            #expect(try #require(w.builds.first).args.contains("-allowProvisioningDeviceRegistration"))
+            _ = await run(
+                argv: [
+                    "provision", "--app", "stremio-ios", "--device", "iphone", "--register-device",
+                    "--yes",
+                ], services: w.services)
+            #expect(
+                try #require(w.builds.first).args.contains("-allowProvisioningDeviceRegistration"))
         }
     }
 }

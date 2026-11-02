@@ -24,8 +24,10 @@ public struct ProvisioningProfile: Sendable, Equatable {
     public var file: String?
 
     public init(
-        uuid: String, team: String? = nil, applicationIdentifier: String? = nil, getTaskAllow: Bool? = nil,
-        platforms: [String] = [], created: Date? = nil, expires: Date? = nil, devices: [String] = [],
+        uuid: String, team: String? = nil, applicationIdentifier: String? = nil,
+        getTaskAllow: Bool? = nil,
+        platforms: [String] = [], created: Date? = nil, expires: Date? = nil,
+        devices: [String] = [],
         certFingerprints: [String] = [], file: String? = nil
     ) {
         self.uuid = uuid
@@ -61,7 +63,8 @@ public struct ProvisioningProfile: Sendable, Equatable {
     public static func parse(_ xml: String, file: String? = nil) -> ProvisioningProfile? {
         guard
             let shared = Guard.parseProfile(xml),
-            let plist = try? PropertyListSerialization.propertyList(from: Data(xml.utf8), options: [], format: nil),
+            let plist = try? PropertyListSerialization.propertyList(
+                from: Data(xml.utf8), options: [], format: nil),
             let dict = plist as? [String: Any],
             let rawUUID = dict["UUID"] as? String,
             let uuid = UUID(uuidString: rawUUID)

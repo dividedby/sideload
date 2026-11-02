@@ -25,7 +25,8 @@ enum InstallBehaviour: Sendable {
 
 /// A `device info apps` document that is not a complete listing (`AppSnapshot.parse` must reject each).
 enum SnapshotFault: String, CaseIterable, Sendable {
-    case noResult, emptyResult, appsNotArray, badElement, elementNotObject, emptyBundleId, notSuccess, topLevelArray
+    case noResult, emptyResult, appsNotArray, badElement, elementNotObject, emptyBundleId,
+        notSuccess, topLevelArray
 
     var json: JSONValue {
         let ok: JSONValue = ["outcome": "success"]
@@ -168,7 +169,10 @@ enum TimeoutShape: CaseIterable, Sendable {
     var result: RunResult {
         switch self {
         case .runnerKill, .thrown: RunResult(code: nil, timedOut: true)
-        case .devicectlOwn: RunResult(code: 1, stderr: "ERROR: The operation timed out. (com.apple.dt.CoreDeviceError error 4)")
+        case .devicectlOwn:
+            RunResult(
+                code: 1,
+                stderr: "ERROR: The operation timed out. (com.apple.dt.CoreDeviceError error 4)")
         case .overflow: RunResult(code: nil, overflow: true)
         case .signalKill: RunResult(code: nil, signal: 9)
         }
@@ -199,7 +203,8 @@ final class DeviceSimRunner: Runner {
         guard (eventually ? deviceAppsEventually : deviceApps)[id] != nil else { return nil }
         var copy = copies.withLock { $0[id] }
         if eventually {
-            for op in deferred.withLock({ $0 }).sorted(by: { $0.at < $1.at }) where op.install && op.id == id { copy = op.copy }
+            for op in deferred.withLock({ $0 }).sorted(by: { $0.at < $1.at })
+            where op.install && op.id == id { copy = op.copy }
         }
         return copy
     }
@@ -239,7 +244,9 @@ final class DeviceSimRunner: Runner {
     /// The apps once every deferred operation has finished (nothing is applied: the clock does not move).
     var deviceAppsEventually: [String: Bool] {
         var state = deviceApps
-        for op in deferred.withLock({ $0 }).sorted(by: { $0.at < $1.at }) { state[op.id] = op.install ? true : nil }
+        for op in deferred.withLock({ $0 }).sorted(by: { $0.at < $1.at }) {
+            state[op.id] = op.install ? true : nil
+        }
         return state
     }
 
@@ -250,7 +257,9 @@ final class DeviceSimRunner: Runner {
 
     private func defer_(_ seconds: TimeInterval?, id: String, install: Bool) {
         guard let seconds, let clock else { return }
-        deferred.withLock { $0.append((clock.now().addingTimeInterval(seconds), id, install, buildExpiry)) }
+        deferred.withLock {
+            $0.append((clock.now().addingTimeInterval(seconds), id, install, buildExpiry))
+        }
     }
 
     var script: DeviceScript { armed.withLock { $0 } }
@@ -287,7 +296,9 @@ final class DeviceSimRunner: Runner {
     static let dataWords: Set<String> = ["device info files", "device copy from", "device copy to"]
 
     /// The app-data calls (`info files`, `copy from`, `copy to`), in order.
-    var dataCalls: [CommandSpec] { calls.filter { $0.executable == "xcrun" && Self.dataWords.contains(Self.words($0)) } }
+    var dataCalls: [CommandSpec] {
+        calls.filter { $0.executable == "xcrun" && Self.dataWords.contains(Self.words($0)) }
+    }
 
     /// The content of the data container of `id` on the device now.
     func container(_ id: String) -> [String: Data] {
@@ -296,15 +307,21 @@ final class DeviceSimRunner: Runner {
     }
 
     /// Changes the container behind sideload's back (an owner action: the app wrote something).
-    func setContainer(_ id: String, _ files: [String: Data]) { containers.withLock { $0[id] = files } }
+    func setContainer(_ id: String, _ files: [String: Data]) {
+        containers.withLock { $0[id] = files }
+    }
 
     /// The argv of every `device profile list` call.
-    var profileCalls: [CommandSpec] { calls.filter { $0.executable == "xcrun" && Self.words($0) == "device profile list" } }
+    var profileCalls: [CommandSpec] {
+        calls.filter { $0.executable == "xcrun" && Self.words($0) == "device profile list" }
+    }
 
     /// Every argv element of every devicectl call, for "this ID never appeared" checks.
     var deviceArgv: [String] { calls.filter { $0.executable == "xcrun" }.flatMap(\.args) }
 
-    var installCalls: [CommandSpec] { calls.filter { $0.executable == "xcrun" && Self.words($0) == "device install app" } }
+    var installCalls: [CommandSpec] {
+        calls.filter { $0.executable == "xcrun" && Self.words($0) == "device install app" }
+    }
 
     static func words(_ spec: CommandSpec) -> String {
         spec.args.dropFirst().prefix { !$0.hasPrefix("-") }.joined(separator: " ")
@@ -352,18 +369,32 @@ final class DeviceSimRunner: Runner {
             switch script.profileList {
             case .fail: return RunResult(code: 1)
             case .malformed:
-                write(["info": ["outcome": "success"], "result": ["provisioningProfiles": [["teamIdentifier": 5]]]], spec)
+                write(
+                    [
+                        "info": ["outcome": "success"],
+                        "result": ["provisioningProfiles": [["teamIdentifier": 5]]],
+                    ], spec)
             case .derived:
                 func profile(_ team: String, _ id: String) -> JSONValue {
-                    ["teamIdentifier": .string(team), "appIdentifier": .string("\(team).\(id)"), "name": "P", "hasExpired": false]
+                    [
+                        "teamIdentifier": .string(team), "appIdentifier": .string("\(team).\(id)"),
+                        "name": "P", "hasExpired": false,
+                    ]
                 }
                 var rows: [JSONValue] = [profile("TFTEAM0001", "com.example.testflight.beta")]
                 let current = deviceApps
                 for (id, developer) in current.sorted(by: { $0.key < $1.key }) where developer {
-                    rows.append(profile(script.otherTeamApps.contains(id) ? "TFTEAM0002" : Team.free, id))
+                    rows.append(
+                        profile(script.otherTeamApps.contains(id) ? "TFTEAM0002" : Team.free, id))
                 }
                 for id in script.staleFreeProfiles { rows.append(profile(Team.free, id)) }
-                write(["info": ["outcome": "success"], "result": ["provisioningProfiles": .array(rows), "configurationProfiles": []]], spec)
+                write(
+                    [
+                        "info": ["outcome": "success"],
+                        "result": [
+                            "provisioningProfiles": .array(rows), "configurationProfiles": [],
+                        ],
+                    ], spec)
             }
             return RunResult()
         case "device install app":
@@ -372,7 +403,9 @@ final class DeviceSimRunner: Runner {
             defer {
                 // A reinstall that loses the app (or an unrelated removal), whatever the install itself reported.
                 if !script.alsoRemovedOnInstall.isEmpty {
-                    apps.withLock { state in for gone in script.alsoRemovedOnInstall { state[gone] = nil } }
+                    apps.withLock { state in
+                        for gone in script.alsoRemovedOnInstall { state[gone] = nil }
+                    }
                 }
             }
             switch script.install {
@@ -387,7 +420,11 @@ final class DeviceSimRunner: Runner {
                 }
                 if lands { copies.withLock { $0[id] = buildExpiry } }
                 if case .succeed = script.install {
-                    write(["info": ["outcome": "success"], "result": ["installedApplications": [["bundleID": .string(id)]]]], spec)
+                    write(
+                        [
+                            "info": ["outcome": "success"],
+                            "result": ["installedApplications": [["bundleID": .string(id)]]],
+                        ], spec)
                 } else {
                     write(["info": ["outcome": "success"], "result": [:]], spec)
                 }
@@ -409,7 +446,9 @@ final class DeviceSimRunner: Runner {
                 return script.timeoutShape.result
             }
             if let failure = script.uninstallFailure {
-                if script.uninstallFailureRemoves { apps.withLock { $0[spec.args.last ?? ""] = nil } }
+                if script.uninstallFailureRemoves {
+                    apps.withLock { $0[spec.args.last ?? ""] = nil }
+                }
                 write(failure, spec)
                 return RunResult(code: 1)
             }
@@ -436,7 +475,8 @@ final class DeviceSimRunner: Runner {
     private func dataCall(_ spec: CommandSpec, _ faults: DataFaults) -> RunResult {
         if faults.callTakes > 0 { clock?.advance(faults.callTakes) }
         if faults.copyHangs, Self.words(spec) != "device info files" {
-            clock?.advance(Double((Int(flagValue("--timeout", spec)) ?? 0) + AppDataBackup.runnerGraceSec))
+            clock?.advance(
+                Double((Int(flagValue("--timeout", spec)) ?? 0) + AppDataBackup.runnerGraceSec))
             return RunResult(code: nil, timedOut: true)
         }
         let id = flagValue("--domain-identifier", spec)
@@ -469,7 +509,10 @@ final class DeviceSimRunner: Runner {
             var directories = Set<String>()
             for path in current.keys {
                 // Parent rows only for well-formed paths (a hostile test path is listed as it is, without invented parents).
-                guard !path.hasPrefix("/"), !path.split(separator: "/", omittingEmptySubsequences: false).contains(where: { ["", ".", ".."].contains($0) })
+                guard !path.hasPrefix("/"),
+                    !path.split(separator: "/", omittingEmptySubsequences: false).contains(where: {
+                        ["", ".", ".."].contains($0)
+                    })
                 else { continue }
                 var parts = path.split(separator: "/").dropLast()
                 while !parts.isEmpty {
@@ -482,20 +525,27 @@ final class DeviceSimRunner: Runner {
                 var metadata: [String: JSONValue] = [:]
                 if let size { metadata["size"] = .number(Double(size)) }
                 return [
-                    "name": .string(path.split(separator: "/").last.map(String.init) ?? path), "relativePath": .string(path),
+                    "name": .string(path.split(separator: "/").last.map(String.init) ?? path),
+                    "relativePath": .string(path),
                     "metadata": .object(metadata), "resources": [:],
                 ]
             }
             for dir in directories.sorted() { rows.append(row(dir, size: nil)) }
             for dir in faults.listedDirectories {
                 rows.append([
-                    "name": .string(dir), "relativePath": .string(dir), "metadata": ["isDirectory": true], "resources": [:],
+                    "name": .string(dir), "relativePath": .string(dir),
+                    "metadata": ["isDirectory": true], "resources": [:],
                 ])
             }
             for (path, data) in current.sorted(by: { $0.key < $1.key }) {
-                rows.append(row(path, size: faults.noSizes ? nil : (faults.claimedSizes[path] ?? data.count)))
+                rows.append(
+                    row(
+                        path, size: faults.noSizes ? nil : (faults.claimedSizes[path] ?? data.count)
+                    ))
             }
-            var document: [String: JSONValue] = ["info": ["outcome": "success"], "result": ["files": .array(rows)]]
+            var document: [String: JSONValue] = [
+                "info": ["outcome": "success"], "result": ["files": .array(rows)],
+            ]
             document.merge(faults.listTopLevel) { _, new in new }
             write(.object(document), spec)
             return RunResult()
@@ -513,7 +563,9 @@ final class DeviceSimRunner: Runner {
                 write(["info": ["outcome": "failed"]], spec)
                 return RunResult()
             }
-            if faults.copyFromReportsSuccess.contains(source) { write(["info": ["outcome": "success"]], spec) }
+            if faults.copyFromReportsSuccess.contains(source) {
+                write(["info": ["outcome": "success"]], spec)
+            }
             if let target = faults.copyFromSymlinks[source] {
                 try? makeDirectories(parentPath(destination), mode: 0o700)
                 return symlink(target, destination) == 0 ? RunResult() : RunResult(code: 1)
@@ -521,7 +573,8 @@ final class DeviceSimRunner: Runner {
             let current = files()
             guard let data = current[source] else {
                 // A directory has nothing to copy; anything else is not there.
-                return current.keys.contains { $0.hasPrefix(source + "/") } ? RunResult() : RunResult(code: 1)
+                return current.keys.contains { $0.hasPrefix(source + "/") }
+                    ? RunResult() : RunResult(code: 1)
             }
             let bytes = faults.copyFromShort.contains(source) ? data.dropLast() : data
             do {
@@ -542,7 +595,9 @@ final class DeviceSimRunner: Runner {
                 write(["info": ["outcome": "failed"]], spec)
                 return RunResult()
             }
-            guard let data = try? Data(contentsOf: URL(fileURLWithPath: source)) else { return RunResult(code: 1) }
+            guard let data = try? Data(contentsOf: URL(fileURLWithPath: source)) else {
+                return RunResult(code: 1)
+            }
             if !faults.copyToDrops { store { $0[destination] = data } }
             if let document = faults.copyToDocument[destination] { write(document, spec) }
             return RunResult()
@@ -563,7 +618,9 @@ final class DeviceSimRunner: Runner {
                 defer_(script.installLandsAfter, id: id, install: true)
             }
         } else {
-            if script.timeoutsTakeTime { clock?.advance(Double(SlotState.uninstallTimeoutSec) + 15) }
+            if script.timeoutsTakeTime {
+                clock?.advance(Double(SlotState.uninstallTimeoutSec) + 15)
+            }
             if script.uninstallTimeoutRemoves == true {
                 apps.withLock { $0[id] = nil }
             } else {
@@ -592,7 +649,8 @@ final class DeviceSimRunner: Runner {
     private func installedBundle(_ spec: CommandSpec) -> String {
         let path = (spec.args.last ?? "") + "/Info.plist"
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
-            let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
+            let plist = try? PropertyListSerialization.propertyList(
+                from: data, options: [], format: nil) as? [String: Any]
         else { return "" }
         return plist["CFBundleIdentifier"] as? String ?? ""
     }
@@ -601,14 +659,19 @@ final class DeviceSimRunner: Runner {
         if spec.args.first == "-dvv" {
             let path = (spec.args.last ?? "") + "/Info.plist"
             let plist = (try? Data(contentsOf: URL(fileURLWithPath: path))).flatMap {
-                try? PropertyListSerialization.propertyList(from: $0, options: [], format: nil) as? [String: Any]
+                try? PropertyListSerialization.propertyList(from: $0, options: [], format: nil)
+                    as? [String: Any]
             }
-            let team = script.reportedTeam.map { "TeamIdentifier=\($0)" } ?? "TeamIdentifier=not set"
-            return RunResult(stderr: "Identifier=\(plist?["CFBundleIdentifier"] as? String ?? "")\n\(team)\n")
+            let team =
+                script.reportedTeam.map { "TeamIdentifier=\($0)" } ?? "TeamIdentifier=not set"
+            return RunResult(
+                stderr: "Identifier=\(plist?["CFBundleIdentifier"] as? String ?? "")\n\(team)\n")
         }
         if let flag = spec.args.first(where: { $0.hasPrefix("--extract-certificates=") }) {
             if let leaf = script.leaf {
-                FileManager.default.createFile(atPath: String(flag.dropFirst("--extract-certificates=".count)) + "0", contents: leaf)
+                FileManager.default.createFile(
+                    atPath: String(flag.dropFirst("--extract-certificates=".count)) + "0",
+                    contents: leaf)
             }
             return RunResult()
         }
@@ -622,7 +685,10 @@ func appsJSON(_ apps: [String: Bool]) -> JSONValue {
         "result": [
             "apps": .array(
                 apps.keys.sorted().map { id in
-                    ["bundleIdentifier": .string(id), "builtByDeveloper": .bool(apps[id] ?? false), "name": "App"]
+                    [
+                        "bundleIdentifier": .string(id),
+                        "builtByDeveloper": .bool(apps[id] ?? false), "name": "App",
+                    ]
                 })
         ],
     ]
@@ -652,22 +718,34 @@ struct InstallWorld {
     func config() throws -> Config { try store.load() }
 
     func install(app: String? = nil, device: String? = nil, yes: Bool = true) async -> Envelope {
-        await InstallCommand.run(services, InstallOptions(app: app ?? self.app.rawValue, device: device ?? alias, yes: yes))
+        await InstallCommand.run(
+            services,
+            InstallOptions(app: app ?? self.app.rawValue, device: device ?? alias, yes: yes))
     }
 
     func remove(app: String? = nil, device: String? = nil, yes: Bool = true) async -> Envelope {
-        await AppCommand.run(services, AppOptions(sub: "remove", app: app ?? self.app.rawValue, device: device ?? alias, yes: yes))
+        await AppCommand.run(
+            services,
+            AppOptions(
+                sub: "remove", app: app ?? self.app.rawValue, device: device ?? alias, yes: yes))
     }
 
-    func slot(_ sub: String, device: String? = nil, udid: String? = nil, to: String? = nil) async -> Envelope {
+    func slot(_ sub: String, device: String? = nil, udid: String? = nil, to: String? = nil) async
+        -> Envelope
+    {
         await SlotCommand.run(services, SlotOptions(sub: sub, device: device, udid: udid, to: to))
     }
 
     /// The printed (redacted) text must hold no device ID or name.
-    func expectClean(_ envelope: Envelope, sourceLocation: SourceLocation = #_sourceLocation) throws {
+    func expectClean(_ envelope: Envelope, sourceLocation: SourceLocation = #_sourceLocation) throws
+    {
         let text = try envelope.printed().text
-        for secret in [savedUdid("1"), savedCoreId("1"), savedUdid("2"), savedCoreId("2"), "Test iPhone", "Test Apple TV"] {
-            #expect(!text.contains(secret), "output holds \(secret)", sourceLocation: sourceLocation)
+        for secret in [
+            savedUdid("1"), savedCoreId("1"), savedUdid("2"), savedCoreId("2"), "Test iPhone",
+            "Test Apple TV",
+        ] {
+            #expect(
+                !text.contains(secret), "output holds \(secret)", sourceLocation: sourceLocation)
         }
     }
 }
@@ -675,9 +753,12 @@ struct InstallWorld {
 /// Runs `body` against a temp home with `app` fetched-signed-provisioned: the signed app on disk, `freeSigned` and
 /// `freeProfiles` in the ledger, the identity pinned, and the saved iPhone / Apple TV.
 func withInstallWorld(
-    app: ProvisionApp = .stremioIOS, alsoSigned: [ProvisionApp] = [], script: DeviceScript = DeviceScript(), reserved: Int = 0,
-    lendable: String? = nil, signed: Bool = true, profileDays: Double = 5, embeddedDays: Double? = nil,
-    embeddedTeam: String = Team.free, keychain reads: [[KeychainCertificate]?]? = nil, ledger tweak: ((inout Ledger) -> Void)? = nil,
+    app: ProvisionApp = .stremioIOS, alsoSigned: [ProvisionApp] = [],
+    script: DeviceScript = DeviceScript(), reserved: Int = 0,
+    lendable: String? = nil, signed: Bool = true, profileDays: Double = 5,
+    embeddedDays: Double? = nil,
+    embeddedTeam: String = Team.free, keychain reads: [[KeychainCertificate]?]? = nil,
+    ledger tweak: ((inout Ledger) -> Void)? = nil,
     _ body: (InstallWorld) async throws -> Void
 ) async throws {
     let free = try freeKeychainCert()
@@ -704,25 +785,36 @@ func withInstallWorld(
                 let dir = "\(paths.signedBuilds)/\(each.rawValue)/\(alias)/\(name).app"
                 try makeDirectories(dir, mode: 0o700)
                 let info = try PropertyListSerialization.data(
-                    fromPropertyList: ["CFBundleIdentifier": bundleId, "CFBundleExecutable": name], format: .xml, options: 0)
+                    fromPropertyList: ["CFBundleIdentifier": bundleId, "CFBundleExecutable": name],
+                    format: .xml, options: 0)
                 try info.write(to: URL(fileURLWithPath: dir + "/Info.plist"))
                 let xml = try profileXML(
-                    uuid: uuid, team: embeddedTeam, applicationIdentifier: Team.free + "." + bundleId, devices: [savedUdid(seed)],
+                    uuid: uuid, team: embeddedTeam,
+                    applicationIdentifier: Team.free + "." + bundleId, devices: [savedUdid(seed)],
                     certs: [freeDER], platform: [each.profilePlatform], created: daysFromNow(-2),
                     expires: embeddedDays.map(daysFromNow) ?? expires)
-                try Data(xml.utf8).write(to: URL(fileURLWithPath: dir + "/embedded.mobileprovision"))
+                try Data(xml.utf8).write(
+                    to: URL(fileURLWithPath: dir + "/embedded.mobileprovision"))
                 signedRecords.append(
                     LedgerFreeSigned(
-                        id: "\(alias)/\(each.rawValue)", device: alias, app: each.rawValue, bundleId: bundleId, version: "1.2.3",
-                        sha256Prefix: "abcd1234", profileUuid: uuid, profileExpires: expires, certFp8: LedgerSync.fp8(free.reference),
-                        signedAt: daysFromNow(-1), path: "builds/signed/\(each.rawValue)/\(alias)/\(name).app",
-                        strippedExtensions: [LedgerStrippedExtension(path: "PlugIns/W.appex", bundleId: "x.widget")],
+                        id: "\(alias)/\(each.rawValue)", device: alias, app: each.rawValue,
+                        bundleId: bundleId, version: "1.2.3",
+                        sha256Prefix: "abcd1234", profileUuid: uuid, profileExpires: expires,
+                        certFp8: LedgerSync.fp8(free.reference),
+                        signedAt: daysFromNow(-1),
+                        path: "builds/signed/\(each.rawValue)/\(alias)/\(name).app",
+                        strippedExtensions: [
+                            LedgerStrippedExtension(path: "PlugIns/W.appex", bundleId: "x.widget")
+                        ],
                         droppedEntitlements: ["aps-environment"]))
                 profileRecords.append(
                     LedgerFreeProfile(
-                        id: "\(alias)/\(each.rawValue)", device: alias, deviceTail: Redactor.tail4(savedUdid(seed)), app: each.rawValue,
-                        bundleId: bundleId, profileUuid: uuid, created: daysFromNow(-2), expires: expires,
-                        certFp8: LedgerSync.fp8(free.reference), file: "profiles/free/\(each.rawValue)/\(alias)/\(uuid).mobileprovision"))
+                        id: "\(alias)/\(each.rawValue)", device: alias,
+                        deviceTail: Redactor.tail4(savedUdid(seed)), app: each.rawValue,
+                        bundleId: bundleId, profileUuid: uuid, created: daysFromNow(-2),
+                        expires: expires,
+                        certFp8: LedgerSync.fp8(free.reference),
+                        file: "profiles/free/\(each.rawValue)/\(alias)/\(uuid).mobileprovision"))
             }
             try await LedgerStore(paths: paths).update { ledger in
                 ledger.freeSigned = signedRecords
@@ -736,8 +828,12 @@ func withInstallWorld(
         runner.clock = clock
         let keychain = SequencedKeychain(reads ?? [[free]])
         let services = Services(
-            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: clock, keychain: keychain, home: paths)
-        try await body(InstallWorld(paths: paths, store: store, services: services, runner: runner, app: app, keychain: keychain, clock: clock))
+            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: clock, keychain: keychain,
+            home: paths)
+        try await body(
+            InstallWorld(
+                paths: paths, store: store, services: services, runner: runner, app: app,
+                keychain: keychain, clock: clock))
     }
 }
 
@@ -749,7 +845,9 @@ final class MutableClock: WallClock, @unchecked Sendable {
     init(_ instant: Date) { current = instant }
 
     func now() -> Date { lock.withLock { current } }
-    func advance(_ seconds: TimeInterval) { lock.withLock { current = current.addingTimeInterval(seconds) } }
+    func advance(_ seconds: TimeInterval) {
+        lock.withLock { current = current.addingTimeInterval(seconds) }
+    }
 }
 
 /// A reference cell a test closure can write to.

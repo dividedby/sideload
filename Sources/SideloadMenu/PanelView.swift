@@ -31,7 +31,8 @@ struct PanelView: View {
         .frame(width: 360)
         // The window-style panel signals "opened" by becoming key; `onAppear` covers the first showing.
         .onAppear { model.reload() }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) {
+            _ in
             model.reload()
         }
     }
@@ -105,7 +106,8 @@ struct LoadedView: View {
                 Text("Apps").font(.caption).fontWeight(.semibold).foregroundStyle(.secondary)
                 if snapshot.checkingApps { ProgressView().controlSize(.mini) }
                 Spacer()
-                Text("signing lasts \(FreeInstallExpiry.windowDays) days").font(.caption).foregroundStyle(.secondary)
+                Text("signing lasts \(FreeInstallExpiry.windowDays) days").font(.caption)
+                    .foregroundStyle(.secondary)
             }
             ForEach(snapshot.devices) { device in
                 DeviceCardView(device: device, snapshot: snapshot, model: model)

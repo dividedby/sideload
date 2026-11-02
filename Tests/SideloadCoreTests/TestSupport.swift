@@ -1,17 +1,20 @@
-import Testing
 import Darwin
 import Foundation
 import Synchronization
+import Testing
 
 @testable import SideloadCore
 
 /// Fixture scripts are located through `#filePath`; there is no resource bundle.
 func fixture(_ name: String, file: String = #filePath) -> String {
-    URL(fileURLWithPath: file).deletingLastPathComponent().appendingPathComponent("Fixtures/\(name)").path
+    URL(fileURLWithPath: file).deletingLastPathComponent().appendingPathComponent(
+        "Fixtures/\(name)"
+    ).path
 }
 
 func makeTempDir() throws -> URL {
-    let url = FileManager.default.temporaryDirectory.appendingPathComponent("sideload-test-\(UUID().uuidString)")
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent(
+        "sideload-test-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
     return url
 }
@@ -93,9 +96,13 @@ struct Harness {
     }
 
     /// Runs `spec` and checks the registry is empty afterwards.
-    func run(_ spec: CommandSpec, sourceLocation: SourceLocation = #_sourceLocation) async -> RunResult {
+    func run(_ spec: CommandSpec, sourceLocation: SourceLocation = #_sourceLocation) async
+        -> RunResult
+    {
         let result = await runner.run(spec)
-        #expect(children.isEmpty, "LiveChildren must be empty after a run", sourceLocation: sourceLocation)
+        #expect(
+            children.isEmpty, "LiveChildren must be empty after a run",
+            sourceLocation: sourceLocation)
         return result
     }
 }

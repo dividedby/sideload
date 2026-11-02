@@ -24,16 +24,21 @@ enum DeviceRemove {
 
     static func run(_ services: Services, _ options: DeviceOptions) async throws -> Envelope {
         let usageFix = "sideload device remove --alias <alias> --yes (owner)"
-        if options.match != nil || options.platform != nil || options.on || options.off || options.reserved != nil {
+        if options.match != nil || options.platform != nil || options.on || options.off
+            || options.reserved != nil
+        {
             return .fail(
-                command, code: "USAGE", message: "device remove takes only --alias and --yes.", fix: usageFix)
+                command, code: "USAGE", message: "device remove takes only --alias and --yes.",
+                fix: usageFix)
         }
         guard let alias = options.alias, !alias.isEmpty else {
-            return .fail(command, code: "USAGE", message: "device remove needs --alias.", fix: usageFix)
+            return .fail(
+                command, code: "USAGE", message: "device remove needs --alias.", fix: usageFix)
         }
         guard DeviceCommand.isValidAlias(alias) else {
             return .fail(
-                command, code: "USAGE", message: "Alias must be 1-32 chars of letters, digits, \"-\" or \"_\".",
+                command, code: "USAGE",
+                message: "Alias must be 1-32 chars of letters, digits, \"-\" or \"_\".",
                 fix: "Use the alias from `sideload device list`.")
         }
 
@@ -41,7 +46,10 @@ enum DeviceRemove {
         let inConfig = config.devices[alias] != nil
         let ledger = try services.ledgerStore.load()
         // Folders count too: a run that died after the ledger write left an alias with only those.
-        guard inConfig || hasRecords(ledger, alias: alias) || !aliasFolders(services.home, alias: alias).paths.isEmpty else {
+        guard
+            inConfig || hasRecords(ledger, alias: alias)
+                || !aliasFolders(services.home, alias: alias).paths.isEmpty
+        else {
             throw SideloadError(
                 "DEVICE_NOT_SAVED",
                 "No saved device with alias \"\(printableAlias(alias))\", and nothing is left for it in the ledger or on disk.",
@@ -60,8 +68,10 @@ enum DeviceRemove {
             preview["backups"] = .number(Double(backupCount(services, alias: alias)))
             return .fail(
                 command, code: "CONFIRM_REQUIRED",
-                message: "device remove forgets this device's ledger records and deletes its profiles and signed builds. Apps on the device stay until their profiles expire; app-data backups are kept.",
-                fix: "The owner confirms by re-running with --yes: \(usageFix)", data: ["preview": .object(preview)])
+                message:
+                    "device remove forgets this device's ledger records and deletes its profiles and signed builds. Apps on the device stay until their profiles expire; app-data backups are kept.",
+                fix: "The owner confirms by re-running with --yes: \(usageFix)",
+                data: ["preview": .object(preview)])
         }
 
         let lock = try OperationLock.acquire(paths: services.home)
@@ -85,7 +95,9 @@ enum DeviceRemove {
         let (dirsDeleted, skipped) = try deleteDirectories(services.home, alias: alias)
 
         // c. the config entry, last.
-        let fromConfig = try await services.store.update { config in config.devices.removeValue(forKey: alias) != nil }
+        let fromConfig = try await services.store.update { config in
+            config.devices.removeValue(forKey: alias) != nil
+        }
 
         let kept = backupCount(services, alias: alias)
         var warnings: [JSONValue] = []
@@ -115,10 +127,16 @@ enum DeviceRemove {
         summary["fromConfig"] = .bool(fromConfig)
         summary["dirsDeleted"] = .number(Double(dirsDeleted))
         return .result(
-            command, ["removed": .object(summary), "backupsKept": .number(Double(kept)), "warnings": .array(warnings)])
+            command,
+            [
+                "removed": .object(summary), "backupsKept": .number(Double(kept)),
+                "warnings": .array(warnings),
+            ])
     }
 
-    private static func dropRecords(_ services: Services, alias: String, now: Date) async throws -> Counts {
+    private static func dropRecords(_ services: Services, alias: String, now: Date) async throws
+        -> Counts
+    {
         var counted = Counts()
         try await SlotState.write(services, point: "device-remove.records") { ledger in
             if let busy = refusal(ledger.slots, alias: alias, now: now) { throw busy }
@@ -137,8 +155,10 @@ enum DeviceRemove {
     // MARK: reading
 
     static func hasRecords(_ ledger: Ledger, alias: String) -> Bool {
-        ledger.freeProfiles.contains { $0.device == alias } || ledger.freeSigned.contains { $0.device == alias }
-            || ledger.installs.contains { $0.device == alias } || ledger.slots.contains { $0.device == alias }
+        ledger.freeProfiles.contains { $0.device == alias }
+            || ledger.freeSigned.contains { $0.device == alias }
+            || ledger.installs.contains { $0.device == alias }
+            || ledger.slots.contains { $0.device == alias }
             || ledger.lent.contains { $0.device == alias }
     }
 
@@ -160,7 +180,8 @@ enum DeviceRemove {
         if let held = mine.first(where: { $0.lentTo != nil && SlotRule.phase($0) == .lent }) {
             return SideloadError(
                 "DEVICE_BUSY", "The lab holds the \(held.app) slot of device \"\(name)\".",
-                fix: "The lab returns it with `sideload slot return --device \(name)`; retry after that.",
+                fix:
+                    "The lab returns it with `sideload slot return --device \(name)`; retry after that.",
                 data: ["alias": .string(alias), "reason": "lent", "app": .string(held.app)])
         }
         let inWindow = mine.compactMap { slot -> (LedgerSlot, Int)? in
@@ -171,14 +192,17 @@ enum DeviceRemove {
             return SideloadError(
                 "DEVICE_BUSY",
                 "A device operation on \(printableCut(slot.app)) of \"\(name)\" may still be finishing, so nothing is forgotten.",
-                fix: "Retry in \(left) seconds, or finish a lend or return with `sideload slot return --device \(name)`.",
+                fix:
+                    "Retry in \(left) seconds, or finish a lend or return with `sideload slot return --device \(name)`.",
                 data: [
-                    "alias": .string(alias), "reason": "pending", "app": .string(slot.app), "retryAfter": .number(Double(left)),
+                    "alias": .string(alias), "reason": "pending", "app": .string(slot.app),
+                    "retryAfter": .number(Double(left)),
                 ])
         }
         if let stuck = mine.first(where: { $0.lentTo != nil && SlotRule.phase($0).pending }) {
             return SideloadError(
-                "DEVICE_BUSY", "A lend or return of \(printableCut(stuck.app)) on \"\(name)\" has not been settled.",
+                "DEVICE_BUSY",
+                "A lend or return of \(printableCut(stuck.app)) on \"\(name)\" has not been settled.",
                 fix: "Finish it with `sideload slot return --device \(name)`, then retry.",
                 data: ["alias": .string(alias), "reason": "pending", "app": .string(stuck.app)])
         }
@@ -190,7 +214,9 @@ enum DeviceRemove {
     /// restored onto a new device saved under the same alias. Read straight from the disk without `PendingRestores`'
     /// settle-window skip: under the lock no return is running. Needs the bundle ID prefix; without a valid one the check
     /// cannot run, and backups present refuse (`restore_unknown`) rather than being skipped.
-    static func pendingRestore(_ services: Services, config: Config, alias: String) -> SideloadError? {
+    static func pendingRestore(_ services: Services, config: Config, alias: String)
+        -> SideloadError?
+    {
         let name = printableAlias(alias)
         guard let prefix = config.bundleIdPrefix, CanaryCommand.isValidPrefix(prefix),
             Config.isFreeBundleId(prefix + ".free.x", prefix: prefix)
@@ -207,11 +233,15 @@ enum DeviceRemove {
                 services, alias: alias, app: app.rawValue, bundleId: prefix + ".free." + app.suffix)
             if case .found = found {
                 return SideloadError(
-                    "DEVICE_BUSY", "Saved app data of \(app.rawValue) on device \"\(name)\" is waiting to be restored.",
+                    "DEVICE_BUSY",
+                    "Saved app data of \(app.rawValue) on device \"\(name)\" is waiting to be restored.",
                     fix: config.devices[alias] != nil
                         ? "The owner runs `sideload slot restore --device \(name) --app \(app.rawValue) --yes`; retry after that."
                         : "This alias is no longer saved, so `slot restore` cannot run for it. If the data is not wanted, the owner deletes backups/\(name)/\(app.rawValue) by hand; then retry.",
-                    data: ["alias": .string(alias), "reason": "restore_pending", "app": .string(app.rawValue)])
+                    data: [
+                        "alias": .string(alias), "reason": "restore_pending",
+                        "app": .string(app.rawValue),
+                    ])
             }
         }
         return nil
@@ -259,7 +289,9 @@ enum DeviceRemove {
     }
 
     /// Deletes what `aliasFolders` lists. Returns the entries deleted and the links skipped.
-    private static func deleteDirectories(_ home: Paths, alias: String) throws -> (deleted: Int, skipped: Int) {
+    private static func deleteDirectories(_ home: Paths, alias: String) throws -> (
+        deleted: Int, skipped: Int
+    ) {
         let found = aliasFolders(home, alias: alias)
         var deleted = 0
         for target in found.paths {
@@ -268,7 +300,9 @@ enum DeviceRemove {
             } catch {
                 throw SideloadError(
                     "DEVICE_REMOVE_INCOMPLETE", "A folder of this alias could not be deleted.",
-                    fix: "Check the permissions under $SIDELOAD_HOME, then re-run `sideload device remove`; the ledger records are already gone.")
+                    fix:
+                        "Check the permissions under $SIDELOAD_HOME, then re-run `sideload device remove`; the ledger records are already gone."
+                )
             }
             deleted += 1
         }
@@ -321,7 +355,8 @@ extension DeviceRemove.Counts {
     var json: [String: JSONValue] {
         [
             "profiles": .number(Double(profiles)), "signedBuilds": .number(Double(signedBuilds)),
-            "installs": .number(Double(installs)), "installsPresent": .number(Double(installsPresent)),
+            "installs": .number(Double(installs)),
+            "installsPresent": .number(Double(installsPresent)),
             "slots": .number(Double(slots)),
         ]
     }

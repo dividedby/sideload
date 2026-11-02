@@ -1,4 +1,10 @@
 {
   "info": { "outcome": "failed" },
-  "error": { "code": 1234567, "domain": "com.apple.dt.CoreDeviceError", "userInfo": { "NSLocalizedDescription": { "string": "Something unexpected happened." } } }
+  "error": {
+    "code": 1234567,
+    "domain": "com.apple.dt.CoreDeviceError",
+    "userInfo": {
+      "NSLocalizedDescription": { "string": "Something unexpected happened." }
+    }
+  }
 }

@@ -5,7 +5,9 @@ public struct SideloadError: Error, Sendable, Equatable {
     public let fix: String?
     public let data: [String: JSONValue]
 
-    public init(_ code: String, _ message: String, fix: String? = nil, data: [String: JSONValue] = [:]) {
+    public init(
+        _ code: String, _ message: String, fix: String? = nil, data: [String: JSONValue] = [:]
+    ) {
         self.code = code
         self.message = message
         self.fix = fix

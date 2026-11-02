@@ -32,14 +32,17 @@ struct DevicePickerView: View {
                 }
                 buttons { EmptyView() }
             case .failed(let issue):
-                Text(issue.message).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(issue.message).font(.callout).foregroundStyle(.secondary).fixedSize(
+                    horizontal: false, vertical: true)
                 if let fix = issue.fix {
-                    Text(fix).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(fix).font(.callout).foregroundStyle(.secondary).fixedSize(
+                        horizontal: false, vertical: true)
                 }
                 Text(issue.code).font(.caption2).foregroundStyle(.tertiary)
                 buttons { checkAgain }
             case .list(let candidates) where candidates.isEmpty:
-                Text(MenuAddDevice.noneFound).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(MenuAddDevice.noneFound).font(.callout).foregroundStyle(.secondary).fixedSize(
+                    horizontal: false, vertical: true)
                 buttons { checkAgain }
             case .list(let candidates):
                 DeviceChoiceForm(candidates: candidates, model: model).id(candidates)
@@ -86,11 +89,13 @@ private struct DeviceChoiceForm: View {
                 alias = candidate.suggestedAlias
             } label: {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Image(systemName: chosen == candidate ? "largecircle.fill.circle" : "circle").frame(width: 14)
+                    Image(systemName: chosen == candidate ? "largecircle.fill.circle" : "circle")
+                        .frame(width: 14)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(candidate.title)
                         if let blocked = candidate.blocked {
-                            Text(blocked).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                            Text(blocked).font(.caption).foregroundStyle(.secondary).fixedSize(
+                                horizontal: false, vertical: true)
                         }
                     }
                 }
@@ -104,7 +109,8 @@ private struct DeviceChoiceForm: View {
                 .textFieldStyle(.roundedBorder)
                 .accessibilityLabel("Alias")
             if let problem {
-                Text(problem).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(problem).font(.caption).foregroundStyle(.secondary).fixedSize(
+                    horizontal: false, vertical: true)
             }
         }
         HStack {

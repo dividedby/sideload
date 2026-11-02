@@ -1,7 +1,7 @@
 import Darwin
 import Dispatch
-import Synchronization
 import SideloadCore
+import Synchronization
 
 /// Handles SIGINT/SIGTERM/SIGHUP with `DispatchSource`s. The default dispositions are ignored so the
 /// sources see the signals; `PosixSpawnRunner` resets them in children so they still react normally.
@@ -34,8 +34,10 @@ func installInterruptHandlers(_ interrupt: Interrupt) -> [any DispatchSourceSign
             // `inspect` unpacks an untrusted IPA into a scratch folder that must not outlive the process: the interrupt
             // gate removes it once the child groups are dead and before the object is written.
             let code = interrupt.handle(
-                signal: signo, kit: kit, clipboardCleared: kit == nil ? nil : cleared.withLock { $0 },
-                context: context.withLock { $0 }, cleanup: { ScratchRegistry.shared.removeAllAndClose() })
+                signal: signo, kit: kit,
+                clipboardCleared: kit == nil ? nil : cleared.withLock { $0 },
+                context: context.withLock { $0 },
+                cleanup: { ScratchRegistry.shared.removeAllAndClose() })
             // _exit, not exit: stdio flush and atexit handlers could block after an abandoned write.
             if let code { _exit(code) } else { park() }
         }

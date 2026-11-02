@@ -42,18 +42,23 @@ private struct ConfirmView: View {
             Text(prompt.title).fontWeight(.semibold).fixedSize(horizontal: false, vertical: true)
             ForEach(Array(prompt.lines.enumerated()), id: \.offset) { index, line in
                 if prompt.monospacedLines.contains(index) {
-                    Text(line).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
-                        .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    Text(line).font(.system(.caption, design: .monospaced)).foregroundStyle(
+                        .secondary
+                    )
+                    .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Text(line).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(line).font(.callout).foregroundStyle(.secondary).fixedSize(
+                        horizontal: false, vertical: true)
                 }
             }
             HStack {
                 Spacer()
                 Button("Cancel") { model.dismiss() }
-                Button(prompt.confirmLabel, role: prompt.destructive ? .destructive : nil) { model.confirm() }
-                    .buttonStyle(.borderedProminent)
-                    .tint(prompt.destructive ? .red : .accentColor)
+                Button(prompt.confirmLabel, role: prompt.destructive ? .destructive : nil) {
+                    model.confirm()
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(prompt.destructive ? .red : .accentColor)
             }
             .padding(.top, 2)
         }
@@ -70,7 +75,8 @@ private struct ResultView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
                 Image(systemName: symbol).foregroundStyle(tone.resultColor).frame(width: 14)
-                Text(outcome.headline).fontWeight(.semibold).fixedSize(horizontal: false, vertical: true)
+                Text(outcome.headline).fontWeight(.semibold).fixedSize(
+                    horizontal: false, vertical: true)
                 Spacer()
                 Button("Dismiss") { model.dismiss() }.buttonStyle(.link)
             }
@@ -81,7 +87,8 @@ private struct ResultView: View {
                 IssueText(issue: issue)
             }
             ForEach(Array(outcome.notes.enumerated()), id: \.offset) { _, note in
-                Text(note).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(note).font(.callout).foregroundStyle(.secondary).fixedSize(
+                    horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -141,7 +148,8 @@ private struct IssueText: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(issue.message).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Text(issue.message).font(.callout).foregroundStyle(.secondary).fixedSize(
+                horizontal: false, vertical: true)
             if let fix = issue.fix {
                 Text(fix).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)

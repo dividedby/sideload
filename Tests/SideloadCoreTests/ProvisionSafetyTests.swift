@@ -18,42 +18,57 @@ private func plant(_ w: ProvisionWorld, _ fp8s: [String]) async throws {
 
 @Suite("provision: in-flight marker")
 struct ProvisionInFlightTests {
-    @Test("the marker is in the ledger when xcodebuild starts, holds the before set, and is gone afterwards")
+    @Test(
+        "the marker is in the ledger when xcodebuild starts, holds the before set, and is gone afterwards"
+    )
     func writtenBeforeAndCleared() async throws {
         let free = try freeKeychainCert()
-        try await withProvisionWorld(reads: [[free, try keychainCert(TestCerts.paid)], [free, try keychainCert(TestCerts.paid)]]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(reads: [
+            [free, try keychainCert(TestCerts.paid)], [free, try keychainCert(TestCerts.paid)],
+        ]) { (w: ProvisionWorld) async throws in
             #expect(try w.ledger().freeProvisionInFlight == nil)
             let out = await w.run()
             #expect(out.ok, "\(out.errors)")
-            let during = try #require(w.cacheAtBuild.ledgerAtBuild?.freeProvisionInFlight, "written before the build")
+            let during = try #require(
+                w.cacheAtBuild.ledgerAtBuild?.freeProvisionInFlight, "written before the build")
             #expect(during.beforeFp8 == [fp8(free)], "the free-OU set only, by 8-hex fingerprint")
-            #expect(during.app == "stremio-ios" && during.device == "iphone" && during.startedAt == testNow)
-            #expect(try w.ledger().freeProvisionInFlight == nil, "cleared with the after-comparison")
+            #expect(
+                during.app == "stremio-ios" && during.device == "iphone"
+                    && during.startedAt == testNow)
+            #expect(
+                try w.ledger().freeProvisionInFlight == nil, "cleared with the after-comparison")
             let raw = try String(contentsOfFile: w.paths.ledger, encoding: .utf8)
             #expect(!raw.contains("freeProvisionInFlight"))
             #expect(!raw.contains(free.reference), "no full fingerprint in the ledger")
         }
     }
 
-    @Test("it is cleared after a failed build and after FREE_CERT_CHANGED, once the comparison was recorded")
+    @Test(
+        "it is cleared after a failed build and after FREE_CERT_CHANGED, once the comparison was recorded"
+    )
     func clearedOnEveryRecordedPath() async throws {
         let free = try freeKeychainCert()
         let failing = BuildScript(result: RunResult(code: 65, stderr: "error: x"))
-        try await withProvisionWorld(reads: [[free], [free]], build: failing) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(reads: [[free], [free]], build: failing) {
+            (w: ProvisionWorld) async throws in
             #expect(await w.run().errors.first?.code == "PROVISION_FAILED")
             #expect(w.cacheAtBuild.ledgerAtBuild?.freeProvisionInFlight != nil)
             #expect(try w.ledger().freeProvisionInFlight == nil)
         }
-        try await withProvisionWorld(reads: [[free], [free, otherFreeCert()]]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(reads: [[free], [free, otherFreeCert()]]) {
+            (w: ProvisionWorld) async throws in
             #expect(await w.run().errors.first?.code == "FREE_CERT_CHANGED")
             #expect(try w.ledger().freeProvisionInFlight == nil)
             #expect(try w.ledger().freeSuspended != nil)
         }
     }
 
-    @Test("a marker with a changed free set is FREE_CERT_CHANGED before anything else: suspended, cleared, no build")
+    @Test(
+        "a marker with a changed free set is FREE_CERT_CHANGED before anything else: suspended, cleared, no build"
+    )
     func staleChanged() async throws {
-        let free = try freeKeychainCert(), extra = otherFreeCert()
+        let free = try freeKeychainCert()
+        let extra = otherFreeCert()
         // Added since the dead run began.
         try await withProvisionWorld(reads: [[free, extra]]) { (w: ProvisionWorld) async throws in
             try await plant(w, [fp8(free)])
@@ -71,7 +86,9 @@ struct ProvisionInFlightTests {
             #expect(ledger.freeSuspended?.addedFp8 == [fp8(extra)])
             #expect(ledger.freeSuspended?.at == testNow)
             #expect(ledger.freeAppIds.isEmpty && ledger.freeProfiles.isEmpty)
-            #expect(!FileManager.default.fileExists(atPath: w.paths.builds + "/carrier"), "not even the project was written")
+            #expect(
+                !FileManager.default.fileExists(atPath: w.paths.builds + "/carrier"),
+                "not even the project was written")
         }
         // Removed.
         try await withProvisionWorld(reads: [[free]]) { (w: ProvisionWorld) async throws in
@@ -102,9 +119,14 @@ struct ProvisionInFlightTests {
     @Test("a marker is settled before the pinned-identity and budget checks")
     func settledFirst() async throws {
         let free = try freeKeychainCert()
-        try await withProvisionWorld(config: provisionConfig(extra: ["freeTeam": ["certFp8": "deadbeef"]]), reads: [[free, otherFreeCert()]]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            config: provisionConfig(extra: ["freeTeam": ["certFp8": "deadbeef"]]),
+            reads: [[free, otherFreeCert()]]
+        ) { (w: ProvisionWorld) async throws in
             try await plant(w, [fp8(free)])
-            #expect(await w.run().errors.first?.code == "FREE_CERT_CHANGED", "not FREE_IDENTITY_MISSING")
+            #expect(
+                await w.run().errors.first?.code == "FREE_CERT_CHANGED", "not FREE_IDENTITY_MISSING"
+            )
         }
     }
 
@@ -118,15 +140,25 @@ struct ProvisionInFlightTests {
         }
     }
 
-    @Test("a run whose after-read failed leaves the marker, so the next run catches the new certificate")
+    @Test(
+        "a run whose after-read failed leaves the marker, so the next run catches the new certificate"
+    )
     func absorbedNever() async throws {
-        let free = try freeKeychainCert(), extra = otherFreeCert()
+        let free = try freeKeychainCert()
+        let extra = otherFreeCert()
         // Run 1: before [free]; after unreadable (as if the process died). Run 2: the keychain now has `extra`.
-        try await withProvisionWorld(config: provisionConfig(extra: ["freeTeam": ["certFp8": .string(fp8(free))]]), reads: [[free], nil, [free, extra], [free, extra]]) { (w: ProvisionWorld) async throws in
+        try await withProvisionWorld(
+            config: provisionConfig(extra: ["freeTeam": ["certFp8": .string(fp8(free))]]),
+            reads: [[free], nil, [free, extra], [free, extra]]
+        ) { (w: ProvisionWorld) async throws in
             #expect(await w.run().errors.first?.code == "IDENTITY_CHECK_FAILED")
-            #expect(try w.ledger().freeProvisionInFlight?.beforeFp8 == [fp8(free)], "the comparison never ran")
+            #expect(
+                try w.ledger().freeProvisionInFlight?.beforeFp8 == [fp8(free)],
+                "the comparison never ran")
             let second = await w.run()
-            #expect(second.errors.first?.code == "FREE_CERT_CHANGED", "the new certificate is not absorbed")
+            #expect(
+                second.errors.first?.code == "FREE_CERT_CHANGED",
+                "the new certificate is not absorbed")
             #expect(second.data["addedFp8"] == [.string(fp8(extra))])
             #expect(w.builds.count == 1, "run 2 built nothing")
             #expect(try w.ledger().freeProvisionInFlight == nil)
@@ -141,7 +173,8 @@ struct ProvisionInFlightTests {
     func noMarker() async throws {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
             let change = try await FreeIdentityGuard.settleInFlight(
-                ledgerStore: w.services.ledgerStore, current: [try freeKeychainCert()], now: testNow)
+                ledgerStore: w.services.ledgerStore, current: [try freeKeychainCert()], now: testNow
+            )
             #expect(change == nil)
             #expect(!FileManager.default.fileExists(atPath: w.paths.ledger), "no ledger write")
         }
@@ -157,7 +190,8 @@ struct ProvisionInFlightTests {
     func derivedDataNotCleared() async throws {
         try await withProvisionWorld { (w: ProvisionWorld) async throws in
             let build = w.paths.builds + "/carrier-dd/Build"
-            try FileManager.default.createDirectory(atPath: build + "/Products/Debug-iphoneos", withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                atPath: build + "/Products/Debug-iphoneos", withIntermediateDirectories: true)
             _ = chmod(build, 0o500)
             defer { _ = chmod(build, 0o700) }
             let out = await w.run()
@@ -179,7 +213,9 @@ struct ProvisionRenewRaceTests {
 
     private func runner() -> FakeRunner {
         FakeRunner { spec in
-            if spec.args == ["cms", "-D"], let stdin = spec.stdin { return RunResult(stdout: String(decoding: stdin, as: UTF8.self)) }
+            if spec.args == ["cms", "-D"], let stdin = spec.stdin {
+                return RunResult(stdout: String(decoding: stdin, as: UTF8.self))
+            }
             return RunResult(code: 1)
         }
     }
@@ -188,7 +224,8 @@ struct ProvisionRenewRaceTests {
         _ dir: String, tmp: String, runner: FakeRunner, beforeMove: (String) -> Void = { _ in }
     ) async -> ProfileCacheRenewal.Outcome {
         await ProfileCacheRenewal.moveOwnProfiles(
-            in: [dir], bundleId: stremioId, platform: "iOS", to: tmp, runner: runner, beforeMove: beforeMove, afterCheck: { _ in })
+            in: [dir], bundleId: stremioId, platform: "iOS", to: tmp, runner: runner,
+            beforeMove: beforeMove, afterCheck: { _ in })
     }
 
     @Test("the bytes decoded are the bytes read from the opened file, piped on stdin with no path")
@@ -215,7 +252,8 @@ struct ProvisionRenewRaceTests {
             try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
             let target = dir + "/a.mobileprovision"
             try Data(try mine().utf8).write(to: URL(fileURLWithPath: target))
-            let intruder = try freeProfileXML(bundleId: apolloId, uuid: "99999999-9999-9999-9999-999999999999")
+            let intruder = try freeProfileXML(
+                bundleId: apolloId, uuid: "99999999-9999-9999-9999-999999999999")
             let out = await move(dir, tmp: paths.tmp, runner: runner()) { path in
                 // A different file (new inode) renamed over the path after it was vetted.
                 let other = path + ".swap"
@@ -223,7 +261,9 @@ struct ProvisionRenewRaceTests {
                 _ = rename(other, path)
             }
             #expect((out.moved, out.skipped) == (0, 1))
-            #expect(try String(contentsOfFile: target, encoding: .utf8) == intruder, "the intruder stays where it is")
+            #expect(
+                try String(contentsOfFile: target, encoding: .utf8) == intruder,
+                "the intruder stays where it is")
             #expect(listing(paths.tmp).filter { $0.hasPrefix("renewed-profile-") }.isEmpty)
         }
     }
@@ -247,20 +287,30 @@ struct ProvisionRenewRaceTests {
         }
     }
 
-    @Test("a symlink, a directory, an oversize file and an unreadable file are skipped and counted, never read through")
+    @Test(
+        "a symlink, a directory, an oversize file and an unreadable file are skipped and counted, never read through"
+    )
     func unsafeEntries() async throws {
         try await withTestHome { paths, _ in
             let dir = paths.home + "/cache"
             let elsewhere = paths.home + "/elsewhere"
             try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-            try FileManager.default.createDirectory(atPath: elsewhere, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                atPath: elsewhere, withIntermediateDirectories: true)
             // A matching profile outside the folder, reached only through a symlink in it.
-            try Data(try mine().utf8).write(to: URL(fileURLWithPath: elsewhere + "/real.mobileprovision"))
-            try FileManager.default.createSymbolicLink(atPath: dir + "/link.mobileprovision", withDestinationPath: elsewhere + "/real.mobileprovision")
-            try FileManager.default.createSymbolicLink(atPath: dir + "/dangling.mobileprovision", withDestinationPath: elsewhere + "/nope")
-            try FileManager.default.createDirectory(atPath: dir + "/dir.mobileprovision", withIntermediateDirectories: true)
-            try Data(count: ProfileCacheRenewal.maxProfileBytes + 1).write(to: URL(fileURLWithPath: dir + "/big.mobileprovision"))
-            try Data(try mine().utf8).write(to: URL(fileURLWithPath: dir + "/locked.mobileprovision"))
+            try Data(try mine().utf8).write(
+                to: URL(fileURLWithPath: elsewhere + "/real.mobileprovision"))
+            try FileManager.default.createSymbolicLink(
+                atPath: dir + "/link.mobileprovision",
+                withDestinationPath: elsewhere + "/real.mobileprovision")
+            try FileManager.default.createSymbolicLink(
+                atPath: dir + "/dangling.mobileprovision", withDestinationPath: elsewhere + "/nope")
+            try FileManager.default.createDirectory(
+                atPath: dir + "/dir.mobileprovision", withIntermediateDirectories: true)
+            try Data(count: ProfileCacheRenewal.maxProfileBytes + 1).write(
+                to: URL(fileURLWithPath: dir + "/big.mobileprovision"))
+            try Data(try mine().utf8).write(
+                to: URL(fileURLWithPath: dir + "/locked.mobileprovision"))
             _ = chmod(dir + "/locked.mobileprovision", 0o000)
             defer { _ = chmod(dir + "/locked.mobileprovision", 0o600) }
             let r = runner()
@@ -268,7 +318,9 @@ struct ProvisionRenewRaceTests {
             #expect((out.moved, out.skipped) == (0, 5))
             #expect(r.calls.isEmpty, "none of them was decoded")
             #expect(FileManager.default.fileExists(atPath: elsewhere + "/real.mobileprovision"))
-            #expect((try? FileManager.default.destinationOfSymbolicLink(atPath: dir + "/link.mobileprovision")) != nil)
+            #expect(
+                (try? FileManager.default.destinationOfSymbolicLink(
+                    atPath: dir + "/link.mobileprovision")) != nil)
         }
     }
 
@@ -277,7 +329,8 @@ struct ProvisionRenewRaceTests {
         try await withTestHome { paths, _ in
             let dir = paths.home + "/cache"
             try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
-            try Data(try freeProfileXML(bundleId: apolloId).utf8).write(to: URL(fileURLWithPath: dir + "/other.mobileprovision"))
+            try Data(try freeProfileXML(bundleId: apolloId).utf8).write(
+                to: URL(fileURLWithPath: dir + "/other.mobileprovision"))
             try Data("garbage".utf8).write(to: URL(fileURLWithPath: dir + "/junk.mobileprovision"))
             let out = await move(dir, tmp: paths.tmp, runner: runner())
             #expect((out.moved, out.skipped) == (0, 0))
@@ -297,7 +350,9 @@ struct ProvisionRenewRaceTests {
             let out = await move(dir, tmp: blocked, runner: runner())
             #expect(out.error?.code == "PROFILE_MOVE_FAILED")
             #expect((out.moved, out.skipped, out.movedTo) == (0, 0, []))
-            #expect(FileManager.default.fileExists(atPath: dir + "/a.mobileprovision"), "still in place")
+            #expect(
+                FileManager.default.fileExists(atPath: dir + "/a.mobileprovision"), "still in place"
+            )
         }
     }
 }

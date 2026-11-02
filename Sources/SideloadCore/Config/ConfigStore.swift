@@ -7,7 +7,10 @@ public struct ConfigStore: Sendable {
     public let lockTimeout: Duration
     let retryInterval: Duration
 
-    public init(paths: Paths, lockTimeout: Duration = .seconds(5), retryInterval: Duration = .milliseconds(25)) {
+    public init(
+        paths: Paths, lockTimeout: Duration = .seconds(5),
+        retryInterval: Duration = .milliseconds(25)
+    ) {
         self.paths = paths
         self.lockTimeout = lockTimeout
         self.retryInterval = retryInterval
@@ -35,6 +38,8 @@ public struct ConfigStore: Sendable {
     }
 
     private func acquireLock() async throws -> FileLock {
-        try await FileLock.acquire(path: paths.configLock, name: "config", timeout: lockTimeout, retryInterval: retryInterval)
+        try await FileLock.acquire(
+            path: paths.configLock, name: "config", timeout: lockTimeout,
+            retryInterval: retryInterval)
     }
 }

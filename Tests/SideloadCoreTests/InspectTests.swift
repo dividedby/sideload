@@ -8,9 +8,9 @@ import Testing
 
 private let marker = "SECRETMARKER-4417"
 
-private extension JSONValue {
-    var strings: [String]? { array?.compactMap(\.string) }
-    var number: Double? {
+extension JSONValue {
+    fileprivate var strings: [String]? { array?.compactMap(\.string) }
+    fileprivate var number: Double? {
         if case .number(let n) = self { return n }
         return nil
     }
@@ -22,7 +22,9 @@ private func expectFailure(
     #expect(!w.envelope.ok, sourceLocation: sourceLocation)
     #expect(w.code == code, "got \(w.code ?? "ok")", sourceLocation: sourceLocation)
     #expect(w.leftovers.isEmpty, "the scratch folder must be gone", sourceLocation: sourceLocation)
-    #expect(!w.text.contains(marker), "an error must not echo file content", sourceLocation: sourceLocation)
+    #expect(
+        !w.text.contains(marker), "an error must not echo file content",
+        sourceLocation: sourceLocation)
 }
 
 @Suite("inspect: report")
@@ -32,15 +34,23 @@ struct InspectReportTests {
         "com.apple.security.application-groups": ["group.io.example", "group.io.example.shared"],
     ]
 
-    @Test("reports the app, its extension, groups, architectures and the hash; leaves no scratch folder")
+    @Test(
+        "reports the app, its extension, groups, architectures and the hash; leaves no scratch folder"
+    )
     func fullReport() async throws {
         var reference = ""
         var ipaSize = 0
         let w = try await inspectIPA { dir in
             let ipaPath = try await makeIPA(
                 [
-                    .app(extra: ["CFBundleDisplayName": "Test Display"], entitlements: groupEntitlements),
-                    .appex(entitlements: ["com.apple.security.application-groups": ["group.io.example", "group.io.example.share"]]),
+                    .app(
+                        extra: ["CFBundleDisplayName": "Test Display"],
+                        entitlements: groupEntitlements),
+                    .appex(entitlements: [
+                        "com.apple.security.application-groups": [
+                            "group.io.example", "group.io.example.share",
+                        ]
+                    ]),
                 ], in: dir)
             ipaSize = try Data(contentsOf: URL(fileURLWithPath: ipaPath)).count
             reference = await tool("/usr/bin/shasum", ["-a", "256", ipaPath])
@@ -71,7 +81,10 @@ struct InspectReportTests {
         #expect(extensions[0]["architectures"] == ["arm64e"])
         #expect(extensions[0]["signed"] == true)
         #expect(extensions[0]["appGroups"] == ["group.io.example", "group.io.example.share"])
-        #expect(w.json["appGroups"] == ["group.io.example", "group.io.example.share", "group.io.example.shared"])
+        #expect(
+            w.json["appGroups"] == [
+                "group.io.example", "group.io.example.share", "group.io.example.shared",
+            ])
         #expect(w.json["hasEmbeddedProvision"] == false)
         #expect(w.json["otherCode"] == ["frameworks": 0, "dylibs": 0, "watchApps": 0])
         #expect(w.json["warnings"] == [])
@@ -83,7 +96,9 @@ struct InspectReportTests {
 
         #expect(w.leftovers.isEmpty)
         #expect(!w.text.contains("inspect-"), "the scratch path must not be printed")
-        #expect(w.runner.calls.allSatisfy { $0.executable.hasPrefix("/usr/bin/") && $0.timeout > .zero })
+        #expect(
+            w.runner.calls.allSatisfy { $0.executable.hasPrefix("/usr/bin/") && $0.timeout > .zero }
+        )
     }
 
     @Test("an unsigned binary reports signed false and entitlements null")
@@ -102,10 +117,13 @@ struct InspectReportTests {
         #expect(w.json["app"]?["entitlements"] == [:])
     }
 
-    @Test("tvOS: platform and minimum OS come from the Mach-O build version; the device family from the plist")
+    @Test(
+        "tvOS: platform and minimum OS come from the Mach-O build version; the device family from the plist"
+    )
     func tvos() async throws {
         let w = try await inspectIPA {
-            try await makeIPA([.app(platform: "tvos", minOS: "16.1", extra: ["UIDeviceFamily": [3]])], in: $0)
+            try await makeIPA(
+                [.app(platform: "tvos", minOS: "16.1", extra: ["UIDeviceFamily": [3]])], in: $0)
         }
         #expect(w.envelope.ok, "\(w.text)")
         #expect(w.json["app"]?["platform"] == "tvos")
@@ -125,7 +143,8 @@ struct InspectReportTests {
         var app = BundleSpec.app(sign: false)
         let blob = Data(marker.utf8)
         app.extraFiles = [
-            "Frameworks/A.framework/A": blob, "Frameworks/B.framework/B": blob, "Frameworks/libx.dylib": blob,
+            "Frameworks/A.framework/A": blob, "Frameworks/B.framework/B": blob,
+            "Frameworks/libx.dylib": blob,
             "Watch/W.app/Info.plist": blob, "embedded.mobileprovision": blob,
         ]
         let w = try await inspectIPA { try await makeIPA([app], in: $0) }
@@ -139,7 +158,12 @@ struct InspectReportTests {
     func longStrings() async throws {
         let long = String(repeating: "x", count: 1000)
         let w = try await inspectIPA {
-            try await makeIPA([.app(extra: ["CFBundleDisplayName": long], entitlements: ["com.example.long": long])], in: $0)
+            try await makeIPA(
+                [
+                    .app(
+                        extra: ["CFBundleDisplayName": long],
+                        entitlements: ["com.example.long": long])
+                ], in: $0)
         }
         #expect(w.envelope.ok, "\(w.text)")
         #expect(w.json["app"]?["name"]?.string?.count == 256)
@@ -150,27 +174,44 @@ struct InspectReportTests {
     func unsignedIsAnchored() async {
         func signature(code: Int32, stderr: String) async -> BinaryTools.Signature {
             let runner = FakeRunner { _ in RunResult(code: code, stderr: stderr) }
-            return await BinaryTools(runner: runner, limits: InspectLimits()).signature(of: "/x/a.app")
+            return await BinaryTools(runner: runner, limits: InspectLimits()).signature(
+                of: "/x/a.app")
         }
-        if case .unsigned = await signature(code: 1, stderr: "/x/a.app: code object is not signed at all\n") {} else { Issue.record("exact message") }
+        if case .unsigned = await signature(
+            code: 1, stderr: "/x/a.app: code object is not signed at all\n")
+        {
+        } else {
+            Issue.record("exact message")
+        }
         for (code, text) in [
             (Int32(1), "/x/other.app: code object is not signed at all\n"),
             (1, "error in /x/code object is not signed at all/a.app: invalid signature\n"),
             (1, "/x/a.app: code object is not signed at all (really)\n"),
             (2, "/x/a.app: code object is not signed at all\n"),
         ] {
-            if case .unknown = await signature(code: code, stderr: text) {} else { Issue.record("must not be unsigned: \(text)") }
+            if case .unknown = await signature(code: code, stderr: text) {
+            } else {
+                Issue.record("must not be unsigned: \(text)")
+            }
         }
     }
 
     @Test("build-version output is parsed for LC_BUILD_VERSION and the older LC_VERSION_MIN forms")
     func buildVersionParsing() {
-        let modern = "x:\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform IOS\n    minos 15.0\n      sdk 17.0\n   ntools 1\n     tool LD\n  version 27037.1\n"
-        #expect(BinaryTools.parseBuildVersion(modern) == BinaryTools.BuildVersion(platform: "ios", minOS: "15.0"))
-        let old = "Load command 9\n      cmd LC_VERSION_MIN_IPHONEOS\n  cmdsize 16\n  version 9.0\n      sdk 12.0\n"
-        #expect(BinaryTools.parseBuildVersion(old) == BinaryTools.BuildVersion(platform: "ios", minOS: "9.0"))
+        let modern =
+            "x:\nLoad command 9\n      cmd LC_BUILD_VERSION\n  cmdsize 32\n platform IOS\n    minos 15.0\n      sdk 17.0\n   ntools 1\n     tool LD\n  version 27037.1\n"
+        #expect(
+            BinaryTools.parseBuildVersion(modern)
+                == BinaryTools.BuildVersion(platform: "ios", minOS: "15.0"))
+        let old =
+            "Load command 9\n      cmd LC_VERSION_MIN_IPHONEOS\n  cmdsize 16\n  version 9.0\n      sdk 12.0\n"
+        #expect(
+            BinaryTools.parseBuildVersion(old)
+                == BinaryTools.BuildVersion(platform: "ios", minOS: "9.0"))
         #expect(BinaryTools.parseBuildVersion("not mach-o") == nil)
-        #expect(BinaryTools.parseBuildVersion("cmd LC_BUILD_VERSION\n platform <script>\n minos 1.0\n") == nil)
+        #expect(
+            BinaryTools.parseBuildVersion("cmd LC_BUILD_VERSION\n platform <script>\n minos 1.0\n")
+                == nil)
     }
 }
 
@@ -189,21 +230,51 @@ struct InspectArchiveTests {
         HostileEntry(label: "backslash", entry: RawZipEntry("Payload\\..\\\(marker)")),
         HostileEntry(label: "control character", entry: RawZipEntry("Payload/a\nb\(marker)")),
         HostileEntry(label: "empty name", entry: RawZipEntry("")),
-        HostileEntry(label: "symlink", entry: RawZipEntry("Payload/Test.app/\(marker)", Array("/etc".utf8), mode: 0o120755)),
-        HostileEntry(label: "symlink, host 0", entry: { var e = RawZipEntry("Payload/Test.app/\(marker)", Array("/etc".utf8), mode: 0o120755); e.host = 0; return e }()),
-        HostileEntry(label: "symlink, host 1", entry: { var e = RawZipEntry("Payload/Test.app/\(marker)", Array("/etc".utf8), mode: 0o120755); e.host = 1; return e }()),
-        HostileEntry(label: "device node, host 0", entry: { var e = RawZipEntry("Payload/\(marker)", mode: 0o060644); e.host = 0; return e }()),
+        HostileEntry(
+            label: "symlink",
+            entry: RawZipEntry("Payload/Test.app/\(marker)", Array("/etc".utf8), mode: 0o120755)),
+        HostileEntry(
+            label: "symlink, host 0",
+            entry: {
+                var e = RawZipEntry(
+                    "Payload/Test.app/\(marker)", Array("/etc".utf8), mode: 0o120755)
+                e.host = 0
+                return e
+            }()),
+        HostileEntry(
+            label: "symlink, host 1",
+            entry: {
+                var e = RawZipEntry(
+                    "Payload/Test.app/\(marker)", Array("/etc".utf8), mode: 0o120755)
+                e.host = 1
+                return e
+            }()),
+        HostileEntry(
+            label: "device node, host 0",
+            entry: {
+                var e = RawZipEntry("Payload/\(marker)", mode: 0o060644)
+                e.host = 0
+                return e
+            }()),
         HostileEntry(label: "device node", entry: RawZipEntry("Payload/\(marker)", mode: 0o060644)),
         HostileEntry(label: "FIFO", entry: RawZipEntry("Payload/\(marker)", mode: 0o010644)),
         HostileEntry(
-            label: "NUL byte", entry: { var e = RawZipEntry(""); e.name = Array("Payload/ok".utf8) + [0] + Array("../../\(marker)".utf8); return e }()),
+            label: "NUL byte",
+            entry: {
+                var e = RawZipEntry("")
+                e.name = Array("Payload/ok".utf8) + [0] + Array("../../\(marker)".utf8)
+                return e
+            }()),
     ]
 
-    @Test("an unsafe entry is a hard failure before anything runs or is extracted", arguments: hostile)
+    @Test(
+        "an unsafe entry is a hard failure before anything runs or is extracted", arguments: hostile
+    )
     func unsafeEntry(_ hostile: HostileEntry) async throws {
         let w = try await inspectIPA { dir in
             let path = dir + "/hostile.ipa"
-            try rawZip([RawZipEntry("Payload/", mode: 0o040755), hostile.entry]).write(to: URL(fileURLWithPath: path))
+            try rawZip([RawZipEntry("Payload/", mode: 0o040755), hostile.entry]).write(
+                to: URL(fileURLWithPath: path))
             return path
         }
         expectFailure(w, "IPA_UNSAFE_ENTRY")
@@ -216,9 +287,15 @@ struct InspectArchiveTests {
             let root = dir + "/root"
             try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
             try await layOut([.app(sign: false)], at: root)
-            try FileManager.default.createSymbolicLink(atPath: root + "/Payload/Test.app/link", withDestinationPath: "/etc")
+            try FileManager.default.createSymbolicLink(
+                atPath: root + "/Payload/Test.app/link", withDestinationPath: "/etc")
             let ipa = dir + "/link.ipa"
-            await tool("/usr/bin/ditto", ["-c", "-k", "--norsrc", "--noextattr", "--noqtn", "--noacl", "--keepParent", root + "/Payload", ipa])
+            await tool(
+                "/usr/bin/ditto",
+                [
+                    "-c", "-k", "--norsrc", "--noextattr", "--noqtn", "--noacl", "--keepParent",
+                    root + "/Payload", ipa,
+                ])
             return ipa
         }
         expectFailure(w, "IPA_UNSAFE_ENTRY")
@@ -292,12 +369,17 @@ struct InspectArchiveTests {
         var limits = InspectLimits()
         limits.maxTotalBytes = 1 << 20
         let w = try await inspectIPA(limits: limits) { dir in
-            try rawZip([RawZipEntry("Payload/", mode: 0o040755), RawZipEntry("Payload/Test.app/", mode: 0o040755), liar])
-                .write(to: URL(fileURLWithPath: dir + "/x.ipa"))
+            try rawZip([
+                RawZipEntry("Payload/", mode: 0o040755),
+                RawZipEntry("Payload/Test.app/", mode: 0o040755), liar,
+            ])
+            .write(to: URL(fileURLWithPath: dir + "/x.ipa"))
             return dir + "/x.ipa"
         }
         expectFailure(w, "IPA_TOO_LARGE")
-        #expect(w.runner.calls.first?.executable == "/usr/bin/ditto", "the declared sizes passed the pre-check")
+        #expect(
+            w.runner.calls.first?.executable == "/usr/bin/ditto",
+            "the declared sizes passed the pre-check")
     }
 
     @Test("a missing file, a symlink and a directory are not an IPA")
@@ -307,7 +389,8 @@ struct InspectArchiveTests {
             { (dir: String) -> String in
                 let target = dir + "/real.ipa"
                 try? rawZip([]).write(to: URL(fileURLWithPath: target))
-                try? FileManager.default.createSymbolicLink(atPath: dir + "/link.ipa", withDestinationPath: target)
+                try? FileManager.default.createSymbolicLink(
+                    atPath: dir + "/link.ipa", withDestinationPath: target)
                 return dir + "/link.ipa"
             },
             { (dir: String) -> String in dir },
@@ -320,24 +403,32 @@ struct InspectArchiveTests {
     @Test("no app, and two apps")
     func appCount() async throws {
         var w = try await inspectIPA { dir in
-            try rawZip([RawZipEntry("readme.txt", Array("hi".utf8))]).write(to: URL(fileURLWithPath: dir + "/x.ipa"))
+            try rawZip([RawZipEntry("readme.txt", Array("hi".utf8))]).write(
+                to: URL(fileURLWithPath: dir + "/x.ipa"))
             return dir + "/x.ipa"
         }
         expectFailure(w, "IPA_NO_APP")
-        w = try await inspectIPA { try await makeIPA([.app("One", executable: "One"), .app("Two", executable: "Two")], in: $0) }
+        w = try await inspectIPA {
+            try await makeIPA(
+                [.app("One", executable: "One"), .app("Two", executable: "Two")], in: $0)
+        }
         expectFailure(w, "IPA_MULTIPLE_APPS")
     }
 }
 
 @Suite("inspect: bundle contents")
 struct InspectBundleTests {
-    @Test("an executable name with a path is refused", arguments: ["../Test", "/bin/sh", "a/b", "..", ".", ""])
+    @Test(
+        "an executable name with a path is refused",
+        arguments: ["../Test", "/bin/sh", "a/b", "..", ".", ""])
     func executableName(_ name: String) async throws {
         var app = BundleSpec.app(executable: name, sign: false)
         app.executableName = nil  // the name is refused before any file is looked for
         let w = try await inspectIPA { try await makeIPA([app], in: $0) }
         expectFailure(w, "IPA_EXECUTABLE_INVALID")
-        #expect(!w.runner.calls.contains { $0.executable != "/usr/bin/ditto" }, "no binary tool may run on it")
+        #expect(
+            !w.runner.calls.contains { $0.executable != "/usr/bin/ditto" },
+            "no binary tool may run on it")
     }
 
     @Test("an executable that is not in the bundle")
@@ -391,8 +482,14 @@ struct InspectBundleTests {
 }
 
 /// Runs the real `ditto`, then does what the closure says to the extraction folder.
-private func tampering(_ change: @escaping @Sendable (_ dest: String) -> Void) -> @Sendable () -> RecordingRunner {
-    { RecordingRunner(afterRun: { spec in if spec.executable == "/usr/bin/ditto", let dest = spec.args.last { change(dest) } }) }
+private func tampering(_ change: @escaping @Sendable (_ dest: String) -> Void)
+    -> @Sendable () -> RecordingRunner
+{
+    {
+        RecordingRunner(afterRun: { spec in
+            if spec.executable == "/usr/bin/ditto", let dest = spec.args.last { change(dest) }
+        })
+    }
 }
 
 @Suite("inspect: extracted tree and cleanup")
@@ -401,7 +498,8 @@ struct InspectTreeTests {
     func symlinkAfterExtraction() async throws {
         let w = try await inspectIPA(
             runner: tampering { dest in
-                try? FileManager.default.createSymbolicLink(atPath: dest + "/Payload/Test.app/evil", withDestinationPath: "/etc")
+                try? FileManager.default.createSymbolicLink(
+                    atPath: dest + "/Payload/Test.app/evil", withDestinationPath: "/etc")
             }
         ) { try await makeIPA([.app(sign: false)], in: $0) }
         expectFailure(w, "IPA_UNSAFE_TREE")
@@ -414,7 +512,9 @@ struct InspectTreeTests {
         ) { try await makeIPA([.app(sign: false)], in: $0) }
         expectFailure(w, "IPA_UNSAFE_TREE")
         w = try await inspectIPA(
-            runner: tampering { dest in _ = link(dest + "/Payload/Test.app/Info.plist", dest + "/Payload/Test.app/again") }
+            runner: tampering { dest in
+                _ = link(dest + "/Payload/Test.app/Info.plist", dest + "/Payload/Test.app/again")
+            }
         ) { try await makeIPA([.app(sign: false)], in: $0) }
         expectFailure(w, "IPA_UNSAFE_TREE")
     }
@@ -435,8 +535,11 @@ struct InspectTreeTests {
         struct Flooding: Runner {
             let cancelled: Flag
             func run(_ spec: CommandSpec) async -> RunResult {
-                guard spec.executable == "/usr/bin/ditto", let dest = spec.args.last else { return RunResult() }
-                FileManager.default.createFile(atPath: dest + "/flood", contents: Data(count: 2 << 20))
+                guard spec.executable == "/usr/bin/ditto", let dest = spec.args.last else {
+                    return RunResult()
+                }
+                FileManager.default.createFile(
+                    atPath: dest + "/flood", contents: Data(count: 2 << 20))
                 while !Task.isCancelled { try? await Task.sleep(for: .milliseconds(10)) }
                 cancelled.set()
                 return RunResult(code: nil, signal: SIGTERM)
@@ -446,21 +549,29 @@ struct InspectTreeTests {
         limits.maxTotalBytes = 1 << 20
         limits.monitorInterval = .milliseconds(20)
         let flag = Flag()
-        let w = try await inspectIPA(limits: limits, runner: { RecordingRunner(Flooding(cancelled: flag)) }) {
+        let w = try await inspectIPA(
+            limits: limits, runner: { RecordingRunner(Flooding(cancelled: flag)) }
+        ) {
             try await makeIPA([.app(sign: false)], in: $0)
         }
         expectFailure(w, "IPA_TOO_LARGE")
         #expect(flag.isSet, "the runner must have been cancelled")
     }
 
-    @Test("a scratch folder that cannot be removed is reported on success and next to the error on failure")
+    @Test(
+        "a scratch folder that cannot be removed is reported on success and next to the error on failure"
+    )
     func removalFailureIsReported() async throws {
         // An immutable tmp/ stops the final rmdir of the scratch folder; everything inside it is still removed.
-        let lockTmp = tampering { dest in _ = chflags(parentPath(parentPath(dest)), UInt32(UF_IMMUTABLE)) }
+        let lockTmp = tampering { dest in
+            _ = chflags(parentPath(parentPath(dest)), UInt32(UF_IMMUTABLE))
+        }
         var garbage = BundleSpec.app(sign: false)
         garbage.plist = nil
         garbage.extraFiles = ["Info.plist": Data("<plist><dict>".utf8)]
-        for (spec, code) in [(BundleSpec.app(sign: false), nil), (garbage, "INFO_PLIST_INVALID")] as [(BundleSpec, String?)] {
+        for (spec, code) in [(BundleSpec.app(sign: false), nil), (garbage, "INFO_PLIST_INVALID")]
+            as [(BundleSpec, String?)]
+        {
             let w = try await inspectIPA(runner: lockTmp) { try await makeIPA([spec], in: $0) }
             defer {
                 _ = chflags(w.paths.tmp, 0)
@@ -480,7 +591,8 @@ struct InspectTreeTests {
         let wrapped = IPAInspector.carrying(warning, Odd())
         #expect(wrapped.code == "INTERNAL_ERROR" && !wrapped.message.contains(marker))
         #expect(wrapped.data["warnings"] == [warning])
-        let kept = IPAInspector.carrying(warning, SideloadError("IPA_NO_APP", "x", data: ["warnings": [["code": "A"]]]))
+        let kept = IPAInspector.carrying(
+            warning, SideloadError("IPA_NO_APP", "x", data: ["warnings": [["code": "A"]]]))
         #expect(kept.code == "IPA_NO_APP" && kept.data["warnings"]?.array?.count == 2)
     }
 
@@ -490,7 +602,8 @@ struct InspectTreeTests {
         defer { _ = ScratchDirectory.removeTree(dir) }
         func fresh(_ name: String) throws -> String {
             let path = dir + "/" + name
-            try FileManager.default.createDirectory(atPath: path + "/a", withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                atPath: path + "/a", withIntermediateDirectories: true)
             try Data("x".utf8).write(to: URL(fileURLWithPath: path + "/a/f"))
             return path
         }
@@ -498,8 +611,11 @@ struct InspectTreeTests {
         #expect(try ExtractedTree.verify(root: try fresh("ok"), limits: limits).entries == 2)
 
         let symlinked = try fresh("symlinked")
-        try FileManager.default.createSymbolicLink(atPath: symlinked + "/a/s", withDestinationPath: "/")
-        #expect(throws: SideloadError.self) { try ExtractedTree.verify(root: symlinked, limits: limits) }
+        try FileManager.default.createSymbolicLink(
+            atPath: symlinked + "/a/s", withDestinationPath: "/")
+        #expect(throws: SideloadError.self) {
+            try ExtractedTree.verify(root: symlinked, limits: limits)
+        }
 
         let fifo = try fresh("fifo")
         _ = mkfifo(fifo + "/a/p", 0o600)
@@ -510,27 +626,36 @@ struct InspectTreeTests {
         #expect(throws: SideloadError.self) { try ExtractedTree.verify(root: hard, limits: limits) }
 
         let deep = try fresh("deep")
-        try FileManager.default.createDirectory(atPath: deep + "/a/b/c/d/e", withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            atPath: deep + "/a/b/c/d/e", withIntermediateDirectories: true)
         var shallow = InspectLimits()
         shallow.maxTreeDepth = 3
-        #expect(throws: SideloadError.self) { try ExtractedTree.verify(root: deep, limits: shallow) }
+        #expect(throws: SideloadError.self) {
+            try ExtractedTree.verify(root: deep, limits: shallow)
+        }
 
         var few = InspectLimits()
         few.maxEntries = 0
-        #expect(throws: SideloadError.self) { try ExtractedTree.verify(root: try fresh("many"), limits: few) }
+        #expect(throws: SideloadError.self) {
+            try ExtractedTree.verify(root: try fresh("many"), limits: few)
+        }
     }
 
-    @Test("removal handles unreadable directories and read-only files, and never follows a symlink out")
+    @Test(
+        "removal handles unreadable directories and read-only files, and never follows a symlink out"
+    )
     func removal() throws {
         let outside = try makeTempDir().path
         defer { _ = ScratchDirectory.removeTree(outside) }
         try Data("keep".utf8).write(to: URL(fileURLWithPath: outside + "/precious"))
 
         let tree = try makeTempDir().path
-        try FileManager.default.createDirectory(atPath: tree + "/locked/inner", withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            atPath: tree + "/locked/inner", withIntermediateDirectories: true)
         try Data("x".utf8).write(to: URL(fileURLWithPath: tree + "/locked/inner/ro"))
         chmod(tree + "/locked/inner/ro", 0o400)
-        try FileManager.default.createSymbolicLink(atPath: tree + "/locked/out", withDestinationPath: outside)
+        try FileManager.default.createSymbolicLink(
+            atPath: tree + "/locked/out", withDestinationPath: outside)
         chmod(tree + "/locked/inner", 0o000)
         chmod(tree + "/locked", 0o000)
 
@@ -539,7 +664,9 @@ struct InspectTreeTests {
         #expect(FileManager.default.fileExists(atPath: outside + "/precious"))
     }
 
-    @Test("the registry removes what is registered, refuses new folders after closing, and is idempotent")
+    @Test(
+        "the registry removes what is registered, refuses new folders after closing, and is idempotent"
+    )
     func registry() throws {
         let registry = ScratchRegistry()
         let tmp = try makeTempDir().path
@@ -551,8 +678,12 @@ struct InspectTreeTests {
         registry.removeAllAndClose()
         #expect(!FileManager.default.fileExists(atPath: first.path))
         #expect(first.remove(), "removing again is fine")
-        #expect(throws: SideloadError.self) { try ScratchDirectory.create(under: tmp, registry: registry) }
-        #expect(try FileManager.default.contentsOfDirectory(atPath: tmp).isEmpty, "a refused folder is not left behind")
+        #expect(throws: SideloadError.self) {
+            try ScratchDirectory.create(under: tmp, registry: registry)
+        }
+        #expect(
+            try FileManager.default.contentsOfDirectory(atPath: tmp).isEmpty,
+            "a refused folder is not left behind")
     }
 }
 
@@ -564,16 +695,23 @@ final class Flag: Sendable {
 
 @Suite("inspect: command")
 struct InspectCommandTests {
-    @Test("every subprocess is an Apple tool by absolute path with a timeout; nothing else is touched")
+    @Test(
+        "every subprocess is an Apple tool by absolute path with a timeout; nothing else is touched"
+    )
     func onlyAppleTools() async throws {
         let w = try await inspectIPA { try await makeIPA([.app(), .appex()], in: $0) }
         #expect(w.envelope.ok, "\(w.text)")
-        let allowed: Set<String> = ["/usr/bin/ditto", "/usr/bin/lipo", "/usr/bin/vtool", "/usr/bin/codesign"]
+        let allowed: Set<String> = [
+            "/usr/bin/ditto", "/usr/bin/lipo", "/usr/bin/vtool", "/usr/bin/codesign",
+        ]
         #expect(Set(w.runner.calls.map(\.executable)).isSubset(of: allowed))
         #expect(w.runner.calls.allSatisfy { $0.timeout > .zero && $0.stdin == nil })
         // $SIDELOAD_HOME holds what ensureHome made plus the test's own files: no config, ledger, log or lock.
         let after = (try? FileManager.default.contentsOfDirectory(atPath: w.paths.home)) ?? []
-        #expect(Set(after).isDisjoint(with: ["config.json", "ledger.json", ".op.lock", ".config.lock", ".ledger.lock"]))
+        #expect(
+            Set(after).isDisjoint(with: [
+                "config.json", "ledger.json", ".op.lock", ".config.lock", ".ledger.lock",
+            ]))
     }
 
     @Test("the CLI: usage errors, help, and the built list")

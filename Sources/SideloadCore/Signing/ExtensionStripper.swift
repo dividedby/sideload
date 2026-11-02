@@ -57,9 +57,11 @@ struct ExtensionStripper: Sendable {
         }
 
         // Bundles to read and remove: every *.appex outside the whole-folder roots, then what those roots hold.
-        var targets = Self.appexPaths(in: app, skipping: Set(wholeFolders.map { $0.lowercased() }), limits: limits)
+        var targets = Self.appexPaths(
+            in: app, skipping: Set(wholeFolders.map { $0.lowercased() }), limits: limits)
         for folder in wholeFolders.sorted() {
-            for name in ExtractedTree.children(of: app + "/" + folder) ?? [] where Self.isBundle(app + "/" + folder + "/" + name) {
+            for name in ExtractedTree.children(of: app + "/" + folder) ?? []
+            where Self.isBundle(app + "/" + folder + "/" + name) {
                 targets.append(folder + "/" + name)
             }
         }
@@ -78,7 +80,9 @@ struct ExtensionStripper: Sendable {
         }
 
         // Remove the appexes first (a failed removal is found by the re-walk), then the whole folders, then PlugIns.
-        for relative in Self.appexPaths(in: app, skipping: Set(wholeFolders.map { $0.lowercased() }), limits: limits) {
+        for relative in Self.appexPaths(
+            in: app, skipping: Set(wholeFolders.map { $0.lowercased() }), limits: limits)
+        {
             _ = remove(app + "/" + relative)
         }
         for folder in wholeFolders { _ = remove(app + "/" + folder) }
@@ -90,7 +94,8 @@ struct ExtensionStripper: Sendable {
                 } else {
                     warnings.append(
                         CanaryCommand.warning(
-                            "PLUGINS_NOT_EMPTY", "PlugIns/ holds content that is not an extension; it was kept.",
+                            "PLUGINS_NOT_EMPTY",
+                            "PlugIns/ holds content that is not an extension; it was kept.",
                             "Review the app with `sideload inspect` if the signed app misbehaves."))
                 }
             }
@@ -139,19 +144,27 @@ struct ExtensionStripper: Sendable {
 
     /// A bundle whose Info.plist says it is a watchOS app.
     static func isWatchApp(_ bundle: String) -> Bool {
-        guard let plist = try? IPAInspector.readPlist(bundle + "/Info.plist", role: "bundle", maxBytes: 4 << 20) else {
+        guard
+            let plist = try? IPAInspector.readPlist(
+                bundle + "/Info.plist", role: "bundle", maxBytes: 4 << 20)
+        else {
             return false
         }
-        if (plist["WKWatchKitApp"] as? Bool) == true || (plist["WKApplication"] as? Bool) == true { return true }
+        if (plist["WKWatchKitApp"] as? Bool) == true || (plist["WKApplication"] as? Bool) == true {
+            return true
+        }
         if plist["WKCompanionAppBundleIdentifier"] is String { return true }
-        let platforms = (plist["CFBundleSupportedPlatforms"] as? [Any])?.compactMap { $0 as? String } ?? []
+        let platforms =
+            (plist["CFBundleSupportedPlatforms"] as? [Any])?.compactMap { $0 as? String } ?? []
         return platforms.contains { ["watchos", "watchsimulator"].contains($0.lowercased()) }
     }
 
     // MARK: pieces
 
     /// Relative paths of every `*.appex` under `app`, not looking inside an appex or a root folder named in `skipping`.
-    private static func appexPaths(in app: String, skipping roots: Set<String>, limits: InspectLimits) -> [String] {
+    private static func appexPaths(
+        in app: String, skipping roots: Set<String>, limits: InspectLimits
+    ) -> [String] {
         var found: [String] = []
         var pending = [app]
         var entries = 0
@@ -171,18 +184,25 @@ struct ExtensionStripper: Sendable {
         return found.sorted()
     }
 
-    private func describe(app: String, relative: String, warnings: inout [JSONValue]) async throws -> StrippedBundle {
+    private func describe(app: String, relative: String, warnings: inout [JSONValue]) async throws
+        -> StrippedBundle
+    {
         let path = app + "/" + relative
         var bundleId: String?
         var point: String?
-        if let plist = try? IPAInspector.readPlist(path + "/Info.plist", role: "extension", maxBytes: limits.maxPlistBytes) {
+        if let plist = try? IPAInspector.readPlist(
+            path + "/Info.plist", role: "extension", maxBytes: limits.maxPlistBytes)
+        {
             bundleId = (plist["CFBundleIdentifier"] as? String).map(BinaryTools.cut)
-            point = ((plist["NSExtension"] as? [String: Any])?["NSExtensionPointIdentifier"] as? String).map(BinaryTools.cut)
+            point =
+                ((plist["NSExtension"] as? [String: Any])?["NSExtensionPointIdentifier"] as? String)
+                .map(BinaryTools.cut)
         } else {
             warnings.append(
                 CanaryCommand.warning(
                     "EXTENSION_UNREADABLE", "A removed extension's Info.plist could not be read.",
-                    "It was removed anyway; review the IPA with `sideload inspect` if this matters."))
+                    "It was removed anyway; review the IPA with `sideload inspect` if this matters."
+                ))
         }
         var keys: [String] = []
         var groups: [String] = []
@@ -192,10 +212,14 @@ struct ExtensionStripper: Sendable {
             groups = BinaryTools.appGroups(entitlements)
         case .unsigned: break
         case .unknown(let why):
-            if why.hasSuffix("was interrupted") { throw SideloadError("CANCELLED", "sign was interrupted.", fix: "Re-run the command.") }
+            if why.hasSuffix("was interrupted") {
+                throw SideloadError(
+                    "CANCELLED", "sign was interrupted.", fix: "Re-run the command.")
+            }
         }
         return StrippedBundle(
-            path: BinaryTools.cut(relative), bundleId: bundleId, extensionPoint: point, entitlementKeys: keys, appGroups: groups)
+            path: BinaryTools.cut(relative), bundleId: bundleId, extensionPoint: point,
+            entitlementKeys: keys, appGroups: groups)
     }
 
     private static func relative(_ path: String, to root: String) -> String {
@@ -208,6 +232,10 @@ struct ExtensionStripper: Sendable {
     }
 
     private static func isBundle(_ path: String) -> Bool {
-        isDirectory(path) && { var st = stat(); return lstat(path + "/Info.plist", &st) == 0 }()
+        isDirectory(path)
+            && {
+                var st = stat()
+                return lstat(path + "/Info.plist", &st) == 0
+            }()
     }
 }

@@ -63,7 +63,9 @@ enum SlotState {
     /// One ledger write that is durable when it returns; `point` names it for the crash-injection hook
     /// (`Services.afterDurableWrite`). The legacy fields are migrated first (so a write can never drop a record an older build
     /// left) and projected from the slots afterwards (I8), in the same atomic write.
-    static func write(_ services: Services, point: String, _ body: (inout Ledger) throws -> Void) async throws {
+    static func write(_ services: Services, point: String, _ body: (inout Ledger) throws -> Void)
+        async throws
+    {
         let now = services.clock.now()
         try await services.ledgerStore.update { ledger in
             ledger.slots = SlotRule.reconcile(ledger, now: now)

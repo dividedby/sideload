@@ -30,8 +30,11 @@ struct ASCCredentialsTests {
     func secretIsOpaque() async throws {
         try await withPortalHome { home in
             let creds = try ASCCredentials.load(home.paths)
-            let body = try #require(home.pem.split(separator: "\n").dropFirst().first.map(String.init))
-            for text in [String(describing: creds), String(reflecting: creds), "\(creds.privateKey)"] {
+            let body = try #require(
+                home.pem.split(separator: "\n").dropFirst().first.map(String.init))
+            for text in [
+                String(describing: creds), String(reflecting: creds), "\(creds.privateKey)",
+            ] {
                 #expect(!text.contains(body))
             }
             var dumped = ""
@@ -46,7 +49,8 @@ struct ASCCredentialsTests {
         try await withTestHome { paths, _ in
             #expect(code(paths) == "PORTAL_NOT_CONFIGURED")
             try FileManager.default.createDirectory(
-                atPath: paths.asc, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+                atPath: paths.asc, withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700])
             #expect(code(paths) == "PORTAL_NOT_CONFIGURED", "no key.json")
         }
         try await withPortalHome { home in
@@ -84,16 +88,20 @@ struct ASCCredentialsTests {
         try await withTestHome { paths, _ in
             let real = paths.tmp + "/real-asc"
             try FileManager.default.createDirectory(
-                atPath: real, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+                atPath: real, withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700])
             try FileManager.default.createSymbolicLink(atPath: paths.asc, withDestinationPath: real)
             #expect(code(paths) == "ASC_KEY_PERMISSIONS")
         }
     }
 
-    @Test("the key file name is a bare AuthKey_<id>.p8", arguments: [
-        "../AuthKey_ABCDE12345.p8", "/etc/hosts", "AuthKey_abcde12345.p8", "AuthKey_ABCDE12345.pem", "sub/AuthKey_ABCDE12345.p8",
-        "AuthKey_ABCDE12345.p8 ", "",
-    ])
+    @Test(
+        "the key file name is a bare AuthKey_<id>.p8",
+        arguments: [
+            "../AuthKey_ABCDE12345.p8", "/etc/hosts", "AuthKey_abcde12345.p8",
+            "AuthKey_ABCDE12345.pem", "sub/AuthKey_ABCDE12345.p8",
+            "AuthKey_ABCDE12345.p8 ", "",
+        ])
     func keyFileName(name: String) async throws {
         try await withTestHome { paths, _ in
             try writeAsc(paths, pem: P256.Signing.PrivateKey().pemRepresentation, keyFile: name)

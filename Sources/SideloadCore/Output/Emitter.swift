@@ -5,8 +5,11 @@ import Synchronization
 public enum Output {
     /// Redacts the envelope, then encodes it as one JSON object plus a trailing newline.
     /// Keys are sorted and `/` is not escaped (deterministic output).
-    public static func render(_ envelope: Envelope, redacting literals: [String] = []) throws -> String {
-        let redacted = Redactor(literals: literals, keepsUserPaths: envelope.keepsUserPaths).redact(envelope.json)
+    public static func render(_ envelope: Envelope, redacting literals: [String] = []) throws
+        -> String
+    {
+        let redacted = Redactor(literals: literals, keepsUserPaths: envelope.keepsUserPaths).redact(
+            envelope.json)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return String(decoding: try encoder.encode(redacted), as: UTF8.self) + "\n"
@@ -45,7 +48,10 @@ public final class Emitter: Sendable {
     private let write: Writer
     private let didEmit = Mutex(false)
 
-    public init(redacting literals: [String] = [], write: @escaping Writer = Output.fileDescriptorWriter(STDOUT_FILENO)) {
+    public init(
+        redacting literals: [String] = [],
+        write: @escaping Writer = Output.fileDescriptorWriter(STDOUT_FILENO)
+    ) {
         self.literals = literals
         self.write = write
     }

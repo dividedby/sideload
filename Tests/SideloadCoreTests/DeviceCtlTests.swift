@@ -35,7 +35,8 @@ struct DeviceCtlTests {
         try await withTestHome(config: iphoneConfig()) { paths, store in
             let runner = FakeRunner()
             let ctl = DeviceCtl(runner: runner, store: store)
-            _ = try await ctl.run(["device", "info", "apps"], deviceAlias: "iphone", timeoutSec: 60)
+            _ = try await ctl.run(
+                ["device", "info", "apps"], deviceAlias: "iphone", timeoutSec: 60)
             let spec = try #require(runner.calls.first)
             #expect(spec.executable == "xcrun")
             #expect(spec.args.first == "devicectl")
@@ -74,7 +75,13 @@ struct DeviceCtlTests {
             }
             attempts.append((["device", "info", "apps", "--device=\(savedUdid("9"))"], nil))
             attempts.append((["device", "info", "apps", "--device"], nil))
-            attempts.append((["device", "info", "apps", "--device", savedUdid("1"), "--device", savedUdid("1")], nil))
+            attempts.append(
+                (
+                    [
+                        "device", "info", "apps", "--device", savedUdid("1"), "--device",
+                        savedUdid("1"),
+                    ], nil
+                ))
             attempts.append((["device", "info", "apps"], "nope"))
             for attempt in attempts {
                 do {
@@ -120,16 +127,31 @@ struct DeviceCtlTests {
                     return nil
                 }
             }
-            #expect(await message { _ = try await ctl.run(["list", "devices", "--timeout", "1"]) }?.contains("wrapper") == true)
-            #expect(await message { _ = try await ctl.run(["list", "devices", "--timeout=1"]) }?.contains("wrapper") == true)
-            #expect(await message { _ = try await ctl.run(["list", "devices", "--json-output", "/x"]) }?.contains("wrapper") == true)
             #expect(
-                await message { _ = try await ctl.run(["device", "uninstall", "app"], deviceAlias: "iphone", positional: ["--all"]) }?
-                    .contains("positional") == true)
-            #expect(await message { _ = try await ctl.run(["list"], timeoutSec: 0) }?.contains("timeoutSec") == true)
+                await message { _ = try await ctl.run(["list", "devices", "--timeout", "1"]) }?
+                    .contains("wrapper") == true)
             #expect(
-                await message { _ = try await ctl.run(["x", "--device", savedUdid("1")], deviceAlias: "iphone") }?
-                    .contains("not both") == true)
+                await message { _ = try await ctl.run(["list", "devices", "--timeout=1"]) }?
+                    .contains("wrapper") == true)
+            #expect(
+                await message {
+                    _ = try await ctl.run(["list", "devices", "--json-output", "/x"])
+                }?.contains("wrapper") == true)
+            #expect(
+                await message {
+                    _ = try await ctl.run(
+                        ["device", "uninstall", "app"], deviceAlias: "iphone", positional: ["--all"]
+                    )
+                }?
+                .contains("positional") == true)
+            #expect(
+                await message { _ = try await ctl.run(["list"], timeoutSec: 0) }?.contains(
+                    "timeoutSec") == true)
+            #expect(
+                await message {
+                    _ = try await ctl.run(["x", "--device", savedUdid("1")], deviceAlias: "iphone")
+                }?
+                .contains("not both") == true)
             #expect(runner.calls.isEmpty)
         }
     }
@@ -139,7 +161,9 @@ struct DeviceCtlTests {
         try await withTestHome(config: iphoneConfig()) { _, store in
             let runner = FakeRunner()
             let ctl = DeviceCtl(runner: runner, store: store)
-            _ = try await ctl.run(["device", "uninstall", "app"], deviceAlias: "iphone", positional: ["com.example.app"])
+            _ = try await ctl.run(
+                ["device", "uninstall", "app"], deviceAlias: "iphone",
+                positional: ["com.example.app"])
             let args = try #require(runner.calls.first).args
             #expect(args.last == "com.example.app")
             #expect(args.firstIndex(of: "--json-output")! < args.count - 1)
@@ -153,7 +177,8 @@ struct DeviceCtlTests {
             let runner = FakeRunner { spec in
                 let file = jsonOutputPath(spec.args)
                 seen.withLock { $0 = (file, FileManager.default.fileExists(atPath: file)) }
-                try? Data(#"{"info":{"outcome":"success"}}"#.utf8).write(to: URL(fileURLWithPath: file))
+                try? Data(#"{"info":{"outcome":"success"}}"#.utf8).write(
+                    to: URL(fileURLWithPath: file))
                 chmod(file, 0o644)  // devicectl's own mode; the wrapper tightens it before reading
                 return RunResult(stderr: String(repeating: "e", count: 5000))
             }
@@ -179,7 +204,8 @@ struct DeviceCtlTests {
             #expect(res.code == 1)
 
             let garbage = FakeRunner { spec in
-                try? Data("{not json".utf8).write(to: URL(fileURLWithPath: jsonOutputPath(spec.args)))
+                try? Data("{not json".utf8).write(
+                    to: URL(fileURLWithPath: jsonOutputPath(spec.args)))
                 return RunResult(code: 0)
             }
             let res2 = try await DeviceCtl(runner: garbage, store: store).run(["list", "devices"])

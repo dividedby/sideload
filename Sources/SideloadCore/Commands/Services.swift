@@ -111,17 +111,22 @@ public struct Services: Sendable {
     public var afterDurableWrite: (@Sendable (String) throws -> Void)?
 
     public init(
-        runner: any Runner, fs: any FileSystem, clock: any WallClock, keychain: any KeychainClient, home: Paths,
+        runner: any Runner, fs: any FileSystem, clock: any WallClock, keychain: any KeychainClient,
+        home: Paths,
         log: @escaping @Sendable (String) -> Void = { _ in }, canaryProject: String? = nil,
         localUser: LocalUser = .current,
-        machineNames: @escaping @Sendable () -> (computerName: String, localHostName: String) = { ("", "") },
+        machineNames: @escaping @Sendable () -> (computerName: String, localHostName: String) = {
+            ("", "")
+        },
         profiles: any ProfileSource = UnavailableProfileSource(),
         identityExporter: any IdentityExporter = UnavailableIdentityExporter(),
         secrets: any SecretStore = UnavailableSecretStore(),
         p12Verifier: any P12Verifier = UnavailableP12Verifier(),
         pasteboard: any SecretPasteboard = UnavailableSecretPasteboard(),
         http: any HTTPTransport = DisabledTransport(),
-        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        sleep: @escaping @Sendable (Duration) async throws -> Void = {
+            try await Task.sleep(for: $0)
+        },
         holdSignal: HoldSignal = HoldSignal(), interruptReport: InterruptReport = InterruptReport(),
         postEmit: PostEmit = PostEmit(),
         xcodeProfileDirectories: [String] = [],
@@ -156,17 +161,22 @@ public struct Services: Sendable {
     ) -> Services {
         let home = Paths.resolveHome(environment: environment)
         let clock = SystemClock()
-        let runner = LoggingRunner(PosixSpawnRunner(), log: ProgressLog.makeFileOnly(home: home, clock: clock))
+        let runner = LoggingRunner(
+            PosixSpawnRunner(), log: ProgressLog.makeFileOnly(home: home, clock: clock))
         return Services(
             runner: runner,
             fs: SystemFileSystem(), clock: clock,
-            keychain: SecurityKeychain(), home: home, log: ProgressLog.make(home: home, clock: clock),
+            keychain: SecurityKeychain(), home: home,
+            log: ProgressLog.make(home: home, clock: clock),
             machineNames: LocalUser.systemMachineNames,
             profiles: XcodeManagedProfileSource(
-                runner: runner, directories: XcodeManagedProfileSource.defaultDirectories(homeDirectory: NSHomeDirectory())),
+                runner: runner,
+                directories: XcodeManagedProfileSource.defaultDirectories(
+                    homeDirectory: NSHomeDirectory())),
             identityExporter: SecurityIdentityExporter(), secrets: SecurityKeychainSecretStore(),
             p12Verifier: SecurityP12Verifier(), http: URLSessionTransport(),
-            xcodeProfileDirectories: XcodeManagedProfileSource.defaultDirectories(homeDirectory: NSHomeDirectory()))
+            xcodeProfileDirectories: XcodeManagedProfileSource.defaultDirectories(
+                homeDirectory: NSHomeDirectory()))
     }
 
     public var store: ConfigStore { ConfigStore(paths: home) }

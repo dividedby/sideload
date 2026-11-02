@@ -62,7 +62,8 @@ public struct Paths: Sendable, Equatable {
         homeDirectory: String = NSHomeDirectory()
     ) -> Paths {
         let configured = environment["SIDELOAD_HOME"] ?? ""
-        return Paths(home: resolvePath(configured.isEmpty ? homeDirectory + "/.sideload" : configured))
+        return Paths(
+            home: resolvePath(configured.isEmpty ? homeDirectory + "/.sideload" : configured))
     }
 
     /// Walks up from the nearest existing ancestor looking for a `.git` entry (directory or worktree file).
@@ -100,7 +101,9 @@ public struct Paths: Sendable, Equatable {
             throw SideloadError(
                 "HOME_IN_GIT_WORKTREE",
                 "SIDELOAD_HOME is inside a git work tree; secrets could be committed.",
-                fix: "Set SIDELOAD_HOME to a directory outside any repository (default: ~/.sideload).")
+                fix:
+                    "Set SIDELOAD_HOME to a directory outside any repository (default: ~/.sideload)."
+            )
         }
         for dir in directories {
             try makeDirectories(dir, mode: 0o700)

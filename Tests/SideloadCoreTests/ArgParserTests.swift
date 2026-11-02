@@ -22,7 +22,8 @@ private func usageMessage(_ args: [String]) -> String? {
 struct ArgParserTests {
     @Test("--opt value, --opt=value, flags and positionals in any order")
     func forms() throws {
-        let p = try ArgParser.parse(["save", "--alias", "a", "--match=b c", "--yes", "extra"], spec: spec)
+        let p = try ArgParser.parse(
+            ["save", "--alias", "a", "--match=b c", "--yes", "extra"], spec: spec)
         #expect(p.positionals == ["save", "extra"])
         #expect(p.values == ["alias": "a", "match": "b c"])
         #expect(p.flags == ["yes"])

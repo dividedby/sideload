@@ -10,7 +10,9 @@ public enum StatusState: String, Sendable, Equatable {
     /// `skipped` or any status this version does not know proves nothing, so it is `unknown` (never `ok`); expiry
     /// items can still raise it to `warn` or `critical`.
     public static func worst(canaryStatus: String?, items: [ExpiryItem]) -> StatusState {
-        if items.contains(where: { $0.level == .expired || $0.level == .critical }) { return .critical }
+        if items.contains(where: { $0.level == .expired || $0.level == .critical }) {
+            return .critical
+        }
         if items.contains(where: { $0.level == .warn }) { return .warn }
         if canaryStatus == "blocked" { return .blocked }
         if let canaryStatus { return canaryStatus == "working" ? .ok : .unknown }
@@ -31,7 +33,8 @@ public enum StatusCommand {
 
     public static func run(_ services: Services) -> Envelope {
         let snapshot = gather(services)
-        return .result(command, snapshot.data.merging(["warnings": .array(snapshot.warnings)]) { $1 })
+        return .result(
+            command, snapshot.data.merging(["warnings": .array(snapshot.warnings)]) { $1 })
     }
 
     /// What one read of the local files found: the envelope's fields, and the parts `--notify` needs beyond them.
@@ -59,18 +62,24 @@ public enum StatusCommand {
                 warnings.append(warning(e.code, e.message, e.fix))
             } else {
                 warnings.append(
-                    warning("STATUS_SOURCE_UNREADABLE", "\(source) could not be read.", "Check $SIDELOAD_HOME and re-run."))
+                    warning(
+                        "STATUS_SOURCE_UNREADABLE", "\(source) could not be read.",
+                        "Check $SIDELOAD_HOME and re-run."))
             }
         }
 
         var canary: [String: JSONValue] = [
-            "last": .null, "lastWorking": .null, "firstBlockedAfterWorking": .null, "runs": 0, "skipped": 0,
+            "last": .null, "lastWorking": .null, "firstBlockedAfterWorking": .null, "runs": 0,
+            "skipped": 0,
         ]
         var canaryStatus: String?
         do {
             let summary = CanaryHistory.summarize(try CanaryHistory.read(services.home.canaryLog))
             for key in canary.keys { canary[key] = summary[key] ?? canary[key] }
-            if case .object(let last)? = summary["last"], case .string(let status)? = last["status"] { canaryStatus = status }
+            if case .object(let last)? = summary["last"], case .string(let status)? = last["status"]
+            {
+                canaryStatus = status
+            }
         } catch {
             warn(error, source: "canary.jsonl")
         }
@@ -99,7 +108,8 @@ public enum StatusCommand {
         do {
             let config = try services.store.load()
             loadedConfig = config
-            slotDevices = Self.slotDevices(config: config, ledger: ledgerRead, readable: ledgerReadable, now: now)
+            slotDevices = Self.slotDevices(
+                config: config, ledger: ledgerRead, readable: ledgerReadable, now: now)
             apps = config.apps.keys.sorted().map { .string($0) }
             // A device without IDs is its own warning; the apps above still count.
             do {
@@ -119,7 +129,8 @@ public enum StatusCommand {
             warn(error, source: "config.json")
         }
 
-        let appIdsLast7Days = JSONValue.number(Double(FreeAppIdBudget.live(ledgerRead.freeAppIds, now: now).count))
+        let appIdsLast7Days = JSONValue.number(
+            Double(FreeAppIdBudget.live(ledgerRead.freeAppIds, now: now).count))
         // The slots, migrated in memory (status never writes): `lent` is the projection of the unified records.
         let projected = SlotRule.migrated(ledgerRead, now: now)
         let lent: [JSONValue] = projected.lent.sorted { $0.device < $1.device }.map { entry in
@@ -131,12 +142,14 @@ public enum StatusCommand {
                 "holds": .bool(SlotPhase(entry).holds),
             ]
         }
-        for entry in projected.lent.sorted(by: { $0.device < $1.device }) where SlotPhase(entry).pending {
+        for entry in projected.lent.sorted(by: { $0.device < $1.device })
+        where SlotPhase(entry).pending {
             warnings.append(
                 warning(
                     "SLOT_STATE_PENDING",
                     "The slot on device \"\(printableAlias(entry.device))\" is \(entry.state): an uninstall or install may or may not have finished, so the slot is neither free nor held.",
-                    "`sideload slot lend --device \(printableAlias(entry.device)) --to lab` or `sideload slot return --device \(printableAlias(entry.device))` settles it with a fresh device snapshot."))
+                    "`sideload slot lend --device \(printableAlias(entry.device)) --to lab` or `sideload slot return --device \(printableAlias(entry.device))` settles it with a fresh device snapshot."
+                ))
         }
 
         // Free installs: only with both the ledger and the config read (the config says which devices are still saved).
@@ -151,13 +164,18 @@ public enum StatusCommand {
             let present = ExpiryItems.presentInstalls(projected, devices: saved)
             presentFound = present
             installs = .array(
-                present.map { Self.installRow($0, autoRefresh: config.devices[$0.device]?.autoRefresh ?? false, now: now) })
+                present.map {
+                    Self.installRow(
+                        $0, autoRefresh: config.devices[$0.device]?.autoRefresh ?? false, now: now)
+                })
             for install in present {
                 if let w = Self.expiryWarning(install, now: now) { warnings.append(w) }
             }
-            let pending = PendingRestores.find(services, config: config, ledger: ledgerRead, now: now)
+            let pending = PendingRestores.find(
+                services, config: config, ledger: ledgerRead, now: now)
             pendingFound = pending
-            pendingRestores = .array(pending.map { ["device": .string($0.device), "app": .string($0.app)] })
+            pendingRestores = .array(
+                pending.map { ["device": .string($0.device), "app": .string($0.app)] })
             for entry in pending {
                 let e = PendingRestores.warning(entry)
                 warnings.append(warning(e.code, e.message, e.fix))
@@ -180,7 +198,8 @@ public enum StatusCommand {
             "pendingRestores": pendingRestores,
         ]
         return Snapshot(
-            data: data, warnings: warnings, items: items, pending: pendingFound, installs: presentFound, config: loadedConfig,
+            data: data, warnings: warnings, items: items, pending: pendingFound,
+            installs: presentFound, config: loadedConfig,
             complete: ledgerReadable && loadedConfig != nil)
     }
 
@@ -192,27 +211,36 @@ public enum StatusCommand {
     /// any record has an operation that is not settled; `retryAfter` is the seconds until the last open window on the device
     /// ends (null when none is open). With the ledger unreadable (`readable` false) or the stored reserve out of range, nothing is known about the slots:
     /// `unknown` is true and `used`, `free`, `apps`, `lent`, `pending` and `retryAfter` are null, never a guessed free count.
-    static func slotDevices(config: Config, ledger: Ledger, readable: Bool = true, now: Date) -> [JSONValue] {
+    static func slotDevices(config: Config, ledger: Ledger, readable: Bool = true, now: Date)
+        -> [JSONValue]
+    {
         config.devices.keys.sorted().map { alias in
             // An out-of-range stored reserve (a hand-edited config) is `CONFIG_INVALID` for every slot command; here it
             // leaves the row unknown, never a free count computed from a guessed reserve.
             let reserved = config.devices[alias]?.freeSlotsReserved
             guard readable, let reserved else {
                 return [
-                    "alias": .string(alias), "limit": .number(Double(FreeSlots.limit)), "used": .null, "free": .null,
-                    "reserved": reserved.map { .number(Double($0)) } ?? .null, "apps": .null, "lent": .null, "pending": .null,
+                    "alias": .string(alias), "limit": .number(Double(FreeSlots.limit)),
+                    "used": .null, "free": .null,
+                    "reserved": reserved.map { .number(Double($0)) } ?? .null, "apps": .null,
+                    "lent": .null, "pending": .null,
                     "retryAfter": .null, "unknown": true,
                 ]
             }
             let view = SlotRule.view(ledger, alias: alias, now: now)
             let used = view.used + reserved
             let lent: JSONValue =
-                view.app.map { ["app": .string($0), "state": .string(view.state.rawValue)] } ?? .null
+                view.app.map { ["app": .string($0), "state": .string(view.state.rawValue)] }
+                ?? .null
             return [
-                "alias": .string(alias), "limit": .number(Double(FreeSlots.limit)), "used": .number(Double(used)),
-                "free": .number(Double(max(0, FreeSlots.limit - used))), "reserved": .number(Double(reserved)),
-                "apps": .array(view.apps.map { .string($0) }), "lent": lent, "pending": .bool(view.pending),
-                "retryAfter": view.retryAfter.map { .number(Double($0)) } ?? .null, "unknown": false,
+                "alias": .string(alias), "limit": .number(Double(FreeSlots.limit)),
+                "used": .number(Double(used)),
+                "free": .number(Double(max(0, FreeSlots.limit - used))),
+                "reserved": .number(Double(reserved)),
+                "apps": .array(view.apps.map { .string($0) }), "lent": lent,
+                "pending": .bool(view.pending),
+                "retryAfter": view.retryAfter.map { .number(Double($0)) } ?? .null,
+                "unknown": false,
             ]
         }
     }
@@ -222,11 +250,14 @@ public enum StatusCommand {
     static func installRow(_ install: LedgerInstall, autoRefresh: Bool, now: Date) -> JSONValue {
         let (days, level) = FreeInstallExpiry.assess(expires: install.profileExpires, now: now)
         return [
-            "id": .string(install.id), "device": .string(install.device), "app": .string(install.app),
-            "notAfter": .string(LedgerDates.string(install.profileExpires)), "daysLeft": .number(Double(days)),
+            "id": .string(install.id), "device": .string(install.device),
+            "app": .string(install.app),
+            "notAfter": .string(LedgerDates.string(install.profileExpires)),
+            "daysLeft": .number(Double(days)),
             "level": .string(level.rawValue), "autoRefresh": .bool(autoRefresh),
             "lastResult": install.refresh.lastResult.map(JSONValue.string) ?? .null,
-            "nextEligible": install.refresh.nextEligible.map { .string(LedgerDates.string($0)) } ?? .null,
+            "nextEligible": install.refresh.nextEligible.map { .string(LedgerDates.string($0)) }
+                ?? .null,
             "suspended": .bool(install.refresh.suspended),
         ]
     }
@@ -242,17 +273,23 @@ public enum StatusCommand {
             return nil
         case .expired:
             return warning(
-                "INSTALL_EXPIRED", "The signing of \(install.app) on device \"\(device)\" has expired, so the app no longer opens.",
+                "INSTALL_EXPIRED",
+                "The signing of \(install.app) on device \"\(device)\" has expired, so the app no longer opens.",
                 fix)
         case .warn, .critical:
             let left = days < 1 ? "less than a day" : days == 1 ? "1 day" : "\(days) days"
             return warning(
-                "INSTALL_EXPIRING", "The signing of \(install.app) on device \"\(device)\" ends in \(left) (\(level.rawValue)).", fix)
+                "INSTALL_EXPIRING",
+                "The signing of \(install.app) on device \"\(device)\" ends in \(left) (\(level.rawValue)).",
+                fix)
         }
     }
 
     private static func warning(_ code: String, _ message: String, _ fix: String?) -> JSONValue {
-        ["code": .string(code), "message": .string(message), "fix": fix.map(JSONValue.string) ?? .null]
+        [
+            "code": .string(code), "message": .string(message),
+            "fix": fix.map(JSONValue.string) ?? .null,
+        ]
     }
 
     private static func tail(_ id: String?) -> JSONValue {

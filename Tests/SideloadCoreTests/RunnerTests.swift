@@ -10,7 +10,8 @@ private func spec(
     cwd: String? = nil, max: Int = CommandSpec.defaultMaxOutputBytes
 ) -> CommandSpec {
     CommandSpec(
-        executable: fixture(script), args: args, timeout: timeout, stdin: stdin, cwd: cwd, maxOutputBytes: max)
+        executable: fixture(script), args: args, timeout: timeout, stdin: stdin, cwd: cwd,
+        maxOutputBytes: max)
 }
 
 @Suite("process runner")
@@ -47,7 +48,9 @@ struct RunnerTests {
     @Test("CommandSpec carries timeout, stdin and defaults through to the runner")
     func specPassesThrough() async {
         let fake = FakeRunner(results: [RunResult(code: 0, stdout: "ok")])
-        let s = CommandSpec(executable: "/usr/bin/openssl", args: ["x509"], timeout: .milliseconds(99), stdin: Data("PEM".utf8))
+        let s = CommandSpec(
+            executable: "/usr/bin/openssl", args: ["x509"], timeout: .milliseconds(99),
+            stdin: Data("PEM".utf8))
         let r = await fake.run(s)
         #expect(r.stdout == "ok")
         #expect(fake.calls == [s])
@@ -87,13 +90,17 @@ struct RunnerTests {
         #expect(r.spawnError == nil && !r.timedOut && !r.overflow)
     }
 
-    @Test("spawn failures are results: ENOENT for a missing path or PATH name, EACCES for a non-executable file")
+    @Test(
+        "spawn failures are results: ENOENT for a missing path or PATH name, EACCES for a non-executable file"
+    )
     func spawnErrors() async throws {
         let h = Harness()
-        let missing = await h.run(CommandSpec(executable: "/nonexistent/sideload-tool", timeout: .seconds(5)))
+        let missing = await h.run(
+            CommandSpec(executable: "/nonexistent/sideload-tool", timeout: .seconds(5)))
         #expect(missing.spawnError == "ENOENT")
         #expect(missing.code == nil)
-        let notOnPath = await h.run(CommandSpec(executable: "sideload-no-such-tool-xyz", timeout: .seconds(5)))
+        let notOnPath = await h.run(
+            CommandSpec(executable: "sideload-no-such-tool-xyz", timeout: .seconds(5)))
         #expect(notOnPath.spawnError == "ENOENT")
 
         let dir = try makeTempDir()
@@ -173,7 +180,9 @@ struct RunnerTests {
         #expect(h.log.signals == [SIGTERM, SIGKILL])
         #expect(h.log.groups.count == 1)
         let toTerm = try #require(h.log.sent(SIGTERM)) - (try #require(h.spawned.at))
-        #expect(toTerm >= timeout && toTerm < timeout + runnerSlack, "SIGTERM at the timeout, took \(toTerm)")
+        #expect(
+            toTerm >= timeout && toTerm < timeout + runnerSlack,
+            "SIGTERM at the timeout, took \(toTerm)")
     }
 
     @Test("sends no signals when the child finishes in time")
@@ -194,10 +203,12 @@ struct RunnerTests {
         let pidFile = dir.appendingPathComponent("pid").path
         let r = await Harness().run(spec("grandchild.sh", [pidFile], timeout: .seconds(1)))
         #expect(r.timedOut)
-        let text = try String(contentsOfFile: pidFile, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = try String(contentsOfFile: pidFile, encoding: .utf8).trimmingCharacters(
+            in: .whitespacesAndNewlines)
         let pid = try #require(Int32(text))
         #expect(pid > 1)
-        #expect(await eventually(timeout: .seconds(5)) { !isAlive(pid) }, "grandchild \(pid) survived")
+        #expect(
+            await eventually(timeout: .seconds(5)) { !isAlive(pid) }, "grandchild \(pid) survived")
     }
 
     @Test("timeout: a child that ignores SIGTERM is SIGKILLed after the grace period")
@@ -217,12 +228,17 @@ struct RunnerTests {
         let term = try #require(h.log.sent(SIGTERM))
         let toTerm = term - (try #require(h.spawned.at))
         let toKill = try #require(h.log.sent(SIGKILL)) - term
-        #expect(toTerm >= timeout && toTerm < timeout + runnerSlack, "SIGTERM at the timeout, took \(toTerm)")
+        #expect(
+            toTerm >= timeout && toTerm < timeout + runnerSlack,
+            "SIGTERM at the timeout, took \(toTerm)")
         #expect(toKill >= grace, "SIGKILL must wait for the grace period")
-        #expect(toKill < grace + runnerSlack, "SIGKILL right after the grace period, took \(toKill)")
+        #expect(
+            toKill < grace + runnerSlack, "SIGKILL right after the grace period, took \(toKill)")
     }
 
-    @Test("a child that cannot be reaped after SIGKILL: the run still returns, status unknown, registry clean")
+    @Test(
+        "a child that cannot be reaped after SIGKILL: the run still returns, status unknown, registry clean"
+    )
     func unreapableChildDoesNotHangTheRun() async throws {
         let seen = Mutex<(pid: pid_t, at: ContinuousClock.Instant?)>((0, nil))
         let children = LiveChildren()
@@ -295,14 +311,19 @@ struct RunnerTests {
         let term = try #require(h.log.sent(SIGTERM))
         let toTerm = term - (try #require(h.spawned.at))
         let toKill = try #require(h.log.sent(SIGKILL)) - term
-        #expect(toTerm < runnerSlack, "the cap hit soon after the spawn, long before the timeout; took \(toTerm)")
+        #expect(
+            toTerm < runnerSlack,
+            "the cap hit soon after the spawn, long before the timeout; took \(toTerm)")
         #expect(toKill >= grace, "SIGKILL must wait for the grace period")
-        #expect(toKill < grace + runnerSlack, "SIGKILL right after the grace period, took \(toKill)")
+        #expect(
+            toKill < grace + runnerSlack, "SIGKILL right after the grace period, took \(toKill)")
     }
 
     // MARK: Cancellation
 
-    @Test("cancellation escalates immediately: SIGTERM now, final group SIGKILL, long before the timeout")
+    @Test(
+        "cancellation escalates immediately: SIGTERM now, final group SIGKILL, long before the timeout"
+    )
     func cancellation() async throws {
         let h = Harness()
         let task = Task { await h.runner.run(spec("sleep.sh", timeout: .seconds(60))) }
@@ -311,7 +332,8 @@ struct RunnerTests {
         task.cancel()
         let r = await task.value
         let toTerm = try #require(h.log.sent(SIGTERM)) - cancelled
-        #expect(toTerm < runnerSlack, "SIGTERM on cancel, long before the 60 s timeout; took \(toTerm)")
+        #expect(
+            toTerm < runnerSlack, "SIGTERM on cancel, long before the 60 s timeout; took \(toTerm)")
         #expect(r.signal == SIGTERM)
         #expect(!r.timedOut && !r.overflow)
         #expect(h.log.signals == [SIGTERM, SIGKILL])
@@ -325,8 +347,12 @@ struct RunnerTests {
         let ready = dir.appendingPathComponent("ready").path
         let grace: Duration = .milliseconds(300)
         let h = Harness(grace: grace)
-        let task = Task { await h.runner.run(spec("ignore-term.sh", [ready], timeout: .seconds(60))) }
-        #expect(await eventually { FileManager.default.fileExists(atPath: ready) }, "fixture never started")
+        let task = Task {
+            await h.runner.run(spec("ignore-term.sh", [ready], timeout: .seconds(60)))
+        }
+        #expect(
+            await eventually { FileManager.default.fileExists(atPath: ready) },
+            "fixture never started")
         let cancelled = ContinuousClock.now
         task.cancel()
         let r = await task.value
@@ -335,9 +361,11 @@ struct RunnerTests {
         let term = try #require(h.log.sent(SIGTERM))
         let toTerm = term - cancelled
         let toKill = try #require(h.log.sent(SIGKILL)) - term
-        #expect(toTerm < runnerSlack, "SIGTERM on cancel, long before the 60 s timeout; took \(toTerm)")
+        #expect(
+            toTerm < runnerSlack, "SIGTERM on cancel, long before the 60 s timeout; took \(toTerm)")
         #expect(toKill >= grace, "SIGKILL must wait for the grace period")
-        #expect(toKill < grace + runnerSlack, "SIGKILL right after the grace period, took \(toKill)")
+        #expect(
+            toKill < grace + runnerSlack, "SIGKILL right after the grace period, took \(toKill)")
         #expect(h.children.isEmpty)
     }
 
@@ -362,7 +390,8 @@ struct RunnerTests {
             func runner(failingAt index: Int) -> PosixSpawnRunner {
                 let calls = Mutex(0)
                 return PosixSpawnRunner(
-                    children: LiveChildren(), grace: .milliseconds(100), signalGroup: { killpg($0, $1) },
+                    children: LiveChildren(), grace: .milliseconds(100),
+                    signalGroup: { killpg($0, $1) },
                     pipeFactory: {
                         let n = calls.withLock { c in
                             defer { c += 1 }
@@ -411,7 +440,8 @@ struct RunnerTests {
         #expect(h.log.signals.isEmpty)
     }
 
-    @Test("an interrupt waits for a spawn that is in flight, and that child is killed, not orphaned")
+    @Test(
+        "an interrupt waits for a spawn that is in flight, and that child is killed, not orphaned")
     func interruptWaitsForInFlightSpawn() async {
         let entered = DispatchSemaphore(value: 0)
         let release = DispatchSemaphore(value: 0)
@@ -420,7 +450,9 @@ struct RunnerTests {
             release.wait()
         })
         let task = Task { await h.runner.run(spec("sleep.sh", timeout: .seconds(60))) }
-        #expect(await eventually { entered.wait(timeout: .now()) == .success }, "spawn never reached the hook")
+        #expect(
+            await eventually { entered.wait(timeout: .now()) == .success },
+            "spawn never reached the hook")
 
         let returned = Mutex(false)
         let children = h.children
@@ -456,7 +488,9 @@ struct RunnerTests {
         await #expect(processExitsWith: .success) {
             close(0)
             let r = await PosixSpawnRunner(children: LiveChildren()).run(
-                CommandSpec(executable: fixture("cat.sh"), timeout: .seconds(10), stdin: Data("hello".utf8)))
+                CommandSpec(
+                    executable: fixture("cat.sh"), timeout: .seconds(10), stdin: Data("hello".utf8))
+            )
             #expect(r.code == 0)
             #expect(r.stdout == "hello")
         }

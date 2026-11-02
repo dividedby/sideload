@@ -34,25 +34,32 @@ enum EvidenceSchema {
 
     /// The verifier's own list of Apple error domains accepted whole, even with a short subject token inside.
     static let knownDomains: Set<String> = [
-        "com.apple.dt.CoreDeviceError", "com.apple.dt.MobileDeviceErrorDomain", "IXUserPresentableErrorDomain",
+        "com.apple.dt.CoreDeviceError", "com.apple.dt.MobileDeviceErrorDomain",
+        "IXUserPresentableErrorDomain",
         "MIInstallerErrorDomain",
     ]
 
     static let fields: [String: Shape] = [
-        "schema": .constInt(2), "generatedAt": .pattern(iso), "appleCase": .pattern(#"[0-9]{6,20}"#),
-        "team": .pattern(team), "bundleId": .pattern(#"(?=.{1,200}$)[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9-]+)*"#),
+        "schema": .constInt(2), "generatedAt": .pattern(iso),
+        "appleCase": .pattern(#"[0-9]{6,20}"#),
+        "team": .pattern(team),
+        "bundleId": .pattern(#"(?=.{1,200}$)[A-Za-z][A-Za-z0-9-]*(\.[A-Za-z0-9-]+)*"#),
         "run": .object, "run.status": .pattern("working|blocked|error"), "run.code": .pattern(code),
         "run.reason": .freeText, "run.guard": .pattern(#"skipped|passed|failed:[A-Z_]{0,32}"#),
         "run.durationMs": .int,
-        "environment": .object, "environment.macos": .object, "environment.macos.version": .pattern(version),
-        "environment.macos.build": .pattern("[0-9A-Za-z]{2,12}"), "environment.xcode": .pattern(xcode),
+        "environment": .object, "environment.macos": .object,
+        "environment.macos.version": .pattern(version),
+        "environment.macos.build": .pattern("[0-9A-Za-z]{2,12}"),
+        "environment.xcode": .pattern(xcode),
         "environment.ios": .object, "environment.ios.version": .pattern(version),
         "environment.ios.build": .pattern("[0-9A-Za-z]{2,12}"),
         "keychainCertificate": .object, "keychainCertificate.ou": .pattern(team),
-        "keychainCertificate.notBefore": .pattern(iso), "keychainCertificate.notAfter": .pattern(iso),
+        "keychainCertificate.notBefore": .pattern(iso),
+        "keychainCertificate.notAfter": .pattern(iso),
         "keychainCertificate.certFp": .pattern("[0-9a-f]{8}"),
         "profile": .object, "profile.team": .pattern(team), "profile.createdAt": .pattern(iso),
-        "profile.expiresAt": .pattern(iso), "profile.deviceCount": .int, "profile.deviceIncluded": .bool,
+        "profile.expiresAt": .pattern(iso), "profile.deviceCount": .int,
+        "profile.deviceIncluded": .bool,
         "profile.deviceTail4": .pattern(tail), "profile.signingCertInProfile": .bool,
         "codesign": .object, "codesign.teamIdentifier": .pattern(team),
         "install": .object, "install.classification": .pattern(code), "install.exitCode": .int,
@@ -62,7 +69,8 @@ enum EvidenceSchema {
         "install.errorChain[].domain": .knownOrShapedFree(
             known: knownDomains, pattern: #"(?=.{1,96}$)[A-Za-z][A-Za-z0-9]*(\.[A-Za-z0-9]+)*"#),
         "install.errorChain[].code": .int, "install.errorChain[].codeHex": .pattern(hex32),
-        "install.errorChain[].description": .freeText, "install.errorChain[].failureReason": .freeText,
+        "install.errorChain[].description": .freeText,
+        "install.errorChain[].failureReason": .freeText,
         "install.errorChain[].recoverySuggestion": .freeText,
         "install.errorChain[].legacyErrorString": .shapedFree("[A-Za-z][A-Za-z0-9]{0,63}"),
         "install.errorChain[].libMISErrorNumber": .pattern("-?[0-9]{1,16}"),
@@ -85,25 +93,34 @@ enum EvidenceSchema {
     /// One line of `logs/canary.jsonl`.
     static let logFields: [String: Shape] = [
         "ts": .pattern(iso), "status": .pattern("working|blocked|error"), "code": .pattern(code),
-        "device": .pattern(tail), "xcodeVersion": .pattern(xcode), "guard": .pattern(#"skipped|passed|failed:[A-Z_]{0,32}"#),
+        "device": .pattern(tail), "xcodeVersion": .pattern(xcode),
+        "guard": .pattern(#"skipped|passed|failed:[A-Z_]{0,32}"#),
         "durationMs": .int, "macosVersion": .pattern(version), "iosVersion": .pattern(version),
         "certFp": .pattern("[0-9a-f]{8}"), "certNotAfter": .pattern(#"\d{4}-\d{2}-\d{2}"#),
     ]
 }
 
 enum EvidenceVerifier {
-    private static let forbiddenInText: Set<Character> = ["%", "+", "@", "/", "\\", "_", "<", ">", "#", "=", "&", "?"]
+    private static let forbiddenInText: Set<Character> = [
+        "%", "+", "@", "/", "\\", "_", "<", ">", "#", "=", "&", "?",
+    ]
 
     fileprivate static func matches(_ pattern: String, _ s: String) -> Bool {
-        guard let re = try? NSRegularExpression(pattern: "^(?:" + pattern + ")$") else { return false }
-        return re.firstMatch(in: s, range: NSRange(location: 0, length: (s as NSString).length)) != nil
+        guard let re = try? NSRegularExpression(pattern: "^(?:" + pattern + ")$") else {
+            return false
+        }
+        return re.firstMatch(in: s, range: NSRange(location: 0, length: (s as NSString).length))
+            != nil
     }
 
     // MARK: A. the closed schema
 
     /// Labels of every schema violation: an unknown key, a wrong type, or a value outside its shape. For free-text
     /// paths this also runs check B.
-    static func schemaHits(_ tree: JSONValue, fields: [String: EvidenceSchema.Shape], tokens: [String], bundleId: String) -> [String] {
+    static func schemaHits(
+        _ tree: JSONValue, fields: [String: EvidenceSchema.Shape], tokens: [String],
+        bundleId: String
+    ) -> [String] {
         var found: [String] = []
         func add(_ label: String) { if !found.contains(label) { found.append(label) } }
 
@@ -131,11 +148,15 @@ enum EvidenceVerifier {
                 if !freeTextOK(s, tokens: tokens, bundleId: bundleId) { add("free-text") }
             case (.shapedFree(let p), .string(let s)):
                 if !matches(p, s) { add("wrong-shape") }
-                if !freeTextOK(s, tokens: tokens, bundleId: bundleId, everyToken: true) { add("free-text") }
+                if !freeTextOK(s, tokens: tokens, bundleId: bundleId, everyToken: true) {
+                    add("free-text")
+                }
             case (.knownOrShapedFree(let known, let p), .string(let s)):
                 if !known.contains(s) {
                     if !matches(p, s) { add("wrong-shape") }
-                    if !freeTextOK(s, tokens: tokens, bundleId: bundleId, everyToken: true) { add("free-text") }
+                    if !freeTextOK(s, tokens: tokens, bundleId: bundleId, everyToken: true) {
+                        add("free-text")
+                    }
                 }
             default:
                 add("wrong-type")
@@ -153,18 +174,27 @@ enum EvidenceVerifier {
     /// aside, no subject token of four or more characters inside the letters and digits run together, and no
     /// shorter token as a whole word. `everyToken` (for identifiers kept without a vocabulary) matches a token of any
     /// length anywhere in the letters and digits run together.
-    private static func freeTextOK(_ text: String, tokens: [String], bundleId: String, everyToken: Bool = false) -> Bool {
+    private static func freeTextOK(
+        _ text: String, tokens: [String], bundleId: String, everyToken: Bool = false
+    ) -> Bool {
         for scalar in text.unicodeScalars {
             if scalar == "\u{201C}" || scalar == "\u{201D}" { continue }
-            guard scalar.value >= 0x20, scalar.value <= 0x7E, !forbiddenInText.contains(Character(scalar)) else { return false }
+            guard scalar.value >= 0x20, scalar.value <= 0x7E,
+                !forbiddenInText.contains(Character(scalar))
+            else { return false }
         }
         var rest = text
         if !bundleId.isEmpty { rest = rest.replacingOccurrences(of: bundleId, with: " ") }
         for open in ["\u{201C}", "\""] {
-            for close in ["\u{201D}", "\""] { rest = rest.replacingOccurrences(of: open + "Canary" + close, with: " ") }
+            for close in ["\u{201D}", "\""] {
+                rest = rest.replacingOccurrences(of: open + "Canary" + close, with: " ")
+            }
         }
         let lower = rest.lowercased()
-        let squashed = String(lower.unicodeScalars.filter { ($0.value >= 0x61 && $0.value <= 0x7A) || ($0.value >= 0x30 && $0.value <= 0x39) }.map(Character.init))
+        let squashed = String(
+            lower.unicodeScalars.filter {
+                ($0.value >= 0x61 && $0.value <= 0x7A) || ($0.value >= 0x30 && $0.value <= 0x39)
+            }.map(Character.init))
         var runs: [String] = []
         var current = ""
         for ch in lower + " " {
@@ -193,7 +223,9 @@ enum EvidenceVerifier {
         func add(_ label: String) { if !found.contains(label) { found.append(label) } }
         if body.contains("@") { add("at-sign") }
         if body.lowercased().contains("/users") { add("users-path") }
-        var run = 0, hasDigit = false, hasLetter = false
+        var run = 0
+        var hasDigit = false
+        var hasLetter = false
         for scalar in Array(body.unicodeScalars) + [" "] {
             let v = scalar.value
             let digit = v >= 0x30 && v <= 0x39
@@ -211,16 +243,23 @@ enum EvidenceVerifier {
         }
         let squashed = body.lowercased().replacingOccurrences(of: "-", with: "")
         for id in ids where id.count >= 8 {
-            if squashed.contains(id.lowercased().replacingOccurrences(of: "-", with: "")) { add("device-id") }
+            if squashed.contains(id.lowercased().replacingOccurrences(of: "-", with: "")) {
+                add("device-id")
+            }
         }
         return found
     }
 
     /// `bodies` are the rendered files; `tokens` and `ids` come from the run, as plain strings.
-    static func hits(tree: JSONValue, bodies: [String], tokens: [String], ids: [String], bundleId: String) -> [String] {
-        var found = schemaHits(tree, fields: EvidenceSchema.fields, tokens: tokens, bundleId: bundleId)
+    static func hits(
+        tree: JSONValue, bodies: [String], tokens: [String], ids: [String], bundleId: String
+    ) -> [String] {
+        var found = schemaHits(
+            tree, fields: EvidenceSchema.fields, tokens: tokens, bundleId: bundleId)
         for body in bodies {
-            for label in bodyHits(body, ids: ids) where !found.contains(label) { found.append(label) }
+            for label in bodyHits(body, ids: ids) where !found.contains(label) {
+                found.append(label)
+            }
         }
         return found
     }

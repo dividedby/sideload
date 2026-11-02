@@ -1,2 +1,3 @@
 #!/bin/sh
-echo "$$"; /bin/ps -o pgid= -p $$
+echo "$$"
+/bin/ps -o pgid= -p $$

@@ -18,14 +18,17 @@ func canaryConfig(_ edit: (inout Config) -> Void = { _ in }) -> Config {
 }
 
 func installFixture(_ name: String) throws -> JSONValue {
-    try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: URL(fileURLWithPath: fixture(name))))
+    try JSONDecoder().decode(
+        JSONValue.self, from: Data(contentsOf: URL(fileURLWithPath: fixture(name))))
 }
 
 extension JSONValue {
     /// A copy with the value at `path` replaced (intermediate objects must exist).
     func setting(_ path: [String], to value: JSONValue) -> JSONValue {
         guard case .object(var fields) = self, let head = path.first else { return value }
-        fields[head] = path.count == 1 ? value : (fields[head] ?? .object([:])).setting(Array(path.dropFirst()), to: value)
+        fields[head] =
+            path.count == 1
+            ? value : (fields[head] ?? .object([:])).setting(Array(path.dropFirst()), to: value)
         return .object(fields)
     }
 }
@@ -39,13 +42,16 @@ struct InstallScript: Sendable {
     /// The canary lands on the device even though the install did not report success.
     var installsAnyway = false
 
-    static func success() throws -> InstallScript { InstallScript(payload: try installFixture("install-success.json")) }
+    static func success() throws -> InstallScript {
+        InstallScript(payload: try installFixture("install-success.json"))
+    }
 
     static func failure(_ fixtureName: String) throws -> InstallScript {
         InstallScript(code: 1, payload: try installFixture(fixtureName))
     }
 
-    static let timeout = InstallScript(code: nil, payload: nil, timedOut: true, installsAnyway: true)
+    static let timeout = InstallScript(
+        code: nil, payload: nil, timedOut: true, installsAnyway: true)
 }
 
 struct CanaryScenario: Sendable {
@@ -121,7 +127,8 @@ final class CanaryWorld: Sendable {
         self.paths = paths
         let list = deviceListJSON(
             deviceEntryJSON(
-                name: s.deviceName, udid: savedUdid("1"), coreId: savedCoreId("1"), hostnames: s.hostnames,
+                name: s.deviceName, udid: savedUdid("1"), coreId: savedCoreId("1"),
+                hostnames: s.hostnames,
                 osVersion: s.iosVersion, osBuild: s.iosBuild))
         let runner = FakeRunner { spec in
             Self.respond(to: spec, scenario: s, install: install, list: list, box: box)
@@ -129,7 +136,8 @@ final class CanaryWorld: Sendable {
         self.runner = runner
         let keychain = FakeKeychain([try keychainCert(s.free ? TestCerts.free : TestCerts.paid)])
         services = Services(
-            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow), keychain: keychain, home: paths,
+            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow),
+            keychain: keychain, home: paths,
             log: { line in box.withLock { $0.logged.append(line) } }, canaryProject: canaryProject,
             localUser: s.localUser)
     }
@@ -157,16 +165,23 @@ final class CanaryWorld: Sendable {
             let products = derived + "/Build/Products/Debug-iphoneos"
             let appPath = products + "/Canary.app"
             if s.appIsSymlink || s.appIsDangling {
-                try? FileManager.default.createDirectory(atPath: products, withIntermediateDirectories: true)
+                try? FileManager.default.createDirectory(
+                    atPath: products, withIntermediateDirectories: true)
                 let target = derived + "/Real.app"
-                if s.appIsSymlink { try? FileManager.default.createDirectory(atPath: target, withIntermediateDirectories: true) }
-                try? FileManager.default.createSymbolicLink(atPath: appPath, withDestinationPath: target)
+                if s.appIsSymlink {
+                    try? FileManager.default.createDirectory(
+                        atPath: target, withIntermediateDirectories: true)
+                }
+                try? FileManager.default.createSymbolicLink(
+                    atPath: appPath, withDestinationPath: target)
             } else {
-                try? FileManager.default.createDirectory(atPath: appPath, withIntermediateDirectories: true)
+                try? FileManager.default.createDirectory(
+                    atPath: appPath, withIntermediateDirectories: true)
             }
             return RunResult()
         case ("/usr/bin/sw_vers", _):
-            return RunResult(stdout: (args.first == "-buildVersion" ? s.macosBuild : s.macosVersion) + "\n")
+            return RunResult(
+                stdout: (args.first == "-buildVersion" ? s.macosBuild : s.macosVersion) + "\n")
         case ("/usr/bin/codesign", _):
             return RunResult(stderr: "Identifier=x\nTeamIdentifier=\(s.signedTeam)\n")
         case ("/usr/bin/security", "cms"):
@@ -185,7 +200,9 @@ final class CanaryWorld: Sendable {
         _ spec: CommandSpec, scenario s: CanaryScenario, install: InstallScript, list: JSONValue,
         box: Box
     ) -> RunResult {
-        func isSub(_ sub: String...) -> Bool { Array(spec.args.dropFirst().prefix(sub.count)) == sub }
+        func isSub(_ sub: String...) -> Bool {
+            Array(spec.args.dropFirst().prefix(sub.count)) == sub
+        }
         switch true {
         case isSub("list", "devices"):
             let n = box.withLock { state -> Int in
@@ -207,7 +224,9 @@ final class CanaryWorld: Sendable {
             if s.snapshotOverflowOn == n { return RunResult(code: nil, overflow: true) }
             var apps = s.others + (installed ? [canaryBundle] : [])
             if s.extraAfter && n > 1 { apps.append("com.unexpected.app") }
-            write(["result": ["apps": .array(apps.map { ["bundleIdentifier": .string($0)] })]], to: spec)
+            write(
+                ["result": ["apps": .array(apps.map { ["bundleIdentifier": .string($0)] })]],
+                to: spec)
             return RunResult()
         case isSub("device", "install", "app"):
             if s.installOverflow {
@@ -232,14 +251,23 @@ final class CanaryWorld: Sendable {
     var calls: [CommandSpec] { runner.calls }
 
     static func isDevicectl(_ c: CommandSpec, _ sub: String...) -> Bool {
-        c.executable == "xcrun" && c.args.first == "devicectl" && Array(c.args.dropFirst().prefix(sub.count)) == sub
+        c.executable == "xcrun" && c.args.first == "devicectl"
+            && Array(c.args.dropFirst().prefix(sub.count)) == sub
     }
 
-    var installs: [CommandSpec] { calls.filter { Self.isDevicectl($0, "device", "install", "app") } }
-    var uninstalls: [CommandSpec] { calls.filter { Self.isDevicectl($0, "device", "uninstall", "app") } }
-    var builds: [CommandSpec] { calls.filter { $0.executable == "xcodebuild" && $0.args.contains("build") } }
+    var installs: [CommandSpec] {
+        calls.filter { Self.isDevicectl($0, "device", "install", "app") }
+    }
+    var uninstalls: [CommandSpec] {
+        calls.filter { Self.isDevicectl($0, "device", "uninstall", "app") }
+    }
+    var builds: [CommandSpec] {
+        calls.filter { $0.executable == "xcodebuild" && $0.args.contains("build") }
+    }
 
-    func run(_ options: CanaryOptions = CanaryOptions(device: "iphone", yes: true)) async -> Envelope {
+    func run(_ options: CanaryOptions = CanaryOptions(device: "iphone", yes: true)) async
+        -> Envelope
+    {
         await CanaryCommand.run(services, options)
     }
 
@@ -262,15 +290,19 @@ final class CanaryWorld: Sendable {
 
 /// A profile as `security cms -D` prints it: XML header, DOCTYPE, other keys, and the two that matter.
 func profileXML(
-    team: String?, devices: [String], created: String? = nil, expires: String? = nil, certs: [String]? = nil
+    team: String?, devices: [String], created: String? = nil, expires: String? = nil,
+    certs: [String]? = nil
 ) -> String {
-    let strings = { (a: [String]) in a.map { "<string>\($0)</string>" }.joined(separator: "\n\t\t") }
+    let strings = { (a: [String]) in a.map { "<string>\($0)</string>" }.joined(separator: "\n\t\t")
+    }
     let dates = [("CreationDate", created), ("ExpirationDate", expires)]
-        .compactMap { key, value in value.map { "\t<key>\(key)</key>\n\t<date>\($0)</date>\n" } }.joined()
-    let certificates = certs.map { list in
-        "\t<key>DeveloperCertificates</key>\n\t<array>\n"
-            + list.map { "\t\t<data>\($0)</data>\n" }.joined() + "\t</array>\n"
-    } ?? ""
+        .compactMap { key, value in value.map { "\t<key>\(key)</key>\n\t<date>\($0)</date>\n" } }
+        .joined()
+    let certificates =
+        certs.map { list in
+            "\t<key>DeveloperCertificates</key>\n\t<array>\n"
+                + list.map { "\t\t<data>\($0)</data>\n" }.joined() + "\t</array>\n"
+        } ?? ""
     return """
         <?xml version="1.0" encoding="UTF-8"?>
         <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">

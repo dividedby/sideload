@@ -1,1 +1,11 @@
-{"command":"provision","errors":[{"code":"USAGE","fix":"sideload provision --app <stremio-ios|stremio-tvos|apollo|filler> --device iphone --yes","message":"provision needs --app and --device <alias>."}],"ok":false}
+{
+  "command": "provision",
+  "errors": [
+    {
+      "code": "USAGE",
+      "fix": "sideload provision --app <stremio-ios|stremio-tvos|apollo|filler> --device iphone --yes",
+      "message": "provision needs --app and --device <alias>."
+    }
+  ],
+  "ok": false
+}

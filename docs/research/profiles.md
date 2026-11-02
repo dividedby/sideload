@@ -12,13 +12,13 @@ Accessed 2026-10-19. Paid individual account (Account Holder). Claims not confir
 
 ## Development vs Ad Hoc
 
-| | Development | Ad Hoc |
-|---|---|---|
-| Certificate | Apple Development (belongs to an individual) | Apple Distribution (belongs to the team; Account Holder/Admin creates; one per team) |
-| Devices | Registered devices | Registered devices |
-| get-task-allow | true (standard for development profiles; Unverified on a current Apple page) | false (standard for distribution; Unverified on a current Apple page) |
-| Developer Mode | Required on iOS/iPadOS/watchOS/visionOS | Unverified (see below) |
-| tvOS | No Developer Mode on tvOS; pairing in Device Hub exposes Developer Settings | Same |
+|                | Development                                                                  | Ad Hoc                                                                               |
+| -------------- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Certificate    | Apple Development (belongs to an individual)                                 | Apple Distribution (belongs to the team; Account Holder/Admin creates; one per team) |
+| Devices        | Registered devices                                                           | Registered devices                                                                   |
+| get-task-allow | true (standard for development profiles; Unverified on a current Apple page) | false (standard for distribution; Unverified on a current Apple page)                |
+| Developer Mode | Required on iOS/iPadOS/watchOS/visionOS                                      | Unverified (see below)                                                               |
+| tvOS           | No Developer Mode on tvOS; pairing in Device Hub exposes Developer Settings  | Same                                                                                 |
 
 Sources for the table: certificate types and ownership [1][2]; profile creation steps [3][4]; Developer Mode [5][6].
 
@@ -96,4 +96,5 @@ Sources for the table: certificate types and ownership [1][2]; profile creation 
 17. https://developer.apple.com/forums/thread/755762 : DTS: tied to primary developer account; try a different team.
 18. https://developer.apple.com/forums/thread/780425 : deactivation/restore case; DTS redirect.
 19. https://developer.apple.com/forums/thread/798110 : DTS requests code-level support case.
+
 - Local, read-only: `man xcodebuild` and `ls` of the profile directories on this Mac.

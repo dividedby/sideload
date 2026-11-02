@@ -50,7 +50,10 @@ public struct DownloadRequest: Sendable {
     /// Wall-clock limit for the whole transfer, in seconds.
     public let timeout: TimeInterval
 
-    public init(url: URL, allowedHosts: Set<String>, maxRedirects: Int = FetchLimits.maxRedirects, maxBytes: Int64, timeout: TimeInterval) {
+    public init(
+        url: URL, allowedHosts: Set<String>, maxRedirects: Int = FetchLimits.maxRedirects,
+        maxBytes: Int64, timeout: TimeInterval
+    ) {
         self.url = url
         self.allowedHosts = allowedHosts
         self.maxRedirects = maxRedirects
@@ -76,12 +79,15 @@ public protocol HTTPTransport: Sendable {
     func get(_ request: HTTPRequest) async throws -> HTTPResponse
     /// Streams a 2xx body to `sink` in chunks (never called for another status). An error thrown by `sink`
     /// stops the transfer and is rethrown unchanged.
-    func download(_ request: DownloadRequest, sink: @Sendable (Data) throws -> Void) async throws -> DownloadResponse
+    func download(_ request: DownloadRequest, sink: @Sendable (Data) throws -> Void) async throws
+        -> DownloadResponse
 }
 
 extension HTTPTransport {
     /// Transports that predate `fetch` (test fakes for `portal`) have no download.
-    public func download(_ request: DownloadRequest, sink: @Sendable (Data) throws -> Void) async throws -> DownloadResponse {
+    public func download(_ request: DownloadRequest, sink: @Sendable (Data) throws -> Void)
+        async throws -> DownloadResponse
+    {
         throw HTTPTransportError.disabled
     }
 }
@@ -127,7 +133,8 @@ public struct URLSessionTransport: HTTPTransport {
 
     init(
         protocolClasses: [AnyClass], flowHigh: Int = URLSessionTransport.defaultFlowHigh,
-        flowLow: Int = URLSessionTransport.defaultFlowLow, pendingProbe: (@Sendable (Int) -> Void)? = nil,
+        flowLow: Int = URLSessionTransport.defaultFlowLow,
+        pendingProbe: (@Sendable (Int) -> Void)? = nil,
         requestTimeout: TimeInterval = URLSessionTransport.defaultRequestTimeout,
         resourceTimeout: TimeInterval = URLSessionTransport.defaultResourceTimeout
     ) {
@@ -152,8 +159,10 @@ public struct URLSessionTransport: HTTPTransport {
 
         /// Completes a redirect with `nil`, so the task ends with the 3xx response instead of following it.
         func urlSession(
-            _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-            newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
+            _ session: URLSession, task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest,
+            completionHandler: @escaping @Sendable (URLRequest?) -> Void
         ) {
             completionHandler(nil)
         }
@@ -170,9 +179,12 @@ public struct URLSessionTransport: HTTPTransport {
             completionHandler(.allow)
         }
 
-        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data)
+        {
             let fits = body.withLock { body -> Bool in
-                guard body.count + data.count <= URLSessionTransport.maxBodyBytes else { return false }
+                guard body.count + data.count <= URLSessionTransport.maxBodyBytes else {
+                    return false
+                }
                 body.append(data)
                 return true
             }
@@ -182,12 +194,17 @@ public struct URLSessionTransport: HTTPTransport {
             }
         }
 
-        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+        func urlSession(
+            _ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?
+        ) {
             if let error {
                 results.finish(throwing: error)
             } else if let http = task.response as? HTTPURLResponse {
                 let retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap { Int($0) }
-                results.yield(HTTPResponse(status: http.statusCode, body: body.withLock { $0 }, retryAfter: retryAfter))
+                results.yield(
+                    HTTPResponse(
+                        status: http.statusCode, body: body.withLock { $0 }, retryAfter: retryAfter)
+                )
                 results.finish()
             } else {
                 results.finish(throwing: HTTPTransportError.failed)
@@ -206,14 +223,18 @@ public struct URLSessionTransport: HTTPTransport {
         config.timeoutIntervalForResource = resourceTimeout
         config.waitsForConnectivity = false
         if !protocolClasses.isEmpty { config.protocolClasses = protocolClasses }
-        let (results, continuation) = AsyncThrowingStream.makeStream(of: HTTPResponse.self, throwing: (any Error).self)
-        let session = URLSession(configuration: config, delegate: GetDelegate(results: continuation), delegateQueue: nil)
+        let (results, continuation) = AsyncThrowingStream.makeStream(
+            of: HTTPResponse.self, throwing: (any Error).self)
+        let session = URLSession(
+            configuration: config, delegate: GetDelegate(results: continuation), delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
 
         var urlRequest = URLRequest(url: request.url)
         urlRequest.httpMethod = "GET"
         urlRequest.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.bearer?.reveal { urlRequest.setValue("Bearer " + $0, forHTTPHeaderField: "Authorization") }
+        request.bearer?.reveal {
+            urlRequest.setValue("Bearer " + $0, forHTTPHeaderField: "Authorization")
+        }
 
         let task = session.dataTask(with: urlRequest)
         // Leaving the wait for any reason (answered, failed, cancelled task) stops the transfer.
@@ -276,8 +297,10 @@ public struct URLSessionTransport: HTTPTransport {
         var refused: Bool { state.withLock { $0.refused } }
 
         func urlSession(
-            _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
-            newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
+            _ session: URLSession, task: URLSessionTask,
+            willPerformHTTPRedirection response: HTTPURLResponse,
+            newRequest request: URLRequest,
+            completionHandler: @escaping @Sendable (URLRequest?) -> Void
         ) {
             let follow = state.withLock { s -> Bool in
                 s.hops += 1
@@ -310,20 +333,27 @@ public struct URLSessionTransport: HTTPTransport {
             completionHandler(.allow)
         }
 
-        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data)
+        {
             // A non-2xx body is not wanted; the consumer stops at the status. Count it all the same.
             let outcome = flow.received(data.count) { events.yield(.data(data)) }
             // The flow has already cancelled the task; this callback ran first, so this error is the one reported.
             if outcome == .exceeded { events.finish(throwing: HTTPTransportError.bodyTooLarge) }
         }
 
-        func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+        func urlSession(
+            _ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?
+        ) {
             events.finish(throwing: error)
         }
     }
 
-    public func download(_ request: DownloadRequest, sink: @Sendable (Data) throws -> Void) async throws -> DownloadResponse {
-        guard DownloadPolicy.permits(request.url, hosts: request.allowedHosts) else { throw HTTPTransportError.failed }
+    public func download(_ request: DownloadRequest, sink: @Sendable (Data) throws -> Void)
+        async throws -> DownloadResponse
+    {
+        guard DownloadPolicy.permits(request.url, hosts: request.allowedHosts) else {
+            throw HTTPTransportError.failed
+        }
         let config = URLSessionConfiguration.ephemeral
         config.httpCookieStorage = nil
         config.httpShouldSetCookies = false
@@ -335,11 +365,13 @@ public struct URLSessionTransport: HTTPTransport {
         config.waitsForConnectivity = false
         if !protocolClasses.isEmpty { config.protocolClasses = protocolClasses }
         // Unbounded here is safe: the flow keeps what is waiting in it under `flowHigh` (plus a small overshoot).
-        let (events, continuation) = AsyncThrowingStream.makeStream(of: DownloadEvent.self, throwing: (any Error).self)
+        let (events, continuation) = AsyncThrowingStream.makeStream(
+            of: DownloadEvent.self, throwing: (any Error).self)
         let maxBytes = min(request.maxBytes, FetchLimits.maxIPABytes)
         let flow = DownloadFlow(maxBytes: maxBytes, high: flowHigh, low: flowLow)
         let delegate = DownloadDelegate(
-            allowedHosts: request.allowedHosts, maxRedirects: request.maxRedirects, flow: flow, events: continuation)
+            allowedHosts: request.allowedHosts, maxRedirects: request.maxRedirects, flow: flow,
+            events: continuation)
         let session = URLSession(configuration: config, delegate: delegate, delegateQueue: nil)
         defer {
             flow.close()
@@ -351,7 +383,9 @@ public struct URLSessionTransport: HTTPTransport {
         urlRequest.httpMethod = "GET"
         urlRequest.setValue("application/octet-stream", forHTTPHeaderField: "Accept")
         let task = session.dataTask(with: urlRequest)
-        flow.attach(DownloadFlow.Controls(suspend: { task.suspend() }, resume: { task.resume() }, cancel: { task.cancel() }))
+        flow.attach(
+            DownloadFlow.Controls(
+                suspend: { task.suspend() }, resume: { task.resume() }, cancel: { task.cancel() }))
         // Leaving the loop for any reason (done, error, cancelled task) stops the transfer; cancelling a suspended
         // task is what ends it, so a consumer that goes away can never be left waiting for a resume.
         continuation.onTermination = { _ in
@@ -413,7 +447,9 @@ public struct URLSessionTransport: HTTPTransport {
 
     /// Hands `data` to `sink` in `downloadChunkBytes` pieces without copying whole blocks: full pieces are slices of
     /// `data` itself, and only a tail shorter than a piece is held in `buffer` for the next block.
-    static func forward(_ data: Data, through buffer: inout Data, to sink: @Sendable (Data) throws -> Void) throws {
+    static func forward(
+        _ data: Data, through buffer: inout Data, to sink: @Sendable (Data) throws -> Void
+    ) throws {
         let piece = downloadChunkBytes
         var offset = data.startIndex
         while offset < data.endIndex {

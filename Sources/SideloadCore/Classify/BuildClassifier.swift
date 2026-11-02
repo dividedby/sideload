@@ -12,7 +12,8 @@ public enum BuildClassifier {
         public var spawnError: String?
 
         public init(
-            exitCode: Int32? = nil, stderr: String = "", stdout: String = "", timedOut: Bool = false,
+            exitCode: Int32? = nil, stderr: String = "", stdout: String = "",
+            timedOut: Bool = false,
             overflow: Bool = false, spawnError: String? = nil
         ) {
             self.exitCode = exitCode
@@ -32,17 +33,22 @@ public enum BuildClassifier {
                 reason: "xcodebuild produced more output than the safety limit and was stopped.")
         }
         if input.timedOut {
-            return Classification(status: .error, code: "BUILD_TIMEOUT", reason: "xcodebuild timed out.")
+            return Classification(
+                status: .error, code: "BUILD_TIMEOUT", reason: "xcodebuild timed out.")
         }
         if let spawnError = input.spawnError, !spawnError.isEmpty {
-            return Classification(status: .error, code: "BUILD_FAILED", reason: "xcodebuild could not be started.")
+            return Classification(
+                status: .error, code: "BUILD_FAILED", reason: "xcodebuild could not be started.")
         }
         if input.exitCode == 0 { return nil }
 
         var unique: [String] = []
-        for line in "\(input.stderr)\n\(input.stdout)".split(omittingEmptySubsequences: false, whereSeparator: \.isNewline) {
+        for line in "\(input.stderr)\n\(input.stdout)".split(
+            omittingEmptySubsequences: false, whereSeparator: \.isNewline)
+        {
             guard let match = line.firstMatch(of: /\berror:/) else { continue }
-            let message = line[match.range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+            let message = line[match.range.upperBound...].trimmingCharacters(
+                in: .whitespacesAndNewlines)
             let clipped = String(message.prefix(300))
             if !unique.contains(clipped) { unique.append(clipped) }
             if unique.count == 3 { break }

@@ -30,8 +30,10 @@ public struct SecurityKeychain: KeychainClient {
         var out: [KeychainCertificate] = []
         for identity in identities {
             var certificate: SecCertificate?
-            guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess, let certificate,
-                var read = CertificateReader.read(certificate: certificate), read.info.isAppleDevelopment
+            guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess,
+                let certificate,
+                var read = CertificateReader.read(certificate: certificate),
+                read.info.isAppleDevelopment
             else { continue }
             read.isValidForCodeSigning = CodeSigningTrust.isValid(certificate)
             out.append(read)

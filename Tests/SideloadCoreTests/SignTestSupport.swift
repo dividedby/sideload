@@ -24,7 +24,9 @@ enum SampleApp: String {
     var profilePlatform: String { self == .stremioTVOS ? "tvOS" : "iOS" }
     var executable: String { self == .apollo ? "Apollo" : "Stremio" }
     var version: String { self == .apollo ? "3.9.0" : "1.9.6b142" }
-    var ipaName: String { self == .apollo ? "Apollo-Reborn-3.9.0-GLASS-NOEXTENSIONS.ipa" : "stremio.ipa" }
+    var ipaName: String {
+        self == .apollo ? "Apollo-Reborn-3.9.0-GLASS-NOEXTENSIONS.ipa" : "stremio.ipa"
+    }
     var deviceAlias: String { self == .stremioTVOS ? "appletv" : "iphone" }
     var seed: String { self == .stremioTVOS ? "2" : "1" }
 }
@@ -67,7 +69,10 @@ private func mainEntitlements(_ app: SampleApp) -> [String: Any] {
 /// Builds the bundles of one sample IPA.
 private func sampleBundles(_ app: SampleApp, _ variant: IPAVariant) async throws -> [BundleSpec] {
     let name = app.executable
-    let dylib = try Data(contentsOf: URL(fileURLWithPath: try await MachOTemplates.shared.path(platform: app.platform, minOS: "15.0")))
+    let dylib = try Data(
+        contentsOf: URL(
+            fileURLWithPath: try await MachOTemplates.shared.path(
+                platform: app.platform, minOS: "15.0")))
     var main = BundleSpec.app(
         name, bundleId: app.upstreamId, executable: name, platform: app.platform, minOS: "15.0",
         entitlements: mainEntitlements(app))
@@ -75,9 +80,13 @@ private func sampleBundles(_ app: SampleApp, _ variant: IPAVariant) async throws
     if variant == .noMinOS {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
-        let thin = dir.path + "/thin", versioned = dir.path + "/versioned", bare = dir.path + "/bare"
+        let thin = dir.path + "/thin"
+        let versioned = dir.path + "/versioned"
+        let bare = dir.path + "/bare"
         await tool("/usr/bin/lipo", ["-thin", "arm64e", "/usr/bin/true", "-output", thin])
-        await tool("/usr/bin/vtool", ["-set-build-version", "ios", "15.0", "17.0", "-replace", "-output", versioned, thin])
+        await tool(
+            "/usr/bin/vtool",
+            ["-set-build-version", "ios", "15.0", "17.0", "-replace", "-output", versioned, thin])
         await tool("/usr/bin/vtool", ["-remove-build-version", "ios", "-output", bare, versioned])
         main.plist?["MinimumOSVersion"] = nil
         main.executableName = nil
@@ -86,41 +95,59 @@ private func sampleBundles(_ app: SampleApp, _ variant: IPAVariant) async throws
     var bundles: [BundleSpec] = [main]
     let framework = BundleSpec(
         directory: "Payload/\(name).app/Frameworks/Core.framework",
-        plist: ["CFBundleIdentifier": "org.example.core", "CFBundleExecutable": "Core", "CFBundleName": "Core"],
-        executableName: "Core", platform: app.platform, minOS: "15.0", sign: variant != .hiddenWatch)
+        plist: [
+            "CFBundleIdentifier": "org.example.core", "CFBundleExecutable": "Core",
+            "CFBundleName": "Core",
+        ],
+        executableName: "Core", platform: app.platform, minOS: "15.0", sign: variant != .hiddenWatch
+    )
     bundles.append(framework)
 
     if app == .stremioIOS {
         bundles.append(
             .appex(
-                "StremioDownloadsWidget", bundleId: "com.stremio.pal.downloads-widget", point: "com.apple.widgetkit-extension",
-                entitlements: ["com.apple.security.application-groups": ["group.com.stremio.pal"]], app: name))
+                "StremioDownloadsWidget", bundleId: "com.stremio.pal.downloads-widget",
+                point: "com.apple.widgetkit-extension",
+                entitlements: ["com.apple.security.application-groups": ["group.com.stremio.pal"]],
+                app: name))
     }
     switch variant {
     case .real: break
     case .everything:
         bundles.append(
-            .appex("Kit", bundleId: app.upstreamId + ".kit", point: "com.apple.extensionkit-service", sign: true, app: name)
-                .moved(to: "Payload/\(name).app/Extensions/Kit.appex"))
+            .appex(
+                "Kit", bundleId: app.upstreamId + ".kit", point: "com.apple.extensionkit-service",
+                sign: true, app: name
+            )
+            .moved(to: "Payload/\(name).app/Extensions/Kit.appex"))
         bundles.append(
             BundleSpec(
                 directory: "Payload/\(name).app/Watch/Watch.app",
                 plist: [
-                    "CFBundleIdentifier": app.upstreamId + ".watchkitapp", "CFBundleExecutable": "WatchApp",
+                    "CFBundleIdentifier": app.upstreamId + ".watchkitapp",
+                    "CFBundleExecutable": "WatchApp",
                     "WKWatchKitApp": true, "WKCompanionAppBundleIdentifier": app.upstreamId,
                 ], executableName: "WatchApp", platform: "ios", minOS: "15.0"))
         bundles.append(
-            .appex("WatchExt", bundleId: app.upstreamId + ".watchkitapp.ext", point: "com.apple.watchkit", app: name)
-                .moved(to: "Payload/\(name).app/Watch/Watch.app/PlugIns/WatchExt.appex"))
+            .appex(
+                "WatchExt", bundleId: app.upstreamId + ".watchkitapp.ext",
+                point: "com.apple.watchkit", app: name
+            )
+            .moved(to: "Payload/\(name).app/Watch/Watch.app/PlugIns/WatchExt.appex"))
         bundles.append(
-            .appex("Deep", bundleId: app.upstreamId + ".deep", point: "com.apple.share-services", app: name)
-                .moved(to: "Payload/\(name).app/Frameworks/Core.framework/PlugIns/Deep.appex"))
+            .appex(
+                "Deep", bundleId: app.upstreamId + ".deep", point: "com.apple.share-services",
+                app: name
+            )
+            .moved(to: "Payload/\(name).app/Frameworks/Core.framework/PlugIns/Deep.appex"))
     case .noMinOS: break
     case .xpc:
         bundles.append(
             BundleSpec(
                 directory: "Payload/\(name).app/XPCServices/Helper.xpc",
-                plist: ["CFBundleIdentifier": app.upstreamId + ".helper", "CFBundlePackageType": "XPC!"],
+                plist: [
+                    "CFBundleIdentifier": app.upstreamId + ".helper", "CFBundlePackageType": "XPC!",
+                ],
                 executableName: nil, sign: false))
     case .hiddenWatch:
         bundles.append(
@@ -151,7 +178,10 @@ actor SignIPAs {
         let task = Task<Data, any Error> {
             let dir = try makeTempDir()
             defer { try? FileManager.default.removeItem(at: dir) }
-            return try Data(contentsOf: URL(fileURLWithPath: try await makeIPA(try await sampleBundles(app, variant), in: dir.path)))
+            return try Data(
+                contentsOf: URL(
+                    fileURLWithPath: try await makeIPA(
+                        try await sampleBundles(app, variant), in: dir.path)))
         }
         cache[key] = task
         return try await task.value
@@ -204,7 +234,9 @@ final class SignRunner: Runner {
         case "/usr/bin/security":
             // `security cms -D` decodes stdin (the bytes the command read) or `-i <file>`; the "CMS" files in these
             // tests are the plist itself.
-            if spec.args == ["cms", "-D"], let stdin = spec.stdin { return RunResult(stdout: String(decoding: stdin, as: UTF8.self)) }
+            if spec.args == ["cms", "-D"], let stdin = spec.stdin {
+                return RunResult(stdout: String(decoding: stdin, as: UTF8.self))
+            }
             guard spec.args.count == 4, spec.args.prefix(3) == ["cms", "-D", "-i"],
                 let text = try? String(contentsOfFile: spec.args[3], encoding: .utf8)
             else { return RunResult(code: 1) }
@@ -230,15 +262,22 @@ final class SignRunner: Runner {
                 return value
             }
             if let failure = script.signingFailure { return failure }
-            if let limit = script.failAfterSigningCalls, n > limit { return RunResult(code: 1, stderr: "scripted failure") }
+            if let limit = script.failAfterSigningCalls, n > limit {
+                return RunResult(code: 1, stderr: "scripted failure")
+            }
             // Only the pinned identity is carried out (ad hoc: there is no real one); a name would not match.
-            guard args[i + 1] == pinnedSha1 else { return RunResult(code: 1, stderr: "no identity found") }
+            guard args[i + 1] == pinnedSha1 else {
+                return RunResult(code: 1, stderr: "no identity found")
+            }
             args[i + 1] = "-"
-            return await real.run(CommandSpec(executable: spec.executable, args: args, timeout: spec.timeout))
+            return await real.run(
+                CommandSpec(executable: spec.executable, args: args, timeout: spec.timeout))
         }
         if let flag = args.first(where: { $0.hasPrefix("--extract-certificates=") }) {
             if let leaf = script.leaf {
-                FileManager.default.createFile(atPath: String(flag.dropFirst("--extract-certificates=".count)) + "0", contents: leaf)
+                FileManager.default.createFile(
+                    atPath: String(flag.dropFirst("--extract-certificates=".count)) + "0",
+                    contents: leaf)
             }
             return RunResult()
         }
@@ -247,7 +286,9 @@ final class SignRunner: Runner {
             // An ad hoc signature has no team; say what the pinned certificate's would.
             var out = result
             out.stderr = out.stderr.replacingOccurrences(
-                of: "TeamIdentifier=not set", with: script.reportedTeam.map { "TeamIdentifier=\($0)" } ?? "TeamIdentifier=not set")
+                of: "TeamIdentifier=not set",
+                with: script.reportedTeam.map { "TeamIdentifier=\($0)" } ?? "TeamIdentifier=not set"
+            )
             return out
         }
         return result
@@ -312,15 +353,21 @@ struct SignWorld {
         registry: ScratchRegistry = ScratchRegistry(), hooks: SignHooks = SignHooks()
     ) async -> Envelope {
         await SignCommand.run(
-            services, SignOptions(app: app ?? self.app.rawValue, device: device ?? alias, yes: yes, version: version),
+            services,
+            SignOptions(
+                app: app ?? self.app.rawValue, device: device ?? alias, yes: yes, version: version),
             registry: registry, hooks: hooks)
     }
 
     /// Scratch folders left under `$SIDELOAD_HOME/tmp`.
-    var leftovers: [String] { listing(paths.tmp).filter { $0.hasPrefix("sign-") || $0.hasPrefix("inspect-") } }
+    var leftovers: [String] {
+        listing(paths.tmp).filter { $0.hasPrefix("sign-") || $0.hasPrefix("inspect-") }
+    }
 
     /// The printed (redacted) object, as the CLI would write it.
-    func printed(_ envelope: Envelope) throws -> (text: String, json: JSONValue) { try envelope.printed() }
+    func printed(_ envelope: Envelope) throws -> (text: String, json: JSONValue) {
+        try envelope.printed()
+    }
 }
 
 func profileFile(_ w: SignWorld, uuid: String) -> String {
@@ -332,9 +379,11 @@ let signProfileUUID = "0F0F0F0F-1111-2222-3333-444444444444"
 /// Runs `body` against a temp home with the sample app fetched, approved and provisioned, unless a mode says otherwise.
 func withSignWorld(
     app: SampleApp = .stremioIOS, variant: IPAVariant = .real, manifest: ManifestMode = .approved,
-    profile: ProfileMode = .valid, pin: Bool = true, script: SignScript = SignScript(), minOS: String? = "15.0",
+    profile: ProfileMode = .valid, pin: Bool = true, script: SignScript = SignScript(),
+    minOS: String? = "15.0",
     declaredMinOS: String? = nil,
-    keychain: [KeychainCertificate]? = nil, prefix: String? = carrierPrefix, ledger: ((inout Ledger) -> Void)? = nil,
+    keychain: [KeychainCertificate]? = nil, prefix: String? = carrierPrefix,
+    ledger: ((inout Ledger) -> Void)? = nil,
     config tweak: ((inout Config) -> Void)? = nil, _ body: (SignWorld) async throws -> Void
 ) async throws {
     let free = try freeKeychainCert()
@@ -345,21 +394,26 @@ func withSignWorld(
     let digest = sha256Hex(ipa)
 
     var config = provisionConfig(
-        prefix: prefix, extra: pin ? ["freeTeam": ["certFp8": .string(LedgerSync.fp8(free.reference))]] : [:])
+        prefix: prefix,
+        extra: pin ? ["freeTeam": ["certFp8": .string(LedgerSync.fp8(free.reference))]] : [:])
     tweak?(&config)
     try await withTestHome(config: config) { paths, store in
         // Fetched and approved.
         func entry(version: String, approved: Bool, fetchedAt: Date) -> ManifestEntry {
             ManifestEntry(
-                app: app.rawValue, version: version, file: "\(app.rawValue)/\(version)/\(app.ipaName)", urlHost: "example.test",
-                sha256: digest, upstreamDigest: digest, size: Int64(ipa.count), fetchedAt: fetchedAt, approved: approved,
-                approvedAt: approved ? fetchedAt : nil, build: "142", declaredSize: Int64(ipa.count), minOS: declaredMinOS,
+                app: app.rawValue, version: version,
+                file: "\(app.rawValue)/\(version)/\(app.ipaName)", urlHost: "example.test",
+                sha256: digest, upstreamDigest: digest, size: Int64(ipa.count),
+                fetchedAt: fetchedAt, approved: approved,
+                approvedAt: approved ? fetchedAt : nil, build: "142",
+                declaredSize: Int64(ipa.count), minOS: declaredMinOS,
                 inspectMinOS: minOS)
         }
         var entries: [ManifestEntry] = []
         let old = testNow.addingTimeInterval(-3 * 86_400)
         switch manifest {
-        case .approved, .tampered, .missingFile: entries = [entry(version: app.version, approved: true, fetchedAt: old)]
+        case .approved, .tampered, .missingFile:
+            entries = [entry(version: app.version, approved: true, fetchedAt: old)]
         case .unapproved: entries = [entry(version: app.version, approved: false, fetchedAt: old)]
         case .none: break
         case .newerApproved:
@@ -399,11 +453,15 @@ func withSignWorld(
             let xml = try profileXML(
                 uuid: profile == .otherUUID ? "AAAAAAAA-1111-2222-3333-444444444444" : uuid,
                 team: profile == .wrongTeam ? Team.paid : Team.free,
-                applicationIdentifier: Team.free + "." + (profile == .wrongAppId ? app.freeId + "x" : app.freeId),
+                applicationIdentifier: Team.free + "."
+                    + (profile == .wrongAppId ? app.freeId + "x" : app.freeId),
                 getTaskAllow: profile == .noGetTaskAllow ? false : true,
                 devices: [profile == .wrongDevice ? savedUdid("9") : udid],
                 certs: [profile == .wrongCertificate ? try certDER(TestCerts.other) : freeDER],
-                platform: [profile == .wrongPlatform ? (app == .stremioTVOS ? "iOS" : "tvOS") : app.profilePlatform],
+                platform: [
+                    profile == .wrongPlatform
+                        ? (app == .stremioTVOS ? "iOS" : "tvOS") : app.profilePlatform
+                ],
                 created: daysFromNow(-2), expires: expires)
             let dir = "\(paths.freeProfiles)/\(app.rawValue)/\(alias)"
             try makeDirectories(dir, mode: 0o700)
@@ -414,31 +472,40 @@ func withSignWorld(
             case .symlink:
                 let target = paths.home + "/elsewhere.mobileprovision"
                 try Data(xml.utf8).write(to: URL(fileURLWithPath: target))
-                try FileManager.default.createSymbolicLink(atPath: file, withDestinationPath: target)
+                try FileManager.default.createSymbolicLink(
+                    atPath: file, withDestinationPath: target)
             default: try Data(xml.utf8).write(to: URL(fileURLWithPath: file))
             }
             try await LedgerStore(paths: paths).update { ledger in
                 ledger.freeProfiles = [
                     LedgerFreeProfile(
-                        id: "\(alias)/\(app.rawValue)", device: alias, deviceTail: Redactor.tail4(udid), app: app.rawValue,
-                        bundleId: app.freeId, profileUuid: uuid, created: daysFromNow(-2), expires: expires,
+                        id: "\(alias)/\(app.rawValue)", device: alias,
+                        deviceTail: Redactor.tail4(udid), app: app.rawValue,
+                        bundleId: app.freeId, profileUuid: uuid, created: daysFromNow(-2),
+                        expires: expires,
                         certFp8: LedgerSync.fp8(free.reference),
-                        file: profile == .foreignFile ? "profiles/free/other/\(uuid).mobileprovision" : "profiles/free/\(app.rawValue)/\(alias)/\(uuid).mobileprovision")
+                        file: profile == .foreignFile
+                            ? "profiles/free/other/\(uuid).mobileprovision"
+                            : "profiles/free/\(app.rawValue)/\(alias)/\(uuid).mobileprovision")
                 ]
             }
         }
         if let ledger { try await LedgerStore(paths: paths).update { ledger(&$0) } }
 
         let entryJSON = deviceEntryJSON(
-            name: app == .stremioTVOS ? "Test Apple TV" : "Test iPhone", udid: udid, coreId: savedCoreId(app.seed),
+            name: app == .stremioTVOS ? "Test Apple TV" : "Test iPhone", udid: udid,
+            coreId: savedCoreId(app.seed),
             platform: app == .stremioTVOS ? "tvOS" : "iOS", osVersion: script.deviceOS)
-        let runner = SignRunner(pinnedSha1: free.reference.uppercased(), script: script, devices: deviceListJSON(entryJSON))
+        let runner = SignRunner(
+            pinnedSha1: free.reference.uppercased(), script: script,
+            devices: deviceListJSON(entryJSON))
         let services = Services(
             runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow),
             keychain: FakeKeychain(keychain ?? [free]), home: paths)
         try await body(
             SignWorld(
-                paths: paths, store: store, services: services, runner: runner, app: app, sha256: digest,
+                paths: paths, store: store, services: services, runner: runner, app: app,
+                sha256: digest,
                 pinnedSha1: free.reference.uppercased()))
     }
 }
@@ -448,14 +515,20 @@ func withSignWorld(
 /// `codesign -d --entitlements - --xml <app>`, parsed.
 func signedEntitlements(_ app: String) async throws -> [String: Any] {
     let r = await PosixSpawnRunner().run(
-        CommandSpec(executable: "/usr/bin/codesign", args: ["-d", "--entitlements", "-", "--xml", app], timeout: .seconds(30)))
+        CommandSpec(
+            executable: "/usr/bin/codesign", args: ["-d", "--entitlements", "-", "--xml", app],
+            timeout: .seconds(30)))
     #expect(r.code == 0, "codesign -d failed: \(r.stderr)")
-    return (try? PropertyListSerialization.propertyList(from: Data(r.stdout.utf8), options: [], format: nil)) as? [String: Any] ?? [:]
+    return
+        (try? PropertyListSerialization.propertyList(
+            from: Data(r.stdout.utf8), options: [], format: nil)) as? [String: Any] ?? [:]
 }
 
 func plistDictionary(_ path: String) throws -> [String: Any] {
     let data = try Data(contentsOf: URL(fileURLWithPath: path))
-    return try #require(try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any])
+    return try #require(
+        try PropertyListSerialization.propertyList(from: data, options: [], format: nil)
+            as? [String: Any])
 }
 
 /// Every path under `root`, relative, sorted (no symlink followed).
@@ -467,7 +540,9 @@ func tree(_ root: String) -> [String] {
             let child = rel.isEmpty ? name : rel + "/" + name
             out.append(child)
             var st = stat()
-            if lstat(root + "/" + child, &st) == 0, st.st_mode & S_IFMT == S_IFDIR { pending.append(child) }
+            if lstat(root + "/" + child, &st) == 0, st.st_mode & S_IFMT == S_IFDIR {
+                pending.append(child)
+            }
         }
     }
     return out.sorted()

@@ -12,7 +12,9 @@ public struct MenuPrevious: Sendable, Hashable, MenuBuildFacts {
     /// The stricter of the source's declared minimum OS and the one the binary says; nil when neither is known.
     public var minOS: String?
 
-    public init(version: String, build: String? = nil, sha256: String, size: Int64, minOS: String? = nil) {
+    public init(
+        version: String, build: String? = nil, sha256: String, size: Int64, minOS: String? = nil
+    ) {
         self.version = version
         self.build = build
         self.sha256 = sha256
@@ -22,12 +24,16 @@ public struct MenuPrevious: Sendable, Hashable, MenuBuildFacts {
 
     /// The manifest's approved entries whose file is on disk, by app (`hasFile` is false for a pruned entry, a missing file
     /// and a link). Pure over its arguments.
-    static func candidates(in manifest: Manifest, hasFile: (ManifestEntry) -> Bool) -> [String: [MenuPrevious]] {
+    static func candidates(in manifest: Manifest, hasFile: (ManifestEntry) -> Bool) -> [String:
+        [MenuPrevious]]
+    {
         var out: [String: [MenuPrevious]] = [:]
-        for entry in manifest.entries where entry.approved && entry.prunedAt == nil && hasFile(entry) {
+        for entry in manifest.entries
+        where entry.approved && entry.prunedAt == nil && hasFile(entry) {
             out[entry.app, default: []].append(
                 MenuPrevious(
-                    version: entry.version, build: entry.build, sha256: entry.sha256, size: entry.size,
+                    version: entry.version, build: entry.build, sha256: entry.sha256,
+                    size: entry.size,
                     minOS: OSVersion.strictest([entry.minOS, entry.inspectMinOS])))
         }
         return out
@@ -51,7 +57,11 @@ public struct MenuPrevious: Sendable, Hashable, MenuBuildFacts {
                 best = candidate
                 continue
             }
-            if VersionOrder.compare(installed: current.version, upstream: candidate.version) == .newer { best = candidate }
+            if VersionOrder.compare(installed: current.version, upstream: candidate.version)
+                == .newer
+            {
+                best = candidate
+            }
         }
         return best
     }

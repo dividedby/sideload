@@ -64,7 +64,9 @@ final class BlockingClearBackend: PasteboardBackend {
 
     var snapshot: FakePasteboardBackend.State { inner.snapshot }
     var changeCount: Int { inner.changeCount }
-    func replaceWithConcealed(_ secret: String) throws -> Int { try inner.replaceWithConcealed(secret) }
+    func replaceWithConcealed(_ secret: String) throws -> Int {
+        try inner.replaceWithConcealed(secret)
+    }
     func clear() {
         clearEntered.signal()
         _ = release.wait(timeout: .now() + 20)  // bounded so a bug fails the test instead of hanging it
@@ -84,7 +86,9 @@ struct SecretPasteboardTests {
         #expect(backend.snapshot.markers.contains("org.nspasteboard.TransientType"))
         #expect(clipboard.clearIfOurs())
         #expect(backend.snapshot.contents == nil && backend.snapshot.clears == 1)
-        #expect(!clipboard.clearIfOurs(), "idempotent: the second call (a signal racing the timer) does nothing")
+        #expect(
+            !clipboard.clearIfOurs(),
+            "idempotent: the second call (a signal racing the timer) does nothing")
         #expect(backend.snapshot.clears == 1)
     }
 
@@ -99,20 +103,26 @@ struct SecretPasteboardTests {
         #expect(!clipboard.clearIfOurs())
     }
 
-    @Test("clear() tells apart cleared, already cleared by the main flow, changed by the owner, and never copied")
+    @Test(
+        "clear() tells apart cleared, already cleared by the main flow, changed by the owner, and never copied"
+    )
     func clearOutcomes() throws {
         let backend = FakePasteboardBackend()
         let clipboard = ConcealedClipboard(backend: backend)
         #expect(clipboard.clear() == .nothingCopied && !clipboard.clear().passwordCleared)
         try clipboard.copy("secret-value")
         #expect(clipboard.clear() == .cleared)
-        #expect(clipboard.clear() == .alreadyCleared && clipboard.clear().passwordCleared, "the main flow already cleared it")
+        #expect(
+            clipboard.clear() == .alreadyCleared && clipboard.clear().passwordCleared,
+            "the main flow already cleared it")
         #expect(backend.snapshot.clears == 1)
 
         try clipboard.copy("secret-value")
         backend.userCopies("my own text")
         #expect(clipboard.clear() == .changedSince && !clipboard.clear().passwordCleared)
-        #expect(clipboard.clear() == .changedSince && backend.snapshot.contents == "my own text" && backend.snapshot.clears == 1)
+        #expect(
+            clipboard.clear() == .changedSince && backend.snapshot.contents == "my own text"
+                && backend.snapshot.clears == 1)
 
         // clearIfOurs keeps its meaning: true only for the call that cleared
         try clipboard.copy("again")
@@ -145,13 +155,19 @@ struct SecretPasteboardTests {
             handlerResult.withLock { $0 = clipboard.clear() }
             handlerDone.signal()
         }.start()
-        #expect(handlerDone.wait(timeout: .now() + 0.3) == .timedOut, "the handler's clear returned while main's was still running")
+        #expect(
+            handlerDone.wait(timeout: .now() + 0.3) == .timedOut,
+            "the handler's clear returned while main's was still running")
         #expect(backend.snapshot.contents == "secret-value")
 
         backend.release.signal()
         #expect(handlerDone.wait(timeout: .now() + 10) == .success)
-        #expect(backend.snapshot.contents == nil && backend.snapshot.clears == 1, "clear, once, before the handler may exit")
-        #expect(handlerResult.withLock { $0 } == .alreadyCleared, "main cleared it; the handler reports that, not \"never held it\"")
+        #expect(
+            backend.snapshot.contents == nil && backend.snapshot.clears == 1,
+            "clear, once, before the handler may exit")
+        #expect(
+            handlerResult.withLock { $0 } == .alreadyCleared,
+            "main cleared it; the handler reports that, not \"never held it\"")
         #expect(handlerResult.withLock { $0 }?.passwordCleared == true)
     }
 
@@ -174,7 +190,9 @@ struct SecretPasteboardTests {
         } catch {
             let e = error as? SideloadError
             #expect(e?.code == "PASTEBOARD_FAILED")
-            #expect(!(e?.message ?? "").contains("secret-value") && !(e?.fix ?? "").contains("secret-value"))
+            #expect(
+                !(e?.message ?? "").contains("secret-value")
+                    && !(e?.fix ?? "").contains("secret-value"))
         }
         #expect(!clipboard.clearIfOurs())
     }
@@ -182,7 +200,8 @@ struct SecretPasteboardTests {
     @Test("the inert default throws PASTEBOARD_UNAVAILABLE")
     func inertDefault() {
         let services = Services(
-            runner: FakeRunner { _ in RunResult() }, fs: FakeFileSystem.free(gb: 1), clock: FixedClock(testNow),
+            runner: FakeRunner { _ in RunResult() }, fs: FakeFileSystem.free(gb: 1),
+            clock: FixedClock(testNow),
             keychain: FakeKeychain(), home: Paths(home: "/nonexistent-sideload-test-home"))
         #expect(throws: SideloadError.self) { try services.pasteboard.copy("x") }
         #expect(!services.pasteboard.clearIfOurs())
@@ -192,9 +211,11 @@ struct SecretPasteboardTests {
 @Suite("pasteboard source hygiene")
 struct PasteboardSourceHygieneTests {
     private func swiftFiles(_ sub: String) throws -> [(path: String, text: String)] {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Sources/" + sub)
-        let walker = try #require(FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil))
+        let walker = try #require(
+            FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil))
         var files: [(String, String)] = []
         for case let url as URL in walker where url.pathExtension == "swift" {
             files.append((url.path, try String(contentsOf: url, encoding: .utf8)))
@@ -203,7 +224,9 @@ struct PasteboardSourceHygieneTests {
         return files
     }
 
-    @Test("SideloadCore imports no AppKit and never touches NSPasteboard; nothing shells out to pbcopy")
+    @Test(
+        "SideloadCore imports no AppKit and never touches NSPasteboard; nothing shells out to pbcopy"
+    )
     func coreStaysFree() throws {
         for (path, text) in try swiftFiles("SideloadCore") {
             #expect(!text.contains("import AppKit") && !text.contains("NSPasteboard"), "\(path)")
@@ -217,7 +240,8 @@ struct PasteboardSourceHygieneTests {
 
     @Test("NSPasteboard lives in one CLI file")
     func oneFile() throws {
-        let users = try swiftFiles("sideload").filter { $0.text.contains("NSPasteboard") }.map(\.path)
+        let users = try swiftFiles("sideload").filter { $0.text.contains("NSPasteboard") }.map(
+            \.path)
         #expect(users.count == 1 && users[0].hasSuffix("/Pasteboard.swift"))
     }
 }

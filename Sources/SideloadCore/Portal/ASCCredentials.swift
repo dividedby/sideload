@@ -33,12 +33,15 @@ public struct ASCCredentials: Sendable {
         "Create $SIDELOAD_HOME/asc/ (mode 0700) holding key.json and the AuthKey_<KEYID>.p8 from App Store Connect (see README)."
 
     private static func invalid(_ message: String) -> SideloadError {
-        SideloadError("ASC_KEY_INVALID", message, fix: "Fix $SIDELOAD_HOME/asc/key.json and the key file (see README).")
+        SideloadError(
+            "ASC_KEY_INVALID", message,
+            fix: "Fix $SIDELOAD_HOME/asc/key.json and the key file (see README).")
     }
 
     private static func permissions(_ what: String, mode: String) -> SideloadError {
         SideloadError(
-            "ASC_KEY_PERMISSIONS", "\(what) must have mode \(mode), be owned by you, and not be a symlink.",
+            "ASC_KEY_PERMISSIONS",
+            "\(what) must have mode \(mode), be owned by you, and not be a symlink.",
             fix: "chmod \(mode) on it, and check its owner.")
     }
 
@@ -48,18 +51,22 @@ public struct ASCCredentials: Sendable {
         if lstat(paths.asc, &st) != 0 {
             if errno == ENOENT {
                 throw SideloadError(
-                    "PORTAL_NOT_CONFIGURED", "No App Store Connect API key is configured.", fix: fixSetup)
+                    "PORTAL_NOT_CONFIGURED", "No App Store Connect API key is configured.",
+                    fix: fixSetup)
             }
             throw ioError("stat")
         }
-        guard (st.st_mode & S_IFMT) == S_IFDIR, st.st_uid == geteuid(), st.st_mode & 0o077 == 0 else {
+        guard (st.st_mode & S_IFMT) == S_IFDIR, st.st_uid == geteuid(), st.st_mode & 0o077 == 0
+        else {
             throw permissions("$SIDELOAD_HOME/asc", mode: "700")
         }
 
         guard let jsonData = try readSecretFile(paths.asc + "/key.json", limit: maxJSONBytes) else {
-            throw SideloadError("PORTAL_NOT_CONFIGURED", "$SIDELOAD_HOME/asc/key.json is missing.", fix: fixSetup)
+            throw SideloadError(
+                "PORTAL_NOT_CONFIGURED", "$SIDELOAD_HOME/asc/key.json is missing.", fix: fixSetup)
         }
-        guard let json = try? JSONDecoder().decode(JSONValue.self, from: jsonData), case .object(let fields) = json
+        guard let json = try? JSONDecoder().decode(JSONValue.self, from: jsonData),
+            case .object(let fields) = json
         else { throw invalid("key.json is not a JSON object.") }
 
         func string(_ key: String) -> String? {
@@ -79,12 +86,15 @@ public struct ASCCredentials: Sendable {
 
         guard let keyData = try readSecretFile(paths.asc + "/" + keyFile, limit: maxKeyBytes) else {
             throw SideloadError(
-                "PORTAL_NOT_CONFIGURED", "The key file named in key.json is missing.", fix: fixSetup)
+                "PORTAL_NOT_CONFIGURED", "The key file named in key.json is missing.", fix: fixSetup
+            )
         }
         // Fail here, before any token or request, if the file is not a P-256 PKCS#8 key.
-        guard let pem = String(data: keyData, encoding: .utf8), (try? P256.Signing.PrivateKey(pemRepresentation: pem)) != nil
+        guard let pem = String(data: keyData, encoding: .utf8),
+            (try? P256.Signing.PrivateKey(pemRepresentation: pem)) != nil
         else { throw invalid("The key file is not a P-256 private key in PEM form.") }
-        return ASCCredentials(keyId: keyId, issuerId: issuerId, role: role, privateKey: ASCSecret(pem))
+        return ASCCredentials(
+            keyId: keyId, issuerId: issuerId, role: role, privateKey: ASCSecret(pem))
     }
 
     /// Reads a regular file without following a final symlink (and without blocking on a FIFO, which the
@@ -102,10 +112,13 @@ public struct ASCCredentials: Sendable {
         defer { close(fd) }
         var st = stat()
         if fstat(fd, &st) != 0 { throw ioError("stat") }
-        guard (st.st_mode & S_IFMT) == S_IFREG, st.st_uid == geteuid(), st.st_mode & 0o077 == 0 else {
+        guard (st.st_mode & S_IFMT) == S_IFREG, st.st_uid == geteuid(), st.st_mode & 0o077 == 0
+        else {
             throw permissions("An asc/ file", mode: "600")
         }
-        guard st.st_size <= limit else { throw invalid("An asc/ file is larger than \(limit) bytes.") }
+        guard st.st_size <= limit else {
+            throw invalid("An asc/ file is larger than \(limit) bytes.")
+        }
         var data = Data()
         var buffer = [UInt8](repeating: 0, count: 1024)
         while true {

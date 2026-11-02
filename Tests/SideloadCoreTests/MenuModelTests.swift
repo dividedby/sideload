@@ -54,7 +54,8 @@ struct MenuModelTests {
         defer { try? FileManager.default.removeItem(at: dir) }
         let runner = GateRunner()
         let services = Services(
-            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow), keychain: FakeKeychain(),
+            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow),
+            keychain: FakeKeychain(),
             home: Paths(home: dir.path))
         let model = MenuModel(services: services)
 

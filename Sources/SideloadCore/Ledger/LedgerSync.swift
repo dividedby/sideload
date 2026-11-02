@@ -20,7 +20,8 @@ public enum LedgerSync {
 
     @discardableResult
     public static func merge(
-        _ ledger: inout Ledger, certificates: [KeychainCertificate], profiles: [ProvisioningProfile], now: Date
+        _ ledger: inout Ledger, certificates: [KeychainCertificate],
+        profiles: [ProvisioningProfile], now: Date
     ) -> Summary {
         // Whole seconds, so the stamp survives the ISO 8601 round trip unchanged.
         let stamp = Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down))
@@ -32,7 +33,8 @@ public enum LedgerSync {
     }
 
     private static func mergeCertificates(
-        _ ledger: inout Ledger, _ certificates: [KeychainCertificate], stamp: Date, summary: inout Summary
+        _ ledger: inout Ledger, _ certificates: [KeychainCertificate], stamp: Date,
+        summary: inout Summary
     ) {
         for i in ledger.certificates.indices {
             ledger.certificates[i].present = false
@@ -48,8 +50,10 @@ public enum LedgerSync {
             upsert(
                 &ledger.certificates, key: \.fp8,
                 LedgerCertificate(
-                    fp8: fp8(cert.reference), team: Team.id, notBefore: cert.info.notBefore, notAfter: notAfter,
-                    firstSeen: stamp, lastSeen: stamp, valid: cert.isValidForCodeSigning && notAfter > stamp,
+                    fp8: fp8(cert.reference), team: Team.id, notBefore: cert.info.notBefore,
+                    notAfter: notAfter,
+                    firstSeen: stamp, lastSeen: stamp,
+                    valid: cert.isValidForCodeSigning && notAfter > stamp,
                     present: true))
             summary.certificates += 1
         }
@@ -57,7 +61,8 @@ public enum LedgerSync {
     }
 
     private static func mergeProfiles(
-        _ ledger: inout Ledger, _ profiles: [ProvisioningProfile], stamp: Date, summary: inout Summary
+        _ ledger: inout Ledger, _ profiles: [ProvisioningProfile], stamp: Date,
+        summary: inout Summary
     ) {
         for i in ledger.profiles.indices { ledger.profiles[i].present = false }
         var seen = Set<String>()
@@ -72,8 +77,10 @@ public enum LedgerSync {
                 LedgerProfile(
                     uuid: profile.uuid, team: Team.id, applicationId: profile.applicationIdentifier,
                     wildcard: profile.isWildcard, created: profile.created, expires: expires,
-                    deviceCount: profile.devices.count, deviceTails: profile.devices.map { String($0.suffix(4)) }.sorted(),
-                    certFp8s: profile.certFingerprints.map(fp8).sorted(), source: profileSource, firstSeen: stamp,
+                    deviceCount: profile.devices.count,
+                    deviceTails: profile.devices.map { String($0.suffix(4)) }.sorted(),
+                    certFp8s: profile.certFingerprints.map(fp8).sorted(), source: profileSource,
+                    firstSeen: stamp,
                     lastSeen: stamp, present: true))
             summary.profiles += 1
         }
@@ -81,7 +88,9 @@ public enum LedgerSync {
     }
 
     /// Replaces the entry with the same key by `fresh`, keeping its `firstSeen` and unknown keys; appends otherwise.
-    private static func upsert<T: LedgerEntry>(_ entries: inout [T], key: KeyPath<T, String>, _ fresh: T) {
+    private static func upsert<T: LedgerEntry>(
+        _ entries: inout [T], key: KeyPath<T, String>, _ fresh: T
+    ) {
         guard let i = entries.firstIndex(where: { $0[keyPath: key] == fresh[keyPath: key] }) else {
             entries.append(fresh)
             return

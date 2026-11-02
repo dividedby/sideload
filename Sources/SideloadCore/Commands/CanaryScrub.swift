@@ -7,12 +7,15 @@ import Synchronization
 enum InstallScrubber {
     static let placeholder = "<device>"
     static let sensitiveKeys: Set<String> = [
-        "deviceName", "hostname", "hostName", "dnsName", "potentialHostnames", "serialNumber", "ecid",
+        "deviceName", "hostname", "hostName", "dnsName", "potentialHostnames", "serialNumber",
+        "ecid",
     ]
 
     /// Literals of three or more characters are replaced as substrings; shorter ones only as whole words in
     /// string values (never in keys), so a short name cannot mangle unrelated text.
-    static func scrub(_ value: JSONValue, literals: [String], key: String = "", inKey: Bool = false) -> JSONValue {
+    static func scrub(_ value: JSONValue, literals: [String], key: String = "", inKey: Bool = false)
+        -> JSONValue
+    {
         if sensitiveKeys.contains(key) && !inKey { return .string(placeholder) }
         switch value {
         case .string(let s):
@@ -23,7 +26,8 @@ enum InstallScrubber {
             var out: [String: JSONValue] = [:]
             // Sorted so keys colliding after scrubbing resolve deterministically (last wins).
             for k in fields.keys.sorted() {
-                out[scrubString(k, literals: literals, inKey: true)] = scrub(fields[k]!, literals: literals, key: k)
+                out[scrubString(k, literals: literals, inKey: true)] = scrub(
+                    fields[k]!, literals: literals, key: k)
             }
             return .object(out)
         case .null, .bool, .number:
@@ -77,7 +81,9 @@ enum InstallScrubber {
 /// apostrophe style (`'` `’` `‘` `ʼ`) and runs of whitespace. Shorter names match only as whole words, exactly
 /// (a short name must not mangle unrelated text).
 enum TextMatch {
-    private static let apostrophes: Set<Character> = ["'", "\u{2019}", "\u{2018}", "\u{02BC}", "`", "\u{00B4}"]
+    private static let apostrophes: Set<Character> = [
+        "'", "\u{2019}", "\u{2018}", "\u{02BC}", "`", "\u{00B4}",
+    ]
     private static let apostropheClass = "['\u{2019}\u{2018}\u{02BC}`\u{00B4}]"
     private static let cache = Mutex<[String: NSRegularExpression]>([:])
 
@@ -91,7 +97,9 @@ enum TextMatch {
                 continue
             }
             inSpace = false
-            out += apostrophes.contains(ch) ? apostropheClass : NSRegularExpression.escapedPattern(for: String(ch))
+            out +=
+                apostrophes.contains(ch)
+                ? apostropheClass : NSRegularExpression.escapedPattern(for: String(ch))
         }
         return out
     }
@@ -100,11 +108,15 @@ enum TextMatch {
     private static let wordAfter = "(?![A-Za-z0-9_])"
 
     /// `wholeWord` adds word boundaries; `ignoreCase` makes the match case-insensitive.
-    static func regex(_ literal: String, wholeWord: Bool, ignoreCase: Bool) -> NSRegularExpression? {
+    static func regex(_ literal: String, wholeWord: Bool, ignoreCase: Bool) -> NSRegularExpression?
+    {
         let key = "\(wholeWord ? "w" : "p")\(ignoreCase ? "i" : "s"):\(literal)"
         if let hit = cache.withLock({ $0[key] }) { return hit }
         let body = wholeWord ? wordBefore + pattern(literal) + wordAfter : pattern(literal)
-        guard let re = try? NSRegularExpression(pattern: body, options: ignoreCase ? [.caseInsensitive] : []) else {
+        guard
+            let re = try? NSRegularExpression(
+                pattern: body, options: ignoreCase ? [.caseInsensitive] : [])
+        else {
             return nil
         }
         cache.withLock { $0[key] = re }
@@ -121,7 +133,9 @@ enum TextMatch {
         replace(s, regex: nameRegex(name), with: replacement)
     }
 
-    static func replace(_ s: String, regex: NSRegularExpression?, with replacement: String) -> String {
+    static func replace(_ s: String, regex: NSRegularExpression?, with replacement: String)
+        -> String
+    {
         guard let regex, !s.isEmpty else { return s }
         return regex.stringByReplacingMatches(
             in: s, range: NSRange(location: 0, length: (s as NSString).length),
@@ -130,7 +144,8 @@ enum TextMatch {
 
     static func contains(_ s: String, regex: NSRegularExpression?) -> Bool {
         guard let regex else { return false }
-        return regex.firstMatch(in: s, range: NSRange(location: 0, length: (s as NSString).length)) != nil
+        return regex.firstMatch(in: s, range: NSRange(location: 0, length: (s as NSString).length))
+            != nil
     }
 
     static func contains(_ s: String, name: String) -> Bool {
@@ -189,7 +204,9 @@ enum InstallLogScrubber {
         var idForms: [(regex: NSRegularExpression, tail: String)] {
             ids.filter { !$0.isEmpty }.flatMap { id in
                 [id, id.replacingOccurrences(of: "-", with: "")].compactMap { form in
-                    TextMatch.regex(form, wholeWord: false, ignoreCase: true).map { ($0, Redactor.tail4(id)) }
+                    TextMatch.regex(form, wholeWord: false, ignoreCase: true).map {
+                        ($0, Redactor.tail4(id))
+                    }
                 }
             }
         }
@@ -197,9 +214,13 @@ enum InstallLogScrubber {
         /// The login name (any length, whole word), the full name and each of its words of four or more characters.
         var personRegexes: [NSRegularExpression] {
             var out: [NSRegularExpression?] = []
-            if !login.isEmpty { out.append(TextMatch.regex(login, wholeWord: true, ignoreCase: true)) }
+            if !login.isEmpty {
+                out.append(TextMatch.regex(login, wholeWord: true, ignoreCase: true))
+            }
             let full = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
-            if full.utf16.count >= 3 { out.append(TextMatch.regex(full, wholeWord: false, ignoreCase: true)) }
+            if full.utf16.count >= 3 {
+                out.append(TextMatch.regex(full, wholeWord: false, ignoreCase: true))
+            }
             for word in full.split(whereSeparator: \.isWhitespace) where word.utf16.count >= 4 {
                 out.append(TextMatch.regex(String(word), wholeWord: true, ignoreCase: true))
             }
@@ -212,8 +233,11 @@ enum InstallLogScrubber {
             for cn in identityNames where cn.count >= 3 {
                 out.append(TextMatch.regex(cn, wholeWord: false, ignoreCase: true))
                 let ns = cn as NSString
-                if let m = SubjectTokens.identityShape.firstMatch(in: cn, range: NSRange(location: 0, length: ns.length)) {
-                    let person = ns.substring(with: m.range(at: 1)), id = ns.substring(with: m.range(at: 2))
+                if let m = SubjectTokens.identityShape.firstMatch(
+                    in: cn, range: NSRange(location: 0, length: ns.length))
+                {
+                    let person = ns.substring(with: m.range(at: 1))
+                    let id = ns.substring(with: m.range(at: 2))
                     out.append(TextMatch.regex(person, wholeWord: true, ignoreCase: true))
                     out.append(TextMatch.regex(id, wholeWord: false, ignoreCase: true))
                 }
@@ -223,14 +247,17 @@ enum InstallLogScrubber {
     }
 
     private static let percentEmail = try! NSRegularExpression(
-        pattern: #"[A-Za-z0-9._%+-]+%40[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"#, options: [.caseInsensitive])
+        pattern: #"[A-Za-z0-9._%+-]+%40[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+"#,
+        options: [.caseInsensitive])
     private static let lowerUsers = try! NSRegularExpression(
         pattern: #"/users/(?!<user>)[^/\s"']+"#, options: [.caseInsensitive])
 
     /// The text-level mask: `inKey` says the text is a JSON key (short names are never masked inside keys).
     static func masker(_ subjects: Subjects) -> (String, Bool) -> String {
         let names = subjects.nameLiterals
-        let ids = subjects.idForms, people = subjects.personRegexes, identities = subjects.identityRegexes
+        let ids = subjects.idForms
+        let people = subjects.personRegexes
+        let identities = subjects.identityRegexes
         let redactor = Redactor(literals: subjects.ids)
         return { input, inKey in
             var out = InstallScrubber.scrubString(input, literals: names, inKey: inKey)

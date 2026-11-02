@@ -15,7 +15,8 @@ public enum FreeInstallExpiry {
     /// The level comes from the exact remaining time (`warn` up to and including 3 days, `critical` up to and including
     /// 1 day, `expired` at or past zero), so 3.9 days is still `ok`. `daysLeft` is the floored count the JSON reports;
     /// `label` rounds up.
-    public static func assess(expires: Date, now: Date) -> (daysLeft: Int, level: ExpiryItem.Level) {
+    public static func assess(expires: Date, now: Date) -> (daysLeft: Int, level: ExpiryItem.Level)
+    {
         let seconds = expires.timeIntervalSince(now)
         let days = Int((seconds / secondsPerDay).rounded(.down))
         if seconds <= 0 { return (days, .expired) }
@@ -90,7 +91,9 @@ enum MenuFormat {
         return capitalised(app)
     }
 
-    static func capitalised(_ text: String) -> String { text.prefix(1).uppercased() + text.dropFirst() }
+    static func capitalised(_ text: String) -> String {
+        text.prefix(1).uppercased() + text.dropFirst()
+    }
 
     /// A version as the panel writes it: Stremio's `<ver>b<build>` is "1.9.2 (45)", anything else is as it is.
     static func version(_ raw: String) -> String {

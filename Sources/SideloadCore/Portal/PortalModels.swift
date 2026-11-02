@@ -19,7 +19,9 @@ struct PortalCertificate {
         platform = item.string("platform")
         activated = item.bool("activated")
         expires = item.string("expirationDate")
-        der = item.string("certificateContent").flatMap { Data(base64Encoded: $0, options: .ignoreUnknownCharacters) }
+        der = item.string("certificateContent").flatMap {
+            Data(base64Encoded: $0, options: .ignoreUnknownCharacters)
+        }
     }
 }
 

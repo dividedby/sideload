@@ -13,7 +13,9 @@ public enum FetchLimits {
 /// default port, and a host in the source's allowlist.
 enum DownloadPolicy {
     static func permits(_ url: URL, hosts: Set<String>) -> Bool {
-        guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased(), hosts.contains(host) else { return false }
+        guard url.scheme?.lowercased() == "https", let host = url.host?.lowercased(),
+            hosts.contains(host)
+        else { return false }
         guard url.user == nil, url.password == nil else { return false }
         return url.port == nil || url.port == 443
     }
@@ -43,13 +45,16 @@ struct FetchSource: Sendable, Equatable {
 
     var metadataURL: URL {
         switch kind {
-        case .githubRelease(let repo): URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
+        case .githubRelease(let repo):
+            URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
         case .altstoreIndex(let url, _): URL(string: url)!
         }
     }
 
     func narrowed(to hosts: Set<String>) -> FetchSource {
-        FetchSource(app: app, kind: kind, metadataHosts: metadataHosts.intersection(hosts), downloadHosts: downloadHosts.intersection(hosts))
+        FetchSource(
+            app: app, kind: kind, metadataHosts: metadataHosts.intersection(hosts),
+            downloadHosts: downloadHosts.intersection(hosts))
     }
 }
 
@@ -63,13 +68,19 @@ enum FetchCatalog {
     /// `objects.githubusercontent.com` and `release-assets.githubusercontent.com` for that.
     static let sources: [FetchSource] = [
         FetchSource(
-            app: "apollo", kind: .githubRelease(repo: apolloRepo), metadataHosts: ["api.github.com"],
-            downloadHosts: ["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"]),
+            app: "apollo", kind: .githubRelease(repo: apolloRepo),
+            metadataHosts: ["api.github.com"],
+            downloadHosts: [
+                "github.com", "objects.githubusercontent.com",
+                "release-assets.githubusercontent.com",
+            ]),
         FetchSource(
-            app: "stremio-ios", kind: .altstoreIndex(url: stremioIndexBase + "stremio-ios.json", tvos: false),
+            app: "stremio-ios",
+            kind: .altstoreIndex(url: stremioIndexBase + "stremio-ios.json", tvos: false),
             metadataHosts: ["raw.githubusercontent.com"], downloadHosts: [stremioHost]),
         FetchSource(
-            app: "stremio-tvos", kind: .altstoreIndex(url: stremioIndexBase + "stremio-tvos.json", tvos: true),
+            app: "stremio-tvos",
+            kind: .altstoreIndex(url: stremioIndexBase + "stremio-tvos.json", tvos: true),
             metadataHosts: ["raw.githubusercontent.com"], downloadHosts: [stremioHost]),
     ]
 
@@ -84,19 +95,23 @@ enum FetchCatalog {
                 fix: "Use one of: \(appNames.joined(separator: ", ")).")
         }
         let entries = config.approvedSources.compactMap { value -> [String: JSONValue]? in
-            guard case .object(let o) = value, case .string(let name)? = o["app"], name == app else { return nil }
+            guard case .object(let o) = value, case .string(let name)? = o["app"], name == app
+            else { return nil }
             return o
         }
         guard let entry = entries.first else {
             throw SideloadError(
                 "SOURCE_NOT_ALLOWED", "\(app) is not in approvedSources in config.json.",
-                fix: "The owner approves a source by adding {\"app\": \"\(app)\"} to approvedSources in $SIDELOAD_HOME/config.json.")
+                fix:
+                    "The owner approves a source by adding {\"app\": \"\(app)\"} to approvedSources in $SIDELOAD_HOME/config.json."
+            )
         }
         guard case .array(let listed)? = entry["hosts"] else { return source }
-        let hosts = Set(listed.compactMap { value -> String? in
-            if case .string(let h) = value { return h.lowercased() }
-            return nil
-        })
+        let hosts = Set(
+            listed.compactMap { value -> String? in
+                if case .string(let h) = value { return h.lowercased() }
+                return nil
+            })
         return source.narrowed(to: hosts)
     }
 

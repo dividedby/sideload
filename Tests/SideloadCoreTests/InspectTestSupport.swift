@@ -11,9 +11,14 @@ import Testing
 
 /// Runs a real tool; fails the test on a non-zero exit.
 @discardableResult
-func tool(_ executable: String, _ args: [String], sourceLocation: SourceLocation = #_sourceLocation) async -> String {
-    let result = await PosixSpawnRunner().run(CommandSpec(executable: executable, args: args, timeout: .seconds(60)))
-    #expect(result.code == 0, "\(executable) \(args.first ?? "") failed: \(result.stderr)", sourceLocation: sourceLocation)
+func tool(_ executable: String, _ args: [String], sourceLocation: SourceLocation = #_sourceLocation)
+    async -> String
+{
+    let result = await PosixSpawnRunner().run(
+        CommandSpec(executable: executable, args: args, timeout: .seconds(60)))
+    #expect(
+        result.code == 0, "\(executable) \(args.first ?? "") failed: \(result.stderr)",
+        sourceLocation: sourceLocation)
     return result.stdout
 }
 
@@ -41,7 +46,12 @@ actor MachOTemplates {
             let thin = dir + "/\(key)-thin"
             await tool("/usr/bin/lipo", ["-thin", "arm64e", "/usr/bin/true", "-output", thin])
             let platformed = dir + "/\(key)-platformed"
-            await tool("/usr/bin/vtool", ["-set-build-version", platform, minOS, "17.0", "-replace", "-output", platformed, thin])
+            await tool(
+                "/usr/bin/vtool",
+                [
+                    "-set-build-version", platform, minOS, "17.0", "-replace", "-output",
+                    platformed, thin,
+                ])
             await tool("/usr/bin/codesign", ["--remove-signature", platformed])
             guard universal else { return platformed }
             let x86 = dir + "/\(key)-x86"
@@ -69,22 +79,27 @@ struct BundleSpec {
 
     static func app(
         _ name: String = "Test", bundleId: String = "io.example.test", executable: String = "Test",
-        platform: String = "ios", minOS: String = "15.0", extra: [String: Any] = [:], sign: Bool = true,
+        platform: String = "ios", minOS: String = "15.0", extra: [String: Any] = [:],
+        sign: Bool = true,
         entitlements: [String: Any]? = nil, universal: Bool = false
     ) -> BundleSpec {
         var plist: [String: Any] = [
             "CFBundleIdentifier": bundleId, "CFBundleExecutable": executable, "CFBundleName": name,
-            "CFBundleShortVersionString": "1.2.3", "CFBundleVersion": "45", "MinimumOSVersion": minOS,
-            "UIDeviceFamily": [1, 2], "CFBundleSupportedPlatforms": [platform == "ios" ? "iPhoneOS" : "AppleTVOS"],
+            "CFBundleShortVersionString": "1.2.3", "CFBundleVersion": "45",
+            "MinimumOSVersion": minOS,
+            "UIDeviceFamily": [1, 2],
+            "CFBundleSupportedPlatforms": [platform == "ios" ? "iPhoneOS" : "AppleTVOS"],
         ]
         for (k, v) in extra { plist[k] = v }
         return BundleSpec(
-            directory: "Payload/\(name).app", plist: plist, executableName: executable, platform: platform, minOS: minOS,
+            directory: "Payload/\(name).app", plist: plist, executableName: executable,
+            platform: platform, minOS: minOS,
             universal: universal, sign: sign, entitlements: entitlements)
     }
 
     static func appex(
-        _ name: String = "Share", bundleId: String = "io.example.test.share", point: String = "com.apple.share-services",
+        _ name: String = "Share", bundleId: String = "io.example.test.share",
+        point: String = "com.apple.share-services",
         sign: Bool = true, entitlements: [String: Any]? = nil, app: String = "Test"
     ) -> BundleSpec {
         BundleSpec(
@@ -103,9 +118,12 @@ func layOut(_ bundles: [BundleSpec], at root: String) async throws {
     for bundle in bundles.sorted(by: { $0.directory.count > $1.directory.count }) {
         let dir = root + "/" + bundle.directory
         try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
-        if let plist = bundle.plist { try infoPlist(plist).write(to: URL(fileURLWithPath: dir + "/Info.plist")) }
+        if let plist = bundle.plist {
+            try infoPlist(plist).write(to: URL(fileURLWithPath: dir + "/Info.plist"))
+        }
         if let name = bundle.executableName {
-            let template = try await MachOTemplates.shared.path(platform: bundle.platform, minOS: bundle.minOS, universal: bundle.universal)
+            let template = try await MachOTemplates.shared.path(
+                platform: bundle.platform, minOS: bundle.minOS, universal: bundle.universal)
             try fm.copyItem(atPath: template, toPath: dir + "/" + name)
         }
         for (relative, data) in bundle.extraFiles {
@@ -114,7 +132,8 @@ func layOut(_ bundles: [BundleSpec], at root: String) async throws {
             try data.write(to: URL(fileURLWithPath: path))
         }
     }
-    for bundle in bundles.sorted(by: { $0.directory.count > $1.directory.count }) where bundle.sign && bundle.executableName != nil {
+    for bundle in bundles.sorted(by: { $0.directory.count > $1.directory.count })
+    where bundle.sign && bundle.executableName != nil {
         let dir = root + "/" + bundle.directory
         var args = ["-f", "-s", "-"]
         if let entitlements = bundle.entitlements {
@@ -127,12 +146,19 @@ func layOut(_ bundles: [BundleSpec], at root: String) async throws {
 }
 
 /// A `.ipa` made from `bundles` with the real `ditto`.
-func makeIPA(_ bundles: [BundleSpec], in dir: String, name: String = "test.ipa") async throws -> String {
+func makeIPA(_ bundles: [BundleSpec], in dir: String, name: String = "test.ipa") async throws
+    -> String
+{
     let root = dir + "/root-\(UUID().uuidString)"
     try FileManager.default.createDirectory(atPath: root, withIntermediateDirectories: true)
     try await layOut(bundles, at: root)
     let ipa = dir + "/" + name
-    await tool("/usr/bin/ditto", ["-c", "-k", "--norsrc", "--noextattr", "--noqtn", "--noacl", "--keepParent", root + "/Payload", ipa])
+    await tool(
+        "/usr/bin/ditto",
+        [
+            "-c", "-k", "--norsrc", "--noextattr", "--noqtn", "--noacl", "--keepParent",
+            root + "/Payload", ipa,
+        ])
     try? FileManager.default.removeItem(atPath: root)
     return ipa
 }
@@ -173,20 +199,30 @@ func rawZip(_ entries: [RawZipEntry], comment: [UInt8] = []) -> Data {
     var out: [UInt8] = []
     var central: [UInt8] = []
     func le16(_ v: UInt16) -> [UInt8] { [UInt8(v & 0xff), UInt8(v >> 8)] }
-    func le32(_ v: UInt32) -> [UInt8] { [UInt8(v & 0xff), UInt8((v >> 8) & 0xff), UInt8((v >> 16) & 0xff), UInt8(v >> 24)] }
+    func le32(_ v: UInt32) -> [UInt8] {
+        [UInt8(v & 0xff), UInt8((v >> 8) & 0xff), UInt8((v >> 16) & 0xff), UInt8(v >> 24)]
+    }
     for entry in entries {
         let offset = UInt32(out.count)
         let crc = crc32(entry.data)
         let size = UInt32(entry.data.count)
-        out += le32(0x0403_4b50) + le16(20) + le16(entry.flags) + le16(0) + le16(0) + le16(0x21) + le32(crc) + le32(size) + le32(size)
+        out +=
+            le32(0x0403_4b50) + le16(20) + le16(entry.flags) + le16(0) + le16(0) + le16(0x21)
+            + le32(crc) + le32(size) + le32(size)
         out += le16(UInt16(entry.name.count)) + le16(0) + entry.name + entry.data
-        central += le32(0x0201_4b50) + le16(UInt16(entry.host) << 8 | 20) + le16(20) + le16(entry.flags) + le16(0) + le16(0) + le16(0x21)
-        central += le32(crc) + le32(size) + le32(entry.declaredSize ?? size) + le16(UInt16(entry.name.count)) + le16(0) + le16(0)
+        central +=
+            le32(0x0201_4b50) + le16(UInt16(entry.host) << 8 | 20) + le16(20) + le16(entry.flags)
+            + le16(0) + le16(0) + le16(0x21)
+        central +=
+            le32(crc) + le32(size) + le32(entry.declaredSize ?? size)
+            + le16(UInt16(entry.name.count)) + le16(0) + le16(0)
         central += le16(0) + le16(0) + le32(entry.mode << 16) + le32(offset) + entry.name
     }
     let cdOffset = UInt32(out.count)
     out += central
-    out += le32(0x0605_4b50) + le16(0) + le16(0) + le16(UInt16(entries.count)) + le16(UInt16(entries.count))
+    out +=
+        le32(0x0605_4b50) + le16(0) + le16(0) + le16(UInt16(entries.count))
+        + le16(UInt16(entries.count))
     out += le32(UInt32(central.count)) + le32(cdOffset) + le16(UInt16(comment.count)) + comment
     return Data(out)
 }
@@ -199,7 +235,9 @@ final class RecordingRunner: Runner {
     private let recorded = Mutex<[CommandSpec]>([])
     private let afterRun: (@Sendable (CommandSpec) -> Void)?
 
-    init(_ inner: any Runner = PosixSpawnRunner(), afterRun: (@Sendable (CommandSpec) -> Void)? = nil) {
+    init(
+        _ inner: any Runner = PosixSpawnRunner(), afterRun: (@Sendable (CommandSpec) -> Void)? = nil
+    ) {
         self.inner = inner
         self.afterRun = afterRun
     }
@@ -222,7 +260,11 @@ struct InspectWorld {
     var paths: Paths
     var code: String? { envelope.errors.first?.code }
     /// Scratch folders left under `$SIDELOAD_HOME/tmp`.
-    var leftovers: [String] { ((try? FileManager.default.contentsOfDirectory(atPath: paths.tmp)) ?? []).filter { $0.hasPrefix("inspect-") } }
+    var leftovers: [String] {
+        ((try? FileManager.default.contentsOfDirectory(atPath: paths.tmp)) ?? []).filter {
+            $0.hasPrefix("inspect-")
+        }
+    }
 }
 
 /// Runs `inspect` over a temp home with a recording real runner. `prepare` builds the IPA inside the temp directory.
@@ -232,12 +274,15 @@ func inspectIPA(
     prepare: (_ dir: String) async throws -> String
 ) async throws -> InspectWorld {
     try await withTestHome { paths, _ in
-        try await inspectIn(paths: paths, limits: limits, registry: registry, makeRunner: makeRunner, prepare: prepare)
+        try await inspectIn(
+            paths: paths, limits: limits, registry: registry, makeRunner: makeRunner,
+            prepare: prepare)
     }
 }
 
 private func inspectIn(
-    paths: Paths, limits: InspectLimits, registry: ScratchRegistry, makeRunner: (@Sendable () -> RecordingRunner)?,
+    paths: Paths, limits: InspectLimits, registry: ScratchRegistry,
+    makeRunner: (@Sendable () -> RecordingRunner)?,
     prepare: (String) async throws -> String
 ) async throws -> InspectWorld {
     let workDir = paths.home + "/ipas"
@@ -245,9 +290,11 @@ private func inspectIn(
     let ipa = try await prepare(workDir)
     let runner = makeRunner?() ?? RecordingRunner()
     var services = Services(
-        runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow), keychain: FakeKeychain(), home: paths)
+        runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow),
+        keychain: FakeKeychain(), home: paths)
     services.log = { _ in }
-    let envelope = await InspectCommand.run(services, InspectOptions(path: ipa), registry: registry, limits: limits)
+    let envelope = await InspectCommand.run(
+        services, InspectOptions(path: ipa), registry: registry, limits: limits)
     let (text, json) = try envelope.printed()
     return InspectWorld(envelope: envelope, json: json, text: text, runner: runner, paths: paths)
 }

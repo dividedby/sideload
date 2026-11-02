@@ -129,7 +129,7 @@ team) before changing anything.
   links available now) to the top of `## Ideas` in the [Idea Inbox](https://github.com/dividedby/sideload/issues/1)
   (label `idea-inbox`, one per repo). Don't scope it yet. Capture and drain protocol:
   `docs/agents/idea-inbox.md`.
-- **"file a *tracked* issue"** or a plainly scoped bug: skip the Inbox and file a `needs-triage` issue directly.
+- **"file a _tracked_ issue"** or a plainly scoped bug: skip the Inbox and file a `needs-triage` issue directly.
 - Issue text follows the Secrets rules: no UDIDs, identity names, device names or credentials.
 
 ## Code style

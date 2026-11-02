@@ -32,9 +32,11 @@ private func parityCases() throws -> [ParityCase] {
     let preexisting = ["com.apple.mobilesafari", canaryBundle]
     return [
         ParityCase(name: "blocked", scenario: try failing("install-blocked-8018-hex.json")),
-        ParityCase(name: "blocked-signed", scenario: try failing("install-blocked-8018-signed.json")),
+        ParityCase(
+            name: "blocked-signed", scenario: try failing("install-blocked-8018-signed.json")),
         ParityCase(name: "blocked-text", scenario: try failing("install-blocked-8018-text.json")),
-        ParityCase(name: "provisional-8015", scenario: try failing("install-provisional-8015.json")),
+        ParityCase(
+            name: "provisional-8015", scenario: try failing("install-provisional-8015.json")),
         ParityCase(name: "working"),
         ParityCase(name: "keep", options: keep),
         ParityCase(name: "uninstall-fails", scenario: CanaryScenario(uninstallFails: true)),
@@ -44,25 +46,34 @@ private func parityCases() throws -> [ParityCase] {
         ParityCase(name: "disk-full", scenario: try failing("install-disk-full.json")),
         ParityCase(name: "not-connected", scenario: try failing("install-not-connected.json")),
         ParityCase(name: "timeout-ambiguous", scenario: CanaryScenario(install: .timeout)),
-        ParityCase(name: "timeout-keep", scenario: CanaryScenario(install: .timeout), options: keep),
-        ParityCase(name: "timeout-preexisting", scenario: timeoutScenario { $0.others = preexisting }),
+        ParityCase(
+            name: "timeout-keep", scenario: CanaryScenario(install: .timeout), options: keep),
+        ParityCase(
+            name: "timeout-preexisting", scenario: timeoutScenario { $0.others = preexisting }),
         ParityCase(name: "working-preexisting", scenario: CanaryScenario(others: preexisting)),
-        ParityCase(name: "timeout-uninstall-fails", scenario: timeoutScenario { $0.uninstallFails = true }),
+        ParityCase(
+            name: "timeout-uninstall-fails", scenario: timeoutScenario { $0.uninstallFails = true }),
         ParityCase(name: "install-overflow", scenario: CanaryScenario(installOverflow: true)),
         ParityCase(name: "uninstall-overflow", scenario: CanaryScenario(uninstallOverflow: true)),
         ParityCase(
             name: "install-overflow-uninstall-overflow",
             scenario: CanaryScenario(installOverflow: true, uninstallOverflow: true)),
-        ParityCase(name: "snapshot-overflow-after", scenario: CanaryScenario(snapshotOverflowOn: 2)),
+        ParityCase(
+            name: "snapshot-overflow-after", scenario: CanaryScenario(snapshotOverflowOn: 2)),
         ParityCase(name: "build-overflow", scenario: CanaryScenario(buildOverflow: true)),
         ParityCase(name: "build-fails", scenario: CanaryScenario(buildFails: true)),
         ParityCase(name: "product-missing", scenario: CanaryScenario(buildSkipsApp: true)),
         ParityCase(name: "guard-signed-wrong", scenario: CanaryScenario(signedTeam: "ZZZZZZZZZZ")),
         ParityCase(name: "guard-signed-free", scenario: CanaryScenario(signedTeam: "6ZU5Z6ZKK7")),
-        ParityCase(name: "guard-profile-wrong", scenario: CanaryScenario(profileTeam: "ZZZZZZZZZZ")),
+        ParityCase(
+            name: "guard-profile-wrong", scenario: CanaryScenario(profileTeam: "ZZZZZZZZZZ")),
         ParityCase(name: "guard-profile-free", scenario: CanaryScenario(profileTeam: "6ZU5Z6ZKK7")),
-        ParityCase(name: "guard-not-in-profile", scenario: CanaryScenario(profileDevices: [savedUdid("9")])),
-        ParityCase(name: "guard-case-insensitive", scenario: CanaryScenario(profileDevices: [savedUdid("1").lowercased()])),
+        ParityCase(
+            name: "guard-not-in-profile", scenario: CanaryScenario(profileDevices: [savedUdid("9")])
+        ),
+        ParityCase(
+            name: "guard-case-insensitive",
+            scenario: CanaryScenario(profileDevices: [savedUdid("1").lowercased()])),
         ParityCase(name: "precheck-fails", scenario: CanaryScenario(free: true)),
         ParityCase(name: "snapshot-fails", scenario: CanaryScenario(snapshotFails: true)),
         ParityCase(name: "usage", options: CanaryOptions(yes: true)),
@@ -78,8 +89,10 @@ struct CanaryParityTests {
 
     @Test("the case table covers every golden file")
     func coversGoldens() throws {
-        let files = listing(URL(fileURLWithPath: fixture("canary-golden/x")).deletingLastPathComponent().path)
-            .filter { $0.hasSuffix(".json") }.map { String($0.dropLast(5)) }.sorted()
+        let files = listing(
+            URL(fileURLWithPath: fixture("canary-golden/x")).deletingLastPathComponent().path
+        )
+        .filter { $0.hasSuffix(".json") }.map { String($0.dropLast(5)) }.sorted()
         #expect(Self.cases.map(\.name).sorted() == files)
     }
 

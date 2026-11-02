@@ -24,7 +24,9 @@ public struct DiskCheck: Check {
             return [
                 CheckResult(
                     id: id, severity: .warn, message: message,
-                    fix: "Free up space; builds need headroom (warning below \(Self.number(warnBelow)) GB).")
+                    fix:
+                        "Free up space; builds need headroom (warning below \(Self.number(warnBelow)) GB)."
+                )
             ]
         }
         return [CheckResult(id: id, severity: .ok, message: message)]

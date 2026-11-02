@@ -17,7 +17,8 @@ import Testing
 // (the result is `.denied`). Each risky step runs under a timeout so an unanswered dialog cannot hang the run.
 // Default test runs skip all of this and touch no real keychain.
 
-private let realKeychainEnabled = ProcessInfo.processInfo.environment["SIDELOAD_REAL_KEYCHAIN"] == "1"
+private let realKeychainEnabled =
+    ProcessInfo.processInfo.environment["SIDELOAD_REAL_KEYCHAIN"] == "1"
 
 private func runTool(_ path: String, _ arguments: [String]) -> (status: Int32, output: String) {
     let process = Process()
@@ -34,7 +35,10 @@ private func runTool(_ path: String, _ arguments: [String]) -> (status: Int32, o
 
 /// The throwaway keychain. Uses the deprecated `SecKeychain` file API, which is the only way to create a keychain
 /// file; the attribute keeps the deprecation warnings out of the build.
-@available(macOS, deprecated: 10.10, message: "SecKeychain is deprecated; this is a test helper for a throwaway keychain")
+@available(
+    macOS, deprecated: 10.10,
+    message: "SecKeychain is deprecated; this is a test helper for a throwaway keychain"
+)
 private final class ThrowawayKeychain {
     static let passphrase = "throwaway-keychain-password"
     static let bundleSecret = "throwaway-p12-password"
@@ -48,11 +52,13 @@ private final class ThrowawayKeychain {
         searchListBefore = runTool("/usr/bin/security", ["list-keychains", "-d", "user"]).output
         let base = NSTemporaryDirectory() + "sideload-real-keychain-" + UUID().uuidString
         try FileManager.default.createDirectory(
-            atPath: base, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+            atPath: base, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700]
+        )
         directory = base
         var created: SecKeychain?
         let status = SecKeychainCreate(
-            base + "/throwaway.keychain", UInt32(Self.passphrase.utf8.count), Self.passphrase, false, nil, &created)
+            base + "/throwaway.keychain", UInt32(Self.passphrase.utf8.count), Self.passphrase,
+            false, nil, &created)
         guard status == errSecSuccess, let created else {
             try? FileManager.default.removeItem(atPath: base)
             throw KeychainFailure.status(status)
@@ -68,31 +74,43 @@ private final class ThrowawayKeychain {
     /// Returns false when openssl is missing.
     func addIdentity(ou: String) throws -> Bool {
         guard FileManager.default.isExecutableFile(atPath: "/usr/bin/openssl") else { return false }
-        let key = directory + "/k.pem", cert = directory + "/c.pem", bundle = directory + "/in.p12"
-        let req = runTool("/usr/bin/openssl", [
-            "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert,
-            "-subj", "/CN=Apple Development: Throwaway/OU=\(ou)", "-days", "2",
-        ])
-        let pack = runTool("/usr/bin/openssl", [
-            "pkcs12", "-export", "-inkey", key, "-in", cert, "-out", bundle, "-passout", "pass:" + Self.bundleSecret,
-        ])
-        guard req.status == 0, pack.status == 0 else { throw KeychainFailure.status(errSecInternalError) }
+        let key = directory + "/k.pem"
+        let cert = directory + "/c.pem"
+        let bundle = directory + "/in.p12"
+        let req = runTool(
+            "/usr/bin/openssl",
+            [
+                "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert,
+                "-subj", "/CN=Apple Development: Throwaway/OU=\(ou)", "-days", "2",
+            ])
+        let pack = runTool(
+            "/usr/bin/openssl",
+            [
+                "pkcs12", "-export", "-inkey", key, "-in", cert, "-out", bundle, "-passout",
+                "pass:" + Self.bundleSecret,
+            ])
+        guard req.status == 0, pack.status == 0 else {
+            throw KeychainFailure.status(errSecInternalError)
+        }
         let data = try Data(contentsOf: URL(fileURLWithPath: bundle))
         var items: CFArray?
-        let status = SecPKCS12Import(data as CFData, [
-            kSecImportExportPassphrase as String: Self.bundleSecret,
-            kSecImportExportKeychain as String: keychain,
-        ] as CFDictionary, &items)
+        let status = SecPKCS12Import(
+            data as CFData,
+            [
+                kSecImportExportPassphrase as String: Self.bundleSecret,
+                kSecImportExportKeychain as String: keychain,
+            ] as CFDictionary, &items)
         guard status == errSecSuccess else { throw KeychainFailure.status(status) }
         return true
     }
 
     func count(_ itemClass: CFString) -> Int {
         var result: CFTypeRef?
-        let status = SecItemCopyMatching([
-            kSecClass as String: itemClass, kSecMatchSearchList as String: [keychain],
-            kSecMatchLimit as String: kSecMatchLimitAll, kSecReturnRef as String: true,
-        ] as CFDictionary, &result)
+        let status = SecItemCopyMatching(
+            [
+                kSecClass as String: itemClass, kSecMatchSearchList as String: [keychain],
+                kSecMatchLimit as String: kSecMatchLimitAll, kSecReturnRef as String: true,
+            ] as CFDictionary, &result)
         return status == errSecSuccess ? ((result as? [Any])?.count ?? 0) : 0
     }
 
@@ -107,7 +125,8 @@ private final class ThrowawayKeychain {
         var now = runTool("/usr/bin/security", ["list-keychains", "-d", "user"]).output
         if now != searchListBefore {
             let paths = searchListBefore.split(separator: "\n").map {
-                $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                $0.trimmingCharacters(in: .whitespaces).trimmingCharacters(
+                    in: CharacterSet(charactersIn: "\""))
             }
             _ = runTool("/usr/bin/security", ["list-keychains", "-d", "user", "-s"] + paths)
             now = runTool("/usr/bin/security", ["list-keychains", "-d", "user"]).output
@@ -122,7 +141,10 @@ struct RealKeychainTests {
     @available(macOS, deprecated: 10.10)
     func roundTrip() async throws {
         let keychain = try ThrowawayKeychain()
-        defer { #expect(keychain.cleanUp(), "the user keychain search list must be identical afterwards") }
+        defer {
+            #expect(
+                keychain.cleanUp(), "the user keychain search list must be identical afterwards")
+        }
 
         // The cert carries the paid OU: it is a fake in a keychain nothing else searches.
         guard try keychain.addIdentity(ou: Team.id) else { return }
@@ -142,22 +164,27 @@ struct RealKeychainTests {
         let readBack = try store.readPassword()
         let matches = readBack == password
         #expect(matches)
-        #expect(throws: KeychainFailure.passwordStoreFailed(errSecDuplicateItem)) { try store.addPassword("other") }
+        #expect(throws: KeychainFailure.passwordStoreFailed(errSecDuplicateItem)) {
+            try store.addPassword("other")
+        }
         let readAgain = try store.readPassword()
         let stillMatches = readAgain == password
         #expect(stillMatches)
 
         // The reference of the one identity in the throwaway keychain.
         var found: CFTypeRef?
-        let lookup = SecItemCopyMatching([
-            kSecClass as String: kSecClassIdentity, kSecMatchSearchList as String: [keychain.keychain],
-            kSecReturnRef as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
-        ] as CFDictionary, &found)
+        let lookup = SecItemCopyMatching(
+            [
+                kSecClass as String: kSecClassIdentity,
+                kSecMatchSearchList as String: [keychain.keychain],
+                kSecReturnRef as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
+            ] as CFDictionary, &found)
         #expect(lookup == errSecSuccess)
         let identity = try #require(found) as! SecIdentity
         var certificate: SecCertificate?
         #expect(SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess)
-        let reference = CertReference(der: SecCertificateCopyData(try #require(certificate)) as Data)
+        let reference = CertReference(
+            der: SecCertificateCopyData(try #require(certificate)) as Data)
 
         // Export under the prompt guard. Deny or Cancel is an accepted outcome.
         let p12: Data
@@ -175,16 +202,24 @@ struct RealKeychainTests {
 
         // A reference that is not there is not found.
         #expect(throws: KeychainFailure.notFound) {
-            _ = try exporter.exportP12(reference: try #require(CertReference(String(repeating: "0", count: 40))), password: password)
+            _ = try exporter.exportP12(
+                reference: try #require(CertReference(String(repeating: "0", count: 40))),
+                password: password)
         }
 
         // Verify in memory: the right identity, nothing left behind, and a wrong password refused.
-        let before = (keychain.count(kSecClassIdentity), keychain.count(kSecClassKey), keychain.count(kSecClassCertificate))
+        let before = (
+            keychain.count(kSecClassIdentity), keychain.count(kSecClassKey),
+            keychain.count(kSecClassCertificate)
+        )
         #expect(try verifier.identityReferences(p12: p12, password: password) == [reference])
         #expect(throws: KeychainFailure.wrongPassword) {
             _ = try verifier.identityReferences(p12: p12, password: "not-the-password")
         }
-        let after = (keychain.count(kSecClassIdentity), keychain.count(kSecClassKey), keychain.count(kSecClassCertificate))
+        let after = (
+            keychain.count(kSecClassIdentity), keychain.count(kSecClassKey),
+            keychain.count(kSecClassCertificate)
+        )
         #expect(before == after, "the in-memory import must leave nothing in the keychain")
     }
 }

@@ -9,11 +9,15 @@ extension RefreshCommand {
         await runAuto(services, steps: RefreshSteps(), timeZone: .current)
     }
 
-    static func runAuto(_ services: Services, steps: RefreshSteps, timeZone: TimeZone) async -> Envelope {
+    static func runAuto(_ services: Services, steps: RefreshSteps, timeZone: TimeZone) async
+        -> Envelope
+    {
         let context = RefreshAutoContext(
-            log: RefreshLog(paths: services.home, clock: services.clock, run: RefreshLog.newRunId()),
+            log: RefreshLog(
+                paths: services.home, clock: services.clock, run: RefreshLog.newRunId()),
             notifier: Notifier(runner: services.runner))
-        return await RefreshRun(services: services, steps: steps, timeZone: timeZone, auto: context).executeAuto()
+        return await RefreshRun(services: services, steps: steps, timeZone: timeZone, auto: context)
+            .executeAuto()
     }
 }
 
@@ -56,10 +60,15 @@ extension RefreshRun {
     }
 
     func executeAuto() async -> Envelope {
-        guard let auto else { return .fail(command, code: "INTERNAL_ERROR", message: "refresh --auto was started without its context.") }
+        guard let auto else {
+            return .fail(
+                command, code: "INTERNAL_ERROR",
+                message: "refresh --auto was started without its context.")
+        }
         let began = services.clock.now()
         var state = AutoState(
-            began: began, start: wholeSeconds(began), deadline: wholeSeconds(began).addingTimeInterval(RefreshPolicy.autoDeadline))
+            began: began, start: wholeSeconds(began),
+            deadline: wholeSeconds(began).addingTimeInterval(RefreshPolicy.autoDeadline))
 
         if let reason = gateRun(&state) { return finish(state, auto, reason: reason) }
         let config: Config
@@ -71,7 +80,9 @@ extension RefreshRun {
             // The log is all a launchd run leaves: name the real code (CONFIG_MISSING, CONFIG_INVALID, ...).
             return finish(state, auto, reason: failure.code)
         }
-        if let reason = planDevices(&state, config, auto) { return finish(state, auto, reason: reason) }
+        if let reason = planDevices(&state, config, auto) {
+            return finish(state, auto, reason: reason)
+        }
 
         // Only now, and only if an app is a candidate, ask devicectl once which devices are there.
         var listed: [ListedDevice] = []
@@ -80,7 +91,9 @@ extension RefreshRun {
             listed = ((try? await services.deviceCtl.listDevices()) ?? nil) ?? []
         }
         for index in state.plans.indices where !state.plans[index].candidates.isEmpty {
-            if let reason = await runDevice(index, &state, config, listed, auto) { return finish(state, auto, reason: reason) }
+            if let reason = await runDevice(index, &state, config, listed, auto) {
+                return finish(state, auto, reason: reason)
+            }
         }
         return finish(state, auto, reason: nil)
     }
@@ -113,7 +126,10 @@ extension RefreshRun {
                 return true
             }
         }
-        guard let gate = RefreshPolicy.runGate(killSwitch: killSwitch, ledger: loadLedger(), lockBusy: lockBusy()) else { return nil }
+        guard
+            let gate = RefreshPolicy.runGate(
+                killSwitch: killSwitch, ledger: loadLedger(), lockBusy: lockBusy())
+        else { return nil }
         log("auto: \(gate.code), nothing to do")
         if gate == .ledgerUnreadable, let ledgerError {
             state.failures.append(RefreshFailure(error: ledgerError))
@@ -128,7 +144,9 @@ extension RefreshRun {
     // MARK: 2. the devices and their installs
 
     /// The devices with auto-renew on and, per install, the gates against the ledger as it is now. Returns a code only when the run ends.
-    private func planDevices(_ state: inout AutoState, _ config: Config, _ auto: RefreshAutoContext) -> String? {
+    private func planDevices(_ state: inout AutoState, _ config: Config, _ auto: RefreshAutoContext)
+        -> String?
+    {
         let (eligible, invalid) = RefreshPolicy.autoDevices(config.devices)
         for alias in invalid { skipDevice(alias, .configInvalid, &state, auto) }
         for alias in eligible {
@@ -147,7 +165,8 @@ extension RefreshRun {
                     case .unlisted: break
                     case .skip(let code, let expires):
                         plan.results.append(skipped(target, code, expires, now: state.start, auto))
-                    case .renew(let baseline): plan.candidates.append(Candidate(target: target, expires: baseline.expires))
+                    case .renew(let baseline):
+                        plan.candidates.append(Candidate(target: target, expires: baseline.expires))
                     }
                 }
             } catch {
@@ -166,9 +185,13 @@ extension RefreshRun {
     }
 
     /// A device left out as a whole: counted by code and logged, no app of it is listed.
-    private func skipDevice(_ alias: String, _ skip: RefreshPolicy.AutoSkip, _ state: inout AutoState, _ auto: RefreshAutoContext) {
+    private func skipDevice(
+        _ alias: String, _ skip: RefreshPolicy.AutoSkip, _ state: inout AutoState,
+        _ auto: RefreshAutoContext
+    ) {
         state.runSkips[skip.code, default: 0] += 1
-        auto.log.record("install", ["device": .string(alias), "decision": "skip", "reason": .string(skip.code)])
+        auto.log.record(
+            "install", ["device": .string(alias), "decision": "skip", "reason": .string(skip.code)])
     }
 
     /// The migrated ledger as it is now.
@@ -179,18 +202,26 @@ extension RefreshRun {
     /// The one path every gate decision takes: the install gates (`RefreshPolicy.autoGate`), then `decide` for what the device's
     /// app list adds. `ledger` is the migrated one.
     private func verdict(
-        _ target: FreeTarget, _ ledger: Ledger, _ config: Config, presence: RefreshPolicy.Presence, now: Date
+        _ target: FreeTarget, _ ledger: Ledger, _ config: Config, presence: RefreshPolicy.Presence,
+        now: Date
     ) -> Verdict {
         let subject = subject(target.app, ledger, alias: target.alias)
         if subject.install == nil, subject.signed == nil, !subject.lent { return .unlisted }
         let expires = subject.install?.profileExpires ?? subject.signed?.profileExpires
-        let pending = SlotBook(services: services, config: config, alias: target.alias).pending(ledger, now: now) != nil
+        let pending =
+            SlotBook(services: services, config: config, alias: target.alias).pending(
+                ledger, now: now) != nil
         let attempts = RefreshPolicy.deviceAttempts(
-            ledger.installs, device: target.alias, today: RefreshPolicy.dayKey(now, timeZone: timeZone))
-        if let skip = RefreshPolicy.autoGate(subject, slotPending: pending, deviceAttempts: attempts, now: now, timeZone: timeZone) {
+            ledger.installs, device: target.alias,
+            today: RefreshPolicy.dayKey(now, timeZone: timeZone))
+        if let skip = RefreshPolicy.autoGate(
+            subject, slotPending: pending, deviceAttempts: attempts, now: now, timeZone: timeZone)
+        {
             return .skip(code: skip.code, expires: expires)
         }
-        switch RefreshPolicy.decide(subject, now: now, within: RefreshPolicy.autoWithin, presence: presence) {
+        switch RefreshPolicy.decide(
+            subject, now: now, within: RefreshPolicy.autoWithin, presence: presence)
+        {
         case .renew(let baseline): return .renew(baseline)
         case .skip(let code, let expiry): return .skip(code: code, expires: expiry ?? expires)
         }
@@ -201,17 +232,23 @@ extension RefreshRun {
     /// The existing path for a device whose installs passed the gates: is it there, the app list, then app by app. Returns a code
     /// only when the run ends.
     private func runDevice(
-        _ index: Int, _ state: inout AutoState, _ config: Config, _ listed: [ListedDevice], _ auto: RefreshAutoContext
+        _ index: Int, _ state: inout AutoState, _ config: Config, _ listed: [ListedDevice],
+        _ auto: RefreshAutoContext
     ) async -> String? {
         let alias = state.plans[index].alias
         let saved = state.plans[index].saved
         let candidates = state.plans[index].candidates
         state.plans[index].candidates = []
         if let stop = state.runStop {
-            for candidate in candidates { state.plans[index].results.append(stopped(candidate, stop, state.start, auto)) }
+            for candidate in candidates {
+                state.plans[index].results.append(stopped(candidate, stop, state.start, auto))
+            }
             return nil
         }
-        guard let reach = DeviceList.autoReach(saved, listed: DeviceList.findSaved(listed, matching: saved)) else {
+        guard
+            let reach = DeviceList.autoReach(
+                saved, listed: DeviceList.findSaved(listed, matching: saved))
+        else {
             notVisible(candidates, index, &state, probe: nil, auto)
             return nil
         }
@@ -221,10 +258,13 @@ extension RefreshRun {
         var installBlock: RefreshFailure?
         log("auto: reading the app list of \(RefreshLog.alias(alias))")
         let read = await steps.snapshot(services, alias, candidates[0].target.bundleId)
-        let readError = read.error ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read.")
+        let readError =
+            read.error
+            ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read.")
         if let snapshot = read.snapshot {
             for candidate in candidates {
-                presence[candidate.target.app] = snapshot.ids.contains(candidate.target.bundleId) ? .present : .absent
+                presence[candidate.target.app] =
+                    snapshot.ids.contains(candidate.target.bundleId) ? .present : .absent
             }
         } else if reach == .probe {
             // No live connection, and the call that would open one got no answer (locked, asleep, off the network): the
@@ -239,14 +279,21 @@ extension RefreshRun {
         do {
             let ledger = try freshLedger(now: state.start)
             for candidate in candidates {
-                switch verdict(candidate.target, ledger, config, presence: presence[candidate.target.app] ?? .unknown, now: state.start) {
-                case .renew(let baseline): entries.append(Candidate(target: candidate.target, expires: baseline.expires))
+                switch verdict(
+                    candidate.target, ledger, config,
+                    presence: presence[candidate.target.app] ?? .unknown, now: state.start)
+                {
+                case .renew(let baseline):
+                    entries.append(Candidate(target: candidate.target, expires: baseline.expires))
                 case .skip(let code, let expires):
-                    state.plans[index].results.append(skipped(candidate.target, code, expires, now: state.start, auto))
+                    state.plans[index].results.append(
+                        skipped(candidate.target, code, expires, now: state.start, auto))
                 case .unlisted:
                     // Its record went away since planning: say so, as the per-app re-gate does, rather than drop it.
                     state.plans[index].results.append(
-                        skipped(candidate.target, RefreshPolicy.AutoSkip.notRecorded.code, nil, now: state.start, auto))
+                        skipped(
+                            candidate.target, RefreshPolicy.AutoSkip.notRecorded.code, nil,
+                            now: state.start, auto))
                 }
             }
         } catch {
@@ -258,7 +305,8 @@ extension RefreshRun {
         var deviceStop: String?
         for entry in entries {
             await renewApp(
-                entry, index, &state, config, presence: presence[entry.target.app] ?? .unknown, installBlock: &installBlock,
+                entry, index, &state, config, presence: presence[entry.target.app] ?? .unknown,
+                installBlock: &installBlock,
                 deviceStop: &deviceStop, auto)
         }
         return nil
@@ -266,16 +314,23 @@ extension RefreshRun {
 
     /// Every candidate of a device the run cannot reach is `DEVICE_NOT_VISIBLE`; `probe` is the failed app list's code, when
     /// the app list was the probe.
-    private func notVisible(_ candidates: [Candidate], _ index: Int, _ state: inout AutoState, probe: String?, _ auto: RefreshAutoContext) {
+    private func notVisible(
+        _ candidates: [Candidate], _ index: Int, _ state: inout AutoState, probe: String?,
+        _ auto: RefreshAutoContext
+    ) {
         let skip = RefreshPolicy.AutoSkip.deviceNotVisible.code
         for candidate in candidates {
-            state.plans[index].results.append(skipped(candidate.target, skip, candidate.expires, now: state.start, probe: probe, auto))
+            state.plans[index].results.append(
+                skipped(
+                    candidate.target, skip, candidate.expires, now: state.start, probe: probe, auto)
+            )
         }
     }
 
     /// One app of a device: the stops and the deadline, a fresh gate, the renewal, then what it means for the rest.
     private func renewApp(
-        _ entry: Candidate, _ index: Int, _ state: inout AutoState, _ config: Config, presence: RefreshPolicy.Presence,
+        _ entry: Candidate, _ index: Int, _ state: inout AutoState, _ config: Config,
+        presence: RefreshPolicy.Presence,
         installBlock: inout RefreshFailure?, deviceStop: inout String?, _ auto: RefreshAutoContext
     ) async {
         let target = entry.target
@@ -284,7 +339,8 @@ extension RefreshRun {
             return
         }
         if Task.isCancelled {
-            let interrupted = RefreshFailure(code: RefreshPolicy.interrupted, message: "The run was interrupted.", fix: nil)
+            let interrupted = RefreshFailure(
+                code: RefreshPolicy.interrupted, message: "The run was interrupted.", fix: nil)
             state.failures.append(interrupted)
             state.runStop = interrupted.code
             state.plans[index].results.append(stopped(entry, interrupted.code, state.start, auto))
@@ -293,7 +349,9 @@ extension RefreshRun {
         if services.clock.now() >= state.deadline {
             // No new app after the deadline; the next run picks up what is still due. Not an attempt, not a failure.
             state.plans[index].results.append(
-                skipped(target, RefreshPolicy.AutoSkip.deadline.code, entry.expires, now: state.start, auto))
+                skipped(
+                    target, RefreshPolicy.AutoSkip.deadline.code, entry.expires, now: state.start,
+                    auto))
             return
         }
 
@@ -301,13 +359,18 @@ extension RefreshRun {
         let baseline: RefreshPolicy.Target
         do {
             let now = wholeSeconds(services.clock.now())
-            switch verdict(target, try freshLedger(now: now), config, presence: presence, now: now) {
+            switch verdict(target, try freshLedger(now: now), config, presence: presence, now: now)
+            {
             case .renew(let fresh): baseline = fresh
             case .skip(let code, let expires):
-                state.plans[index].results.append(skipped(target, code, expires, now: state.start, auto))
+                state.plans[index].results.append(
+                    skipped(target, code, expires, now: state.start, auto))
                 return
             case .unlisted:
-                state.plans[index].results.append(skipped(target, RefreshPolicy.AutoSkip.notRecorded.code, nil, now: state.start, auto))
+                state.plans[index].results.append(
+                    skipped(
+                        target, RefreshPolicy.AutoSkip.notRecorded.code, nil, now: state.start, auto
+                    ))
                 return
             }
         } catch {
@@ -321,11 +384,15 @@ extension RefreshRun {
         auto.log.record(
             "install",
             [
-                "device": .string(target.alias), "app": .string(target.app.rawValue), "decision": "renew",
-                "daysLeft": RefreshLog.int(RefreshPolicy.daysLeft(baseline.expires, now: state.start)),
+                "device": .string(target.alias), "app": .string(target.app.rawValue),
+                "decision": "renew",
+                "daysLeft": RefreshLog.int(
+                    RefreshPolicy.daysLeft(baseline.expires, now: state.start)),
             ])
         let began = services.clock.now()
-        var outcome = await renew(target, baseline: baseline, start: state.start, installBlock: &installBlock, warnings: &state.warnings)
+        var outcome = await renew(
+            target, baseline: baseline, start: state.start, installBlock: &installBlock,
+            warnings: &state.warnings)
         var notified = false
         if outcome.trace.busy {
             // The lab's turn: a logged skip, silent, and the rest of the run (the lock is shared) waits for the next one.
@@ -349,15 +416,20 @@ extension RefreshRun {
 
     // MARK: 4. the envelope and the run line
 
-    private func finish(_ state: AutoState, _ auto: RefreshAutoContext, reason: String?) -> Envelope {
+    private func finish(_ state: AutoState, _ auto: RefreshAutoContext, reason: String?) -> Envelope
+    {
         var tally = state.runSkips
         let all = state.plans.flatMap(\.results)
-        for result in all where result.status == .skipped { tally[result.code ?? "UNKNOWN", default: 0] += 1 }
-        let renewed = all.filter { $0.status == .renewed || $0.status == .renewedNotInstalled }.count
+        for result in all where result.status == .skipped {
+            tally[result.code ?? "UNKNOWN", default: 0] += 1
+        }
+        let renewed = all.filter { $0.status == .renewed || $0.status == .renewedNotInstalled }
+            .count
         let counts = JSONValue.object(tally.mapValues { RefreshLog.int($0) })
         var line: [String: JSONValue] = [
             "ok": .bool(state.failures.isEmpty),
-            "durationMs": RefreshLog.int(max(0, Int(services.clock.now().timeIntervalSince(state.began) * 1000))),
+            "durationMs": RefreshLog.int(
+                max(0, Int(services.clock.now().timeIntervalSince(state.began) * 1000))),
             "devices": RefreshLog.int(state.plans.count), "renewed": RefreshLog.int(renewed),
             "failed": RefreshLog.int(state.failures.count), "skipped": counts,
         ]
@@ -366,7 +438,9 @@ extension RefreshRun {
         let data: [String: JSONValue] = [
             "auto": true,
             "devices": .array(
-                state.plans.map { .object(["alias": .string($0.alias), "results": .array($0.results.map(\.json))]) }),
+                state.plans.map {
+                    .object(["alias": .string($0.alias), "results": .array($0.results.map(\.json))])
+                }),
             "skipped": counts,
             "warnings": .array(state.warnings),
         ]
@@ -380,13 +454,15 @@ extension RefreshRun {
     /// A skipped result for an app, logged unless it is the quiet `NOT_DUE`. `stopped` marks a skip that a stop of the device or
     /// the run caused, as against one the app's own gates gave.
     private func skipped(
-        _ target: FreeTarget, _ code: String, _ expires: Date?, now: Date, stopped: Bool = false, probe: String? = nil,
+        _ target: FreeTarget, _ code: String, _ expires: Date?, now: Date, stopped: Bool = false,
+        probe: String? = nil,
         _ auto: RefreshAutoContext
     ) -> AppResult {
         let result = AppResult.skipped(target.app, code: code, expires: expires, now: now)
         if code != RefreshPolicy.notDue {
             var fields: [String: JSONValue] = [
-                "device": .string(target.alias), "app": .string(target.app.rawValue), "decision": "skip", "reason": .string(code),
+                "device": .string(target.alias), "app": .string(target.app.rawValue),
+                "decision": "skip", "reason": .string(code),
             ]
             if let days = result.daysLeftBefore { fields["daysLeft"] = RefreshLog.int(days) }
             if stopped { fields["stopped"] = true }
@@ -397,20 +473,31 @@ extension RefreshRun {
     }
 
     /// An app left alone because the device or the run stopped with `code`.
-    private func stopped(_ entry: Candidate, _ code: String, _ now: Date, _ auto: RefreshAutoContext) -> AppResult {
+    private func stopped(
+        _ entry: Candidate, _ code: String, _ now: Date, _ auto: RefreshAutoContext
+    ) -> AppResult {
         skipped(entry.target, code, entry.expires, now: now, stopped: true, auto)
     }
 
     /// The log line of one renewal attempt, after its step lines.
-    private func record(_ result: AppResult, _ target: FreeTarget, since began: Date, notified: Bool, auto: RefreshAutoContext) {
+    private func record(
+        _ result: AppResult, _ target: FreeTarget, since began: Date, notified: Bool,
+        auto: RefreshAutoContext
+    ) {
         var fields: [String: JSONValue] = [
-            "device": .string(target.alias), "app": .string(target.app.rawValue), "decision": .string(result.status.rawValue),
-            "durationMs": RefreshLog.int(max(0, Int(services.clock.now().timeIntervalSince(began) * 1000))),
+            "device": .string(target.alias), "app": .string(target.app.rawValue),
+            "decision": .string(result.status.rawValue),
+            "durationMs": RefreshLog.int(
+                max(0, Int(services.clock.now().timeIntervalSince(began) * 1000))),
             "notified": .bool(notified),
         ]
         if let code = result.code { fields["code"] = .string(code) }
-        if let days = result.daysLeftAfter ?? result.daysLeftBefore { fields["daysLeft"] = RefreshLog.int(days) }
-        if let expires = result.trace.newExpires { fields["newExpires"] = .string(ProgressLog.isoTimestamp(expires)) }
+        if let days = result.daysLeftAfter ?? result.daysLeftBefore {
+            fields["daysLeft"] = RefreshLog.int(days)
+        }
+        if let expires = result.trace.newExpires {
+            fields["newExpires"] = .string(ProgressLog.isoTimestamp(expires))
+        }
         if let next = result.trace.nextEligible, result.status == .failed {
             fields["nextEligible"] = .string(ProgressLog.isoTimestamp(next))
         }
@@ -422,25 +509,30 @@ extension RefreshRun {
 
     /// Tells the owner how an attempt ended, and when it made the install `suspended`. A cancelled attempt says nothing.
     /// True when the attempt's own notification was delivered.
-    private func notify(_ result: AppResult, _ target: FreeTarget, auto: RefreshAutoContext) async -> Bool {
+    private func notify(_ result: AppResult, _ target: FreeTarget, auto: RefreshAutoContext) async
+        -> Bool
+    {
         guard !result.trace.cancelled else { return false }
         let app = target.app.rawValue
         let alias = RefreshLog.alias(target.alias)
         let delivered: Bool
         switch result.status {
         case .renewed, .renewedNotInstalled:
-            delivered = await auto.notifier.notify(Notifier.refreshed(app: app, alias: alias, daysLeft: result.daysLeftAfter))
+            delivered = await auto.notifier.notify(
+                Notifier.refreshed(app: app, alias: alias, daysLeft: result.daysLeftAfter))
         case .failed:
             delivered = await auto.notifier.notify(
                 Notifier.failed(
                     app: app, alias: alias, code: RefreshLog.code(result.code ?? "INTERNAL_ERROR"),
-                    next: result.trace.nextEligible.map(clockTime), daysLeft: result.daysLeftBefore))
+                    next: result.trace.nextEligible.map(clockTime), daysLeft: result.daysLeftBefore)
+            )
         case .skipped:
             return false
         }
         if result.trace.newlySuspended {
             _ = await auto.notifier.notify(
-                Notifier.suspended(app: app, alias: alias, code: RefreshLog.code(result.code ?? "INTERNAL_ERROR")))
+                Notifier.suspended(
+                    app: app, alias: alias, code: RefreshLog.code(result.code ?? "INTERNAL_ERROR")))
         }
         return delivered
     }

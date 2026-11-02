@@ -64,7 +64,9 @@ extension RefreshPolicy {
 
     /// The saved devices with auto-renew on (valid alias) whose slot reserve is valid, and those with it on whose reserve is out
     /// of range. Both sorted, so a run is deterministic.
-    static func autoDevices(_ devices: [String: SavedDevice]) -> (eligible: [String], invalid: [String]) {
+    static func autoDevices(_ devices: [String: SavedDevice]) -> (
+        eligible: [String], invalid: [String]
+    ) {
         let autoOn = devices.filter { $0.value.autoRefresh && DeviceCommand.isValidAlias($0.key) }
         return (
             autoOn.filter { $0.value.freeSlotsReserved != nil }.keys.sorted(),
@@ -86,12 +88,21 @@ extension RefreshPolicy {
         if slotPending { return .slotPending }
         // The signed build is what goes on the device. A version other than the installed one is an update that is half done,
         // which only the owner finishes (Install update); auto never changes the installed version.
-        if let signed = subject.signed, signed.version != install.version { return .signedVersionDiffers }
-        guard isDue(expires: install.profileExpires, now: now, within: autoWithin) else { return .notDue }
+        if let signed = subject.signed, signed.version != install.version {
+            return .signedVersionDiffers
+        }
+        guard isDue(expires: install.profileExpires, now: now, within: autoWithin) else {
+            return .notDue
+        }
         if let next = install.refresh.nextEligible, now < next { return .backoff }
-        if (install.refresh.attemptsByDay[dayKey(now, timeZone: timeZone)] ?? 0) >= installDailyCap { return .installCap }
+        if (install.refresh.attemptsByDay[dayKey(now, timeZone: timeZone)] ?? 0) >= installDailyCap
+        {
+            return .installCap
+        }
         if deviceAttempts >= deviceDailyCap { return .deviceCap }
-        if let last = install.refresh.lastAttempt, now.timeIntervalSince(last) < minAttemptGap { return .recentAttempt }
+        if let last = install.refresh.lastAttempt, now.timeIntervalSince(last) < minAttemptGap {
+            return .recentAttempt
+        }
         return nil
     }
 
@@ -100,5 +111,7 @@ extension RefreshPolicy {
 
     /// Whether this failure ends the automatic run for every device (a certificate, keychain, account, ledger or config
     /// problem belongs to the team or the machine) and not just for the device it happened on.
-    static func stopsWholeRun(_ code: String) -> Bool { isFatal(code) && !deviceScopedFatalCodes.contains(code) }
+    static func stopsWholeRun(_ code: String) -> Bool {
+        isFatal(code) && !deviceScopedFatalCodes.contains(code)
+    }
 }

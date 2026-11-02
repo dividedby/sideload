@@ -32,7 +32,9 @@ struct MenuAutoRenewRulesTests {
         #expect(off.devices[0].autoRenew == false)
         let turnOnOffer = MenuActions.autoRenewOffer(off.devices[0], snapshot: off, now: testNow)
         #expect(turnOnOffer.label == "Turn auto-renew on…" && turnOnOffer.action == turnOn)
-        #expect(turnOnOffer.kind == .autoRenew && turnOnOffer.availability == .enabled && !turnOnOffer.destructive)
+        #expect(
+            turnOnOffer.kind == .autoRenew && turnOnOffer.availability == .enabled
+                && !turnOnOffer.destructive)
 
         let on = onSnapshot()
         #expect(on.devices[0].autoRenew)
@@ -41,22 +43,30 @@ struct MenuAutoRenewRulesTests {
         #expect(turnOffOffer.availability == .enabled)
     }
 
-    @Test("every saved device gets its own offer, even offline, with an unreadable ledger or a suspended free team")
+    @Test(
+        "every saved device gets its own offer, even offline, with an unreadable ledger or a suspended free team"
+    )
     func everyDevice() {
         let config = menuConfig(auto: ["appletv"], devices: ["iphone", "appletv"])
         let offline = menuBuild(config: config, probe: .listed([]), ledgerReadable: false)
-        let labels = offline.devices.map { MenuActions.autoRenewOffer($0, snapshot: offline, now: testNow) }
+        let labels = offline.devices.map {
+            MenuActions.autoRenewOffer($0, snapshot: offline, now: testNow)
+        }
         #expect(labels.map(\.label) == ["Turn auto-renew on…", "Turn auto-renew off…"])
         #expect(labels.allSatisfy { $0.availability == .enabled })
         var suspended = Ledger()
-        suspended.freeSuspended = LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow, addedFp8: ["aaaaaaaa"], removedFp8: [])
+        suspended.freeSuspended = LedgerFreeSuspension(
+            code: "FREE_CERT_CHANGED", at: testNow, addedFp8: ["aaaaaaaa"], removedFp8: [])
         #expect(availability(turnOn, menuBuild(ledger: suspended)) == .enabled)
     }
 
     @Test("a lent or changing app does not stop it: the lab does not read the setting")
     func lentDoesNotStop() {
         var lent = Ledger()
-        lent.slots = [LedgerSlot(device: "iphone", app: "apollo", presence: .absent, lentTo: "lab", since: testNow)]
+        lent.slots = [
+            LedgerSlot(
+                device: "iphone", app: "apollo", presence: .absent, lentTo: "lab", since: testNow)
+        ]
         SlotRule.project(&lent)
         #expect(availability(turnOn, menuBuild(ledger: lent)) == .enabled)
     }
@@ -65,14 +75,18 @@ struct MenuAutoRenewRulesTests {
     func noChange() {
         #expect(availability(turnOn, onSnapshot()) == .disabled("Already on"))
         #expect(availability(turnOff, offSnapshot()) == .disabled("Already off"))
-        #expect(availability(.autoRenew(device: "nobody", on: true), offSnapshot()) == .disabled("Device not found"))
+        #expect(
+            availability(.autoRenew(device: "nobody", on: true), offSnapshot())
+                == .disabled("Device not found"))
         #expect(MenuActions.prompt(for: turnOn, in: onSnapshot(), now: testNow) == nil)
     }
 
     @Test("it is instant, not cancellable, and names its device")
     func shape() {
         #expect(!MenuActions.cancellable(turnOn) && !MenuActions.cancellable(turnOff))
-        #expect(turnOn.device == "iphone" && turnOn.leavesDeviceReadAlone && turnOff.leavesDeviceReadAlone)
+        #expect(
+            turnOn.device == "iphone" && turnOn.leavesDeviceReadAlone
+                && turnOff.leavesDeviceReadAlone)
         // Fetch stages leave the device read alone too; the other settings and the chains do not.
         #expect(MenuAction.addFetch(device: "iphone", app: "apollo").leavesDeviceReadAlone)
         #expect(!MenuAction.lendable(device: "iphone", app: nil).leavesDeviceReadAlone)
@@ -93,10 +107,12 @@ struct MenuAutoRenewRulesTests {
             ])
     }
 
-    @Test("the confirm to turn it off says installs then expire after 7 days unless renewed by hand")
+    @Test(
+        "the confirm to turn it off says installs then expire after 7 days unless renewed by hand")
     func promptOff() throws {
         let prompt = try #require(MenuActions.prompt(for: turnOff, in: onSnapshot(), now: testNow))
-        #expect(prompt.title == "Turn auto-renew off for iphone" && prompt.confirmLabel == "Turn off")
+        #expect(
+            prompt.title == "Turn auto-renew off for iphone" && prompt.confirmLabel == "Turn off")
         #expect(!prompt.destructive && prompt.runningLabel == "Saving…")
         #expect(
             prompt.lines == [
@@ -109,36 +125,54 @@ struct MenuAutoRenewRulesTests {
     func noNames() throws {
         for (action, snapshot) in [(turnOn, offSnapshot()), (turnOff, onSnapshot())] {
             let prompt = try #require(MenuActions.prompt(for: action, in: snapshot, now: testNow))
-            let all = ([prompt.title, prompt.runningLabel, prompt.confirmLabel] + prompt.lines).joined(separator: "\n")
-            for secret in ["Robin", savedUdid("1"), savedCoreId("1"), "io.github", "7AGMPUPP64", "6ZU5Z6ZKK7"] {
+            let all = ([prompt.title, prompt.runningLabel, prompt.confirmLabel] + prompt.lines)
+                .joined(separator: "\n")
+            for secret in [
+                "Robin", savedUdid("1"), savedCoreId("1"), "io.github", "7AGMPUPP64", "6ZU5Z6ZKK7",
+            ] {
                 #expect(!all.contains(secret), "\(action): \(secret)")
             }
         }
     }
 
-    @Test("a confirm left open across a change of the setting is blocked, not run; an unchanged panel runs")
+    @Test(
+        "a confirm left open across a change of the setting is blocked, not run; an unchanged panel runs"
+    )
     func reconfirm() throws {
         let shown = try #require(MenuActions.prompt(for: turnOn, in: offSnapshot(), now: testNow))
-        #expect(MenuActions.reconfirm(turnOn, shown: shown, in: offSnapshot(), now: testNow) == .run(shown))
-        #expect(MenuActions.reconfirm(turnOn, shown: shown, in: onSnapshot(), now: testNow) == .blocked("Already on"))
+        #expect(
+            MenuActions.reconfirm(turnOn, shown: shown, in: offSnapshot(), now: testNow)
+                == .run(shown))
+        #expect(
+            MenuActions.reconfirm(turnOn, shown: shown, in: onSnapshot(), now: testNow)
+                == .blocked("Already on"))
         #expect(MenuActions.blockedReason(turnOn, in: onSnapshot(), now: testNow) == "Already on")
         let gone = menuBuild(config: menuConfig(devices: ["ipad"]))
-        #expect(MenuActions.reconfirm(turnOn, shown: shown, in: gone, now: testNow) == .blocked("Device not found"))
+        #expect(
+            MenuActions.reconfirm(turnOn, shown: shown, in: gone, now: testNow)
+                == .blocked("Device not found"))
     }
 
     @Test("the \"Auto-renew off\" label under the rows follows the setting: gone when it is on")
     func labelFollows() {
         let ledger = menuLedger([("iphone", "apollo", 3)])
-        let apps: [String: DeviceAppsProbe] = ["iphone": .read(menuSnapshot([menuBundleId("apollo")]), takenAt: testNow)]
+        let apps: [String: DeviceAppsProbe] = [
+            "iphone": .read(menuSnapshot([menuBundleId("apollo")]), takenAt: testNow)
+        ]
         let off = menuBuild(ledger: ledger, apps: apps, autoRefreshAvailable: true)
         #expect(off.devices[0].apps[0].exception == "Auto-renew off")
-        let on = menuBuild(config: menuConfig(auto: ["iphone"]), ledger: ledger, apps: apps, autoRefreshAvailable: true)
+        let on = menuBuild(
+            config: menuConfig(auto: ["iphone"]), ledger: ledger, apps: apps,
+            autoRefreshAvailable: true)
         #expect(on.devices[0].apps[0].exception == nil)
         // The offline line follows too.
         let seen = testNow.addingTimeInterval(-3 * 3600)
         let gone: DeviceProbe = .listed([menuListed(link: "unavailable", lastSeen: seen)])
-        #expect(menuBuild(probe: gone, autoRefreshAvailable: true).devices[0].offlineNote == "Seen 3 h ago · auto-renew off")
-        let onGone = menuBuild(config: menuConfig(auto: ["iphone"]), probe: gone, autoRefreshAvailable: true)
+        #expect(
+            menuBuild(probe: gone, autoRefreshAvailable: true).devices[0].offlineNote
+                == "Seen 3 h ago · auto-renew off")
+        let onGone = menuBuild(
+            config: menuConfig(auto: ["iphone"]), probe: gone, autoRefreshAvailable: true)
         #expect(onGone.devices[0].offlineNote == "Seen 3 h ago · renews when back on Wi-Fi or USB")
     }
 }
@@ -147,7 +181,8 @@ struct MenuAutoRenewRulesTests {
 struct MenuAutoRenewRunTests {
     private func services(_ paths: Paths = Paths(home: "/nonexistent-sideload-home")) -> Services {
         Services(
-            runner: FakeRunner { _ in RunResult() }, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow),
+            runner: FakeRunner { _ in RunResult() }, fs: FakeFileSystem.free(gb: 50),
+            clock: FixedClock(testNow),
             keychain: FakeKeychain(), home: paths)
     }
 
@@ -158,14 +193,38 @@ struct MenuAutoRenewRunTests {
             log.add("autoRenew \(options)")
             return .result("device auto-refresh")
         }
-        steps.refresh = { _, _ in log.add("refresh"); return .result("refresh") }
-        steps.install = { _, _ in log.add("install"); return .result("install") }
-        steps.remove = { _, _ in log.add("remove"); return .result("app remove") }
-        steps.lendable = { _, _ in log.add("lendable"); return .result("device lendable") }
-        steps.saveDevice = { _, _ in log.add("saveDevice"); return .result("device save") }
-        steps.fetch = { _, _ in log.add("fetch"); return .result("fetch") }
-        steps.provision = { _, _ in log.add("provision"); return .result("provision") }
-        steps.sign = { _, _ in log.add("sign"); return .result("sign") }
+        steps.refresh = { _, _ in
+            log.add("refresh")
+            return .result("refresh")
+        }
+        steps.install = { _, _ in
+            log.add("install")
+            return .result("install")
+        }
+        steps.remove = { _, _ in
+            log.add("remove")
+            return .result("app remove")
+        }
+        steps.lendable = { _, _ in
+            log.add("lendable")
+            return .result("device lendable")
+        }
+        steps.saveDevice = { _, _ in
+            log.add("saveDevice")
+            return .result("device save")
+        }
+        steps.fetch = { _, _ in
+            log.add("fetch")
+            return .result("fetch")
+        }
+        steps.provision = { _, _ in
+            log.add("provision")
+            return .result("provision")
+        }
+        steps.sign = { _, _ in
+            log.add("sign")
+            return .result("sign")
+        }
         return steps
     }
 
@@ -173,22 +232,33 @@ struct MenuAutoRenewRunTests {
     func onlyAutoRefresh() async {
         for (action, on) in [(turnOn, true), (turnOff, false)] {
             let log = Log()
-            await MenuActionRunner.perform(action, services: services(), steps: steps(log), isCancelled: { false }) { _ in }
-            let expected = DeviceOptions(sub: "auto-refresh", alias: "iphone", on: on, off: !on, yes: true)
+            await MenuActionRunner.perform(
+                action, services: services(), steps: steps(log), isCancelled: { false }
+            ) { _ in }
+            let expected = DeviceOptions(
+                sub: "auto-refresh", alias: "iphone", on: on, off: !on, yes: true)
             #expect(log.value == ["autoRenew \(expected)"], "\(action)")
         }
     }
 
     /// The real command (`DeviceCommand`) over a temp home: it writes `config.json` and nothing else.
-    private func real(_ action: MenuAction, config: Config) async throws -> (outcome: MenuActionOutcome, saved: SavedDevice?, files: [String]) {
+    private func real(_ action: MenuAction, config: Config) async throws -> (
+        outcome: MenuActionOutcome, saved: SavedDevice?, files: [String]
+    ) {
         try await withTestHome(config: config) { paths, store in
             let outcome = Mutex<MenuActionOutcome?>(nil)
             let runner = FakeRunner { _ in RunResult() }
             let services = Services(
-                runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow), keychain: FakeKeychain(), home: paths)
-            await MenuActionRunner.perform(action, services: services) { result in outcome.withLock { $0 = result } }
+                runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow),
+                keychain: FakeKeychain(), home: paths)
+            await MenuActionRunner.perform(action, services: services) { result in
+                outcome.withLock { $0 = result }
+            }
             #expect(runner.calls.isEmpty, "no subprocess, no device")
-            return (try #require(outcome.withLock { $0 }), try store.load().devices["iphone"], listing(paths.home))
+            return (
+                try #require(outcome.withLock { $0 }), try store.load().devices["iphone"],
+                listing(paths.home)
+            )
         }
     }
 
@@ -212,21 +282,30 @@ struct MenuAutoRenewRunTests {
             #expect(flock(held, LOCK_EX | LOCK_NB) == 0)
             let outcome = Mutex<MenuActionOutcome?>(nil)
             let services = Services(
-                runner: FakeRunner { _ in RunResult() }, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow),
+                runner: FakeRunner { _ in RunResult() }, fs: FakeFileSystem.free(gb: 50),
+                clock: FixedClock(testNow),
                 keychain: FakeKeychain(), home: paths)
-            await MenuActionRunner.perform(turnOn, services: services) { result in outcome.withLock { $0 = result } }
+            await MenuActionRunner.perform(turnOn, services: services) { result in
+                outcome.withLock { $0 = result }
+            }
             #expect(outcome.withLock { $0 }?.kind == .done)
             let saved = try store.load().devices["iphone"]
             #expect(saved?.autoRefresh == true)
         }
     }
 
-    @Test("turning it on for a device with an invalid slot reserve fails with the command's own error; turning it off works")
+    @Test(
+        "turning it on for a device with an invalid slot reserve fails with the command's own error; turning it off works"
+    )
     func invalidReserve() async throws {
         // Out of range, as a hand-edited file could hold it.
         func broken(auto: Bool) throws -> Config {
-            let device = #"{"udid":"\#(savedUdid("1"))","coreDeviceId":"\#(savedCoreId("1"))","platform":"ios","freeSlotsReserved":9"#
-            return try Config.parse(Data(#"{"devices":{"iphone":\#(device)\#(auto ? #","autoRefresh":true"# : "")}}}"#.utf8))
+            let device =
+                #"{"udid":"\#(savedUdid("1"))","coreDeviceId":"\#(savedCoreId("1"))","platform":"ios","freeSlotsReserved":9"#
+            return try Config.parse(
+                Data(
+                    #"{"devices":{"iphone":\#(device)\#(auto ? #","autoRefresh":true"# : "")}}}"#
+                        .utf8))
         }
         #expect(try broken(auto: false).devices["iphone"]?.freeSlotsReserved == nil)
         let offConfig = try broken(auto: false)
@@ -239,17 +318,27 @@ struct MenuAutoRenewRunTests {
         #expect(off.outcome.kind == .done && off.saved?.autoRefresh == false)
     }
 
-    @Test("the outcome texts: headline and note for each state, and a failure keeps the command's errors")
+    @Test(
+        "the outcome texts: headline and note for each state, and a failure keeps the command's errors"
+    )
     func outcomes() {
-        let on = MenuActionOutcome(action: turnOn, envelope: .result("device auto-refresh"), cancelled: false)
+        let on = MenuActionOutcome(
+            action: turnOn, envelope: .result("device auto-refresh"), cancelled: false)
         #expect(on.kind == .done && on.headline == "Auto-renew is on for iphone")
-        #expect(on.notes == [MenuActionOutcome.autoRenewOnNote] && on.lines.isEmpty && on.proceed == nil)
-        let off = MenuActionOutcome(action: turnOff, envelope: .result("device auto-refresh"), cancelled: false)
+        #expect(
+            on.notes == [MenuActionOutcome.autoRenewOnNote] && on.lines.isEmpty && on.proceed == nil
+        )
+        let off = MenuActionOutcome(
+            action: turnOff, envelope: .result("device auto-refresh"), cancelled: false)
         #expect(off.kind == .done && off.headline == "Auto-renew is off for iphone")
         #expect(off.notes == [MenuActionOutcome.autoRenewOffNote])
-        #expect(off.notes[0].contains("expire after 7 days") && on.notes[0].contains("Nothing was renewed now"))
+        #expect(
+            off.notes[0].contains("expire after 7 days")
+                && on.notes[0].contains("Nothing was renewed now"))
 
-        let failed = Envelope.fail("device auto-refresh", code: "DEVICE_NOT_SAVED", message: "No saved device.", fix: "Save it.")
+        let failed = Envelope.fail(
+            "device auto-refresh", code: "DEVICE_NOT_SAVED", message: "No saved device.",
+            fix: "Save it.")
         let bad = MenuActionOutcome(action: turnOn, envelope: failed, cancelled: false)
         #expect(bad.kind == .failed && bad.headline == "Setting not saved" && bad.notes.isEmpty)
         #expect(bad.issues.map(\.code) == ["DEVICE_NOT_SAVED"] && bad.lines.first?.retry == turnOn)
@@ -297,9 +386,11 @@ struct MenuAutoRenewModelTests {
         try paths.ensureHome()
         try await seed(paths, config: menuConfig(), ledger: menuLedger([("iphone", "apollo", 5.5)]))
         let list = deviceListJSON(phoneEntryJSON(seed: "1"))
-        let runner = SlowDeviceRunner(menuDeviceScript(devices: list, apps: { _ in .apps([menuBundleId("apollo")]) }))
+        let runner = SlowDeviceRunner(
+            menuDeviceScript(devices: list, apps: { _ in .apps([menuBundleId("apollo")]) }))
         let services = Services(
-            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: MutableClock(testNow), keychain: FakeKeychain(), home: paths)
+            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: MutableClock(testNow),
+            keychain: FakeKeychain(), home: paths)
         let log = Log()
         let hold = Hold()
         var steps = MenuActionSteps()
@@ -331,7 +422,9 @@ struct MenuAutoRenewModelTests {
         return nil
     }
 
-    @Test("confirm turns it on: only the config command runs, the card shows the new state and the device is not read again")
+    @Test(
+        "confirm turns it on: only the config command runs, the card shows the new state and the device is not read again"
+    )
     func turnsOn() async throws {
         let w = try await loadedWorld()
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -360,12 +453,15 @@ struct MenuAutoRenewModelTests {
         #expect(try ConfigStore(paths: w.paths).load().devices["iphone"]?.autoRefresh == true)
         // Nothing asked the device: no list, no app read, no load.
         try await Task.sleep(for: .milliseconds(100))
-        #expect(w.runner.lists == lists && w.runner.infoApps.count == reads && w.model.loadTask == nil)
+        #expect(
+            w.runner.lists == lists && w.runner.infoApps.count == reads && w.model.loadTask == nil)
         // The device's read is still there: the card does not say "Checking apps…".
         #expect(card(w.model)?.liveRead == .read)
     }
 
-    @Test("a load that is running is left alone, and its later repaints already carry the new setting")
+    @Test(
+        "a load that is running is left alone, and its later repaints already carry the new setting"
+    )
     func duringLoad() async throws {
         let w = try await loadedWorld()
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -391,7 +487,8 @@ struct MenuAutoRenewModelTests {
         // Nothing is left over to redraw later: a quiet moment changes nothing and starts no load.
         let lists = w.runner.lists
         try await Task.sleep(for: .milliseconds(100))
-        #expect(w.model.loadTask == nil && w.runner.lists == lists && card(w.model)?.autoRenew == true)
+        #expect(
+            w.model.loadTask == nil && w.runner.lists == lists && card(w.model)?.autoRenew == true)
     }
 
     @Test("turning it off from the card, then the offer flips back")
@@ -408,7 +505,8 @@ struct MenuAutoRenewModelTests {
         try await until { self.card(w.model)?.autoRenew == false }
         #expect(card(w.model)?.apps.first?.exception == "Auto-renew off")
         let snapshot = try #require(w.model.panelSnapshotForTests)
-        let offer = MenuActions.autoRenewOffer(try #require(card(w.model)), snapshot: snapshot, now: testNow)
+        let offer = MenuActions.autoRenewOffer(
+            try #require(card(w.model)), snapshot: snapshot, now: testNow)
         #expect(offer.label == "Turn auto-renew on…")
     }
 
@@ -429,7 +527,9 @@ struct MenuAutoRenewModelTests {
         #expect(w.log.value.isEmpty && !w.model.actionBusy)
     }
 
-    @Test("it is not available while another action is confirmed or runs, and a request then is ignored")
+    @Test(
+        "it is not available while another action is confirmed or runs, and a request then is ignored"
+    )
     func gatedByOtherActions() async throws {
         let w = try await loadedWorld()
         defer { try? FileManager.default.removeItem(at: w.dir) }

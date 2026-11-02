@@ -31,10 +31,14 @@ enum CleanBackups {
 
         var json: [String: JSONValue] {
             var reasons: [String: JSONValue] = [:]
-            for reason in Reason.allCases { reasons[reason.rawValue] = .number(Double(byReason[reason] ?? 0)) }
+            for reason in Reason.allCases {
+                reasons[reason.rawValue] = .number(Double(byReason[reason] ?? 0))
+            }
             return [
-                "deleted": .number(Double(deleted)), "kept": .number(Double(kept)), "unreadable": .number(Double(unreadable)),
-                "failed": .number(Double(failed)), "devicesSkippedBusy": .number(Double(devicesSkippedBusy)),
+                "deleted": .number(Double(deleted)), "kept": .number(Double(kept)),
+                "unreadable": .number(Double(unreadable)),
+                "failed": .number(Double(failed)),
+                "devicesSkippedBusy": .number(Double(devicesSkippedBusy)),
                 "linksSkipped": .number(Double(linksSkipped)), "byReason": .object(reasons),
             ]
         }
@@ -77,9 +81,13 @@ enum CleanBackups {
                 }
                 let context = Context(
                     services: services, saved: saved,
-                    pending: saved ? pendingDirectory(services, config: config, alias: alias, app: app) : nil, cutoff: cutoff)
+                    pending: saved
+                        ? pendingDirectory(services, config: config, alias: alias, app: app) : nil,
+                    cutoff: cutoff)
                 for name in entries {
-                    decide(appDir + "/" + name, partial: name.hasSuffix(".partial"), context, plan: &plan)
+                    decide(
+                        appDir + "/" + name, partial: name.hasSuffix(".partial"), context,
+                        plan: &plan)
                 }
             }
             if busy && found > 0 { plan.counts.devicesSkippedBusy += 1 }
@@ -87,7 +95,9 @@ enum CleanBackups {
         return plan
     }
 
-    private static func decide(_ directory: String, partial: Bool, _ context: Context, plan: inout Plan) {
+    private static func decide(
+        _ directory: String, partial: Bool, _ context: Context, plan: inout Plan
+    ) {
         let (saved, pending, cutoff) = (context.saved, context.pending, context.cutoff)
         func doom(_ reason: Reason) {
             plan.doomed.append(Doomed(directory: directory, reason: reason))
@@ -97,7 +107,11 @@ enum CleanBackups {
         let root = context.services.home.backups
         if partial {
             // Nothing writes one while the lock is held, so any left is abandoned; the age keeps the rule as cautious as the rest.
-            if let stamp = modified(directory), stamp < cutoff { doom(.partial) } else { plan.counts.kept += 1 }
+            if let stamp = modified(directory), stamp < cutoff {
+                doom(.partial)
+            } else {
+                plan.counts.kept += 1
+            }
             return
         }
         guard AppDataBackup.isPlain(directory + "/manifest.json", root: root, regularFile: true),
@@ -112,13 +126,19 @@ enum CleanBackups {
             var markers: [(Date, Reason)] = []
             if let at = manifest.restoredAt { markers.append((at, .restored)) }
             if let at = manifest.supersededAt { markers.append((at, .superseded)) }
-            guard directory != pending, let latest = markers.max(by: { $0.0 < $1.0 }), latest.0 < cutoff else {
+            guard directory != pending, let latest = markers.max(by: { $0.0 < $1.0 }),
+                latest.0 < cutoff
+            else {
                 plan.counts.kept += 1
                 return
             }
             doom(latest.1)
         } else {
-            let newest = [manifest.createdAt, manifest.restoredAt, manifest.supersededAt, manifest.uninstalledAt].compactMap { $0 }.max()
+            let newest =
+                [
+                    manifest.createdAt, manifest.restoredAt, manifest.supersededAt,
+                    manifest.uninstalledAt,
+                ].compactMap { $0 }.max()
                 ?? manifest.createdAt
             if newest < cutoff { doom(.unsavedAlias) } else { plan.counts.kept += 1 }
         }
@@ -126,12 +146,16 @@ enum CleanBackups {
 
     /// The folder `slot restore` would restore from for this device and app (`AppDataBackup.pending`), when it can be asked: a
     /// known free app and a valid bundle ID prefix.
-    private static func pendingDirectory(_ services: Services, config: Config, alias: String, app: String) -> String? {
+    private static func pendingDirectory(
+        _ services: Services, config: Config, alias: String, app: String
+    ) -> String? {
         guard let prefix = config.bundleIdPrefix, CanaryCommand.isValidPrefix(prefix),
             Config.isFreeBundleId(prefix + ".free.x", prefix: prefix),
             let known = ProvisionApp.allCases.first(where: { $0.rawValue == app })
         else { return nil }
-        if case .found(let directory, _) = AppDataBackup.pending(services, alias: alias, app: app, bundleId: prefix + ".free." + known.suffix) {
+        if case .found(let directory, _) = AppDataBackup.pending(
+            services, alias: alias, app: app, bundleId: prefix + ".free." + known.suffix)
+        {
             return directory
         }
         return nil
@@ -155,7 +179,8 @@ enum CleanBackups {
             }
         }
         for appDir in parents {
-            for dir in [appDir, parentPath(appDir)] where AppDataBackup.isPlain(dir, root: root, regularFile: false) && dir != root {
+            for dir in [appDir, parentPath(appDir)]
+            where AppDataBackup.isPlain(dir, root: root, regularFile: false) && dir != root {
                 rmdir(dir)
             }
         }

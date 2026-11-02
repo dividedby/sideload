@@ -28,7 +28,8 @@ struct PanelMenu: NSViewRepresentable {
     func makeNSView(context: Context) -> PanelMenuButton { PanelMenuButton() }
 
     func updateNSView(_ button: PanelMenuButton, context: Context) {
-        button.configure(label: label, items: items, small: small, enabled: context.environment.isEnabled)
+        button.configure(
+            label: label, items: items, small: small, enabled: context.environment.isEnabled)
     }
 }
 
@@ -85,7 +86,8 @@ final class PanelMenuButton: NSPopUpButton {
         menu.autoenablesItems = false
         menu.font = font
         for choice in choices {
-            let item = NSMenuItem(title: choice.title, action: #selector(choose(_:)), keyEquivalent: "")
+            let item = NSMenuItem(
+                title: choice.title, action: #selector(choose(_:)), keyEquivalent: "")
             item.target = self
             // The item keeps its own action: a snapshot update while the menu is open replaces `choices`.
             item.representedObject = Choice(choice.action)
@@ -93,7 +95,8 @@ final class PanelMenuButton: NSPopUpButton {
             item.toolTip = choice.help
             if choice.destructive, choice.enabled {
                 item.attributedTitle = NSAttributedString(
-                    string: choice.title, attributes: [.foregroundColor: NSColor.systemRed, .font: font as Any])
+                    string: choice.title,
+                    attributes: [.foregroundColor: NSColor.systemRed, .font: font as Any])
             }
             menu.addItem(item)
         }

@@ -41,7 +41,8 @@ struct FreeRemoval: Sendable {
     /// Runs `beforeOp` (the durable intent; if it throws the device is untouched), uninstalls, and takes the snapshot
     /// after. The only throw is `beforeOp`'s.
     func perform(beforeOp: (() async throws -> Void)? = nil) async throws -> Outcome {
-        let calls = FreeDeviceCalls(services: services, alias: target.alias, bundleId: target.bundleId)
+        let calls = FreeDeviceCalls(
+            services: services, alias: target.alias, bundleId: target.bundleId)
         try await beforeOp?()
         services.log("uninstalling")
         let (failure, result) = await calls.uninstall()
@@ -54,7 +55,9 @@ struct FreeRemoval: Sendable {
     /// this errs on the side of warning. The menu snapshot uses it too, for the Remove confirm's trust warning.
     static func isLastFreeApp(bundleId: String, in snapshot: AppSnapshot, prefix: String?) -> Bool {
         let managedOthers = snapshot.managedIds(prefix: prefix).filter { $0 != bundleId }.count
-        let signers = snapshot.ids.filter { !Config.isFreeBundleId($0, prefix: prefix) && FreeTeamSigner.label(of: $0) != nil }.count
+        let signers = snapshot.ids.filter {
+            !Config.isFreeBundleId($0, prefix: prefix) && FreeTeamSigner.label(of: $0) != nil
+        }.count
         return managedOthers + signers == 0
     }
 }
@@ -69,22 +72,27 @@ public enum AppCommand {
     public static func run(_ services: Services, _ options: AppOptions) async -> Envelope {
         guard options.sub == "remove" else {
             return .fail(
-                "app", code: "USAGE", message: "Unknown app subcommand \"\(printableCut(options.sub ?? ""))\".",
+                "app", code: "USAGE",
+                message: "Unknown app subcommand \"\(printableCut(options.sub ?? ""))\".",
                 fix: "Use `sideload app remove --app <app> --device <alias> --yes`.")
         }
         let target: FreeTarget
         do {
             target = try FreeTarget.resolve(
                 app: options.app, device: options.device, services: services,
-                usageFix: "sideload app remove --app <\(ProvisionApp.names.joined(separator: "|"))> --device iphone --yes")
+                usageFix:
+                    "sideload app remove --app <\(ProvisionApp.names.joined(separator: "|"))> --device iphone --yes"
+            )
         } catch {
             return .from(error, command: command)
         }
         guard options.yes else {
             return .fail(
                 command, code: "CONFIRM_REQUIRED",
-                message: "app remove uninstalls \(target.app.rawValue) from the saved device (its data goes with it).",
-                fix: "The owner confirms by re-running with --yes. Agents must not pass --yes on their own.",
+                message:
+                    "app remove uninstalls \(target.app.rawValue) from the saved device (its data goes with it).",
+                fix:
+                    "The owner confirms by re-running with --yes. Agents must not pass --yes on their own.",
                 data: target.identity)
         }
         do {
@@ -94,7 +102,8 @@ public enum AppCommand {
         } catch let error as SideloadError {
             var data = target.identity
             data.merge(error.data) { _, new in new }
-            return .fail(command, code: error.code, message: error.message, fix: error.fix, data: data)
+            return .fail(
+                command, code: error.code, message: error.message, fix: error.fix, data: data)
         } catch {
             return .from(error, command: command)
         }
@@ -103,18 +112,21 @@ public enum AppCommand {
     /// The pipeline of `SlotBook`: marker and keychain, migrate, the gate (any op in flight on the device is `SLOT_PENDING`),
     /// snapshot S0, W1 settle, the intent (W2, an `uninstall` op), the uninstall, snapshot S1, then W3 applies the table's
     /// effect: absent is removed, present is the failure, and anything else keeps the op pending.
-    private static func remove(_ services: Services, _ target: FreeTarget) async throws -> Envelope {
+    private static func remove(_ services: Services, _ target: FreeTarget) async throws -> Envelope
+    {
         let now = wholeSeconds(services.clock.now())
         _ = try await FreeSession.settle(services, now: now)
         let book = SlotBook(services: services, config: target.config, alias: target.alias)
         let ledger = try await book.loadMigrated()
         try book.gate(ledger, now: services.clock.now(), extra: ["removed": false])
-        let calls = FreeDeviceCalls(services: services, alias: target.alias, bundleId: target.bundleId)
+        let calls = FreeDeviceCalls(
+            services: services, alias: target.alias, bundleId: target.bundleId)
         let removal = FreeRemoval(services: services, target: target)
 
         let s0 = await calls.trySnapshot()
         guard let before = s0.snapshot else {
-            throw s0.error ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read.")
+            throw s0.error
+                ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read.")
         }
         // Rule (i) on every record on the device, so the ledger reads what S0 shows before the uninstall can change anything.
         _ = try await book.settle(before, takenAt: s0.takenAt, point: "remove.settle")
@@ -129,11 +141,13 @@ public enum AppCommand {
         let profiles = await calls.freeProfiles()
         let outcome = try await removal.perform {
             try await book.begin(
-                target, kind: .uninstall, by: .remove, presence: .present, since: now, point: "remove.intent")
+                target, kind: .uninstall, by: .remove, presence: .present, since: now,
+                point: "remove.intent")
         }
         let confirmation = SlotRule.confirm(.uninstall, outcome.result, outcome.reading)
         let slot = try await book.finish(
-            target, effect: confirmation.effect, takenAt: outcome.afterTakenAt, point: "remove.final")
+            target, effect: confirmation.effect, takenAt: outcome.afterTakenAt,
+            point: "remove.final")
 
         switch confirmation.effect {
         case .present:
@@ -141,27 +155,35 @@ public enum AppCommand {
             if let failure = outcome.opFailure { throw failure }
             throw unexpectedDelta(
                 AppSnapshot.delta(from: before, to: outcome.after ?? before),
-                expectation: "the app is still on the device after its uninstall reported success", extra: ["uninstalled": false])
+                expectation: "the app is still on the device after its uninstall reported success",
+                extra: ["uninstalled": false])
         case .keep:
             // Nothing is claimed either way: the op stays pending until its window ends.
             var data = outcome.opFailure?.data ?? [:]
-            data.merge(["uncertain": true, "retryAfter": .number(Double(book.retryAfter(slot))), "removed": false]) { _, new in new }
+            data.merge([
+                "uncertain": true, "retryAfter": .number(Double(book.retryAfter(slot))),
+                "removed": false,
+            ]) { _, new in new }
             if let failure = outcome.opFailure {
                 throw SideloadError(
                     failure.code, failure.message,
-                    fix: "The uninstall may still finish and the slot reads used; retry `sideload app remove` in \(book.retryAfter(slot)) seconds.",
+                    fix:
+                        "The uninstall may still finish and the slot reads used; retry `sideload app remove` in \(book.retryAfter(slot)) seconds.",
                     data: data)
             }
             if confirmation.note == .unexpectedAppDelta {
                 data["uninstalled"] = false
                 throw unexpectedDelta(
                     AppSnapshot.delta(from: before, to: outcome.after ?? before),
-                    expectation: "the app is still on the device after its uninstall reported success", extra: data)
+                    expectation:
+                        "the app is still on the device after its uninstall reported success",
+                    extra: data)
             }
             throw SideloadError(
                 "UNINSTALL_RESULT_UNCERTAIN",
                 "The uninstall reported success, but the device's app list could not be read afterwards, so it is not known whether the app is gone.",
-                fix: "The slot reads used. Retry `sideload app remove` in \(book.retryAfter(slot)) seconds, when the device is awake.",
+                fix:
+                    "The slot reads used. Retry `sideload app remove` in \(book.retryAfter(slot)) seconds, when the device is awake.",
                 data: data)
         case .absent:
             break
@@ -169,7 +191,9 @@ public enum AppCommand {
         let after = outcome.after ?? before
         let delta = AppSnapshot.delta(from: before, to: after)
         if delta.removed != [target.bundleId] || !delta.added.isEmpty {
-            throw unexpectedDelta(delta, expectation: "an uninstall should remove only this app", extra: ["uninstalled": true])
+            throw unexpectedDelta(
+                delta, expectation: "an uninstall should remove only this app",
+                extra: ["uninstalled": true])
         }
 
         var warnings: [JSONValue] = []
@@ -185,23 +209,28 @@ public enum AppCommand {
                 CanaryCommand.warning(
                     "LAST_FREE_APP_REMOVED",
                     "No other free-team app is on this device, so removing \(target.app.rawValue) clears the developer trust: the next app needs trusting again.",
-                    "After the next install: Settings › General › VPN & Device Management › trust the developer."))
+                    "After the next install: Settings › General › VPN & Device Management › trust the developer."
+                ))
         }
         var data = target.identity
         data["removed"] = true
         data["wasPresent"] = true
         data["warnings"] = .array(warnings)
         let outside = book.usedOutsideSnapshot(
-            (try? services.ledgerStore.load()) ?? ledger, excluding: target.app.rawValue, snapshot: after)
+            (try? services.ledgerStore.load()) ?? ledger, excluding: target.app.rawValue,
+            snapshot: after)
         data["slots"] = slots(after, target, outside: outside, profiles: profiles)
         return .result(command, data)
     }
 
     private static func slots(
-        _ after: AppSnapshot, _ target: FreeTarget, outside: SlotBook.OutsideUse, profiles: FreeTeamProfiles?
+        _ after: AppSnapshot, _ target: FreeTarget, outside: SlotBook.OutsideUse,
+        profiles: FreeTeamProfiles?
     ) -> JSONValue {
         // An out-of-range stored reserve leaves the count unknown (as in `status`), never computed from a guessed 0.
         guard let reserved = try? target.reserved() else { return AppSnapshot.Usage.unknownJSON }
-        return after.usage(prefix: target.prefix, reserved: reserved, outside: outside, profiles: profiles).json()
+        return after.usage(
+            prefix: target.prefix, reserved: reserved, outside: outside, profiles: profiles
+        ).json()
     }
 }

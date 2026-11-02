@@ -45,7 +45,9 @@ private final class FakeTask: Sendable {
 
 @Suite("download flow control")
 struct DownloadFlowTests {
-    @Test("a lagging consumer suspends the task above the high mark and resumes it at the low mark, one for one")
+    @Test(
+        "a lagging consumer suspends the task above the high mark and resumes it at the low mark, one for one"
+    )
     func suspendResume() {
         let task = FakeTask()
         let flow = DownloadFlow(maxBytes: 1 << 30, high: 4096, low: 1024)
@@ -80,7 +82,9 @@ struct DownloadFlowTests {
         #expect(flow.maxPending == 2000)
     }
 
-    @Test("after close nothing is suspended or resumed again, and a suspended task is left for cancel")
+    @Test(
+        "after close nothing is suspended or resumed again, and a suspended task is left for cancel"
+    )
     func closeWhileSuspended() {
         let task = FakeTask()
         let flow = DownloadFlow(maxBytes: 1 << 30, high: 100, low: 10)
@@ -106,7 +110,9 @@ struct DownloadFlowTests {
         let producer = Thread {
             for _ in 0..<blocks {
                 // A suspended task delivers nothing until it is resumed.
-                while task.suspended, !stop.withLock({ $0 }) { Thread.sleep(forTimeInterval: 0.00002) }
+                while task.suspended, !stop.withLock({ $0 }) {
+                    Thread.sleep(forTimeInterval: 0.00002)
+                }
                 if stop.withLock({ $0 }) { break }
                 _ = flow.received(512) { queue.withLock { $0.append(512) } }
             }
@@ -116,7 +122,8 @@ struct DownloadFlowTests {
         // or cause a resume, so a task suspended before an empty queue was found is a lost wakeup, however slow the run.
         // `giveUp` only keeps a broken test from hanging the run. It is here and not a `.timeLimit`, which could only
         // cancel a task, and neither thread would see that.
-        let outcome = await withCheckedContinuation { (finished: CheckedContinuation<(consumed: Int, lost: Bool), Never>) in
+        let outcome = await withCheckedContinuation {
+            (finished: CheckedContinuation<(consumed: Int, lost: Bool), Never>) in
             let consumer = Thread {
                 var consumed = 0
                 var lost = false
@@ -147,7 +154,9 @@ struct DownloadFlowTests {
 
 @Suite("download chunking")
 struct DownloadChunkingTests {
-    @Test("blocks are re-cut into 64 KiB pieces in order, whole blocks sliced and only a tail held back")
+    @Test(
+        "blocks are re-cut into 64 KiB pieces in order, whole blocks sliced and only a tail held back"
+    )
     func forwardPieces() throws {
         let piece = URLSessionTransport.downloadChunkBytes
         let source = Data((0..<(piece * 5 + 123)).map { UInt8($0 % 251) })
@@ -162,7 +171,9 @@ struct DownloadChunkingTests {
         let received = Mutex<[Data]>([])
         var buffer = Data()
         for block in blocks {
-            try URLSessionTransport.forward(block, through: &buffer) { chunk in received.withLock { $0.append(Data(chunk)) } }
+            try URLSessionTransport.forward(block, through: &buffer) { chunk in
+                received.withLock { $0.append(Data(chunk)) }
+            }
         }
         let pieces = received.withLock { $0 }
         #expect(pieces.allSatisfy { $0.count == piece })

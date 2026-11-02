@@ -49,7 +49,8 @@ enum CleanDownloads {
         var json: [String: JSONValue] {
             [
                 "versionsDeleted": .number(Double(deleted)), "versionsKept": .number(Double(kept)),
-                "bytesFreed": .number(Double(bytesFreed)), "versionsAlreadyGone": .number(Double(alreadyGone)),
+                "bytesFreed": .number(Double(bytesFreed)),
+                "versionsAlreadyGone": .number(Double(alreadyGone)),
                 "skipped": .number(Double(skipped)), "failed": .number(Double(failed)),
                 "apps": .object(apps.mapValues(\.json)),
             ]
@@ -69,7 +70,8 @@ enum CleanDownloads {
         let downloads = services.home.downloads
         for app in Set(manifest.entries.map(\.app)).sorted() {
             let entries = manifest.entries.filter { $0.app == app }
-            let keep = keepSet(entries, installed: Set(ledger.installs.filter { $0.app == app }.map(\.version)))
+            let keep = keepSet(
+                entries, installed: Set(ledger.installs.filter { $0.app == app }.map(\.version)))
             var counts = AppCounts()
             for entry in entries {
                 if keep.contains(entry.version) {
@@ -94,12 +96,16 @@ enum CleanDownloads {
                     }
                     continue
                 }
-                guard st.st_mode & S_IFMT == S_IFDIR, AppDataBackup.isPlain(folder, root: downloads, regularFile: false) else {
+                guard st.st_mode & S_IFMT == S_IFDIR,
+                    AppDataBackup.isPlain(folder, root: downloads, regularFile: false)
+                else {
                     plan.skipped += 1
                     continue
                 }
                 let bytes = treeBytes(folder)
-                if entry.prunedAt == nil { plan.marks.append(Mark(app: entry.app, version: entry.version)) }
+                if entry.prunedAt == nil {
+                    plan.marks.append(Mark(app: entry.app, version: entry.version))
+                }
                 plan.folders.append(Folder(app: entry.app, path: folder, bytes: bytes))
                 counts.deleted += 1
                 counts.bytesFreed += bytes
@@ -128,7 +134,11 @@ enum CleanDownloads {
     static func marked(_ manifest: Manifest, plan: Plan, at now: Date) -> Manifest {
         var copy = manifest
         for mark in plan.marks {
-            guard let index = copy.entries.firstIndex(where: { $0.app == mark.app && $0.version == mark.version }) else { continue }
+            guard
+                let index = copy.entries.firstIndex(where: {
+                    $0.app == mark.app && $0.version == mark.version
+                })
+            else { continue }
             copy.entries[index].prunedAt = now
         }
         return copy

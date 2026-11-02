@@ -20,7 +20,8 @@ public struct ExpiryItem: Sendable, Equatable {
 
     public var json: JSONValue {
         [
-            "kind": .string(kind.rawValue), "name": .string(name), "notAfter": .string(LedgerDates.string(notAfter)),
+            "kind": .string(kind.rawValue), "name": .string(name),
+            "notAfter": .string(LedgerDates.string(notAfter)),
             "daysLeft": .number(Double(daysLeft)), "level": .string(level.rawValue),
         ]
     }
@@ -30,7 +31,8 @@ public struct ExpiryItem: Sendable, Equatable {
 /// fewer, `expired` once `notAfter` has passed. Only items seen at the last refresh (`present`) count; certificates
 /// and profiles that have since left the keychain or Xcode's folder are history, not a warning.
 public enum ExpiryItems {
-    public static func level(notAfter: Date, now: Date) -> (daysLeft: Int, level: ExpiryItem.Level) {
+    public static func level(notAfter: Date, now: Date) -> (daysLeft: Int, level: ExpiryItem.Level)
+    {
         let days = Int((notAfter.timeIntervalSince(now) / 86_400).rounded(.down))
         if notAfter <= now { return (days, .expired) }
         if days <= CertCheck.criticalDays { return (days, .critical) }
@@ -45,13 +47,15 @@ public enum ExpiryItems {
             let (days, level) = level(notAfter: cert.notAfter, now: now)
             items.append(
                 ExpiryItem(
-                    kind: .certificate, name: "cert " + cert.fp8, notAfter: cert.notAfter, daysLeft: days, level: level))
+                    kind: .certificate, name: "cert " + cert.fp8, notAfter: cert.notAfter,
+                    daysLeft: days, level: level))
         }
         for profile in ledger.profiles where profile.present {
             let (days, level) = level(notAfter: profile.expires, now: now)
             items.append(
                 ExpiryItem(
-                    kind: .profile, name: "profile " + Redactor.tail4(profile.uuid), notAfter: profile.expires,
+                    kind: .profile, name: "profile " + Redactor.tail4(profile.uuid),
+                    notAfter: profile.expires,
                     daysLeft: days, level: level))
         }
         return items.sorted { ($0.notAfter, $0.name) < ($1.notAfter, $1.name) }
@@ -70,7 +74,8 @@ public enum ExpiryItems {
     static func item(_ install: LedgerInstall, now: Date) -> ExpiryItem {
         let (days, level) = FreeInstallExpiry.assess(expires: install.profileExpires, now: now)
         return ExpiryItem(
-            kind: .install, name: "\(install.app) @ \(install.device)", notAfter: install.profileExpires, daysLeft: days,
+            kind: .install, name: "\(install.app) @ \(install.device)",
+            notAfter: install.profileExpires, daysLeft: days,
             level: level)
     }
 

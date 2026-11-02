@@ -1,59 +1,75 @@
 import SideloadCore
 
-let allCommands: [JSONValue] = ["doctor", "device", "canary", "portal", "export-cert", "fetch", "sign", "install", "status", "ledger", "inspect", "provision", "app", "slot", "refresh", "updates", "clean"]
-let builtCommands: [JSONValue] = ["doctor", "device", "canary", "ledger", "portal", "export-cert", "status", "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot", "updates", "clean"]
+let allCommands: [JSONValue] = [
+    "doctor", "device", "canary", "portal", "export-cert", "fetch", "sign", "install", "status",
+    "ledger", "inspect", "provision", "app", "slot", "refresh", "updates", "clean",
+]
+let builtCommands: [JSONValue] = [
+    "doctor", "device", "canary", "ledger", "portal", "export-cert", "status", "inspect", "fetch",
+    "provision", "sign", "install", "refresh", "app", "slot", "updates", "clean",
+]
 
 private let helpFlags: Set<String> = ["-h", "--help"]
 
 private func help() -> Envelope {
-    .result("help", [
-        "commands": .array(allCommands),
-        "built": .array(builtCommands),
-        "usage": [
-            "canary --device <alias> [--keep] [--evidence] --yes",
-            "canary history",
-            "device save|list ...",
-            "device auto-refresh --alias <alias> --on|--off --yes",
-            "device slots --alias <alias> --reserved 0-3 --yes",
-            "device lendable --alias <alias> --app <apollo|stremio-ios|stremio-tvos|filler>|--none --yes",
-            "device remove --alias <alias> --yes",
-            "inspect <path.ipa>",
-            "fetch --app <apollo|stremio-ios|stremio-tvos> [--approve --version <v>]",
-            "updates [--app <apollo|stremio-ios|stremio-tvos>] [--force]",
-            "provision --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> [--register-device] [--renew] --yes",
-            "provision --renew-ack --yes",
-            "sign --app <apollo|stremio-ios|stremio-tvos> --device <alias> [--version <v>] --yes",
-            "install --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> --yes",
-            .string("refresh --device <alias> [--app <apollo|stremio-ios|stremio-tvos|filler>] [--within 1-\(RefreshCommand.maxWithin) | --force] --yes"),
-            "refresh --auto",
-            "refresh --print-agent [--binary <absolute path>]",
-            "app remove --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> --yes",
-            "slot lend --device <alias>|--udid <id> --to lab",
-            "slot return --device <alias>|--udid <id>",
-            "slot restore --device <alias> [--app <apollo|stremio-ios|stremio-tvos|filler>] --yes",
-            "clean [--yes]",
-            "export-cert --device <alias> [--profile <uuid>] [--out <dir>] [--copy-password] --yes",
-            "ledger [refresh]",
-            "portal [certificates|bundle-ids|devices|profiles] [--show-identifiers]",
-            "status",
-            "status --notify [--check-updates]",
-            "status --print-agent [--binary <absolute path>]",
-        ],
-        "docs": "docs/design.md",
-        "note": "commands not listed under `built` are not built yet; see docs/design.md",
-    ])
+    .result(
+        "help",
+        [
+            "commands": .array(allCommands),
+            "built": .array(builtCommands),
+            "usage": [
+                "canary --device <alias> [--keep] [--evidence] --yes",
+                "canary history",
+                "device save|list ...",
+                "device auto-refresh --alias <alias> --on|--off --yes",
+                "device slots --alias <alias> --reserved 0-3 --yes",
+                "device lendable --alias <alias> --app <apollo|stremio-ios|stremio-tvos|filler>|--none --yes",
+                "device remove --alias <alias> --yes",
+                "inspect <path.ipa>",
+                "fetch --app <apollo|stremio-ios|stremio-tvos> [--approve --version <v>]",
+                "updates [--app <apollo|stremio-ios|stremio-tvos>] [--force]",
+                "provision --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> [--register-device] [--renew] --yes",
+                "provision --renew-ack --yes",
+                "sign --app <apollo|stremio-ios|stremio-tvos> --device <alias> [--version <v>] --yes",
+                "install --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> --yes",
+                .string(
+                    "refresh --device <alias> [--app <apollo|stremio-ios|stremio-tvos|filler>] [--within 1-\(RefreshCommand.maxWithin) | --force] --yes"
+                ),
+                "refresh --auto",
+                "refresh --print-agent [--binary <absolute path>]",
+                "app remove --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> --yes",
+                "slot lend --device <alias>|--udid <id> --to lab",
+                "slot return --device <alias>|--udid <id>",
+                "slot restore --device <alias> [--app <apollo|stremio-ios|stremio-tvos|filler>] --yes",
+                "clean [--yes]",
+                "export-cert --device <alias> [--profile <uuid>] [--out <dir>] [--copy-password] --yes",
+                "ledger [refresh]",
+                "portal [certificates|bundle-ids|devices|profiles] [--show-identifiers]",
+                "status",
+                "status --notify [--check-updates]",
+                "status --print-agent [--binary <absolute path>]",
+            ],
+            "docs": "docs/design.md",
+            "note": "commands not listed under `built` are not built yet; see docs/design.md",
+        ])
 }
 
-private let deviceSpec = ArgSpec(values: ["alias", "match", "platform", "reserved", "app"], flags: ["yes", "on", "off", "none"])
+private let deviceSpec = ArgSpec(
+    values: ["alias", "match", "platform", "reserved", "app"], flags: ["yes", "on", "off", "none"])
 private let canarySpec = ArgSpec(values: ["device"], flags: ["yes", "keep", "evidence"])
 
-private let exportCertSpec = ArgSpec(values: ["device", "profile", "out"], flags: ["yes", "copy-password"])
-private let provisionSpec = ArgSpec(values: ["app", "device"], flags: ["yes", "register-device", "renew", "renew-ack"])
+private let exportCertSpec = ArgSpec(
+    values: ["device", "profile", "out"], flags: ["yes", "copy-password"])
+private let provisionSpec = ArgSpec(
+    values: ["app", "device"], flags: ["yes", "register-device", "renew", "renew-ack"])
 private let signSpec = ArgSpec(values: ["app", "device", "version"], flags: ["yes"])
 private let installSpec = ArgSpec(values: ["app", "device"], flags: ["yes"])
-private let refreshSpec = ArgSpec(values: ["device", "app", "within", "binary"], flags: ["yes", "force", "auto", "print-agent"])
+private let refreshSpec = ArgSpec(
+    values: ["device", "app", "within", "binary"], flags: ["yes", "force", "auto", "print-agent"])
 // `--auto` and `--print-agent` each take no other option (`--binary` belongs to `--print-agent`).
-private let refreshAutoConflicts = ["device", "app", "within", "yes", "force", "binary", "print-agent"]
+private let refreshAutoConflicts = [
+    "device", "app", "within", "yes", "force", "binary", "print-agent",
+]
 private let refreshPrintAgentConflicts = ["device", "app", "within", "yes", "force", "auto"]
 private let appSpec = ArgSpec(values: ["app", "device"], flags: ["yes"])
 private let slotSpec = ArgSpec(values: ["device", "udid", "to", "app"], flags: ["yes"])
@@ -63,10 +79,13 @@ private let cleanSpec = ArgSpec(flags: ["yes"])
 private let portalSpec = ArgSpec(flags: ["show-identifiers"])
 // Plain `status` takes no option; `--notify` and `--print-agent` are alternatives, `--binary` belongs to `--print-agent` and
 // `--check-updates` to `--notify`.
-private let statusSpec = ArgSpec(values: ["binary"], flags: ["notify", "print-agent", "check-updates"])
+private let statusSpec = ArgSpec(
+    values: ["binary"], flags: ["notify", "print-agent", "check-updates"])
 
 private func unexpectedPositionals(_ command: String) -> Envelope {
-    .fail(command, code: "USAGE", message: "Unexpected positional arguments.", fix: "Run `sideload help`.")
+    .fail(
+        command, code: "USAGE", message: "Unexpected positional arguments.",
+        fix: "Run `sideload help`.")
 }
 
 /// Dispatches one invocation to a command and returns its single result object. `services` defaults to the
@@ -79,7 +98,8 @@ func run(argv: [String], services: Services? = nil) async -> Envelope {
     let services = services ?? liveServices()
     let record = ProvisionCommand.RenewRecord.read(services)
     let envelope = await dispatch(argv: argv, services: services)
-    return record.merged(into: envelope, listed: envelope.ok && envelope.data["renewMovesAcknowledged"] != nil)
+    return record.merged(
+        into: envelope, listed: envelope.ok && envelope.data["renewMovesAcknowledged"] != nil)
 }
 
 private func dispatch(argv: [String], services: Services?) async -> Envelope {
@@ -114,7 +134,9 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     default:
         if wantsHelp { return help() }
         guard allCommands.contains(.string(command)) else {
-            return .fail(command, code: "UNKNOWN_COMMAND", message: "Unknown command \"\(command)\".", fix: "Run `sideload help`.")
+            return .fail(
+                command, code: "UNKNOWN_COMMAND", message: "Unknown command \"\(command)\".",
+                fix: "Run `sideload help`.")
         }
         return .fail(
             command, code: "NOT_IMPLEMENTED",
@@ -131,7 +153,8 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     if parsed.help { return help() }
 
     // `device` takes one subcommand, `canary` only `history`, `ledger` only `refresh`, `portal` one list name, `inspect` one path; `doctor` and `status` take none.
-    let maxPositionals = ["device", "canary", "ledger", "portal", "inspect", "app", "slot"].contains(command) ? 1 : 0
+    let maxPositionals =
+        ["device", "canary", "ledger", "portal", "inspect", "app", "slot"].contains(command) ? 1 : 0
     if parsed.positionals.count > maxPositionals { return unexpectedPositionals(command) }
     if command == "canary", let sub = parsed.positionals.first, sub != "history" {
         return unexpectedPositionals(command)
@@ -143,8 +166,11 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
 
     if command == "status", parsed.flags.contains("notify"), parsed.flags.contains("print-agent") {
         return .fail(
-            command, code: "USAGE", message: "status --notify and status --print-agent are alternatives.",
-            fix: "Run `sideload status --notify` or `sideload status --print-agent [--binary <absolute path>]`, not both.")
+            command, code: "USAGE",
+            message: "status --notify and status --print-agent are alternatives.",
+            fix:
+                "Run `sideload status --notify` or `sideload status --print-agent [--binary <absolute path>]`, not both."
+        )
     }
 
     if command == "status", parsed.values["binary"] != nil, !parsed.flags.contains("print-agent") {
@@ -153,17 +179,24 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
             fix: "Run `sideload status --print-agent --binary <absolute path>`.")
     }
 
-    if command == "status", parsed.flags.contains("check-updates"), !parsed.flags.contains("notify") {
+    if command == "status", parsed.flags.contains("check-updates"), !parsed.flags.contains("notify")
+    {
         return .fail(
             command, code: "USAGE", message: "--check-updates belongs to status --notify.",
-            fix: "Run `sideload status --notify --check-updates`; `sideload updates` is the plain check.")
+            fix:
+                "Run `sideload status --notify --check-updates`; `sideload updates` is the plain check."
+        )
     }
 
     if command == "refresh", parsed.flags.contains("print-agent"),
-        let option = refreshPrintAgentConflicts.first(where: { parsed.values[$0] != nil || parsed.flags.contains($0) })
+        let option = refreshPrintAgentConflicts.first(where: {
+            parsed.values[$0] != nil || parsed.flags.contains($0)
+        })
     {
         return .fail(
-            command, code: "USAGE", message: "refresh --print-agent takes no other option but --binary (--\(option) was given).",
+            command, code: "USAGE",
+            message:
+                "refresh --print-agent takes no other option but --binary (--\(option) was given).",
             fix: "Run `sideload refresh --print-agent [--binary <absolute path>]` on its own.")
     }
 
@@ -174,11 +207,16 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     }
 
     if command == "refresh", parsed.flags.contains("auto"),
-        let option = refreshAutoConflicts.first(where: { parsed.values[$0] != nil || parsed.flags.contains($0) })
+        let option = refreshAutoConflicts.first(where: {
+            parsed.values[$0] != nil || parsed.flags.contains($0)
+        })
     {
         return .fail(
-            command, code: "USAGE", message: "refresh --auto takes no other option (--\(option) was given).",
-            fix: "Run `sideload refresh --auto` on its own; the devices with auto-renew on and the limits are the policy's.")
+            command, code: "USAGE",
+            message: "refresh --auto takes no other option (--\(option) was given).",
+            fix:
+                "Run `sideload refresh --auto` on its own; the devices with auto-renew on and the limits are the policy's."
+        )
     }
 
     var portalResource: PortalResource?
@@ -186,7 +224,9 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
         guard let resource = PortalResource(cliName: name) else {
             return .fail(
                 command, code: "USAGE", message: "Unknown portal list.",
-                fix: "Use certificates, bundle-ids, devices or profiles, or no argument for all four.")
+                fix:
+                    "Use certificates, bundle-ids, devices or profiles, or no argument for all four."
+            )
         }
         portalResource = resource
     }
@@ -206,70 +246,99 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     }
     if command == "doctor" { return await Doctor.run(services) }
     if command == "status", parsed.flags.contains("notify") {
-        return await StatusCommand.runNotify(services, checkUpdates: parsed.flags.contains("check-updates"))
+        return await StatusCommand.runNotify(
+            services, checkUpdates: parsed.flags.contains("check-updates"))
     }
     if command == "status" { return StatusCommand.run(services) }
-    if command == "ledger" { return await LedgerCommand.run(services, LedgerOptions(sub: parsed.positionals.isEmpty ? .show : .refresh)) }
+    if command == "ledger" {
+        return await LedgerCommand.run(
+            services, LedgerOptions(sub: parsed.positionals.isEmpty ? .show : .refresh))
+    }
     if command == "fetch" {
-        return await FetchCommand.run(services, FetchOptions(app: parsed.values["app"], approve: parsed.flags.contains("approve"), version: parsed.values["version"]))
+        return await FetchCommand.run(
+            services,
+            FetchOptions(
+                app: parsed.values["app"], approve: parsed.flags.contains("approve"),
+                version: parsed.values["version"]))
     }
     if command == "updates" {
-        return await UpdatesCommand.run(services, UpdatesOptions(app: parsed.values["app"], force: parsed.flags.contains("force")))
+        return await UpdatesCommand.run(
+            services,
+            UpdatesOptions(app: parsed.values["app"], force: parsed.flags.contains("force")))
     }
-    if command == "clean" { return CleanCommand.run(services, CleanOptions(yes: parsed.flags.contains("yes"))) }
+    if command == "clean" {
+        return CleanCommand.run(services, CleanOptions(yes: parsed.flags.contains("yes")))
+    }
     if command == "provision" {
         return await ProvisionCommand.run(
             services,
             ProvisionOptions(
                 app: parsed.values["app"], device: parsed.values["device"],
-                registerDevice: parsed.flags.contains("register-device"), renew: parsed.flags.contains("renew"),
+                registerDevice: parsed.flags.contains("register-device"),
+                renew: parsed.flags.contains("renew"),
                 yes: parsed.flags.contains("yes"), renewAck: parsed.flags.contains("renew-ack")))
     }
     if command == "sign" {
         return await SignCommand.run(
             services,
             SignOptions(
-                app: parsed.values["app"], device: parsed.values["device"], yes: parsed.flags.contains("yes"),
+                app: parsed.values["app"], device: parsed.values["device"],
+                yes: parsed.flags.contains("yes"),
                 version: parsed.values["version"]))
     }
     if command == "install" {
         return await InstallCommand.run(
             services,
-            InstallOptions(app: parsed.values["app"], device: parsed.values["device"], yes: parsed.flags.contains("yes")))
+            InstallOptions(
+                app: parsed.values["app"], device: parsed.values["device"],
+                yes: parsed.flags.contains("yes")))
     }
-    if command == "refresh", parsed.flags.contains("auto") { return await RefreshCommand.runAuto(services) }
+    if command == "refresh", parsed.flags.contains("auto") {
+        return await RefreshCommand.runAuto(services)
+    }
     if command == "refresh" {
         return await RefreshCommand.run(
             services,
             RefreshOptions(
-                device: parsed.values["device"], app: parsed.values["app"], within: parsed.values["within"],
+                device: parsed.values["device"], app: parsed.values["app"],
+                within: parsed.values["within"],
                 force: parsed.flags.contains("force"), yes: parsed.flags.contains("yes")))
     }
     if command == "app" {
         return await AppCommand.run(
             services,
             AppOptions(
-                sub: parsed.positionals.first, app: parsed.values["app"], device: parsed.values["device"],
+                sub: parsed.positionals.first, app: parsed.values["app"],
+                device: parsed.values["device"],
                 yes: parsed.flags.contains("yes")))
     }
     if command == "slot" {
         return await SlotCommand.run(
             services,
             SlotOptions(
-                sub: parsed.positionals.first, device: parsed.values["device"], udid: parsed.values["udid"],
-                to: parsed.values["to"], app: parsed.values["app"], yes: parsed.flags.contains("yes")))
+                sub: parsed.positionals.first, device: parsed.values["device"],
+                udid: parsed.values["udid"],
+                to: parsed.values["to"], app: parsed.values["app"],
+                yes: parsed.flags.contains("yes")))
     }
-    if command == "inspect" { return await InspectCommand.run(services, InspectOptions(path: parsed.positionals.first)) }
+    if command == "inspect" {
+        return await InspectCommand.run(services, InspectOptions(path: parsed.positionals.first))
+    }
     if command == "export-cert" {
         return await ExportCertCommand.run(
             services,
             ExportCertOptions(
-                device: parsed.values["device"], profile: parsed.values["profile"], out: parsed.values["out"],
-                yes: parsed.flags.contains("yes"), copyPassword: parsed.flags.contains("copy-password")))
+                device: parsed.values["device"], profile: parsed.values["profile"],
+                out: parsed.values["out"],
+                yes: parsed.flags.contains("yes"),
+                copyPassword: parsed.flags.contains("copy-password")))
     }
     if command == "portal" {
         return await PortalCommand.run(
-            services, PortalOptions(resource: portalResource, showIdentifiers: parsed.flags.contains("show-identifiers")))
+            services,
+            PortalOptions(
+                resource: portalResource, showIdentifiers: parsed.flags.contains("show-identifiers")
+            ))
     }
     if command == "canary", parsed.positionals.first == "history" {
         // Read-only: no device, no confirmation, no lock, so no canary option applies.
@@ -284,14 +353,18 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
         return await CanaryCommand.run(
             services,
             CanaryOptions(
-                device: parsed.values["device"], yes: parsed.flags.contains("yes"), keep: parsed.flags.contains("keep"),
+                device: parsed.values["device"], yes: parsed.flags.contains("yes"),
+                keep: parsed.flags.contains("keep"),
                 evidence: parsed.flags.contains("evidence")))
     }
     return await DeviceCommand.run(
         services,
         DeviceOptions(
-            sub: parsed.positionals.first, alias: parsed.values["alias"], match: parsed.values["match"],
-            platform: parsed.values["platform"], on: parsed.flags.contains("on"), off: parsed.flags.contains("off"),
-            reserved: parsed.values["reserved"], app: parsed.values["app"], none: parsed.flags.contains("none"),
+            sub: parsed.positionals.first, alias: parsed.values["alias"],
+            match: parsed.values["match"],
+            platform: parsed.values["platform"], on: parsed.flags.contains("on"),
+            off: parsed.flags.contains("off"),
+            reserved: parsed.values["reserved"], app: parsed.values["app"],
+            none: parsed.flags.contains("none"),
             yes: parsed.flags.contains("yes")))
 }

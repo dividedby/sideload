@@ -80,21 +80,35 @@ final class LogLines: Sendable {
 
 func okPage(_ rows: [JSONValue], next: String? = nil) -> HTTPResponse {
     var root: [String: JSONValue] = ["data": .array(rows)]
-    if let next { root["links"] = ["self": "https://api.appstoreconnect.apple.com/v1/x", "next": .string(next)] }
+    if let next {
+        root["links"] = [
+            "self": "https://api.appstoreconnect.apple.com/v1/x", "next": .string(next),
+        ]
+    }
     return jsonResponse(.object(root))
 }
 
 func jsonResponse(_ value: JSONValue, status: Int = 200, retryAfter: Int? = nil) -> HTTPResponse {
-    HTTPResponse(status: status, body: (try? JSONEncoder().encode(value)) ?? Data(), retryAfter: retryAfter)
+    HTTPResponse(
+        status: status, body: (try? JSONEncoder().encode(value)) ?? Data(), retryAfter: retryAfter)
 }
 
 func textResponse(_ text: String, status: Int = 200) -> HTTPResponse {
     HTTPResponse(status: status, body: Data(text.utf8))
 }
 
-func errorResponse(_ status: Int, code: String = "NOT_AUTHORIZED", detail: String = "detail text") -> HTTPResponse {
+func errorResponse(_ status: Int, code: String = "NOT_AUTHORIZED", detail: String = "detail text")
+    -> HTTPResponse
+{
     jsonResponse(
-        ["errors": [["status": .string(String(status)), "code": .string(code), "title": "title text", "detail": .string(detail)]]],
+        [
+            "errors": [
+                [
+                    "status": .string(String(status)), "code": .string(code), "title": "title text",
+                    "detail": .string(detail),
+                ]
+            ]
+        ],
         status: status)
 }
 
@@ -118,7 +132,10 @@ enum Canary {
     static let foreignIdentifier = "com.zebra.secretapp"
     static let detail = "Canary Apple Detail Zebra"
     static var all: [String] {
-        [certName, certSerial, deviceName, profileName, appName, profileContent, foreignIdentifier, detail]
+        [
+            certName, certSerial, deviceName, profileName, appName, profileContent,
+            foreignIdentifier, detail,
+        ]
     }
 }
 
@@ -145,20 +162,25 @@ func bundleRow(_ id: String, _ identifier: String, seed: String = Team.id) -> JS
         ])
 }
 
-func deviceRow(_ id: String, udid: String, cls: String = "IPHONE", added: String = "2026-03-04T10:00:00.000+0000")
+func deviceRow(
+    _ id: String, udid: String, cls: String = "IPHONE",
+    added: String = "2026-03-04T10:00:00.000+0000"
+)
     -> JSONValue
 {
     resource(
         "devices", id,
         [
-            "udid": .string(udid), "deviceClass": .string(cls), "model": "iPhone 17", "platform": "IOS",
+            "udid": .string(udid), "deviceClass": .string(cls), "model": "iPhone 17",
+            "platform": "IOS",
             "status": "ENABLED", "addedDate": .string(added), "name": .string(Canary.deviceName),
         ])
 }
 
 func profileRow(
     _ id: String, type: String = "IOS_APP_DEVELOPMENT", state: String = "ACTIVE",
-    created: String = "2026-03-04T10:00:00.000+0000", expires: String = "2027-03-04T10:00:00.000+0000"
+    created: String = "2026-03-04T10:00:00.000+0000",
+    expires: String = "2027-03-04T10:00:00.000+0000"
 ) -> JSONValue {
     resource(
         "profiles", id,
@@ -207,16 +229,23 @@ func withPortalHome<T>(
     }
 }
 
-func writeAsc(_ paths: Paths, pem: String, role: String? = "Developer", keyFile: String = "AuthKey_\(testKeyId).p8") throws {
+func writeAsc(
+    _ paths: Paths, pem: String, role: String? = "Developer",
+    keyFile: String = "AuthKey_\(testKeyId).p8"
+) throws {
     try FileManager.default.createDirectory(
-        atPath: paths.asc, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        atPath: paths.asc, withIntermediateDirectories: false,
+        attributes: [.posixPermissions: 0o700])
     chmod(paths.asc, 0o700)
     var fields: [String: JSONValue] = [
         "keyId": .string(testKeyId), "issuerId": .string(testIssuerId), "keyFile": .string(keyFile),
     ]
     if let role { fields["role"] = .string(role) }
-    try writeSecret(paths.asc + "/key.json", Data(try JSONEncoder().encode(JSONValue.object(fields))))
-    if !keyFile.contains("/") && !keyFile.isEmpty { try writeSecret(paths.asc + "/" + keyFile, Data(pem.utf8)) }
+    try writeSecret(
+        paths.asc + "/key.json", Data(try JSONEncoder().encode(JSONValue.object(fields))))
+    if !keyFile.contains("/") && !keyFile.isEmpty {
+        try writeSecret(paths.asc + "/" + keyFile, Data(pem.utf8))
+    }
 }
 
 func writeSecret(_ path: String, _ data: Data, mode: mode_t = 0o600) throws {
@@ -225,14 +254,16 @@ func writeSecret(_ path: String, _ data: Data, mode: mode_t = 0o600) throws {
 }
 
 func portalServices(
-    _ paths: Paths, http: any HTTPTransport, keychain: FakeKeychain = FakeKeychain(), now: Date = testNow,
+    _ paths: Paths, http: any HTTPTransport, keychain: FakeKeychain = FakeKeychain(),
+    now: Date = testNow,
     log: @escaping @Sendable (String) -> Void = { _ in },
     sleep: @escaping @Sendable (Duration) async throws -> Void = { _ in }
 ) -> (services: Services, runner: FakeRunner) {
     let runner = FakeRunner()
     return (
         Services(
-            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(now), keychain: keychain, home: paths,
+            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(now),
+            keychain: keychain, home: paths,
             log: log, http: http, sleep: sleep),
         runner
     )

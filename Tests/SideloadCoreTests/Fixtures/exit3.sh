@@ -1,2 +1,4 @@
 #!/bin/sh
-echo out; echo bad >&2; exit 3
+echo out
+echo bad >&2
+exit 3

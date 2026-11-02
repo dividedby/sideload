@@ -10,15 +10,19 @@ private func cert(_ pem: String) throws -> KeychainCertificate {
     return read
 }
 
-private func hand(_ reference: String, _ info: CertInfo, valid: Bool = true) -> KeychainCertificate {
+private func hand(_ reference: String, _ info: CertInfo, valid: Bool = true) -> KeychainCertificate
+{
     KeychainCertificate(reference: reference, info: info, isValidForCodeSigning: valid)
 }
 
-private func utc(_ year: Int, _ month: Int, _ day: Int, _ hour: Int = 0, _ minute: Int = 0, _ second: Int = 0) -> Date {
+private func utc(
+    _ year: Int, _ month: Int, _ day: Int, _ hour: Int = 0, _ minute: Int = 0, _ second: Int = 0
+) -> Date {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = TimeZone(identifier: "GMT")!
-    return calendar.date(from: DateComponents(
-        year: year, month: month, day: day, hour: hour, minute: minute, second: second))!
+    return calendar.date(
+        from: DateComponents(
+            year: year, month: month, day: day, hour: hour, minute: minute, second: second))!
 }
 
 /// 2026-10-19 12:00 UTC, the `NOW` of the Node doctor tests.
@@ -28,7 +32,8 @@ private let paidExpiry = utc(2027, 10, 16, 22, 39, 42)
 
 /// Every string a finding carries, for leak assertions.
 private func text(_ findings: [CheckResult]) -> String {
-    findings.map { "\($0.id) \($0.message) \($0.fix ?? "") \($0.daysLeft.map(String.init) ?? "")" }.joined(separator: "\n")
+    findings.map { "\($0.id) \($0.message) \($0.fix ?? "") \($0.daysLeft.map(String.init) ?? "")" }
+        .joined(separator: "\n")
 }
 
 @Suite("certificate reader")
@@ -107,7 +112,9 @@ struct CertCheckTests {
         #expect(out.count == 1)
         #expect(out[0].id == "cert")
         #expect(out[0].severity == .ok)
-        #expect(out[0].message == "Apple Development (team 7AGMPUPP64) valid until 2027-10-16 (362 days).")
+        #expect(
+            out[0].message
+                == "Apple Development (team 7AGMPUPP64) valid until 2027-10-16 (362 days).")
         #expect(out[0].daysLeft == 362)
         let all = text(out)
         #expect(!all.contains(paid.reference))
@@ -120,7 +127,9 @@ struct CertCheckTests {
         let out = CertCheck.run(keychain: FakeKeychain([try cert(TestCerts.free)]), now: now)
         #expect(out[0].id == "cert")
         #expect(out[0].severity == .fail)
-        #expect(out[0].message == "No Apple Development certificate for team 7AGMPUPP64 in the keychain.")
+        #expect(
+            out[0].message
+                == "No Apple Development certificate for team 7AGMPUPP64 in the keychain.")
         let other = try #require(out.first { $0.id == "cert-other-team" })
         #expect(other.severity == .info)
         #expect(other.message.hasPrefix("other team, ignored"))
@@ -139,13 +148,16 @@ struct CertCheckTests {
         #expect(gone[0].severity == .fail)
         // Swift applies `find-identity -v` semantics to every input, so a past notAfter is "none" (Node's parser
         // path would say "expired"; on a real keychain both say none: design section 14).
-        #expect(gone[0].message == "No Apple Development certificate for team 7AGMPUPP64 in the keychain.")
+        #expect(
+            gone[0].message
+                == "No Apple Development certificate for team 7AGMPUPP64 in the keychain.")
     }
 
     @Test func warnBoundaryIsSixtyDays() throws {
         let paid = try cert(TestCerts.paid)
         // 60 full days left is ok; one second less is 59 days and warns.
-        let sixty = CertCheck.run(keychain: FakeKeychain([paid]), now: paidExpiry.addingTimeInterval(-60 * 86_400))
+        let sixty = CertCheck.run(
+            keychain: FakeKeychain([paid]), now: paidExpiry.addingTimeInterval(-60 * 86_400))
         #expect(sixty[0].severity == .ok)
         let fiftyNine = CertCheck.run(
             keychain: FakeKeychain([paid]), now: paidExpiry.addingTimeInterval(-60 * 86_400 + 1))
@@ -162,21 +174,29 @@ struct CertCheckTests {
 
     // "passes with both teams present and ignores the free one"
     @Test func bothTeamsPassAndIgnoreFree() throws {
-        let out = CertCheck.run(keychain: FakeKeychain([try cert(TestCerts.paid), try cert(TestCerts.free)]), now: now)
+        let out = CertCheck.run(
+            keychain: FakeKeychain([try cert(TestCerts.paid), try cert(TestCerts.free)]), now: now)
         #expect(out.map(\.id) == ["cert", "cert-other-team"])
         #expect(out.map(\.severity) == [.ok, .info])
     }
 
     @Test func keychainFailureIsAFailFinding() {
-        let out = CertCheck.run(keychain: FakeKeychain(failure: KeychainError("SecItemCopyMatching failed (OSStatus -25308)")), now: now)
+        let out = CertCheck.run(
+            keychain: FakeKeychain(
+                failure: KeychainError("SecItemCopyMatching failed (OSStatus -25308)")), now: now)
         #expect(out.count == 1)
         #expect(out[0].severity == .fail)
-        #expect(out[0].message == "Could not read signing identities: SecItemCopyMatching failed (OSStatus -25308).")
+        #expect(
+            out[0].message
+                == "Could not read signing identities: SecItemCopyMatching failed (OSStatus -25308)."
+        )
         #expect(out[0].fix == "Check that the login keychain is unlocked.")
     }
 
     @Test func nonKeychainErrorsAreGeneric() {
-        struct Boom: Error, CustomStringConvertible { var description: String { "Apple Development: a@b.invalid" } }
+        struct Boom: Error, CustomStringConvertible {
+            var description: String { "Apple Development: a@b.invalid" }
+        }
         let out = CertCheck.run(keychain: FakeKeychain(failure: Boom()), now: now)
         #expect(out[0].severity == .fail)
         #expect(!text(out).contains("a@b.invalid"))
@@ -193,7 +213,8 @@ struct CertCheckTests {
     }
 
     @Test func subjectCarryingBothPaidAndDeniedOUIsNotSelected() {
-        let mixed = hand("AA", CertInfo(ous: ["7AGMPUPP64", "6ZU5Z6ZKK7"], notAfter: utc(2099, 1, 1)))
+        let mixed = hand(
+            "AA", CertInfo(ous: ["7AGMPUPP64", "6ZU5Z6ZKK7"], notAfter: utc(2099, 1, 1)))
         let out = CertCheck.evaluate([mixed], now: now)
         #expect(out[0].severity == .fail)
         #expect(out.map(\.id) == ["cert", "cert-other-team"])
@@ -201,7 +222,8 @@ struct CertCheckTests {
     }
 
     @Test func deniedOUFirstIsLabelledDenyListedEvenWithPaidOUSecond() {
-        let mixed = hand("AB", CertInfo(ous: ["6ZU5Z6ZKK7", "7AGMPUPP64"], notAfter: utc(2099, 1, 1)))
+        let mixed = hand(
+            "AB", CertInfo(ous: ["6ZU5Z6ZKK7", "7AGMPUPP64"], notAfter: utc(2099, 1, 1)))
         let out = CertCheck.evaluate([mixed], now: now)
         #expect(out[0].severity == .fail)
         #expect(out[1].message == "other team, ignored (6ZU5Z6ZKK7, deny-listed)")
@@ -215,15 +237,19 @@ struct CertCheckTests {
     }
 
     @Test func expiredPaidPlusValidOtherReportsNoneAndTheOtherTeam() throws {
-        let out = CertCheck.evaluate([try cert(TestCerts.paid), try cert(TestCerts.other)], now: utc(2028, 1, 1))
+        let out = CertCheck.evaluate(
+            [try cert(TestCerts.paid), try cert(TestCerts.other)], now: utc(2028, 1, 1))
         #expect(out.map(\.severity) == [.fail, .info])
-        #expect(out[0].message == "No Apple Development certificate for team 7AGMPUPP64 in the keychain.")
+        #expect(
+            out[0].message
+                == "No Apple Development certificate for team 7AGMPUPP64 in the keychain.")
         #expect(out[1].message == "other team, ignored")
     }
 
     @Test func picksTheLatestExpiryAmongPaidCerts() throws {
         let early = try cert(TestCerts.paid)
-        let late = hand("LATE", CertInfo(ous: ["7AGMPUPP64"], notAfter: utc(2055, 12, 31, 23, 59, 59)))
+        let late = hand(
+            "LATE", CertInfo(ous: ["7AGMPUPP64"], notAfter: utc(2055, 12, 31, 23, 59, 59)))
         let out = CertCheck.evaluate([early, late], now: now)
         #expect(out.count == 1)
         #expect(out[0].message.contains("valid until 2055-12-31"))
@@ -239,18 +265,22 @@ struct CertCheckTests {
     @Test func sameOtherTeamIsReportedOnce() {
         let a = hand("A1", CertInfo(ous: ["TESTTEAM01"], notAfter: utc(2030, 1, 1)))
         let b = hand("B2", CertInfo(ous: ["TESTTEAM01"], notAfter: utc(2031, 1, 1)))
-        #expect(CertCheck.evaluate([a, b], now: now).filter { $0.id == "cert-other-team" }.count == 1)
+        #expect(
+            CertCheck.evaluate([a, b], now: now).filter { $0.id == "cert-other-team" }.count == 1)
     }
 
     @Test func nonDevelopmentCertificatesAreIgnored() {
-        let dist = hand("C3", CertInfo(ous: ["7AGMPUPP64"], notAfter: utc(2099, 1, 1), isAppleDevelopment: false))
+        let dist = hand(
+            "C3",
+            CertInfo(ous: ["7AGMPUPP64"], notAfter: utc(2099, 1, 1), isAppleDevelopment: false))
         let out = CertCheck.evaluate([dist], now: now)
         #expect(out.count == 1)
         #expect(out[0].severity == .fail)
     }
 
     @Test func unreadableExpiryIsNotValid() {
-        let out = CertCheck.evaluate([hand("D4", CertInfo(ous: ["7AGMPUPP64"], notAfter: nil))], now: now)
+        let out = CertCheck.evaluate(
+            [hand("D4", CertInfo(ous: ["7AGMPUPP64"], notAfter: nil))], now: now)
         #expect(out.count == 1)
         #expect(out[0].severity == .fail)
     }
@@ -264,11 +294,15 @@ struct CertCheckTests {
         let out = CertCheck.evaluate([paid, other], now: now)
         #expect(out.map(\.id) == ["cert"])
         #expect(out[0].severity == .fail)
-        #expect(out[0].message == "No Apple Development certificate for team 7AGMPUPP64 in the keychain.")
+        #expect(
+            out[0].message
+                == "No Apple Development certificate for team 7AGMPUPP64 in the keychain.")
     }
 
     @Test func unvalidatedIdentitiesDefaultToInvalid() {
-        #expect(!KeychainCertificate(reference: "E5", info: CertInfo(ous: ["7AGMPUPP64"])).isValidForCodeSigning)
+        #expect(
+            !KeychainCertificate(reference: "E5", info: CertInfo(ous: ["7AGMPUPP64"]))
+                .isValidForCodeSigning)
     }
 
     @Test func expiredOtherTeamsAreNotReported() throws {
@@ -287,7 +321,9 @@ struct CertCheckTests {
         let a = hand("F6", CertInfo(ous: ["TESTTEAM01", "TESTTEAM02"], notAfter: utc(2030, 1, 1)))
         let b = hand("G7", CertInfo(ous: ["TESTTEAM01", "TESTTEAM03"], notAfter: utc(2030, 1, 1)))
         let c = hand("H8", CertInfo(ous: ["TESTTEAM02"], notAfter: utc(2030, 1, 1)))
-        #expect(CertCheck.evaluate([a, b, c], now: now).filter { $0.id == "cert-other-team" }.count == 2)
+        #expect(
+            CertCheck.evaluate([a, b, c], now: now).filter { $0.id == "cert-other-team" }.count == 2
+        )
     }
 
     @Test func readsTheKeychainOnce() throws {
@@ -320,7 +356,8 @@ struct CodeSigningTrustTests {
 
 @Suite("security keychain")
 struct SecurityKeychainTests {
-    private static let enabled = ProcessInfo.processInfo.environment["SIDELOAD_REAL_KEYCHAIN"] == "1"
+    private static let enabled =
+        ProcessInfo.processInfo.environment["SIDELOAD_REAL_KEYCHAIN"] == "1"
 
     /// Opt-in: reads the real login keychain, read-only. Asserts only the team OU and a future expiry; prints nothing.
     @Test(.enabled(if: enabled, "set SIDELOAD_REAL_KEYCHAIN=1"))

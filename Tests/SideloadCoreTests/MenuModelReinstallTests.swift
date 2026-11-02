@@ -32,26 +32,37 @@ struct MenuModelReinstallTests {
         ledger.installs[0].version = "3.9.0"
         ledger.freeProfiles = [
             LedgerFreeProfile(
-                id: "iphone/apollo", device: "iphone", deviceTail: "…0001", app: "apollo", bundleId: menuBundleId("apollo"),
-                profileUuid: "UUID-1", created: nil, expires: daysFromNow(6.5), certFp8: "12345678", file: "x")
+                id: "iphone/apollo", device: "iphone", deviceTail: "…0001", app: "apollo",
+                bundleId: menuBundleId("apollo"),
+                profileUuid: "UUID-1", created: nil, expires: daysFromNow(6.5), certFp8: "12345678",
+                file: "x")
         ]
-        ledger.freeAppIds = [LedgerFreeAppId(bundleId: menuBundleId("apollo"), epochStart: testNow.addingTimeInterval(-3_600))]
+        ledger.freeAppIds = [
+            LedgerFreeAppId(
+                bundleId: menuBundleId("apollo"), epochStart: testNow.addingTimeInterval(-3_600))
+        ]
         try await seed(paths, config: addConfig(), ledger: ledger)
         var manifest = Manifest()
         manifest.entries = [
             ManifestEntry(
-                app: "apollo", version: "3.8.0", file: "apollo/3.8.0/Apollo.ipa", urlHost: "github.com", sha256: oldSha,
+                app: "apollo", version: "3.8.0", file: "apollo/3.8.0/Apollo.ipa",
+                urlHost: "github.com", sha256: oldSha,
                 upstreamDigest: oldSha, size: 44_000_000, fetchedAt: testNow, approved: true)
         ]
         try ManifestStore(paths: paths).save(manifest)
         if storeFile {
-            try FileManager.default.createDirectory(atPath: "\(paths.downloads)/apollo/3.8.0", withIntermediateDirectories: true)
-            try Data("ipa".utf8).write(to: URL(fileURLWithPath: "\(paths.downloads)/apollo/3.8.0/Apollo.ipa"))
+            try FileManager.default.createDirectory(
+                atPath: "\(paths.downloads)/apollo/3.8.0", withIntermediateDirectories: true)
+            try Data("ipa".utf8).write(
+                to: URL(fileURLWithPath: "\(paths.downloads)/apollo/3.8.0/Apollo.ipa"))
         }
         let runner = SlowDeviceRunner(
-            menuDeviceScript(devices: deviceListJSON(phoneEntryJSON(seed: "1")), apps: { _ in .apps([menuBundleId("apollo")]) }))
+            menuDeviceScript(
+                devices: deviceListJSON(phoneEntryJSON(seed: "1")),
+                apps: { _ in .apps([menuBundleId("apollo")]) }))
         let services = Services(
-            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: MutableClock(testNow), keychain: FakeKeychain(), home: paths)
+            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: MutableClock(testNow),
+            keychain: FakeKeychain(), home: paths)
         let record = Record()
         var steps = MenuActionSteps()
         steps.fetch = { _, _ in
@@ -92,8 +103,12 @@ struct MenuModelReinstallTests {
     }
 
     private func offer(_ w: World) -> MenuOffer? {
-        guard case .loaded(let snapshot) = w.model.panel, let card = snapshot.devices.first, let row = row(w) else { return nil }
-        return w.model.offers(for: row, on: card, in: snapshot).first { $0.kind == .reinstallPrevious }
+        guard case .loaded(let snapshot) = w.model.panel, let card = snapshot.devices.first,
+            let row = row(w)
+        else { return nil }
+        return w.model.offers(for: row, on: card, in: snapshot).first {
+            $0.kind == .reinstallPrevious
+        }
     }
 
     private func until(_ condition: () -> Bool) async throws {
@@ -110,7 +125,9 @@ struct MenuModelReinstallTests {
         defer { try? FileManager.default.removeItem(at: w.dir) }
         await loaded(w)
         #expect(row(w)?.previous?.version == "3.8.0" && row(w)?.previous?.sha256 == oldSha)
-        #expect(offer(w)?.label == "Reinstall previous version (3.8.0)…" && offer(w)?.availability == .enabled)
+        #expect(
+            offer(w)?.label == "Reinstall previous version (3.8.0)…"
+                && offer(w)?.availability == .enabled)
 
         let gone = try await world(storeFile: false)
         defer { try? FileManager.default.removeItem(at: gone.dir) }
@@ -129,7 +146,9 @@ struct MenuModelReinstallTests {
         #expect(offer(w)?.availability == .enabled)
     }
 
-    @Test("one confirm runs provision (skipped here), sign of exactly 3.8.0 and install, then the device is read again")
+    @Test(
+        "one confirm runs provision (skipped here), sign of exactly 3.8.0 and install, then the device is read again"
+    )
     func flow() async throws {
         let w = try await world()
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -174,7 +193,9 @@ struct MenuModelReinstallTests {
             Issue.record("expected the Not run card, got \(w.model.actionState)")
             return
         }
-        #expect(outcome.headline == "Not run" && outcome.issues.first?.message == "No previous version of Apollo is stored")
+        #expect(
+            outcome.headline == "Not run"
+                && outcome.issues.first?.message == "No previous version of Apollo is stored")
         #expect(w.record.calls.isEmpty)
     }
 }

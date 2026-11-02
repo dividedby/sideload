@@ -17,7 +17,8 @@ public struct DeviceOptions: Sendable, Equatable {
 
     public init(
         sub: String? = nil, alias: String? = nil, match: String? = nil, platform: String? = nil,
-        on: Bool = false, off: Bool = false, reserved: String? = nil, app: String? = nil, none: Bool = false,
+        on: Bool = false, off: Bool = false, reserved: String? = nil, app: String? = nil,
+        none: Bool = false,
         yes: Bool = false
     ) {
         self.sub = sub
@@ -41,7 +42,8 @@ public enum DeviceCommand {
         do {
             if options.sub != "lendable", options.app != nil || options.none {
                 return .fail(
-                    "device", code: "USAGE", message: "--app and --none belong to `device lendable`.",
+                    "device", code: "USAGE",
+                    message: "--app and --none belong to `device lendable`.",
                     fix: "sideload device lendable --alias <alias> --app <app>|--none --yes")
             }
             switch options.sub {
@@ -53,7 +55,8 @@ public enum DeviceCommand {
             case "remove": return try await DeviceRemove.run(services, options)
             default:
                 return .fail(
-                    "device", code: "USAGE", message: "Unknown device subcommand \"\(options.sub ?? "")\".",
+                    "device", code: "USAGE",
+                    message: "Unknown device subcommand \"\(options.sub ?? "")\".",
                     fix: "Use `sideload device save|list|auto-refresh|slots|lendable|remove`.")
             }
         } catch {
@@ -82,34 +85,45 @@ public enum DeviceCommand {
 
     /// The device name is never echoed: it can carry the owner's name.
     private static func redacted(_ d: ListedDevice) -> [String: JSONValue] {
-        ["name": "<device>", "platform": .string(d.platform), "udid": tail(d.udid), "coreDeviceId": tail(d.coreDeviceId)]
+        [
+            "name": "<device>", "platform": .string(d.platform), "udid": tail(d.udid),
+            "coreDeviceId": tail(d.coreDeviceId),
+        ]
     }
 
     private static func listDevices(_ services: Services) async throws -> [ListedDevice] {
         guard let devices = try await services.deviceCtl.listDevices() else {
             throw SideloadError(
-                "DEVICECTL_FAILED", "devicectl could not list devices.", fix: "Check that Xcode is installed, then retry.")
+                "DEVICECTL_FAILED", "devicectl could not list devices.",
+                fix: "Check that Xcode is installed, then retry.")
         }
         return devices
     }
 
-    private static func save(_ services: Services, _ options: DeviceOptions) async throws -> Envelope {
+    private static func save(_ services: Services, _ options: DeviceOptions) async throws
+        -> Envelope
+    {
         let command = "device save"
         if options.on || options.off || options.reserved != nil {
             return .fail(
-                command, code: "USAGE", message: "device save does not take --on, --off or --reserved.",
+                command, code: "USAGE",
+                message: "device save does not take --on, --off or --reserved.",
                 fix: "Use `device auto-refresh` or `device slots` for those.")
         }
         guard let alias = nonEmpty(options.alias), let match = nonEmpty(options.match),
             let platform = nonEmpty(options.platform)
         else {
             return .fail(
-                command, code: "USAGE", message: "device save needs --alias, --match and --platform.",
-                fix: "sideload device save --alias <alias> --match <device name|udid> --platform ios|tvos --yes")
+                command, code: "USAGE",
+                message: "device save needs --alias, --match and --platform.",
+                fix:
+                    "sideload device save --alias <alias> --match <device name|udid> --platform ios|tvos --yes"
+            )
         }
         guard isValidAlias(alias) else {
             return .fail(
-                command, code: "USAGE", message: "Alias must be 1-32 chars of letters, digits, \"-\" or \"_\".",
+                command, code: "USAGE",
+                message: "Alias must be 1-32 chars of letters, digits, \"-\" or \"_\".",
                 fix: "Choose a simpler alias, e.g. iphone.")
         }
         guard platforms.contains(platform) else {
@@ -122,10 +136,12 @@ public enum DeviceCommand {
         let candidates = DeviceList.findCandidates(devices, query: match, platform: platform)
         if candidates.isEmpty {
             return .fail(
-                command, code: "DEVICE_NOT_FOUND", message: "No physical device of that platform matched.",
+                command, code: "DEVICE_NOT_FOUND",
+                message: "No physical device of that platform matched.",
                 fix: platform == "tvos"
                     ? "The Apple TV must first be paired with this Mac in Xcode (owner action: Settings > Remotes and Devices)."
-                    : "Connect the device by USB, unlock it, trust this Mac, and match by its exact name or UDID.")
+                    : "Connect the device by USB, unlock it, trust this Mac, and match by its exact name or UDID."
+            )
         }
         if candidates.count > 1 {
             return .fail(
@@ -143,7 +159,8 @@ public enum DeviceCommand {
         }
         guard options.yes else {
             return .fail(
-                command, code: "CONFIRM_REQUIRED", message: "Owner confirmation is required to save this device.",
+                command, code: "CONFIRM_REQUIRED",
+                message: "Owner confirmation is required to save this device.",
                 fix: "Check the candidate is your device, then re-run with --yes (owner only).",
                 data: ["candidate": .object(redacted(dev))])
         }
@@ -156,13 +173,17 @@ public enum DeviceCommand {
             if let prior, prior.udid != udid || prior.coreDeviceId != coreDeviceId {
                 throw SideloadError(
                     "ALIAS_EXISTS", "Alias \"\(alias)\" is already saved for a different device.",
-                    fix: "Pick another alias, or retire this one with `sideload device remove --alias \(alias) --yes` (owner).")
+                    fix:
+                        "Pick another alias, or retire this one with `sideload device remove --alias \(alias) --yes` (owner)."
+                )
             }
             let device = SavedDevice(
                 udid: udid, coreDeviceId: coreDeviceId, platform: platform,
                 name: prior?.name ?? nonEmpty(dev.name),
-                hostnames: (prior?.hostnames.isEmpty == false ? prior?.hostnames : nil) ?? dev.hostnames,
-                autoRefresh: prior?.autoRefresh ?? true, freeSlotsReserved: prior?.freeSlotsReservedRaw ?? 0,
+                hostnames: (prior?.hostnames.isEmpty == false ? prior?.hostnames : nil)
+                    ?? dev.hostnames,
+                autoRefresh: prior?.autoRefresh ?? true,
+                freeSlotsReserved: prior?.freeSlotsReservedRaw ?? 0,
                 lendableApp: prior?.lendableApp, extra: prior?.extra ?? [:])
             config.devices[alias] = device
             return device
@@ -193,13 +214,18 @@ public enum DeviceCommand {
         for d in saved where config.devices[d.alias]?.freeSlotsReserved == nil {
             warnings.append([
                 "code": "CONFIG_INVALID",
-                "message": .string("Saved device \"\(d.alias)\" has a freeSlotsReserved outside 0 to 3; its free-team operations are disabled."),
-                "fix": .string("Run `sideload device slots --alias \(d.alias) --reserved <0-3> --yes` (owner) or fix config.json."),
+                "message": .string(
+                    "Saved device \"\(d.alias)\" has a freeSlotsReserved outside 0 to 3; its free-team operations are disabled."
+                ),
+                "fix": .string(
+                    "Run `sideload device slots --alias \(d.alias) --reserved <0-3> --yes` (owner) or fix config.json."
+                ),
             ])
         }
         let devices: [JSONValue] = saved.map { d in
             let listed = visible.flatMap { DeviceList.findSaved($0, matching: d) }
-            let visibility = visible.map { _ in DeviceList.visibilityOf(listed).rawValue } ?? "unknown"
+            let visibility =
+                visible.map { _ in DeviceList.visibilityOf(listed).rawValue } ?? "unknown"
             let saved = config.devices[d.alias] ?? SavedDevice()
             return [
                 "alias": .string(d.alias),
@@ -226,11 +252,14 @@ public enum DeviceCommand {
         guard config.devices[options.alias ?? ""] != nil else {
             throw SideloadError(
                 "DEVICE_NOT_SAVED", "No saved device with alias \"\(options.alias ?? "")\".",
-                fix: "sideload device save --alias <alias> --match <device name> --platform ios|tvos --yes")
+                fix:
+                    "sideload device save --alias <alias> --match <device name> --platform ios|tvos --yes"
+            )
         }
         guard options.yes else {
             return .fail(
-                command, code: "CONFIRM_REQUIRED", message: "Owner confirmation is required to change this device's settings.",
+                command, code: "CONFIRM_REQUIRED",
+                message: "Owner confirmation is required to change this device's settings.",
                 fix: confirmFix)
         }
         return nil
@@ -251,7 +280,9 @@ public enum DeviceCommand {
 
     /// `device auto-refresh --alias a --on|--off --yes`: the owner's setting for `refresh --auto` (design section 18). A new
     /// device starts on (`device save`); this turns it off or back on.
-    private static func autoRefresh(_ services: Services, _ options: DeviceOptions) async throws -> Envelope {
+    private static func autoRefresh(_ services: Services, _ options: DeviceOptions) async throws
+        -> Envelope
+    {
         let command = "device auto-refresh"
         let usageFix = "sideload device auto-refresh --alias <alias> --on|--off --yes"
         if options.reserved != nil {
@@ -261,13 +292,16 @@ public enum DeviceCommand {
         }
         guard let alias = nonEmpty(options.alias), options.on != options.off else {
             return .fail(
-                command, code: "USAGE", message: "device auto-refresh needs --alias and exactly one of --on or --off.",
+                command, code: "USAGE",
+                message: "device auto-refresh needs --alias and exactly one of --on or --off.",
                 fix: usageFix)
         }
         if let stop = try requireSavedAndConfirmed(
             services, options, command: command,
             confirmFix: "Re-run with --yes (owner only): \(usageFix)")
-        { return stop }
+        {
+            return stop
+        }
         let updated = try await services.store.update { config -> SavedDevice in
             guard var d = config.devices[alias] else {
                 throw SideloadError("DEVICE_NOT_SAVED", "No saved device with alias \"\(alias)\".")
@@ -281,7 +315,9 @@ public enum DeviceCommand {
     }
 
     /// `device slots --alias a --reserved 0-3 --yes`: dev-signed apps sideload does not manage (design section 18).
-    private static func slots(_ services: Services, _ options: DeviceOptions) async throws -> Envelope {
+    private static func slots(_ services: Services, _ options: DeviceOptions) async throws
+        -> Envelope
+    {
         let command = "device slots"
         let usageFix = "sideload device slots --alias <alias> --reserved 0|1|2|3 --yes"
         if options.on || options.off {
@@ -290,15 +326,21 @@ public enum DeviceCommand {
                 fix: "Use `device auto-refresh` for that.")
         }
         guard let alias = nonEmpty(options.alias), let raw = nonEmpty(options.reserved) else {
-            return .fail(command, code: "USAGE", message: "device slots needs --alias and --reserved.", fix: usageFix)
+            return .fail(
+                command, code: "USAGE", message: "device slots needs --alias and --reserved.",
+                fix: usageFix)
         }
         guard let reserved = Int(raw), SavedDevice.freeSlotRange.contains(reserved) else {
-            return .fail(command, code: "USAGE", message: "--reserved must be a whole number from 0 to 3.", fix: usageFix)
+            return .fail(
+                command, code: "USAGE", message: "--reserved must be a whole number from 0 to 3.",
+                fix: usageFix)
         }
         if let stop = try requireSavedAndConfirmed(
             services, options, command: command,
             confirmFix: "Re-run with --yes (owner only): \(usageFix)")
-        { return stop }
+        {
+            return stop
+        }
         let updated = try await services.store.update { config -> SavedDevice in
             guard var d = config.devices[alias] else {
                 throw SideloadError("DEVICE_NOT_SAVED", "No saved device with alias \"\(alias)\".")
@@ -312,16 +354,25 @@ public enum DeviceCommand {
 
     /// `device lendable --alias a --app <app>|--none --yes`: the one app the lab may borrow the slot of through
     /// `slot lend` (design section 18). Owner-only; touches no device.
-    private static func lendable(_ services: Services, _ options: DeviceOptions) async throws -> Envelope {
+    private static func lendable(_ services: Services, _ options: DeviceOptions) async throws
+        -> Envelope
+    {
         let command = "device lendable"
-        let usageFix = "sideload device lendable --alias <alias> --app <\(ProvisionApp.names.joined(separator: "|"))>|--none --yes"
-        if options.on || options.off || options.reserved != nil || options.match != nil || options.platform != nil {
+        let usageFix =
+            "sideload device lendable --alias <alias> --app <\(ProvisionApp.names.joined(separator: "|"))>|--none --yes"
+        if options.on || options.off || options.reserved != nil || options.match != nil
+            || options.platform != nil
+        {
             return .fail(
-                command, code: "USAGE", message: "device lendable takes only --alias, --app or --none, and --yes.", fix: usageFix)
+                command, code: "USAGE",
+                message: "device lendable takes only --alias, --app or --none, and --yes.",
+                fix: usageFix)
         }
-        guard let alias = nonEmpty(options.alias), (nonEmpty(options.app) != nil) != options.none else {
+        guard let alias = nonEmpty(options.alias), (nonEmpty(options.app) != nil) != options.none
+        else {
             return .fail(
-                command, code: "USAGE", message: "device lendable needs --alias and exactly one of --app or --none.",
+                command, code: "USAGE",
+                message: "device lendable needs --alias and exactly one of --app or --none.",
                 fix: usageFix)
         }
         var chosen: ProvisionApp?
@@ -334,8 +385,11 @@ public enum DeviceCommand {
             chosen = app
         }
         if let stop = try requireSavedAndConfirmed(
-            services, options, command: command, confirmFix: "Re-run with --yes (owner only): \(usageFix)")
-        { return stop }
+            services, options, command: command,
+            confirmFix: "Re-run with --yes (owner only): \(usageFix)")
+        {
+            return stop
+        }
         let updated = try await services.store.update { config -> SavedDevice in
             guard var d = config.devices[alias] else {
                 throw SideloadError("DEVICE_NOT_SAVED", "No saved device with alias \"\(alias)\".")
@@ -356,7 +410,8 @@ public enum DeviceCommand {
             command,
             [
                 "device": [
-                    "alias": .string(alias), "platform": updated.platform.map(JSONValue.string) ?? .null,
+                    "alias": .string(alias),
+                    "platform": updated.platform.map(JSONValue.string) ?? .null,
                     "udid": tail(updated.udid), "coreDeviceId": tail(updated.coreDeviceId),
                     "lendableApp": updated.lendableApp.map(JSONValue.string) ?? .null,
                 ]

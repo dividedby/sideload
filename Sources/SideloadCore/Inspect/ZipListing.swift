@@ -50,7 +50,8 @@ enum ZipListing {
         var eocdAt: Int?
         var i = tailLength - eocdSize
         while i >= 0 {
-            if le32(tail, i) == eocdSignature, i + eocdSize + Int(le16(tail, i + 20)) == tailLength {
+            if le32(tail, i) == eocdSignature, i + eocdSize + Int(le16(tail, i + 20)) == tailLength
+            {
                 eocdAt = i
                 break
             }
@@ -58,18 +59,28 @@ enum ZipListing {
         }
         guard let at = eocdAt else { throw notZip() }
 
-        let diskNumber = le16(tail, at + 4), cdDisk = le16(tail, at + 6)
-        let entriesOnDisk = le16(tail, at + 8), entriesTotal = le16(tail, at + 10)
-        let cdSize = le32(tail, at + 12), cdOffset = le32(tail, at + 16)
-        if diskNumber != 0 || cdDisk != 0 || entriesOnDisk != entriesTotal { throw unsupported("a multi-disk archive") }
-        if entriesTotal == 0xffff || cdSize == 0xffff_ffff || cdOffset == 0xffff_ffff { throw unsupported("a ZIP64 archive") }
+        let diskNumber = le16(tail, at + 4)
+        let cdDisk = le16(tail, at + 6)
+        let entriesOnDisk = le16(tail, at + 8)
+        let entriesTotal = le16(tail, at + 10)
+        let cdSize = le32(tail, at + 12)
+        let cdOffset = le32(tail, at + 16)
+        if diskNumber != 0 || cdDisk != 0 || entriesOnDisk != entriesTotal {
+            throw unsupported("a multi-disk archive")
+        }
+        if entriesTotal == 0xffff || cdSize == 0xffff_ffff || cdOffset == 0xffff_ffff {
+            throw unsupported("a ZIP64 archive")
+        }
         if Int(entriesTotal) > limits.maxEntries {
             throw SideloadError(
-                "IPA_TOO_MANY_ENTRIES", "The archive lists \(entriesTotal) entries; the limit is \(limits.maxEntries).",
+                "IPA_TOO_MANY_ENTRIES",
+                "The archive lists \(entriesTotal) entries; the limit is \(limits.maxEntries).",
                 fix: "Inspect a normal IPA; this one is refused before anything is extracted.")
         }
         let eocdPosition = tailStart + UInt64(at)
-        guard UInt64(cdOffset) + UInt64(cdSize) <= eocdPosition, Int(cdSize) <= limits.maxCentralDirectoryBytes else {
+        guard UInt64(cdOffset) + UInt64(cdSize) <= eocdPosition,
+            Int(cdSize) <= limits.maxCentralDirectoryBytes
+        else {
             throw notZip()
         }
 
@@ -79,23 +90,35 @@ enum ZipListing {
         var cursor = 0
         var total: UInt64 = 0
         for index in 0..<Int(entriesTotal) {
-            guard cursor + cdFixedSize <= cd.count, le32(cd, cursor) == cdSignature else { throw notZip() }
+            guard cursor + cdFixedSize <= cd.count, le32(cd, cursor) == cdSignature else {
+                throw notZip()
+            }
             let madeBy = le16(cd, cursor + 4)
             let flags = le16(cd, cursor + 8)
-            let compressed = le32(cd, cursor + 20), uncompressed = le32(cd, cursor + 24)
-            let nameLength = Int(le16(cd, cursor + 28)), extraLength = Int(le16(cd, cursor + 30))
+            let compressed = le32(cd, cursor + 20)
+            let uncompressed = le32(cd, cursor + 24)
+            let nameLength = Int(le16(cd, cursor + 28))
+            let extraLength = Int(le16(cd, cursor + 30))
             let commentLength = Int(le16(cd, cursor + 32))
             let attributes = le32(cd, cursor + 38)
             let next = cursor + cdFixedSize + nameLength + extraLength + commentLength
             guard next <= cd.count else { throw notZip() }
             if flags & 0x1 != 0 || flags & 0x40 != 0 { throw unsupported("an encrypted entry") }
-            if compressed == 0xffff_ffff || uncompressed == 0xffff_ffff { throw unsupported("a ZIP64 entry") }
+            if compressed == 0xffff_ffff || uncompressed == 0xffff_ffff {
+                throw unsupported("a ZIP64 entry")
+            }
 
             let name = Array(cd[(cursor + cdFixedSize)..<(cursor + cdFixedSize + nameLength)])
-            if let reason = unsafeReason(name: name, madeBy: madeBy, attributes: attributes) { throw unsafeEntry(index, reason) }
-            if UInt64(uncompressed) > limits.maxEntryBytes { throw tooLarge("An entry declares more than the per-entry limit.") }
+            if let reason = unsafeReason(name: name, madeBy: madeBy, attributes: attributes) {
+                throw unsafeEntry(index, reason)
+            }
+            if UInt64(uncompressed) > limits.maxEntryBytes {
+                throw tooLarge("An entry declares more than the per-entry limit.")
+            }
             total += UInt64(uncompressed)
-            if total > limits.maxTotalBytes { throw tooLarge("The archive declares more uncompressed data than the limit.") }
+            if total > limits.maxTotalBytes {
+                throw tooLarge("The archive declares more uncompressed data than the limit.")
+            }
             entries.append(Entry(name: name, uncompressedSize: UInt64(uncompressed)))
             cursor = next
         }
@@ -108,7 +131,9 @@ enum ZipListing {
         if name.isEmpty { return "has an empty name" }
         if name.contains(0) { return "has a NUL in its name" }
         if name.contains(0x5c) { return "has a backslash in its name" }
-        if name.contains(where: { $0 < 0x20 || $0 == 0x7f }) { return "has a control character in its name" }
+        if name.contains(where: { $0 < 0x20 || $0 == 0x7f }) {
+            return "has a control character in its name"
+        }
         if name.first == 0x2f { return "has an absolute path" }
         if name.split(separator: 0x2f, omittingEmptySubsequences: false).contains([0x2e, 0x2e]) {
             return "has a '..' path component"
@@ -124,11 +149,14 @@ enum ZipListing {
     }
 
     private static func notZip() -> SideloadError {
-        SideloadError("IPA_NOT_ZIP", "The file is not a readable ZIP archive.", fix: "Pass an .ipa file.")
+        SideloadError(
+            "IPA_NOT_ZIP", "The file is not a readable ZIP archive.", fix: "Pass an .ipa file.")
     }
 
     private static func unsupported(_ what: String) -> SideloadError {
-        SideloadError("IPA_UNSUPPORTED_ZIP", "The archive uses \(what), which inspect does not read.", fix: "Inspect an unencrypted, single-file IPA of at most 2 GiB.")
+        SideloadError(
+            "IPA_UNSUPPORTED_ZIP", "The archive uses \(what), which inspect does not read.",
+            fix: "Inspect an unencrypted, single-file IPA of at most 2 GiB.")
     }
 
     private static func unsafeEntry(_ index: Int, _ reason: String) -> SideloadError {
@@ -138,14 +166,17 @@ enum ZipListing {
     }
 
     private static func tooLarge(_ message: String) -> SideloadError {
-        SideloadError("IPA_TOO_LARGE", message + " The IPA was not extracted.", fix: "Inspect a normal IPA.")
+        SideloadError(
+            "IPA_TOO_LARGE", message + " The IPA was not extracted.", fix: "Inspect a normal IPA.")
     }
 
     private static func readExactly(fd: Int32, offset: UInt64, count: Int) throws -> [UInt8] {
         var buffer = [UInt8](repeating: 0, count: count)
         var done = 0
         while done < count {
-            let n = buffer.withUnsafeMutableBytes { pread(fd, $0.baseAddress! + done, count - done, off_t(offset) + off_t(done)) }
+            let n = buffer.withUnsafeMutableBytes {
+                pread(fd, $0.baseAddress! + done, count - done, off_t(offset) + off_t(done))
+            }
             if n < 0 {
                 if errno == EINTR { continue }
                 throw ioError("read")
@@ -156,7 +187,9 @@ enum ZipListing {
         return buffer
     }
 
-    private static func le16(_ b: [UInt8], _ at: Int) -> UInt16 { UInt16(b[at]) | UInt16(b[at + 1]) << 8 }
+    private static func le16(_ b: [UInt8], _ at: Int) -> UInt16 {
+        UInt16(b[at]) | UInt16(b[at + 1]) << 8
+    }
     private static func le32(_ b: [UInt8], _ at: Int) -> UInt32 {
         UInt32(b[at]) | UInt32(b[at + 1]) << 8 | UInt32(b[at + 2]) << 16 | UInt32(b[at + 3]) << 24
     }

@@ -19,7 +19,8 @@ public struct AppleTVCheck: Check {
         return saved.map { d in
             switch DeviceList.visibilityOf(DeviceList.findSaved(devices, matching: d)) {
             case .ok:
-                return CheckResult(id: id, severity: .ok, message: "\(d.alias): visible and paired.")
+                return CheckResult(
+                    id: id, severity: .ok, message: "\(d.alias): visible and paired.")
             case .unavailable:
                 return CheckResult(
                     id: id, severity: .warn,

@@ -19,9 +19,13 @@ struct BinaryTools: Sendable {
 
     func run(_ executable: String, _ args: [String]) async -> Outcome {
         let result = await runner.run(
-            CommandSpec(executable: executable, args: args, timeout: limits.toolTimeout, maxOutputBytes: limits.maxToolOutputBytes))
+            CommandSpec(
+                executable: executable, args: args, timeout: limits.toolTimeout,
+                maxOutputBytes: limits.maxToolOutputBytes))
         if let spawnError = result.spawnError {
-            return .failed(spawnError == "INTERRUPTED" ? "was interrupted" : "could not be started (\(spawnError))")
+            return .failed(
+                spawnError == "INTERRUPTED"
+                    ? "was interrupted" : "could not be started (\(spawnError))")
         }
         if result.timedOut { return .failed("timed out") }
         if result.overflow { return .failed("printed more output than the limit") }
@@ -37,12 +41,18 @@ struct BinaryTools: Sendable {
         case .ok(let out):
             let names = out.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init)
             guard !names.isEmpty, names.count <= 16,
-                names.allSatisfy({ $0.count <= 24 && $0.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == ".") } })
+                names.allSatisfy({
+                    $0.count <= 24
+                        && $0.allSatisfy {
+                            $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == ".")
+                        }
+                })
             else { throw toolFailure("lipo", "printed an architecture list inspect cannot read") }
             return names
         case .exited:
             throw SideloadError(
-                "IPA_NOT_MACHO", "The \(role) executable is not a Mach-O file.", fix: "Do not use this IPA; it is not a normal app archive.")
+                "IPA_NOT_MACHO", "The \(role) executable is not a Mach-O file.",
+                fix: "Do not use this IPA; it is not a normal app archive.")
         case .failed(let why):
             throw toolFailure("lipo", why)
         }
@@ -57,7 +67,9 @@ struct BinaryTools: Sendable {
 
     /// The first slice's platform and minimum OS, or nil when `vtool` could not say.
     func buildVersion(of executable: String) async -> BuildVersion? {
-        guard case .ok(let out) = await run(Self.vtool, ["-show-build", executable]) else { return nil }
+        guard case .ok(let out) = await run(Self.vtool, ["-show-build", executable]) else {
+            return nil
+        }
         return Self.parseBuildVersion(out)
     }
 
@@ -73,7 +85,8 @@ struct BinaryTools: Sendable {
         for raw in text.split(separator: "\n") {
             let parts = raw.split(separator: " ", omittingEmptySubsequences: true)
             guard parts.count == 2 else { continue }
-            let key = String(parts[0]), value = String(parts[1])
+            let key = String(parts[0])
+            let value = String(parts[1])
             if key == "cmd" {
                 if let found = finished() { return found }
                 platform = nil
@@ -84,11 +97,13 @@ struct BinaryTools: Sendable {
                 } else if value.hasPrefix("LC_VERSION_MIN_") {
                     kind = .versionMin
                     platform = String(value.dropFirst("LC_VERSION_MIN_".count))
-                        .replacingOccurrences(of: "IPHONEOS", with: "IOS").replacingOccurrences(of: "MACOSX", with: "MACOS")
+                        .replacingOccurrences(of: "IPHONEOS", with: "IOS").replacingOccurrences(
+                            of: "MACOSX", with: "MACOS")
                 }
             } else if kind == .build, key == "platform", isToken(value) {
                 platform = value
-            } else if key == "minos" || (kind == .versionMin && key == "version"), isVersion(value) {
+            } else if key == "minos" || (kind == .versionMin && key == "version"), isVersion(value)
+            {
                 minOS = value
             }
         }
@@ -96,7 +111,8 @@ struct BinaryTools: Sendable {
     }
 
     private static func isToken(_ s: String) -> Bool {
-        !s.isEmpty && s.count <= 32 && s.allSatisfy { $0.isASCII && ($0.isUppercase || $0.isNumber || $0 == "_") }
+        !s.isEmpty && s.count <= 32
+            && s.allSatisfy { $0.isASCII && ($0.isUppercase || $0.isNumber || $0 == "_") }
     }
 
     private static func isVersion(_ s: String) -> Bool {
@@ -119,15 +135,22 @@ struct BinaryTools: Sendable {
             let trimmed = out.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.isEmpty { return .signed(entitlements: [:], warning: nil) }
             guard let data = trimmed.data(using: .utf8),
-                let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+                let plist = try? PropertyListSerialization.propertyList(
+                    from: data, options: [], format: nil),
                 let dictionary = plist as? [String: Any]
             else { return .signed(entitlements: nil, warning: "ENTITLEMENTS_UNREADABLE") }
             var budget = 4000
-            return .signed(entitlements: Self.json(dictionary, depth: 0, budget: &budget), warning: budget < 0 ? "ENTITLEMENTS_TRUNCATED" : nil)
+            return .signed(
+                entitlements: Self.json(dictionary, depth: 0, budget: &budget),
+                warning: budget < 0 ? "ENTITLEMENTS_TRUNCATED" : nil)
         case .exited(let code, let stderr):
             // codesign prints "<path>: code object is not signed at all" and exits 1. Matching the whole line with the
             // path we passed (not a substring) keeps a path or an error that merely contains the words from counting.
-            if code == 1, stderr.split(separator: "\n", omittingEmptySubsequences: true).contains(where: { $0 == "\(bundle): code object is not signed at all" }) {
+            if code == 1,
+                stderr.split(separator: "\n", omittingEmptySubsequences: true).contains(where: {
+                    $0 == "\(bundle): code object is not signed at all"
+                })
+            {
                 return .unsigned
             }
             return .unknown("codesign could not read the signature")
@@ -148,13 +171,17 @@ struct BinaryTools: Sendable {
         }
         if let array = value as? [Any] {
             var items: [JSONValue] = []
-            for element in array.prefix(256) { items.append(json(element, depth: depth + 1, budget: &budget)) }
+            for element in array.prefix(256) {
+                items.append(json(element, depth: depth + 1, budget: &budget))
+            }
             if array.count > 256 { budget = min(budget, -1) }
             return .array(items)
         }
         if let dictionary = value as? [String: Any] {
             var object: [String: JSONValue] = [:]
-            for key in dictionary.keys.sorted().prefix(256) { object[cut(key)] = json(dictionary[key]!, depth: depth + 1, budget: &budget) }
+            for key in dictionary.keys.sorted().prefix(256) {
+                object[cut(key)] = json(dictionary[key]!, depth: depth + 1, budget: &budget)
+            }
             if dictionary.count > 256 { budget = min(budget, -1) }
             return .object(object)
         }
@@ -166,13 +193,21 @@ struct BinaryTools: Sendable {
     static func cut(_ s: String) -> String { String(s.prefix(256)) }
 
     static func appGroups(_ entitlements: JSONValue?) -> [String] {
-        guard case .object(let object)? = entitlements, case .array(let items)? = object["com.apple.security.application-groups"] else { return [] }
-        return items.compactMap { if case .string(let s) = $0 { s } else { nil } }.prefix(100).map { $0 }
+        guard case .object(let object)? = entitlements,
+            case .array(let items)? = object["com.apple.security.application-groups"]
+        else { return [] }
+        return items.compactMap { if case .string(let s) = $0 { s } else { nil } }.prefix(100).map {
+            $0
+        }
     }
 
     private func toolFailure(_ tool: String, _ why: String) -> SideloadError {
-        if why == "was interrupted" { return SideloadError("CANCELLED", "inspect was interrupted.", fix: "Re-run the command.") }
+        if why == "was interrupted" {
+            return SideloadError(
+                "CANCELLED", "inspect was interrupted.", fix: "Re-run the command.")
+        }
         return SideloadError(
-            "TOOL_FAILED", "\(tool) \(why).", fix: "Run `sideload doctor`; the Xcode command-line tools must be installed.")
+            "TOOL_FAILED", "\(tool) \(why).",
+            fix: "Run `sideload doctor`; the Xcode command-line tools must be installed.")
     }
 }

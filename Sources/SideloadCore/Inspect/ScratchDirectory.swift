@@ -54,14 +54,20 @@ struct ScratchDirectory {
 
     /// `CANCELLED` when an interrupt already closed the registry. `prefix` names the folder (`inspect-XXXXXX`,
     /// or `fetch-XXXXXX` for a download in flight).
-    static func create(under tmp: String, registry: ScratchRegistry, prefix: String = "inspect") throws -> ScratchDirectory {
+    static func create(under tmp: String, registry: ScratchRegistry, prefix: String = "inspect")
+        throws -> ScratchDirectory
+    {
         try makeDirectories(tmp, mode: 0o700)
         var template = Array((tmp + "/\(prefix)-XXXXXX").utf8CString)
         guard mkdtemp(&template) != nil else { throw ioError("mkdtemp") }
-        let path = String(decoding: template.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) }, as: UTF8.self)
+        let path = String(
+            decoding: template.prefix(while: { $0 != 0 }).map { UInt8(bitPattern: $0) },
+            as: UTF8.self)
         guard registry.register(path) else {
             _ = removeTree(path)
-            throw SideloadError("CANCELLED", "\(prefix) was interrupted before it started.", fix: "Re-run the command.")
+            throw SideloadError(
+                "CANCELLED", "\(prefix) was interrupted before it started.",
+                fix: "Re-run the command.")
         }
         return ScratchDirectory(path: path, registry: registry)
     }

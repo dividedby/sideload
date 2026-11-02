@@ -50,7 +50,8 @@ public struct ListedDevice: Sendable, Equatable {
 
     public init(
         name: String = "", udid: String? = nil, coreDeviceId: String? = nil, platform: String = "",
-        physical: Bool = true, paired: Bool = false, hostnames: [String] = [], link: String = "unknown",
+        physical: Bool = true, paired: Bool = false, hostnames: [String] = [],
+        link: String = "unknown",
         osVersion: String? = nil, osBuild: String? = nil, transport: DeviceTransport = .unknown,
         lastConnection: Date? = nil, deviceType: String? = nil
     ) {
@@ -105,9 +106,13 @@ public enum DeviceList {
             guard case .object(let d) = entry else { return nil }
             let properties = d["properties"]?.objectValue
             let legacyState = d["deviceProperties"]?.objectValue
-            let hw = firstPresent(properties?["hardware"], d["hardwareProperties"])?.objectValue ?? [:]
-            let conn = firstPresent(properties?["connection"], d["connectionProperties"])?.objectValue ?? [:]
-            let state = firstPresent(properties?["state"], d["deviceProperties"])?.objectValue ?? [:]
+            let hw =
+                firstPresent(properties?["hardware"], d["hardwareProperties"])?.objectValue ?? [:]
+            let conn =
+                firstPresent(properties?["connection"], d["connectionProperties"])?.objectValue
+                ?? [:]
+            let state =
+                firstPresent(properties?["state"], d["deviceProperties"])?.objectValue ?? [:]
 
             let visibility = firstPresent(d["visibilityClass"], state["visibilityClass"])
             let physical: Bool
@@ -133,8 +138,12 @@ public enum DeviceList {
                 paired: conn["pairingState"] == .string("paired"),
                 hostnames: hostnames,
                 link: firstPresent(conn["tunnelState"], conn["state"])?.stringValue ?? "unknown",
-                osVersion: validVersion(state["osVersionNumber"]?.stringValue ?? legacyState?["osVersionNumber"]?.stringValue),
-                osBuild: validBuild(state["osBuildUpdate"]?.stringValue ?? legacyState?["osBuildUpdate"]?.stringValue),
+                osVersion: validVersion(
+                    state["osVersionNumber"]?.stringValue
+                        ?? legacyState?["osVersionNumber"]?.stringValue),
+                osBuild: validBuild(
+                    state["osBuildUpdate"]?.stringValue
+                        ?? legacyState?["osBuildUpdate"]?.stringValue),
                 transport: transportType(conn),
                 lastConnection: conn["lastConnectionDate"]?.stringValue.flatMap(parseDate),
                 deviceType: hw["deviceType"]?.stringValue)
@@ -143,7 +152,10 @@ public enum DeviceList {
 
     /// An ISO 8601 date with or without fractional seconds (`2026-10-23T09:15:00.000Z`).
     static func parseDate(_ s: String) -> Date? {
-        if let d = try? Date(s, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true)) { return d }
+        if let d = try? Date(s, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+        {
+            return d
+        }
         return try? Date(s, strategy: Date.ISO8601FormatStyle())
     }
 
@@ -169,16 +181,21 @@ public enum DeviceList {
 
     /// Physical devices of `platform` (`ios`, `tvos`) whose name matches exactly (curly apostrophes read as
     /// straight, case and outer whitespace ignored) or whose UDID or CoreDevice ID equals `query`.
-    public static func findCandidates(_ devices: [ListedDevice], query: String, platform: String) -> [ListedDevice] {
+    public static func findCandidates(_ devices: [ListedDevice], query: String, platform: String)
+        -> [ListedDevice]
+    {
         let q = normalizedName(query)
         return devices.filter {
             $0.physical && $0.platform == platform
-                && (normalizedName($0.name) == q || idsEqual($0.udid, query) || idsEqual($0.coreDeviceId, query))
+                && (normalizedName($0.name) == q || idsEqual($0.udid, query)
+                    || idsEqual($0.coreDeviceId, query))
         }
     }
 
     /// The physical device whose CoreDevice ID or UDID equals the saved one (case-insensitive).
-    public static func findSaved(_ devices: [ListedDevice], matching saved: some DeviceIdentifiers) -> ListedDevice? {
+    public static func findSaved(_ devices: [ListedDevice], matching saved: some DeviceIdentifiers)
+        -> ListedDevice?
+    {
         devices.first {
             $0.physical
                 && (idsEqual($0.coreDeviceId, saved.coreDeviceId) || idsEqual($0.udid, saved.udid))
@@ -207,7 +224,9 @@ public enum DeviceList {
     /// (`.probe`). An absent entry, an `unknown` transport, an `unavailable` link and any unrecognised link are nil. Pure; says
     /// nothing about the install itself.
     public static func autoReach(_ saved: SavedDevice, listed: ListedDevice?) -> AutoReach? {
-        guard saved.autoRefresh, saved.freeSlotsReserved != nil, let listed, listed.physical else { return nil }
+        guard saved.autoRefresh, saved.freeSlotsReserved != nil, let listed, listed.physical else {
+            return nil
+        }
         guard listed.transport == .network || listed.transport == .wired else { return nil }
         // Fail closed on anything but the two known states (visibility alone treats everything but `unavailable` as ok).
         guard visibilityOf(listed) == .ok else { return nil }

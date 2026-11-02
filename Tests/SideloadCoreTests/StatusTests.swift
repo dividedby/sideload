@@ -17,14 +17,17 @@ private struct World {
 
 private func cert(_ fp: String, days: Double, present: Bool = true) -> LedgerCertificate {
     LedgerCertificate(
-        fp8: fp, team: Team.id, notBefore: nil, notAfter: daysFromNow(days), firstSeen: testNow, lastSeen: testNow,
+        fp8: fp, team: Team.id, notBefore: nil, notAfter: daysFromNow(days), firstSeen: testNow,
+        lastSeen: testNow,
         valid: true, present: present)
 }
 
 private func profile(days: Double) -> LedgerProfile {
     LedgerProfile(
-        uuid: UUID().uuidString, team: Team.id, applicationId: nil, wildcard: true, created: nil, expires: daysFromNow(days),
-        deviceCount: 1, deviceTails: [], certFp8s: [], source: "xcode-managed", firstSeen: testNow, lastSeen: testNow,
+        uuid: UUID().uuidString, team: Team.id, applicationId: nil, wildcard: true, created: nil,
+        expires: daysFromNow(days),
+        deviceCount: 1, deviceTails: [], certFp8s: [], source: "xcode-managed", firstSeen: testNow,
+        lastSeen: testNow,
         present: true)
 }
 
@@ -35,21 +38,26 @@ private func canaryLine(_ status: String, code: String? = nil) -> String {
 
 /// Runs `argv` through the CLI over fakes and a temp home seeded with the given files.
 private func invoke(
-    _ argv: [String] = ["status"], config: Config? = nil, ledger: Ledger? = nil, canaryLog: String? = nil,
+    _ argv: [String] = ["status"], config: Config? = nil, ledger: Ledger? = nil,
+    canaryLog: String? = nil,
     rawLedger: String? = nil, rawConfig: String? = nil
 ) async throws -> World {
     try await withTestHome(config: config) { paths, _ in
         if let ledger { try await LedgerStore(paths: paths).update { $0 = ledger } }
         if let rawLedger { try Data(rawLedger.utf8).write(to: URL(fileURLWithPath: paths.ledger)) }
         if let rawConfig { try Data(rawConfig.utf8).write(to: URL(fileURLWithPath: paths.config)) }
-        if let canaryLog { try Data(canaryLog.utf8).write(to: URL(fileURLWithPath: paths.canaryLog)) }
+        if let canaryLog {
+            try Data(canaryLog.utf8).write(to: URL(fileURLWithPath: paths.canaryLog))
+        }
         let keychain = FakeKeychain([try keychainCert(TestCerts.paid)])
         let source = FakeProfileSource([])
         var (services, runner) = fakeServices(paths, keychain: keychain)
         services.profiles = source
         let envelope = await run(argv: argv, services: services)
         let (text, json) = try envelope.printed()
-        return World(envelope: envelope, text: text, json: json, runner: runner, keychain: keychain, source: source)
+        return World(
+            envelope: envelope, text: text, json: json, runner: runner, keychain: keychain,
+            source: source)
     }
 }
 
@@ -61,7 +69,9 @@ struct StatusTests {
         #expect(w.envelope.ok && w.json["command"] == "status")
         #expect(w.json["state"] == "unknown")
         #expect(w.json["generated"] == "2026-10-19T12:00:00Z")
-        #expect(w.json["items"] == [] && w.json["devices"] == [] && w.json["apps"] == [] && w.json["warnings"] == [])
+        #expect(
+            w.json["items"] == [] && w.json["devices"] == [] && w.json["apps"] == []
+                && w.json["warnings"] == [])
         #expect(w.json["ledger"] == ["updated": .null, "present": false])
         #expect(w.json["canary"]?["runs"] == 0 && w.json["canary"]?["last"] == .null)
         #expect(w.keychain.readCount == 0 && w.source.readCount == 0 && w.runner.calls.isEmpty)
@@ -84,12 +94,17 @@ struct StatusTests {
     func expiryOutranksBlocked() async throws {
         let log = canaryLine("blocked", code: "0xe8008018")
         let warn = try await invoke(
-            ledger: Ledger(certificates: [cert("aaaaaaaa", days: 300)], profiles: [profile(days: 40)]), canaryLog: log)
+            ledger: Ledger(
+                certificates: [cert("aaaaaaaa", days: 300)], profiles: [profile(days: 40)]),
+            canaryLog: log)
         #expect(warn.json["state"] == "warn")
         let critical = try await invoke(
-            ledger: Ledger(certificates: [cert("aaaaaaaa", days: 14)], profiles: [profile(days: 40)]), canaryLog: log)
+            ledger: Ledger(
+                certificates: [cert("aaaaaaaa", days: 14)], profiles: [profile(days: 40)]),
+            canaryLog: log)
         #expect(critical.json["state"] == "critical")
-        let expired = try await invoke(ledger: Ledger(certificates: [cert("aaaaaaaa", days: -1)]), canaryLog: log)
+        let expired = try await invoke(
+            ledger: Ledger(certificates: [cert("aaaaaaaa", days: -1)]), canaryLog: log)
         #expect(expired.json["state"] == "critical")
         #expect(expired.json["items"]?.array?.first?["level"] == "expired")
     }
@@ -97,7 +112,8 @@ struct StatusTests {
     @Test("a working canary with healthy items is ok, and items match ledger")
     func working() async throws {
         let ledger = Ledger(updated: daysFromNow(-1), certificates: [cert("aaaaaaaa", days: 300)])
-        let w = try await invoke(ledger: ledger, canaryLog: canaryLine("blocked") + canaryLine("working"))
+        let w = try await invoke(
+            ledger: ledger, canaryLog: canaryLine("blocked") + canaryLine("working"))
         #expect(w.json["state"] == "ok")
         #expect(w.json["ledger"] == ["updated": "2026-10-18T12:00:00Z", "present": true])
         let viaLedger = try await invoke(["ledger"], ledger: ledger)
@@ -106,13 +122,16 @@ struct StatusTests {
 
     @Test("a last canary run of error with no ledger items is unknown, never ok")
     func canaryError() async throws {
-        let w = try await invoke(canaryLog: canaryLine("working") + canaryLine("error", code: "BUILD_FAILED"))
+        let w = try await invoke(
+            canaryLog: canaryLine("working") + canaryLine("error", code: "BUILD_FAILED"))
         #expect(w.envelope.ok && w.json["state"] == "unknown")
         let healthy = try await invoke(
-            ledger: Ledger(certificates: [cert("aaaaaaaa", days: 300)]), canaryLog: canaryLine("error"))
+            ledger: Ledger(certificates: [cert("aaaaaaaa", days: 300)]),
+            canaryLog: canaryLine("error"))
         #expect(healthy.json["state"] == "unknown")
         let expiring = try await invoke(
-            ledger: Ledger(certificates: [cert("aaaaaaaa", days: 30)]), canaryLog: canaryLine("error"))
+            ledger: Ledger(certificates: [cert("aaaaaaaa", days: 30)]),
+            canaryLog: canaryLine("error"))
         #expect(expiring.json["state"] == "warn")
     }
 
@@ -128,7 +147,9 @@ struct StatusTests {
         config.apps = ["feather": ["version": "1.0"], "stremio": .null]
         let w = try await invoke(config: config)
         let device = try #require(w.json["devices"]?.array?.first)
-        #expect(device["alias"] == "iphone" && device["platform"] == "ios" && device["visibility"] == "unknown")
+        #expect(
+            device["alias"] == "iphone" && device["platform"] == "ios"
+                && device["visibility"] == "unknown")
         #expect(device["udid"]?.string == Redactor.tail4(savedUdid("1")))
         #expect(device["coreDeviceId"]?.string == Redactor.tail4(savedCoreId("1")))
         #expect(!w.text.contains(savedUdid("1")) && !w.text.contains(savedCoreId("1")))
@@ -146,7 +167,9 @@ struct StatusTests {
         #expect(!w.text.contains("LEDGER-SECRET-MARKER"))
     }
 
-    @Test("a corrupt ledger leaves the slots unknown: no free count, no lent list, never a guessed free slot")
+    @Test(
+        "a corrupt ledger leaves the slots unknown: no free count, no lent list, never a guessed free slot"
+    )
     func corruptLedgerSlotsUnknown() async throws {
         let w = try await invoke(config: iphoneConfig(), rawLedger: "{ not json")
         let device = try #require(w.json["slots"]?["devices"]?.array?.first)
@@ -159,20 +182,26 @@ struct StatusTests {
         #expect(fine.json["lent"] == [])
     }
 
-    @Test("an out-of-range stored reserve leaves that device's slots unknown, never a free count from a guessed reserve", arguments: [4, 99, -1])
+    @Test(
+        "an out-of-range stored reserve leaves that device's slots unknown, never a free count from a guessed reserve",
+        arguments: [4, 99, -1])
     func invalidReserveSlotsUnknown(raw: Int) async throws {
         var config = iphoneConfig()
         config.devices["iphone"] = SavedDevice(
-            udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios", freeSlotsReserved: raw)
+            udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios",
+            freeSlotsReserved: raw)
         let w = try await invoke(config: config)
         let device = try #require(w.json["slots"]?["devices"]?.array?.first)
-        #expect(device["unknown"] == true && device["free"] == .null && device["used"] == .null && device["reserved"] == .null)
+        #expect(
+            device["unknown"] == true && device["free"] == .null && device["used"] == .null
+                && device["reserved"] == .null)
     }
 
     @Test("a corrupt config is a warning, and the other sections still load")
     func corruptConfig() async throws {
         let w = try await invoke(
-            ledger: Ledger(certificates: [cert("aaaaaaaa", days: 20)]), rawConfig: "{ not json CONFIG-SECRET-MARKER")
+            ledger: Ledger(certificates: [cert("aaaaaaaa", days: 20)]),
+            rawConfig: "{ not json CONFIG-SECRET-MARKER")
         #expect(w.envelope.ok)
         #expect(w.warningCodes == ["CONFIG_INVALID"])
         #expect(w.json["devices"] == [] && w.json["apps"] == [])
@@ -185,7 +214,8 @@ struct StatusTests {
         var config = iphoneConfig()
         config.devices["broken"] = SavedDevice(platform: "tvos")
         config.apps = ["feather": .null]
-        let w = try await invoke(config: config, ledger: Ledger(certificates: [cert("aaaaaaaa", days: 300)]))
+        let w = try await invoke(
+            config: config, ledger: Ledger(certificates: [cert("aaaaaaaa", days: 300)]))
         #expect(w.envelope.ok)
         #expect(w.warningCodes == ["CONFIG_INVALID"])
         #expect(w.json["devices"] == [])
@@ -193,9 +223,13 @@ struct StatusTests {
         #expect(w.json["items"]?.array?.count == 1)
     }
 
-    @Test("a last canary status other than working is unknown, not ok", arguments: ["skipped", "future-status"])
+    @Test(
+        "a last canary status other than working is unknown, not ok",
+        arguments: ["skipped", "future-status"])
     func unrecognisedCanaryStatus(status: String) async throws {
-        let w = try await invoke(ledger: Ledger(certificates: [cert("aaaaaaaa", days: 300)]), canaryLog: canaryLine(status))
+        let w = try await invoke(
+            ledger: Ledger(certificates: [cert("aaaaaaaa", days: 300)]),
+            canaryLog: canaryLine(status))
         #expect(w.json["state"] == "unknown")
     }
 
@@ -206,7 +240,9 @@ struct StatusTests {
         #expect(w.json["state"] == "ok")
     }
 
-    @Test("--warn-days is USAGE (--notify and --print-agent are built: StatusNotifyTests)", arguments: ["--warn-days"])
+    @Test(
+        "--warn-days is USAGE (--notify and --print-agent are built: StatusNotifyTests)",
+        arguments: ["--warn-days"])
     func unknownFlags(flag: String) async throws {
         let w = try await invoke(["status", flag])
         #expect(!w.envelope.ok && w.code == "USAGE")
@@ -221,7 +257,8 @@ struct StatusTests {
     @Test("StatusState.worst ranks critical, warn, blocked, unknown (no data or canary error), ok")
     func worst() {
         func item(_ level: ExpiryItem.Level) -> ExpiryItem {
-            ExpiryItem(kind: .certificate, name: "cert x", notAfter: testNow, daysLeft: 0, level: level)
+            ExpiryItem(
+                kind: .certificate, name: "cert x", notAfter: testNow, daysLeft: 0, level: level)
         }
         #expect(StatusState.worst(canaryStatus: nil, items: []) == .unknown)
         #expect(StatusState.worst(canaryStatus: "working", items: []) == .ok)
@@ -233,8 +270,11 @@ struct StatusTests {
         #expect(StatusState.worst(canaryStatus: "error", items: [item(.expired)]) == .critical)
         #expect(StatusState.worst(canaryStatus: nil, items: [item(.ok)]) == .ok)
         #expect(StatusState.worst(canaryStatus: "blocked", items: [item(.ok)]) == .blocked)
-        #expect(StatusState.worst(canaryStatus: "blocked", items: [item(.warn), item(.ok)]) == .warn)
-        #expect(StatusState.worst(canaryStatus: "working", items: [item(.warn), item(.critical)]) == .critical)
+        #expect(
+            StatusState.worst(canaryStatus: "blocked", items: [item(.warn), item(.ok)]) == .warn)
+        #expect(
+            StatusState.worst(canaryStatus: "working", items: [item(.warn), item(.critical)])
+                == .critical)
         #expect(StatusState.worst(canaryStatus: "blocked", items: [item(.expired)]) == .critical)
     }
 }

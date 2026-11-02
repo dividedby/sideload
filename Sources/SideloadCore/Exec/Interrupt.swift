@@ -23,7 +23,11 @@ public final class Interrupt: Sendable {
     }
 
     private enum Writer: Equatable { case main, handler }
-    private enum Stdout: Equatable { case idle, writing(Writer), done }
+    private enum Stdout: Equatable {
+        case idle
+        case writing(Writer)
+        case done
+    }
 
     private struct State {
         var stdout = Stdout.idle
@@ -57,7 +61,8 @@ public final class Interrupt: Sendable {
     ) {
         let broken = BrokenPipe()
         pipeBroken = broken
-        self.writer = writer ?? Output.fileDescriptorWriter(stdoutFD, onBrokenPipe: { broken.set() })
+        self.writer =
+            writer ?? Output.fileDescriptorWriter(stdoutFD, onBrokenPipe: { broken.set() })
         self.literals = literals
         self.children = children
         self.emitTimeout = emitTimeout
@@ -65,7 +70,9 @@ public final class Interrupt: Sendable {
 
     /// True when the main flow's object was written in full to a reader: no write error, no EPIPE. Only then may a
     /// command do work that assumes the owner has seen its envelope (`Services.postEmit`).
-    public var delivered: Bool { state.withLock { $0.stdout == .done && !$0.writeFailed } && !pipeBroken.isSet }
+    public var delivered: Bool {
+        state.withLock { $0.stdout == .done && !$0.writeFailed } && !pipeBroken.isSet
+    }
 
     /// Main flow: write the one result object, unless a signal got there first.
     public func finishMain(_ envelope: Envelope) -> Outcome {
@@ -118,7 +125,8 @@ public final class Interrupt: Sendable {
     /// `context` is what the running command reported (`InterruptReport`): it is merged into the object's data and
     /// the message says the command had already changed things (`provision --renew` moved cached profiles).
     public func handle(
-        signal signo: Int32, kit: String? = nil, clipboardCleared: Bool? = nil, context: [String: JSONValue] = [:],
+        signal signo: Int32, kit: String? = nil, clipboardCleared: Bool? = nil,
+        context: [String: JSONValue] = [:],
         cleanup: (@Sendable () -> Void)? = nil
     ) -> Int32? {
         enum Plan { case park, write, wait, none }
@@ -144,11 +152,14 @@ public final class Interrupt: Sendable {
 
         if plan == .write {
             let name = Self.name(of: signo)
-            let envelope = Self.interrupted(name: name, kit: kit, clipboardCleared: clipboardCleared, context: context)
+            let envelope = Self.interrupted(
+                name: name, kit: kit, clipboardCleared: clipboardCleared, context: context)
             // Own thread: with stdout a full pipe nobody reads the write never returns, and a signal must
             // still end the process. A failed or abandoned write is not reported.
             Thread { [self] in
-                if let text = try? Output.render(envelope, redacting: literals) { try? writer(text) }
+                if let text = try? Output.render(envelope, redacting: literals) {
+                    try? writer(text)
+                }
                 state.withLock { $0.stdout = .done }
                 writeDone.signal()
             }.start()
@@ -187,17 +198,21 @@ public final class Interrupt: Sendable {
             let noun = { (n: Int) in n == 1 ? "1 cached profile" : "\(n) cached profiles" }
             let message: String
             if moved > 0 {
-                message = "Interrupted by \(name) after provision --renew moved \(noun(moved)) into tmp/."
+                message =
+                    "Interrupted by \(name) after provision --renew moved \(noun(moved)) into tmp/."
             } else if stray > 0 {
-                message = "Interrupted by \(name) during provision --renew, which left \(noun(stray)) in tmp/ that could not be put back."
+                message =
+                    "Interrupted by \(name) during provision --renew, which left \(noun(stray)) in tmp/ that could not be put back."
             } else {
-                message = "Interrupted by \(name) during provision --renew; no cached profiles were moved."
+                message =
+                    "Interrupted by \(name) during provision --renew; no cached profiles were moved."
             }
             let fix =
                 moved + stray > 0
                 ? "Nothing was deleted; the profiles are listed in cachedProfilesMovedTo and cachedProfilesStrayInTmp. Re-run the command."
                 : "Nothing was deleted. Re-run the command."
-            return Envelope.fail("sideload", code: "INTERRUPTED", message: message, fix: fix, data: context)
+            return Envelope.fail(
+                "sideload", code: "INTERRUPTED", message: message, fix: fix, data: context)
         }
         let clipboard =
             switch clipboardCleared {
@@ -207,16 +222,20 @@ public final class Interrupt: Sendable {
             }
         return Envelope.fail(
             "sideload", code: "INTERRUPTED",
-            message: "Interrupted by \(name) after the export finished: the kit is at \(kit) and is recorded in ledger.json. \(clipboard)",
+            message:
+                "Interrupted by \(name) after the export finished: the kit is at \(kit) and is recorded in ledger.json. \(clipboard)",
             fix: "Nothing needs repeating; the kit is complete. Use it as it is.",
             data: [
-                "kit": .string(kit), "ledgerRecorded": true, "clipboardCleared": clipboardCleared.map(JSONValue.bool) ?? .null,
+                "kit": .string(kit), "ledgerRecorded": true,
+                "clipboardCleared": clipboardCleared.map(JSONValue.bool) ?? .null,
             ])
     }
 
     /// Runs `body` on a helper thread and waits up to `timeout`. Returns false if it had not finished, in
     /// which case the thread is abandoned. Used for stderr reports that must not hold the process.
-    public static func bounded(timeout: DispatchTimeInterval, _ body: @escaping @Sendable () -> Void) -> Bool {
+    public static func bounded(
+        timeout: DispatchTimeInterval, _ body: @escaping @Sendable () -> Void
+    ) -> Bool {
         let done = DispatchSemaphore(value: 0)
         Thread {
             body()

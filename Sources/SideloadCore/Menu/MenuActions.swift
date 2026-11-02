@@ -73,8 +73,10 @@ public enum MenuAction: Hashable, Sendable {
 
     public var device: String {
         switch self {
-        case .renew(let device, _), .install(let device, _), .remove(let device, _), .lendable(let device, _),
-            .autoRenew(let device, _), .addFetch(let device, _), .addApprove(let device, _, _), .updateFetch(let device, _, _),
+        case .renew(let device, _), .install(let device, _), .remove(let device, _),
+            .lendable(let device, _),
+            .autoRenew(let device, _), .addFetch(let device, _), .addApprove(let device, _, _),
+            .updateFetch(let device, _, _),
             .updateApprove(let device, _, _, _), .reinstallPrevious(let device, _, _, _),
             .saveDevice(let device, _), .addRegister(let device, _, _):
             device
@@ -118,7 +120,8 @@ enum AddChain: Sendable, Equatable {
     func approval(device: String, app: String, fetched: MenuFetched) -> MenuAction {
         switch self {
         case .add: .addApprove(device: device, app: app, fetched: fetched)
-        case .update(let from): .updateApprove(device: device, app: app, from: from, fetched: fetched)
+        case .update(let from):
+            .updateApprove(device: device, app: app, from: from, fetched: fetched)
         }
     }
 }
@@ -239,7 +242,9 @@ public enum MenuActions {
     public static let couldntCheckApps = "Couldn't check apps"
     public static let controlsBusy = "Another action is in progress"
     static let ledgerUnreadable = "Can't read the ledger"
-    static func lentOrChanging(_ alias: String) -> String { "An app is lent or changing on \(alias)" }
+    static func lentOrChanging(_ alias: String) -> String {
+        "An app is lent or changing on \(alias)"
+    }
 
     /// Install, Remove, Renew and both stages of Add app and of Update stop for the owner's Cancel; saving the lendable setting,
     /// the auto-renew setting or a device is instant.
@@ -255,10 +260,13 @@ public enum MenuActions {
 
     // MARK: availability
 
-    public static func availability(_ action: MenuAction, in snapshot: MenuSnapshot, now: Date) -> MenuAvailability {
+    public static func availability(_ action: MenuAction, in snapshot: MenuSnapshot, now: Date)
+        -> MenuAvailability
+    {
         // The one action with no card yet.
         if case .saveDevice(let alias, let candidate) = action {
-            return MenuAddDevice.availability(alias: alias, candidate: candidate, taken: snapshot.devices.map(\.alias))
+            return MenuAddDevice.availability(
+                alias: alias, candidate: candidate, taken: snapshot.devices.map(\.alias))
         }
         guard let card = snapshot.devices.first(where: { $0.alias == action.device }) else {
             return .disabled("Device not found")
@@ -288,7 +296,8 @@ public enum MenuActions {
             return update(app, from: from, fetched: nil, card: card, snapshot: snapshot, now: now)
         case .updateApprove(_, let app, let from, let fetched):
             if let stop = freeStop(card: card, snapshot: snapshot) { return stop }
-            return update(app, from: from, fetched: fetched, card: card, snapshot: snapshot, now: now)
+            return update(
+                app, from: from, fetched: fetched, card: card, snapshot: snapshot, now: now)
         case .reinstallPrevious(_, let app, let from, let to):
             if let stop = freeStop(card: card, snapshot: snapshot) { return stop }
             return reinstall(app, from: from, to: to, card: card, snapshot: snapshot, now: now)
@@ -296,7 +305,8 @@ public enum MenuActions {
     }
 
     /// The rules every free action shares, first match wins.
-    private static func freeStop(card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuAvailability? {
+    private static func freeStop(card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuAvailability?
+    {
         if snapshot.suspended { return .disabled("Free certificate changed") }
         if !snapshot.ledgerReadable { return .disabled(ledgerUnreadable) }
         if card.hasPending { return .disabled("Change in progress on \(card.alias)") }
@@ -335,7 +345,8 @@ public enum MenuActions {
     private static func renew(_ app: String?, card: MenuDeviceCard) -> MenuAvailability {
         guard let app else {
             guard !card.refreshSet.isEmpty else {
-                return .disabled(card.renew.items.contains { $0.app != nil } ? notDue : "No apps to renew")
+                return .disabled(
+                    card.renew.items.contains { $0.app != nil } ? notDue : "No apps to renew")
             }
             let each = card.refreshSet.map { renew($0.app, card: card) }
             return each.contains(.enabled) ? .enabled : each[0]
@@ -355,7 +366,9 @@ public enum MenuActions {
     }
 
     /// What "All apps" runs and what it leaves out (with why), in `refresh`'s order.
-    private static func renewPlan(_ card: MenuDeviceCard) -> (included: [MenuRefreshTarget], excluded: [(app: String, reason: String)]) {
+    private static func renewPlan(_ card: MenuDeviceCard) -> (
+        included: [MenuRefreshTarget], excluded: [(app: String, reason: String)]
+    ) {
         var included: [MenuRefreshTarget] = []
         var excluded: [(app: String, reason: String)] = []
         for member in card.refreshSet {
@@ -370,7 +383,8 @@ public enum MenuActions {
 
     static let notDue = "renewable at \(RefreshPolicy.maxWithin) d left"
 
-    private static func install(_ app: String, card: MenuDeviceCard, now: Date) -> MenuAvailability {
+    private static func install(_ app: String, card: MenuDeviceCard, now: Date) -> MenuAvailability
+    {
         guard let row = card.row(for: app) else { return .disabled("Not on \(card.alias)") }
         if row.presence == .lent { return .disabled(why(.lent)) }
         if let stop = deviceStop(card: card) { return stop }
@@ -384,7 +398,8 @@ public enum MenuActions {
         }
         guard let signed = row.signedExpires else {
             // The text `install` gives for NOT_SIGNED.
-            let sign = ProvisionApp(rawValue: app)?.signStep(device: card.alias) ?? "`sideload sign`"
+            let sign =
+                ProvisionApp(rawValue: app)?.signStep(device: card.alias) ?? "`sideload sign`"
             return .disabled("Not signed yet: the owner runs \(sign) first")
         }
         guard signed > now else {
@@ -402,10 +417,18 @@ public enum MenuActions {
     }
 
     /// Add app, first match wins: an approved source, the platform, no row yet, a readable device, a free slot, an App ID.
-    private static func add(_ app: String, card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuAvailability {
-        guard let source = snapshot.addSources.first(where: { $0.app == app }) else { return .disabled("Not an approved source") }
-        guard let platform = card.platform else { return .disabled("\(card.alias) has no recorded platform") }
-        guard source.platform == platform else { return .disabled("\(source.name) does not run on \(card.alias)") }
+    private static func add(_ app: String, card: MenuDeviceCard, snapshot: MenuSnapshot)
+        -> MenuAvailability
+    {
+        guard let source = snapshot.addSources.first(where: { $0.app == app }) else {
+            return .disabled("Not an approved source")
+        }
+        guard let platform = card.platform else {
+            return .disabled("\(card.alias) has no recorded platform")
+        }
+        guard source.platform == platform else {
+            return .disabled("\(source.name) does not run on \(card.alias)")
+        }
         if let row = card.row(for: app) {
             switch row.presence {
             case .installed: return .disabled("Already installed")
@@ -419,32 +442,43 @@ public enum MenuActions {
         if let stop = deviceStop(card: card) { return stop }
         guard card.slotsKnown else { return .disabled("Slots unknown") }
         guard card.freeSlots > 0 else { return .disabled("No free slot: remove an app first") }
-        guard let option = card.addable.first(where: { $0.app == app }) else { return .disabled("Bundle ID prefix is not set") }
+        guard let option = card.addable.first(where: { $0.app == app }) else {
+            return .disabled("Bundle ID prefix is not set")
+        }
         // A reused App ID costs none, so only a new one is gated on the budget.
         guard option.newAppId else { return .enabled }
         guard let ids = snapshot.appIds else { return .disabled("App ID budget unknown") }
         if !option.appIdAllowed {
-            return .disabled("App ID limit: \(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved")
+            return .disabled(
+                "App ID limit: \(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved"
+            )
         }
         return .enabled
     }
 
     /// `sign` refuses a build the device's OS is too old for, after `provision` has spent the App ID: the confirm says so first.
-    private static func minimumOS(_ app: String, version: String, minOS: String?, card: MenuDeviceCard) -> MenuAvailability {
-        guard let need = minOS, let have = card.osVersion, OSVersion.isAtLeast(have, need) == false else { return .enabled }
-        return .disabled("\(MenuFormat.appName(app)) \(version) needs \(ProvisionApp.osName(devicePlatform: card.platform)) \(need) or later; \(card.alias) runs \(have)")
+    private static func minimumOS(
+        _ app: String, version: String, minOS: String?, card: MenuDeviceCard
+    ) -> MenuAvailability {
+        guard let need = minOS, let have = card.osVersion, OSVersion.isAtLeast(have, need) == false
+        else { return .enabled }
+        return .disabled(
+            "\(MenuFormat.appName(app)) \(version) needs \(ProvisionApp.osName(devicePlatform: card.platform)) \(need) or later; \(card.alias) runs \(have)"
+        )
     }
 
     /// The row's stored profile is fresh, so `provision` is skipped (the runner's rule, `MenuActionRunner.profileIsFresh`).
     static func profileIsFresh(_ row: MenuAppRow, now: Date) -> Bool {
-        row.profile?.storedExpires.map { MenuActionRunner.profileIsFresh(expires: $0, now: now) } ?? false
+        row.profile?.storedExpires.map { MenuActionRunner.profileIsFresh(expires: $0, now: now) }
+            ?? false
     }
 
     /// Update, first match wins: a row and where it is (lent, changing, not installed), a readable device, a recorded install still at the version the owner
     /// saw, an approved source, a newer version (the listed one for stage 1; for stage 2 the fetched one, which is what will be
     /// installed), the minimum OS, and the App ID budget only when `provision` will run and register a new one.
     private static func update(
-        _ app: String, from: String, fetched: MenuFetched?, card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date
+        _ app: String, from: String, fetched: MenuFetched?, card: MenuDeviceCard,
+        snapshot: MenuSnapshot, now: Date
     ) -> MenuAvailability {
         let name = MenuFormat.appName(app)
         let row: MenuAppRow
@@ -453,11 +487,16 @@ public enum MenuActions {
         case .stop(let stop): return stop
         case .open(let found, let version): (row, installed) = (found, version)
         }
-        guard snapshot.addSources.contains(where: { $0.app == app }) else { return .disabled("Not an approved source") }
+        guard snapshot.addSources.contains(where: { $0.app == app }) else {
+            return .disabled("Not an approved source")
+        }
         let target: (version: String, minOS: String?)
         if let fetched {
-            guard VersionOrder.compare(installed: installed, upstream: fetched.version) == .newer else {
-                return .disabled("\(name) \(MenuFormat.version(fetched.version)) is not newer than \(MenuFormat.version(installed))")
+            guard VersionOrder.compare(installed: installed, upstream: fetched.version) == .newer
+            else {
+                return .disabled(
+                    "\(name) \(MenuFormat.version(fetched.version)) is not newer than \(MenuFormat.version(installed))"
+                )
             }
             target = (fetched.version, fetched.minOS)
         } else {
@@ -470,7 +509,8 @@ public enum MenuActions {
             }
             target = (listed.version, listed.minOS)
         }
-        let os = minimumOS(app, version: MenuFormat.version(target.version), minOS: target.minOS, card: card)
+        let os = minimumOS(
+            app, version: MenuFormat.version(target.version), minOS: target.minOS, card: card)
         if !os.isEnabled { return os }
         return appIdStop(row, snapshot: snapshot, now: now) ?? .enabled
     }
@@ -482,7 +522,9 @@ public enum MenuActions {
         case open(row: MenuAppRow, installed: String)
     }
 
-    private static func installedGate(_ app: String, from: String, card: MenuDeviceCard) -> InstalledGate {
+    private static func installedGate(_ app: String, from: String, card: MenuDeviceCard)
+        -> InstalledGate
+    {
         let name = MenuFormat.appName(app)
         guard let row = card.row(for: app) else { return .stop(.disabled("Not on \(card.alias)")) }
         switch row.presence {
@@ -499,17 +541,26 @@ public enum MenuActions {
             return .stop(.disabled("Installed by hand: no update check"))
         }
         guard installed == from else {
-            return .stop(.disabled("\(name) is now \(MenuFormat.version(installed)), not \(MenuFormat.version(from))"))
+            return .stop(
+                .disabled(
+                    "\(name) is now \(MenuFormat.version(installed)), not \(MenuFormat.version(from))"
+                ))
         }
         return .open(row: row, installed: installed)
     }
 
     /// A fresh stored profile skips `provision`, so the budget does not matter; otherwise only a new App ID is gated on it.
-    private static func appIdStop(_ row: MenuAppRow, snapshot: MenuSnapshot, now: Date) -> MenuAvailability? {
-        guard let profile = row.profile, !profileIsFresh(row, now: now), profile.newAppId else { return nil }
+    private static func appIdStop(_ row: MenuAppRow, snapshot: MenuSnapshot, now: Date)
+        -> MenuAvailability?
+    {
+        guard let profile = row.profile, !profileIsFresh(row, now: now), profile.newAppId else {
+            return nil
+        }
         guard let ids = snapshot.appIds else { return .disabled("App ID budget unknown") }
         if !profile.appIdAllowed {
-            return .disabled("App ID limit: \(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved")
+            return .disabled(
+                "App ID limit: \(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved"
+            )
         }
         return nil
     }
@@ -517,7 +568,8 @@ public enum MenuActions {
     /// Reinstall previous version, first match wins: Update's row gate, the previous version the owner saw still being the
     /// row's (the same version and file), the minimum OS, and the App ID budget only when `provision` will run.
     private static func reinstall(
-        _ app: String, from: String, to: MenuPrevious, card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date
+        _ app: String, from: String, to: MenuPrevious, card: MenuDeviceCard, snapshot: MenuSnapshot,
+        now: Date
     ) -> MenuAvailability {
         let name = MenuFormat.appName(app)
         let row: MenuAppRow
@@ -529,19 +581,25 @@ public enum MenuActions {
             return .disabled("No previous version of \(name) is stored")
         }
         guard current.version == to.version else {
-            return .disabled("The previous version of \(name) is now \(MenuFormat.version(current.version))")
+            return .disabled(
+                "The previous version of \(name) is now \(MenuFormat.version(current.version))")
         }
         guard current == to else {
-            return .disabled("The stored file of \(name) \(MenuFormat.version(to.version)) changed since you reviewed it")
+            return .disabled(
+                "The stored file of \(name) \(MenuFormat.version(to.version)) changed since you reviewed it"
+            )
         }
-        let os = minimumOS(app, version: MenuFormat.version(to.version), minOS: to.minOS, card: card)
+        let os = minimumOS(
+            app, version: MenuFormat.version(to.version), minOS: to.minOS, card: card)
         if !os.isEnabled { return os }
         return appIdStop(row, snapshot: snapshot, now: now) ?? .enabled
     }
 
     /// The lab's borrowing is a setting; it changes nothing on the device. It stays put while an app is lent or changing,
     /// because the lab repeats `slot lend` and a different `lendableApp` mid-lend would fail it with ALREADY_LENT.
-    private static func lendable(_ app: String?, card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuAvailability {
+    private static func lendable(_ app: String?, card: MenuDeviceCard, snapshot: MenuSnapshot)
+        -> MenuAvailability
+    {
         // Without the ledger the rows cannot say whether an app is lent.
         if !snapshot.ledgerReadable { return .disabled(ledgerUnreadable) }
         if card.apps.contains(where: { $0.presence == .lent || $0.presence == .pending }) {
@@ -562,10 +620,13 @@ public enum MenuActions {
     }
 
     /// The device card's auto-renew button: it flips the current setting.
-    public static func autoRenewOffer(_ card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date) -> MenuOffer {
+    public static func autoRenewOffer(_ card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date)
+        -> MenuOffer
+    {
         let action = MenuAction.autoRenew(device: card.alias, on: !card.autoRenew)
         return MenuOffer(
-            kind: .autoRenew, action: action, label: card.autoRenew ? "Turn auto-renew off…" : "Turn auto-renew on…",
+            kind: .autoRenew, action: action,
+            label: card.autoRenew ? "Turn auto-renew off…" : "Turn auto-renew on…",
             availability: availability(action, in: snapshot, now: now), destructive: false)
     }
 
@@ -577,16 +638,23 @@ public enum MenuActions {
     // MARK: row buttons
 
     /// Retry on a failed renewal, Install (or Install update) and Remove, each with its availability.
-    public static func rowOffers(_ row: MenuAppRow, card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date) -> [MenuOffer] {
+    public static func rowOffers(
+        _ row: MenuAppRow, card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date
+    ) -> [MenuOffer] {
         var offers: [MenuOffer] = []
-        func offer(_ kind: MenuOfferKind, _ action: MenuAction, _ label: String, destructive: Bool = false) {
+        func offer(
+            _ kind: MenuOfferKind, _ action: MenuAction, _ label: String, destructive: Bool = false
+        ) {
             offers.append(
                 MenuOffer(
-                    kind: kind, action: action, label: label, availability: availability(action, in: snapshot, now: now),
+                    kind: kind, action: action, label: label,
+                    availability: availability(action, in: snapshot, now: now),
                     destructive: destructive))
         }
         if row.failure != nil { offer(.retry, .renew(device: card.alias, app: row.app), "Retry") }
-        if row.presence == .notInstalled { offer(.install, .install(device: card.alias, app: row.app), "Install") }
+        if row.presence == .notInstalled {
+            offer(.install, .install(device: card.alias, app: row.app), "Install")
+        }
         if row.presence == .installed, row.newerSigned {
             offer(.installUpdate, .install(device: card.alias, app: row.app), "Install update")
         }
@@ -597,7 +665,8 @@ public enum MenuActions {
         }
         if row.offersPrevious, let previous = row.previous, let installed = row.installedVersion {
             offer(
-                .reinstallPrevious, .reinstallPrevious(device: card.alias, app: row.app, from: installed, to: previous),
+                .reinstallPrevious,
+                .reinstallPrevious(device: card.alias, app: row.app, from: installed, to: previous),
                 "Reinstall previous version (\(MenuFormat.version(previous.version)))…")
         }
         if row.presence != .notInstalled {
@@ -609,9 +678,13 @@ public enum MenuActions {
     // MARK: confirm
 
     /// The confirm for an available action; nil when it is not available (or the card is gone).
-    public static func prompt(for action: MenuAction, in snapshot: MenuSnapshot, now: Date) -> MenuPrompt? {
+    public static func prompt(for action: MenuAction, in snapshot: MenuSnapshot, now: Date)
+        -> MenuPrompt?
+    {
         guard availability(action, in: snapshot, now: now).isEnabled else { return nil }
-        if case .saveDevice(let alias, let candidate) = action { return MenuAddDevice.prompt(alias: alias, candidate: candidate) }
+        if case .saveDevice(let alias, let candidate) = action {
+            return MenuAddDevice.prompt(alias: alias, candidate: candidate)
+        }
         guard let card = snapshot.devices.first(where: { $0.alias == action.device })
         else { return nil }
         switch action {
@@ -622,14 +695,19 @@ public enum MenuActions {
         case .lendable(_, let app): return lendablePrompt(app, card: card)
         case .autoRenew(_, let on): return autoRenewPrompt(on, card: card)
         case .addFetch(_, let app): return addFetchPrompt(app, card: card, snapshot: snapshot)
-        case .addApprove(_, let app, let fetched): return addApprovePrompt(app, fetched: fetched, card: card, snapshot: snapshot)
+        case .addApprove(_, let app, let fetched):
+            return addApprovePrompt(app, fetched: fetched, card: card, snapshot: snapshot)
         case .addRegister(_, let app, let fetched):
-            return addApprovePrompt(app, fetched: fetched, card: card, snapshot: snapshot, registers: true)
-        case .updateFetch(_, let app, let from): return updateFetchPrompt(app, from: from, card: card, snapshot: snapshot)
+            return addApprovePrompt(
+                app, fetched: fetched, card: card, snapshot: snapshot, registers: true)
+        case .updateFetch(_, let app, let from):
+            return updateFetchPrompt(app, from: from, card: card, snapshot: snapshot)
         case .updateApprove(_, let app, let from, let fetched):
-            return updateApprovePrompt(app, from: from, fetched: fetched, card: card, snapshot: snapshot, now: now)
+            return updateApprovePrompt(
+                app, from: from, fetched: fetched, card: card, snapshot: snapshot, now: now)
         case .reinstallPrevious(_, let app, let from, let to):
-            return reinstallPrompt(app, from: from, to: to, card: card, snapshot: snapshot, now: now)
+            return reinstallPrompt(
+                app, from: from, to: to, card: card, snapshot: snapshot, now: now)
         }
     }
 
@@ -644,11 +722,16 @@ public enum MenuActions {
     }
 
     /// Why an action that cannot be confirmed now is not run.
-    public static func blockedReason(_ action: MenuAction, in snapshot: MenuSnapshot?, now: Date) -> String {
-        snapshot.flatMap { availability(action, in: $0, now: now).reason } ?? "It is no longer available."
+    public static func blockedReason(_ action: MenuAction, in snapshot: MenuSnapshot?, now: Date)
+        -> String
+    {
+        snapshot.flatMap { availability(action, in: $0, now: now).reason }
+            ?? "It is no longer available."
     }
 
-    public static func reconfirm(_ action: MenuAction, shown: MenuPrompt, in snapshot: MenuSnapshot, now: Date) -> Reconfirm {
+    public static func reconfirm(
+        _ action: MenuAction, shown: MenuPrompt, in snapshot: MenuSnapshot, now: Date
+    ) -> Reconfirm {
         guard let current = prompt(for: action, in: snapshot, now: now) else {
             return .blocked(blockedReason(action, in: snapshot, now: now))
         }
@@ -660,43 +743,58 @@ public enum MenuActions {
     private static func slotArithmetic(_ card: MenuDeviceCard, delta: Int) -> String? {
         guard card.slotsKnown else { return nil }
         let used = MenuSnapshotBuilder.slotLimit - card.freeSlots
-        return "\(used)/\(MenuSnapshotBuilder.slotLimit) → \(used + delta)/\(MenuSnapshotBuilder.slotLimit)"
+        return
+            "\(used)/\(MenuSnapshotBuilder.slotLimit) → \(used + delta)/\(MenuSnapshotBuilder.slotLimit)"
     }
 
-    private static func renewPrompt(_ app: String?, card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuPrompt {
+    private static func renewPrompt(_ app: String?, card: MenuDeviceCard, snapshot: MenuSnapshot)
+        -> MenuPrompt
+    {
         let alias = card.alias
         let plan = renewPlan(card)
         let qualifying = app.map { [$0] } ?? plan.included.map(\.app)
-        let lent = Set(card.refreshSet.filter(\.lent).map(\.app)).union(card.apps.filter { $0.presence == .lent }.map(\.app))
+        let lent = Set(card.refreshSet.filter(\.lent).map(\.app)).union(
+            card.apps.filter { $0.presence == .lent }.map(\.app))
         var lines: [String] = []
         if app == nil {
             lines.append("Re-signs and reinstalls on \(alias):")
             for key in qualifying {
                 let name = MenuFormat.appName(key)
-                lines.append(lent.contains(key) ? "\(name): re-signed only, not installed (lent to the lab)" : name)
+                lines.append(
+                    lent.contains(key)
+                        ? "\(name): re-signed only, not installed (lent to the lab)" : name)
             }
-            for (key, reason) in plan.excluded { lines.append("Not included: \(MenuFormat.appName(key)) (\(reason))") }
+            for (key, reason) in plan.excluded {
+                lines.append("Not included: \(MenuFormat.appName(key)) (\(reason))")
+            }
         } else if let key = qualifying.first {
             let name = MenuFormat.appName(key)
             lines.append(
                 lent.contains(key)
                     ? "Re-signs \(name) for \(alias): re-signed only, not installed (lent to the lab)"
                     : "Re-signs and reinstalls \(name) on \(alias)")
-            if card.row(for: key)?.recorded == false { lines.append("Installed by hand: this records the install") }
+            if card.row(for: key)?.recorded == false {
+                lines.append("Installed by hand: this records the install")
+            }
         }
         var portal = "Portal: profiles only, normally no new App ID"
         if let ids = snapshot.appIds {
-            portal += " (\(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved)"
+            portal +=
+                " (\(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved)"
         }
         lines.append(portal)
         lines.append("Slots unchanged")
-        if qualifying.contains(where: { !lent.contains($0) }) { lines.append("Keep the device unlocked and connected") }
+        if qualifying.contains(where: { !lent.contains($0) }) {
+            lines.append("Keep the device unlocked and connected")
+        }
         lines.append(keychain)
         let name = app.map(MenuFormat.appName)
         return MenuPrompt(
-            title: name.map { "Renew \($0) on \(alias)" } ?? "Renew all apps on \(alias)", lines: lines,
+            title: name.map { "Renew \($0) on \(alias)" } ?? "Renew all apps on \(alias)",
+            lines: lines,
             confirmLabel: app == nil ? "Renew all" : "Renew", destructive: false,
-            runningLabel: name.map { "Renewing \($0) on \(alias)…" } ?? "Renewing all apps on \(alias)…",
+            runningLabel: name.map { "Renewing \($0) on \(alias)…" }
+                ?? "Renewing all apps on \(alias)…",
             apps: qualifying)
     }
 
@@ -704,10 +802,17 @@ public enum MenuActions {
         let alias = card.alias
         let name = MenuFormat.appName(app)
         let update = card.row(for: app)?.presence == .installed
-        var lines = [update ? "Installs the newer signed build of \(name) on \(alias)" : "Installs the signed build of \(name) on \(alias)"]
+        var lines = [
+            update
+                ? "Installs the newer signed build of \(name) on \(alias)"
+                : "Installs the signed build of \(name) on \(alias)"
+        ]
         if update {
-            if let row = card.row(for: app), let installed = row.installedVersion, let signed = row.signedVersion, installed != signed {
-                lines.append("Version \(MenuFormat.version(installed)) → \(MenuFormat.version(signed))")
+            if let row = card.row(for: app), let installed = row.installedVersion,
+                let signed = row.signedVersion, installed != signed
+            {
+                lines.append(
+                    "Version \(MenuFormat.version(installed)) → \(MenuFormat.version(signed))")
             }
             lines.append("Slots unchanged")
         } else if let slots = slotArithmetic(card, delta: 1) {
@@ -717,7 +822,8 @@ public enum MenuActions {
         lines.append("Keep the device unlocked and connected")
         lines.append(keychain)
         return MenuPrompt(
-            title: update ? "Install update of \(name) on \(alias)" : "Install \(name) on \(alias)", lines: lines,
+            title: update ? "Install update of \(name) on \(alias)" : "Install \(name) on \(alias)",
+            lines: lines,
             confirmLabel: update ? "Install update" : "Install", destructive: false,
             runningLabel: "Installing \(name) on \(alias)…", apps: [])
     }
@@ -725,14 +831,18 @@ public enum MenuActions {
     private static func removePrompt(_ app: String, card: MenuDeviceCard) -> MenuPrompt {
         let alias = card.alias
         let name = MenuFormat.appName(app)
-        var lines = ["Deletes \(name) and its data from \(alias), frees a slot" + (slotArithmetic(card, delta: -1).map { " (\($0))" } ?? "")]
+        var lines = [
+            "Deletes \(name) and its data from \(alias), frees a slot"
+                + (slotArithmetic(card, delta: -1).map { " (\($0))" } ?? "")
+        ]
         if card.row(for: app)?.removalClearsTrust == true {
             lines.append("Last free app: developer trust is cleared")
         }
         lines.append("Keep the device unlocked and connected")
         lines.append(keychain)
         return MenuPrompt(
-            title: "Remove \(name) from \(alias)", lines: lines, confirmLabel: "Remove", destructive: true,
+            title: "Remove \(name) from \(alias)", lines: lines, confirmLabel: "Remove",
+            destructive: true,
             runningLabel: "Removing \(name) from \(alias)…", apps: [])
     }
 
@@ -741,13 +851,15 @@ public enum MenuActions {
         guard let app else {
             return MenuPrompt(
                 title: "Stop lending on \(alias)",
-                lines: ["Setting only: the lab may not borrow a slot on \(alias)"], confirmLabel: "Stop lending",
+                lines: ["Setting only: the lab may not borrow a slot on \(alias)"],
+                confirmLabel: "Stop lending",
                 destructive: false, runningLabel: "Saving…", apps: [])
         }
         let name = MenuFormat.appName(app)
         return MenuPrompt(
             title: "Make \(name) lendable on \(alias)",
-            lines: ["Setting only: the lab may uninstall \(name) and put it back"], confirmLabel: "Make lendable",
+            lines: ["Setting only: the lab may uninstall \(name) and put it back"],
+            confirmLabel: "Make lendable",
             destructive: false, runningLabel: "Saving…", apps: [])
     }
 
@@ -771,7 +883,9 @@ public enum MenuActions {
             ], confirmLabel: "Turn off", destructive: false, runningLabel: "Saving…", apps: [])
     }
 
-    private static func addFetchPrompt(_ app: String, card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuPrompt {
+    private static func addFetchPrompt(_ app: String, card: MenuDeviceCard, snapshot: MenuSnapshot)
+        -> MenuPrompt
+    {
         let alias = card.alias
         let name = MenuFormat.appName(app)
         let source = snapshot.addSources.first { $0.app == app }?.source ?? "its source"
@@ -780,19 +894,25 @@ public enum MenuActions {
             lines: [
                 "Downloads the latest \(name) release from \(source) and checks it",
                 "Nothing is signed or installed; \(alias) and the portal are unchanged",
-            ], confirmLabel: "Fetch", destructive: false, runningLabel: "Fetching \(name)…", apps: [])
+            ], confirmLabel: "Fetch", destructive: false, runningLabel: "Fetching \(name)…",
+            apps: [])
     }
 
     /// `registers` is the confirm of `MenuAction.addRegister`, which says plainly that the device joins the free team.
     private static func addApprovePrompt(
-        _ app: String, fetched: MenuFetched, card: MenuDeviceCard, snapshot: MenuSnapshot, registers: Bool = false
+        _ app: String, fetched: MenuFetched, card: MenuDeviceCard, snapshot: MenuSnapshot,
+        registers: Bool = false
     ) -> MenuPrompt {
         let alias = card.alias
         let name = MenuFormat.appName(app)
         var lines = fetchedLines(app, fetched, card: card, snapshot: snapshot)
         if let extensions = extensionsLine(fetched.extensionCount) { lines.append(extensions) }
-        if registers { lines.append("Registers \(alias) on your free Apple team; sideload can't remove it") }
-        lines.append("Approves this exact version for signing" + (fetched.alreadyApproved ? " (approved earlier)" : ""))
+        if registers {
+            lines.append("Registers \(alias) on your free Apple team; sideload can't remove it")
+        }
+        lines.append(
+            "Approves this exact version for signing"
+                + (fetched.alreadyApproved ? " (approved earlier)" : ""))
         let option = card.addable.first { $0.app == app }
         var portal: String
         if option?.newAppId == false {
@@ -800,7 +920,8 @@ public enum MenuActions {
         } else {
             portal = "Portal: creates one App ID and a 7-day profile"
             if let ids = snapshot.appIds {
-                portal += " (\(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved)"
+                portal +=
+                    " (\(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved)"
             }
         }
         lines.append(portal)
@@ -809,10 +930,13 @@ public enum MenuActions {
         lines.append(keychain)
         return MenuPrompt(
             title: registers
-                ? "Register \(alias) and install \(name) \(fetched.version)" : "Approve and install \(name) \(fetched.version) on \(alias)",
-            lines: lines, confirmLabel: registers ? "Register and install" : "Approve and install", destructive: false,
+                ? "Register \(alias) and install \(name) \(fetched.version)"
+                : "Approve and install \(name) \(fetched.version) on \(alias)",
+            lines: lines, confirmLabel: registers ? "Register and install" : "Approve and install",
+            destructive: false,
             runningLabel: registers
-                ? "Registering \(alias) and adding \(name) \(fetched.version)…" : "Adding \(name) \(fetched.version) to \(alias)…",
+                ? "Registering \(alias) and adding \(name) \(fetched.version)…"
+                : "Adding \(name) \(fetched.version) to \(alias)…",
             apps: [], monospacedLines: [hashLineIndex])
     }
 
@@ -821,7 +945,9 @@ public enum MenuActions {
 
     /// The first lines of both second confirms: the file's version and build, size and minimum OS, the full SHA-256 and who
     /// vouches for it. The build is written once: Stremio's spelling ("1.9.6b142" is "1.9.6 (142)") already carries it.
-    private static func fetchedLines(_ app: String, _ fetched: MenuFetched, card: MenuDeviceCard, snapshot: MenuSnapshot) -> [String] {
+    private static func fetchedLines(
+        _ app: String, _ fetched: MenuFetched, card: MenuDeviceCard, snapshot: MenuSnapshot
+    ) -> [String] {
         let thirdParty = snapshot.addSources.first { $0.app == app }?.thirdParty == true
         let vouched =
             thirdParty
@@ -831,33 +957,45 @@ public enum MenuActions {
     }
 
     /// The build's facts and its full SHA-256 (at `hashLineIndex`): the first two lines of every confirm that names a file.
-    private static func buildLines(_ app: String, _ build: some MenuBuildFacts, card: MenuDeviceCard) -> [String] {
+    private static func buildLines(
+        _ app: String, _ build: some MenuBuildFacts, card: MenuDeviceCard
+    ) -> [String] {
         [factsLine(app, build, card: card), "SHA-256 \(build.sha256)"]
     }
 
     /// "Apollo 3.9.0 · 45.2 MB · iOS 15.0 or later".
-    private static func factsLine(_ app: String, _ build: some MenuBuildFacts, card: MenuDeviceCard) -> String {
+    private static func factsLine(_ app: String, _ build: some MenuBuildFacts, card: MenuDeviceCard)
+        -> String
+    {
         var facts = "\(MenuFormat.appName(app)) \(MenuFormat.version(build.version))"
         if let number = build.build, !facts.hasSuffix(")") { facts += " (build \(number))" }
         facts += " · " + MenuFormat.size(build.size)
-        if let minOS = build.minOS { facts += " · \(ProvisionApp.osName(devicePlatform: card.platform)) \(minOS) or later" }
+        if let minOS = build.minOS {
+            facts += " · \(ProvisionApp.osName(devicePlatform: card.platform)) \(minOS) or later"
+        }
         return facts
     }
 
     /// "2 extensions will be removed", nil when none. An Update adds how it differs from the installed build's `installed`
     /// count ("(1 more than 3.9.0)").
-    private static func extensionsLine(_ count: Int, installed: (count: Int, version: String)? = nil) -> String? {
+    private static func extensionsLine(
+        _ count: Int, installed: (count: Int, version: String)? = nil
+    ) -> String? {
         var line = count > 0 ? "\(count) extension\(count == 1 ? "" : "s") will be removed" : nil
         if let installed, installed.count != count {
             let more = count - installed.count
             line =
                 (line ?? "No extensions will be removed")
-                + (more > 0 ? " (\(more) more than \(installed.version))" : " (\(-more) fewer than \(installed.version))")
+                + (more > 0
+                    ? " (\(more) more than \(installed.version))"
+                    : " (\(-more) fewer than \(installed.version))")
         }
         return line
     }
 
-    private static func updateFetchPrompt(_ app: String, from: String, card: MenuDeviceCard, snapshot: MenuSnapshot) -> MenuPrompt {
+    private static func updateFetchPrompt(
+        _ app: String, from: String, card: MenuDeviceCard, snapshot: MenuSnapshot
+    ) -> MenuPrompt {
         let alias = card.alias
         let name = MenuFormat.appName(app)
         let source = snapshot.addSources.first { $0.app == app }?.source ?? "its source"
@@ -873,26 +1011,32 @@ public enum MenuActions {
                 seen,
                 "Downloads the \(name) release from \(source) and checks it",
                 "Nothing is approved, signed or installed; \(alias) and the portal are unchanged",
-            ], confirmLabel: "Fetch", destructive: false, runningLabel: "Fetching \(name) update…", apps: [])
+            ], confirmLabel: "Fetch", destructive: false, runningLabel: "Fetching \(name) update…",
+            apps: [])
     }
 
     /// What `provision` will do for an installed row: reuse a fresh stored profile, or renew it (with a new App ID or the existing one).
-    private static func profileLine(_ row: MenuAppRow?, snapshot: MenuSnapshot, now: Date) -> String {
+    private static func profileLine(_ row: MenuAppRow?, snapshot: MenuSnapshot, now: Date) -> String
+    {
         if let row, profileIsFresh(row, now: now), let expires = row.profile?.storedExpires,
             case .days(let days) = FreeInstallExpiry.timeLeft(expires.timeIntervalSince(now))
         {
             return "Profile reused (\(days) d left), no portal change"
         }
-        guard row?.profile?.newAppId == true else { return "Renews the 7-day profile; existing App ID" }
+        guard row?.profile?.newAppId == true else {
+            return "Renews the 7-day profile; existing App ID"
+        }
         var portal = "Renews the 7-day profile; creates one App ID"
         if let ids = snapshot.appIds {
-            portal += " (\(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved)"
+            portal +=
+                " (\(ids.recent) of \(FreeAppIdBudget.limit) used in 7 days, \(ids.reserved) reserved)"
         }
         return portal
     }
 
     private static func reinstallPrompt(
-        _ app: String, from: String, to: MenuPrevious, card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date
+        _ app: String, from: String, to: MenuPrevious, card: MenuDeviceCard, snapshot: MenuSnapshot,
+        now: Date
     ) -> MenuPrompt {
         let alias = card.alias
         let name = MenuFormat.appName(app)
@@ -910,12 +1054,14 @@ public enum MenuActions {
             ]
         return MenuPrompt(
             title: "Reinstall \(name) \(after) on \(alias) (now \(before))", lines: lines,
-            confirmLabel: "Reinstall \(after)", destructive: false, runningLabel: "Reinstalling \(name) \(after) on \(alias)…",
+            confirmLabel: "Reinstall \(after)", destructive: false,
+            runningLabel: "Reinstalling \(name) \(after) on \(alias)…",
             apps: [], monospacedLines: [hashLineIndex])
     }
 
     private static func updateApprovePrompt(
-        _ app: String, from: String, fetched: MenuFetched, card: MenuDeviceCard, snapshot: MenuSnapshot, now: Date
+        _ app: String, from: String, fetched: MenuFetched, card: MenuDeviceCard,
+        snapshot: MenuSnapshot, now: Date
     ) -> MenuPrompt {
         let alias = card.alias
         let name = MenuFormat.appName(app)
@@ -923,10 +1069,15 @@ public enum MenuActions {
         let before = MenuFormat.version(from)
         let after = MenuFormat.version(fetched.version)
         var lines = fetchedLines(app, fetched, card: card, snapshot: snapshot)
-        if let extensions = extensionsLine(fetched.extensionCount, installed: row?.profile.map { (count: $0.installedExtensions, version: before) }) {
+        if let extensions = extensionsLine(
+            fetched.extensionCount,
+            installed: row?.profile.map { (count: $0.installedExtensions, version: before) })
+        {
             lines.append(extensions)
         }
-        lines.append("Approves this exact version for signing" + (fetched.alreadyApproved ? " (approved earlier)" : ""))
+        lines.append(
+            "Approves this exact version for signing"
+                + (fetched.alreadyApproved ? " (approved earlier)" : ""))
         lines.append(profileLine(row, snapshot: snapshot, now: now))
         lines.append("Installs over the existing app: its data is kept, slots unchanged")
         lines.append("Keep the device unlocked and connected")
@@ -934,6 +1085,7 @@ public enum MenuActions {
         return MenuPrompt(
             title: "Approve and update \(name) \(before) → \(after) on \(alias)", lines: lines,
             confirmLabel: "Approve and update", destructive: false,
-            runningLabel: "Updating \(name) \(before) → \(after) on \(alias)…", apps: [], monospacedLines: [hashLineIndex])
+            runningLabel: "Updating \(name) \(before) → \(after) on \(alias)…", apps: [],
+            monospacedLines: [hashLineIndex])
     }
 }

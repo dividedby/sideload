@@ -70,7 +70,9 @@ struct MenuModelReadTests {
     }
 
     /// Three saved devices: iphone and ipad reachable, appletv offline. `iphone` and `ipad` have one app each recorded.
-    private func world(apps: @escaping @Sendable (String) -> RunResultWithJSON) async throws -> World {
+    private func world(apps: @escaping @Sendable (String) -> RunResultWithJSON) async throws
+        -> World
+    {
         let dir = try makeTempDir()
         let paths = Paths(home: dir.path)
         try paths.ensureHome()
@@ -78,10 +80,13 @@ struct MenuModelReadTests {
             paths, config: menuConfig(devices: ["iphone", "ipad", "appletv"]),
             ledger: menuLedger([("iphone", "apollo", 5), ("ipad", "apollo", 4)]))
         let list = deviceListJSON(
-            phoneEntryJSON(seed: "1"), phoneEntryJSON(seed: "2"), phoneEntryJSON(seed: "3", tunnel: "unavailable"))
+            phoneEntryJSON(seed: "1"), phoneEntryJSON(seed: "2"),
+            phoneEntryJSON(seed: "3", tunnel: "unavailable"))
         let runner = SlowDeviceRunner(menuDeviceScript(devices: list, apps: apps))
         let clock = MutableClock(testNow)
-        let services = Services(runner: runner, fs: FakeFileSystem.free(gb: 50), clock: clock, keychain: FakeKeychain(), home: paths)
+        let services = Services(
+            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: clock, keychain: FakeKeychain(),
+            home: paths)
         return World(model: MenuModel(services: services), runner: runner, clock: clock, dir: dir)
     }
 
@@ -94,10 +99,13 @@ struct MenuModelReadTests {
 
     private func rows(_ model: MenuModel) -> [String: [AppPresence]] {
         guard case .loaded(let snapshot) = model.panel else { return [:] }
-        return Dictionary(uniqueKeysWithValues: snapshot.devices.map { ($0.alias, $0.apps.map(\.presence)) })
+        return Dictionary(
+            uniqueKeysWithValues: snapshot.devices.map { ($0.alias, $0.apps.map(\.presence)) })
     }
 
-    @Test("launch reads each visible device once, one after the other; an offline device is not asked")
+    @Test(
+        "launch reads each visible device once, one after the other; an offline device is not asked"
+    )
     func launch() async throws {
         let w = try await world { _ in .apps([menuBundleId("apollo")]) }
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -112,7 +120,9 @@ struct MenuModelReadTests {
         #expect(!snapshot.checkingApps && !snapshot.checkingDevices)
     }
 
-    @Test("an open within 5 minutes reads nothing; Check status now reads every visible device; an open after 5 minutes reads again")
+    @Test(
+        "an open within 5 minutes reads nothing; Check status now reads every visible device; an open after 5 minutes reads again"
+    )
     func cadence() async throws {
         let w = try await world { _ in .apps([menuBundleId("apollo")]) }
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -149,7 +159,9 @@ struct MenuModelReadTests {
         #expect(w.runner.maxInFlight == 1)
     }
 
-    @Test("a failed attempt is not retried on the next open; the rows keep the ledger's record and the card says why")
+    @Test(
+        "a failed attempt is not retried on the next open; the rows keep the ledger's record and the card says why"
+    )
     func failedAttempt() async throws {
         let w = try await world { _ in .locked }
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -158,7 +170,9 @@ struct MenuModelReadTests {
         #expect(w.runner.infoApps.count == 2)
         #expect(rows(w.model)["iphone"] == [.unconfirmed])
         let snapshot = try #require(loaded(w.model))
-        #expect(snapshot.devices.first { $0.alias == "iphone" }?.appsNote == "Couldn't check apps (device locked) · showing last known")
+        #expect(
+            snapshot.devices.first { $0.alias == "iphone" }?.appsNote
+                == "Couldn't check apps (device locked) · showing last known")
 
         w.clock.advance(30)
         w.model.reload()
@@ -181,13 +195,17 @@ struct MenuModelReadTests {
         let reachable = Mutex(true)
         let script: FakeRunner.Script = { spec in
             let up = reachable.withLock { $0 }
-            let list = deviceListJSON(phoneEntryJSON(seed: "1", tunnel: up ? "connected" : "unavailable"))
-            return menuDeviceScript(devices: list, apps: { _ in .apps([menuBundleId("apollo")]) })(spec)
+            let list = deviceListJSON(
+                phoneEntryJSON(seed: "1", tunnel: up ? "connected" : "unavailable"))
+            return menuDeviceScript(devices: list, apps: { _ in .apps([menuBundleId("apollo")]) })(
+                spec)
         }
         let runner = SlowDeviceRunner(script)
         let clock = MutableClock(testNow)
         let model = MenuModel(
-            services: Services(runner: runner, fs: FakeFileSystem.free(gb: 50), clock: clock, keychain: FakeKeychain(), home: paths))
+            services: Services(
+                runner: runner, fs: FakeFileSystem.free(gb: 50), clock: clock,
+                keychain: FakeKeychain(), home: paths))
         model.reload()
         await model.loadTask?.value
         #expect(runner.infoApps.count == 1)
@@ -222,7 +240,9 @@ struct MenuModelReadTests {
         #expect(try Data(contentsOf: URL(fileURLWithPath: paths.ledger)) == ledger)
     }
 
-    @Test("Check status now during a running load is not dropped: it runs once that load ends and reads every visible device")
+    @Test(
+        "Check status now during a running load is not dropped: it runs once that load ends and reads every visible device"
+    )
     func forceDuringLoad() async throws {
         let w = try await world { _ in .apps([menuBundleId("apollo")]) }
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -256,7 +276,9 @@ struct MenuModelReadTests {
         #expect(w.runner.infoApps.count == 4)
     }
 
-    @Test("every visible device still to be read says checking from the start, not when its turn comes")
+    @Test(
+        "every visible device still to be read says checking from the start, not when its turn comes"
+    )
     func allDueDevicesCheckingAtOnce() async throws {
         let w = try await world { _ in .apps([menuBundleId("apollo")]) }
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -273,7 +295,9 @@ struct MenuModelReadTests {
         #expect(rows(w.model) == ["iphone": [.installed], "ipad": [.installed], "appletv": []])
     }
 
-    @Test("a reload paints what the last load learned at once: no checking rows, and nothing changes when the answers agree")
+    @Test(
+        "a reload paints what the last load learned at once: no checking rows, and nothing changes when the answers agree"
+    )
     func firstPaintKeepsWhatIsKnown() async throws {
         let w = try await world { _ in .apps([menuBundleId("apollo")]) }
         defer { try? FileManager.default.removeItem(at: w.dir) }

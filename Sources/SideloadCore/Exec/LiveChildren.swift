@@ -50,7 +50,9 @@ public final class LiveChildren: Sendable {
     /// Sends `signal` to every registered group. Groups that are already gone are ignored. With `closing`
     /// (the interrupt handler, which is about to exit), new spawns are refused, and this waits up to
     /// `spawnWait` for spawns already in flight to finish, since `endSpawn` kills their groups.
-    public func killAll(_ signal: Int32, closing: Bool = false, spawnWait: Duration = .milliseconds(500)) {
+    public func killAll(
+        _ signal: Int32, closing: Bool = false, spawnWait: Duration = .milliseconds(500)
+    ) {
         let snapshot = state.withLock { s in
             if closing { s.closed = true }
             return Array(s.groups)

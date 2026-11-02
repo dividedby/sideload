@@ -15,7 +15,8 @@ public struct CommandSpec: Sendable, Equatable {
     /// Traps on an empty executable, a non-positive timeout, or a non-positive output cap:
     /// a timeout is mandatory on every call, and these are programmer errors.
     public init(
-        executable: String, args: [String] = [], timeout: Duration, stdin: Data? = nil, cwd: String? = nil,
+        executable: String, args: [String] = [], timeout: Duration, stdin: Data? = nil,
+        cwd: String? = nil,
         maxOutputBytes: Int = CommandSpec.defaultMaxOutputBytes
     ) {
         precondition(!executable.isEmpty, "CommandSpec: executable must be non-empty")

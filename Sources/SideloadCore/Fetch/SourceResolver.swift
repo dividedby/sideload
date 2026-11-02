@@ -23,7 +23,8 @@ struct ResolvedAsset: Sendable, Equatable {
 enum SourceResolver {
     // MARK: shared validation
 
-    private static let safeToken = try! NSRegularExpression(pattern: #"^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$"#)
+    private static let safeToken = try! NSRegularExpression(
+        pattern: #"^[0-9A-Za-z][0-9A-Za-z._-]{0,63}$"#)
     private static let digestPattern = try! NSRegularExpression(pattern: #"^[0-9a-f]{64}$"#)
 
     static func isSafeToken(_ text: String) -> Bool {
@@ -40,33 +41,42 @@ enum SourceResolver {
         } else if text.hasPrefix("sha256:") {
             text.removeFirst("sha256:".count)
         }
-        guard digestPattern.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil else { throw missingDigest }
+        guard
+            digestPattern.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+        else { throw missingDigest }
         return text
     }
 
     private static var missingDigest: SideloadError {
         SideloadError(
             "UPSTREAM_DIGEST_MISSING", "The source published no usable SHA-256 for this file.",
-            fix: "Nothing is downloaded without a digest to check it against. Wait for the publisher to fix the metadata.")
+            fix:
+                "Nothing is downloaded without a digest to check it against. Wait for the publisher to fix the metadata."
+        )
     }
 
     private static func invalid(_ what: String) -> SideloadError {
         SideloadError(
             "SOURCE_INVALID", "The source metadata is not usable: \(what).",
-            fix: "Retry later; if it persists the publisher changed the format and fetch needs an update.")
+            fix:
+                "Retry later; if it persists the publisher changed the format and fetch needs an update."
+        )
     }
 
     private static func notAllowed(_ what: String) -> SideloadError {
         SideloadError(
             "SOURCE_NOT_ALLOWED", "The source offered nothing fetch accepts: \(what).",
-            fix: "Fetch only takes the pinned asset shape (docs/design.md section 8, approved sources).")
+            fix:
+                "Fetch only takes the pinned asset shape (docs/design.md section 8, approved sources)."
+        )
     }
 
     private static func checkSize(_ size: Int64?) throws -> Int64 {
         guard let size, size > 0 else { throw invalid("no file size") }
         guard size <= FetchLimits.maxIPABytes else {
             throw SideloadError(
-                "DOWNLOAD_TOO_LARGE", "The source declares a file over the \(FetchLimits.maxIPABytes >> 30) GiB limit.",
+                "DOWNLOAD_TOO_LARGE",
+                "The source declares a file over the \(FetchLimits.maxIPABytes >> 30) GiB limit.",
                 fix: "Nothing was downloaded.")
         }
         return size
@@ -94,26 +104,39 @@ enum SourceResolver {
     /// `-GLASSICONS-NOEXTENSIONS`, `-GLASS`, dSYMs, `.deb`) never match, whatever their order.
     static func apollo(app: String, repo: String, json: Data) throws -> ResolvedAsset {
         let release: Release
-        do { release = try JSONDecoder().decode(Release.self, from: json) } catch { throw invalid("the release is not valid JSON") }
-        if release.draft == true || release.prerelease == true { throw notAllowed("the latest release is a draft or pre-release") }
+        do { release = try JSONDecoder().decode(Release.self, from: json) } catch {
+            throw invalid("the release is not valid JSON")
+        }
+        if release.draft == true || release.prerelease == true {
+            throw notAllowed("the latest release is a draft or pre-release")
+        }
         guard let tag = release.tag_name else { throw invalid("no tag") }
         let parts = tag.split(separator: "_", omittingEmptySubsequences: false)
-        guard parts.count == 2, parts[0].hasPrefix("v"), isSafeToken(String(parts[0].dropFirst())), isSafeToken(String(parts[1])) else {
+        guard parts.count == 2, parts[0].hasPrefix("v"), isSafeToken(String(parts[0].dropFirst())),
+            isSafeToken(String(parts[1]))
+        else {
             throw notAllowed("the tag is not v<x>_<ver>")
         }
         let version = String(parts[1])
         let name = "Apollo-Reborn-\(version)-GLASS-NOEXTENSIONS.ipa"
         let matches = (release.assets ?? []).filter { $0.name == name }
         guard matches.count == 1, let asset = matches.first else {
-            throw notAllowed(matches.isEmpty ? "no asset named exactly the GLASS-NOEXTENSIONS IPA" : "more than one asset with the IPA's name")
+            throw notAllowed(
+                matches.isEmpty
+                    ? "no asset named exactly the GLASS-NOEXTENSIONS IPA"
+                    : "more than one asset with the IPA's name")
         }
-        if let state = asset.state, state != "uploaded" { throw notAllowed("the asset is not fully uploaded") }
+        if let state = asset.state, state != "uploaded" {
+            throw notAllowed("the asset is not fully uploaded")
+        }
         let digest = try parseDigest(asset.digest, prefixed: true)
         let size = try checkSize(asset.size)
         guard let link = asset.browser_download_url, let url = URL(string: link),
             url.absoluteString == "https://github.com/\(repo)/releases/download/\(tag)/\(name)"
         else { throw notAllowed("the asset's download URL is not the repository's release URL") }
-        return ResolvedAsset(app: app, version: version, fileName: name, url: url, upstreamDigest: digest, size: size, build: nil, minOS: nil)
+        return ResolvedAsset(
+            app: app, version: version, fileName: name, url: url, upstreamDigest: digest,
+            size: size, build: nil, minOS: nil)
     }
 
     // MARK: Stremio (gorlev AltStore-style indexes)
@@ -159,18 +182,31 @@ enum SourceResolver {
     /// for iOS the path is pinned only to a plain `.ipa` name until the first approved fetch shows its shape.
     static func stremio(app: String, tvos: Bool, json: Data) throws -> ResolvedAsset {
         let index: Index
-        do { index = try JSONDecoder().decode(Index.self, from: json) } catch { throw invalid("the index is not valid JSON") }
-        let candidates = (index.apps ?? []).filter { $0.bundleIdentifier == FetchCatalog.stremioBundleId }
-        guard candidates.count == 1 else { throw notAllowed("the index has \(candidates.count) apps with the Stremio bundle ID") }
-        guard let latest = candidates[0].versions?.first else { throw invalid("the app has no versions") }
-        guard let ver = latest.version?.text, isSafeToken(ver), let build = latest.buildVersion?.text, isSafeToken(build) else {
+        do { index = try JSONDecoder().decode(Index.self, from: json) } catch {
+            throw invalid("the index is not valid JSON")
+        }
+        let candidates = (index.apps ?? []).filter {
+            $0.bundleIdentifier == FetchCatalog.stremioBundleId
+        }
+        guard candidates.count == 1 else {
+            throw notAllowed("the index has \(candidates.count) apps with the Stremio bundle ID")
+        }
+        guard let latest = candidates[0].versions?.first else {
+            throw invalid("the app has no versions")
+        }
+        guard let ver = latest.version?.text, isSafeToken(ver),
+            let build = latest.buildVersion?.text, isSafeToken(build)
+        else {
             throw invalid("the version or build is missing or has unexpected characters")
         }
         let digest = try parseDigest(latest.sha256, prefixed: false)
         let size = try checkSize(latest.size)
         var minOS: String?
         if let declared = latest.minOSVersion {
-            guard let text = declared.text, text.range(of: #"^[0-9]{1,3}(\.[0-9]{1,3}){0,2}$"#, options: .regularExpression) != nil else {
+            guard let text = declared.text,
+                text.range(of: #"^[0-9]{1,3}(\.[0-9]{1,3}){0,2}$"#, options: .regularExpression)
+                    != nil
+            else {
                 throw invalid("minOSVersion is not a version number")
             }
             minOS = text
@@ -178,26 +214,32 @@ enum SourceResolver {
         let versionKey = "\(ver)b\(build)"
         guard isSafeToken(versionKey), let link = latest.downloadURL, let url = URL(string: link),
             let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
-            parts.scheme == "https", parts.host == FetchCatalog.stremioHost, parts.port == nil, parts.user == nil,
+            parts.scheme == "https", parts.host == FetchCatalog.stremioHost, parts.port == nil,
+            parts.user == nil,
             parts.password == nil, parts.query == nil, parts.fragment == nil
         else { throw notAllowed("the download URL is not https on \(FetchCatalog.stremioHost)") }
         let path = parts.percentEncodedPath
         let components = path.split(separator: "/", omittingEmptySubsequences: false)
-        guard components.count >= 2, components[0].isEmpty, let last = components.last.map(String.init), last.hasSuffix(".ipa"),
-            isSafeToken(last), !components.dropFirst().contains(where: { $0.isEmpty || $0 == "." || $0 == ".." })
+        guard components.count >= 2, components[0].isEmpty,
+            let last = components.last.map(String.init), last.hasSuffix(".ipa"),
+            isSafeToken(last),
+            !components.dropFirst().contains(where: { $0.isEmpty || $0 == "." || $0 == ".." })
         else { throw notAllowed("the download path is not a plain .ipa path") }
         if tvos, path != "/apple/\(versionKey)/tvos/stremio_tvOS.ipa" {
-            throw notAllowed("the tvOS download path is not /apple/<ver>b<build>/tvos/stremio_tvOS.ipa")
+            throw notAllowed(
+                "the tvOS download path is not /apple/<ver>b<build>/tvos/stremio_tvOS.ipa")
         }
         return ResolvedAsset(
-            app: app, version: versionKey, fileName: last, url: url, upstreamDigest: digest, size: size, build: build, minOS: minOS)
+            app: app, version: versionKey, fileName: last, url: url, upstreamDigest: digest,
+            size: size, build: build, minOS: minOS)
     }
 
     /// The asset's URL must be https on one of the source's (possibly narrowed) download hosts; `fetch` and `updates` both ask.
     static func requireDownloadHost(_ asset: ResolvedAsset, source: FetchSource) throws {
         guard DownloadPolicy.permits(asset.url, hosts: source.downloadHosts) else {
             throw SideloadError(
-                "SOURCE_NOT_ALLOWED", "The download URL is not https on an allowed host for \(source.app).",
+                "SOURCE_NOT_ALLOWED",
+                "The download URL is not https on an allowed host for \(source.app).",
                 fix: "Allowed hosts: \(source.downloadHosts.sorted().joined(separator: ", ")).",
                 data: ["host": .string(printableCut(asset.url.host ?? ""))])
         }

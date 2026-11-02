@@ -20,7 +20,8 @@ public enum FreeIdentityGuard {
 
     public static func diff(before: [String], after: [String]) -> Change {
         Change(
-            addedFp8: Set(after).subtracting(before).sorted(), removedFp8: Set(before).subtracting(after).sorted())
+            addedFp8: Set(after).subtracting(before).sorted(),
+            removedFp8: Set(before).subtracting(after).sorted())
     }
 
     /// Settles a marker left by a run that never recorded its after-comparison. With no marker it does nothing
@@ -39,7 +40,8 @@ public enum FreeIdentityGuard {
             ledger.freeProvisionInFlight = nil
             guard change.changed else { return nil }
             ledger.freeSuspended = LedgerFreeSuspension(
-                code: "FREE_CERT_CHANGED", at: now, addedFp8: change.addedFp8, removedFp8: change.removedFp8)
+                code: "FREE_CERT_CHANGED", at: now, addedFp8: change.addedFp8,
+                removedFp8: change.removedFp8)
             return change
         }
     }

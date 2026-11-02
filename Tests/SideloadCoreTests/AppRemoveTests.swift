@@ -7,16 +7,23 @@ private func text(_ envelope: Envelope) -> String { (try? envelope.printed().tex
 
 @Suite("app remove")
 struct AppRemoveTests {
-    @Test("removes one managed install: snapshot, uninstall of our ID only, snapshot; the ledger says present:false")
+    @Test(
+        "removes one managed install: snapshot, uninstall of our ID only, snapshot; the ledger says present:false"
+    )
     func removes() async throws {
         let script = DeviceScript(initial: [stremioId: true, apolloId: true])
-        try await withInstallWorld(script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }) { w in
+        try await withInstallWorld(
+            script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }
+        ) { w in
             let out = await w.remove()
             #expect(out.ok, "\(out.errors)")
             #expect(out.command == "app remove")
             #expect(json(out)["removed"] == true)
             #expect(json(out)["warnings"] == [])
-            #expect(w.runner.deviceCalls == ["device info apps", "device uninstall app", "device info apps"])
+            #expect(
+                w.runner.deviceCalls == [
+                    "device info apps", "device uninstall app", "device info apps",
+                ])
             #expect(w.runner.deviceApps.keys.sorted() == [apolloId])
             let uninstall = try #require(w.runner.calls.first { $0.args.contains("uninstall") })
             #expect(uninstall.args.last == w.bundleId)
@@ -26,14 +33,19 @@ struct AppRemoveTests {
         }
     }
 
-    @Test("an out-of-range stored reserve leaves the printed slots unknown after a remove, never a guessed free count")
+    @Test(
+        "an out-of-range stored reserve leaves the printed slots unknown after a remove, never a guessed free count"
+    )
     func removeInvalidReserveSlotsUnknown() async throws {
         let script = DeviceScript(initial: [stremioId: true, apolloId: true])
-        try await withInstallWorld(script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }) { w in
+        try await withInstallWorld(
+            script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }
+        ) { w in
             try await w.store.update { config in
                 let d = config.devices["iphone"]
                 config.devices["iphone"] = SavedDevice(
-                    udid: d?.udid, coreDeviceId: d?.coreDeviceId, platform: d?.platform, freeSlotsReserved: -1)
+                    udid: d?.udid, coreDeviceId: d?.coreDeviceId, platform: d?.platform,
+                    freeSlotsReserved: -1)
             }
             let out = await w.remove()
             #expect(out.ok, "\(out.errors)")
@@ -41,7 +53,9 @@ struct AppRemoveTests {
         }
     }
 
-    @Test("removing the last free-team app warns that the developer trust goes with it, and still proceeds")
+    @Test(
+        "removing the last free-team app warns that the developer trust goes with it, and still proceeds"
+    )
     func lastFreeApp() async throws {
         try await withInstallWorld(script: DeviceScript(initial: [stremioId: true])) { w in
             let out = await w.remove()
@@ -52,7 +66,9 @@ struct AppRemoveTests {
         }
     }
 
-    @Test("the static rule the menu's confirm uses: same answer as the command, for a given bundle ID and snapshot")
+    @Test(
+        "the static rule the menu's confirm uses: same answer as the command, for a given bundle ID and snapshot"
+    )
     func isLastFreeAppStatic() {
         let prefix = menuPrefix
         func last(_ ids: [String], of id: String = stremioId) -> Bool {
@@ -66,34 +82,53 @@ struct AppRemoveTests {
         #expect(last([stremioId, "com.apple.mobilesafari"]))
     }
 
-    @Test("no warning while another app that keeps the trust remains: ours, WebDriverAgent or SideStore")
+    @Test(
+        "no warning while another app that keeps the trust remains: ours, WebDriverAgent or SideStore"
+    )
     func notTheLast() async throws {
-        try await withInstallWorld(script: DeviceScript(initial: [stremioId: true, apolloId: true])) { w in
+        try await withInstallWorld(
+            script: DeviceScript(initial: [stremioId: true, apolloId: true])
+        ) { w in
             #expect(json(await w.remove())["warnings"] == [])
         }
-        try await withInstallWorld(script: DeviceScript(initial: [stremioId: true, wdaId: true])) { w in
+        try await withInstallWorld(script: DeviceScript(initial: [stremioId: true, wdaId: true])) {
+            w in
             #expect(json(await w.remove())["warnings"] == [])
             #expect(w.runner.deviceApps.keys.contains(wdaId), "WebDriverAgent is never touched")
         }
-        try await withInstallWorld(script: DeviceScript(initial: [stremioId: true, sideStoreId: true])) { w in
+        try await withInstallWorld(
+            script: DeviceScript(initial: [stremioId: true, sideStoreId: true])
+        ) { w in
             #expect(json(await w.remove())["warnings"] == [])
         }
     }
 
-    @Test("the reserve and unlabelled developer-signed apps do not count as keeping the trust: it warns")
+    @Test(
+        "the reserve and unlabelled developer-signed apps do not count as keeping the trust: it warns"
+    )
     func warnsOnUncertainTrust() async throws {
-        try await withInstallWorld(script: DeviceScript(initial: [stremioId: true]), reserved: 1) { w in
-            #expect(json(await w.remove())["warnings"]?.array?.first?["code"] == "LAST_FREE_APP_REMOVED")
+        try await withInstallWorld(script: DeviceScript(initial: [stremioId: true]), reserved: 1) {
+            w in
+            #expect(
+                json(await w.remove())["warnings"]?.array?.first?["code"] == "LAST_FREE_APP_REMOVED"
+            )
         }
-        try await withInstallWorld(script: DeviceScript(initial: [stremioId: true, "com.example.devbuild": true])) { w in
-            #expect(json(await w.remove())["warnings"]?.array?.first?["code"] == "LAST_FREE_APP_REMOVED")
+        try await withInstallWorld(
+            script: DeviceScript(initial: [stremioId: true, "com.example.devbuild": true])
+        ) { w in
+            #expect(
+                json(await w.remove())["warnings"]?.array?.first?["code"] == "LAST_FREE_APP_REMOVED"
+            )
         }
     }
 
     @Test("a timeout with the app gone is recorded as removed with UNINSTALL_RESULT_UNCERTAIN")
     func timeoutGone() async throws {
-        let script = DeviceScript(initial: [stremioId: true, apolloId: true], uninstallTimeoutRemoves: true)
-        try await withInstallWorld(script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }) { w in
+        let script = DeviceScript(
+            initial: [stremioId: true, apolloId: true], uninstallTimeoutRemoves: true)
+        try await withInstallWorld(
+            script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }
+        ) { w in
             let out = await w.remove()
             #expect(out.ok, "\(out.errors)")
             #expect(json(out)["warnings"]?.array?.first?["code"] == "UNINSTALL_RESULT_UNCERTAIN")
@@ -104,7 +139,9 @@ struct AppRemoveTests {
     @Test("a timeout with the app still there is the error, and the ledger says present")
     func timeoutKept() async throws {
         let script = DeviceScript(initial: [stremioId: true], uninstallTimeoutRemoves: false)
-        try await withInstallWorld(script: script, ledger: { $0.installs = [installRecord(.stremioIOS, present: false)] }) { w in
+        try await withInstallWorld(
+            script: script, ledger: { $0.installs = [installRecord(.stremioIOS, present: false)] }
+        ) { w in
             #expect(await w.remove().errorCodes == ["TIMEOUT"])
             #expect(w.installs.first?.present == true)
         }
@@ -112,8 +149,11 @@ struct AppRemoveTests {
 
     @Test("a timeout whose snapshot also fails is an error and changes no record")
     func timeoutUnknown() async throws {
-        let script = DeviceScript(initial: [stremioId: true], snapshotFailures: [2], uninstallTimeoutRemoves: true)
-        try await withInstallWorld(script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }) { w in
+        let script = DeviceScript(
+            initial: [stremioId: true], snapshotFailures: [2], uninstallTimeoutRemoves: true)
+        try await withInstallWorld(
+            script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }
+        ) { w in
             let out = await w.remove()
             #expect(out.errorCodes == ["TIMEOUT"] && json(out)["uncertain"] == true)
             #expect(w.installs.first?.present == true)
@@ -144,9 +184,18 @@ struct AppRemoveTests {
     @Test("usage, unknown app, unsaved device, wrong platform")
     func usage() async throws {
         try await withInstallWorld { w in
-            #expect(await AppCommand.run(w.services, AppOptions(sub: "remove", app: nil, device: "iphone", yes: true)).errorCodes == ["USAGE"])
-            #expect(await AppCommand.run(w.services, AppOptions(sub: nil, app: "apollo", device: "iphone", yes: true)).errorCodes == ["USAGE"])
-            #expect(await AppCommand.run(w.services, AppOptions(sub: "purge", app: "apollo", device: "iphone", yes: true)).errorCodes == ["USAGE"])
+            #expect(
+                await AppCommand.run(
+                    w.services, AppOptions(sub: "remove", app: nil, device: "iphone", yes: true)
+                ).errorCodes == ["USAGE"])
+            #expect(
+                await AppCommand.run(
+                    w.services, AppOptions(sub: nil, app: "apollo", device: "iphone", yes: true)
+                ).errorCodes == ["USAGE"])
+            #expect(
+                await AppCommand.run(
+                    w.services, AppOptions(sub: "purge", app: "apollo", device: "iphone", yes: true)
+                ).errorCodes == ["USAGE"])
             #expect(await w.remove(app: wdaId).errorCodes == ["USAGE"])
             #expect(await w.remove(app: atvloadlyId).errorCodes == ["USAGE"])
             #expect(await w.remove(device: "nope").errorCodes == ["DEVICE_NOT_SAVED"])
@@ -165,10 +214,16 @@ struct AppRemoveTests {
         }
     }
 
-    @Test("an in-flight marker is settled first: a changed identity set stops with FREE_CERT_CHANGED and removes nothing")
+    @Test(
+        "an in-flight marker is settled first: a changed identity set stops with FREE_CERT_CHANGED and removes nothing"
+    )
     func marker() async throws {
-        let marker = LedgerFreeInFlight(beforeFp8: ["00000000"], startedAt: testNow, app: "stremio-ios", device: "iphone")
-        try await withInstallWorld(script: DeviceScript(initial: [stremioId: true]), ledger: { $0.freeProvisionInFlight = marker }) { w in
+        let marker = LedgerFreeInFlight(
+            beforeFp8: ["00000000"], startedAt: testNow, app: "stremio-ios", device: "iphone")
+        try await withInstallWorld(
+            script: DeviceScript(initial: [stremioId: true]),
+            ledger: { $0.freeProvisionInFlight = marker }
+        ) { w in
             #expect(await w.remove().errorCodes == ["FREE_CERT_CHANGED"])
             #expect(w.runner.calls.isEmpty)
             #expect(w.runner.deviceApps.keys.contains(w.bundleId))
@@ -179,7 +234,9 @@ struct AppRemoveTests {
     func uninstallFails() async throws {
         let locked = try loadFixtureJSON("install-locked.json")
         let script = DeviceScript(initial: [stremioId: true], uninstallFailure: locked)
-        try await withInstallWorld(script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }) { w in
+        try await withInstallWorld(
+            script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }
+        ) { w in
             let out = await w.remove()
             #expect(out.errorCodes == ["DEVICE_LOCKED"])
             #expect(w.installs.first?.present == true)
@@ -187,20 +244,30 @@ struct AppRemoveTests {
         }
     }
 
-    @Test("an uninstall that also takes another app away is UNEXPECTED_APP_DELTA; the ledger still records ours")
+    @Test(
+        "an uninstall that also takes another app away is UNEXPECTED_APP_DELTA; the ledger still records ours"
+    )
     func unexpectedDelta() async throws {
-        let script = DeviceScript(initial: [stremioId: true, "com.example.other": false], alsoRemovedOnUninstall: ["com.example.other"])
-        try await withInstallWorld(script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }) { w in
+        let script = DeviceScript(
+            initial: [stremioId: true, "com.example.other": false],
+            alsoRemovedOnUninstall: ["com.example.other"])
+        try await withInstallWorld(
+            script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }
+        ) { w in
             let out = await w.remove()
             #expect(out.errorCodes == ["UNEXPECTED_APP_DELTA"])
             #expect(w.installs.first?.present == false)
         }
     }
 
-    @Test("an uninstall that reports success while the app is still listed is UNEXPECTED_APP_DELTA and the ledger stays present")
+    @Test(
+        "an uninstall that reports success while the app is still listed is UNEXPECTED_APP_DELTA and the ledger stays present"
+    )
     func stillListed() async throws {
         let script = DeviceScript(initial: [stremioId: true], uninstallLeavesApp: true)
-        try await withInstallWorld(script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }) { w in
+        try await withInstallWorld(
+            script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }
+        ) { w in
             let out = await w.remove()
             #expect(out.errorCodes == ["UNEXPECTED_APP_DELTA"])
             #expect(w.installs.first?.present == true)

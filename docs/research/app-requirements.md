@@ -15,6 +15,7 @@ Accessed 2026-10-19. Web research only; nothing downloaded. Claims not verified 
 **Upstream.** The project was renamed from Apollo-ImprovedCustomApi to Apollo-Reborn, and the official repo is [github.com/Apollo-Reborn/Apollo-Reborn](https://github.com/Apollo-Reborn/Apollo-Reborn). [Balackburn/Apollo](https://github.com/Balackburn/Apollo/releases) is an older mirror and AltStore source (secondary, per a search summary). Pre-built IPAs and sources (AltStore Classic, SideStore, Feather) are also at apolloreborn.app. The repo's `DISTRIBUTION.md` says IPAs are attached to GitHub Releases, with tags like `v1.15.11_3.9.0`.
 
 **Releases and checksums.** The GitHub releases API for 2026-10-09 (`v1.15.11_3.9.0`) lists these assets, each with a `sha256:` digest:
+
 - `Apollo-Reborn-3.9.0.ipa`
 - `…-NOEXTENSIONS.ipa`
 - `…-GLASS.ipa`
@@ -32,6 +33,7 @@ These are GitHub-computed asset digests, not a project-published checksum file. 
 **Entitlements.** The main app carries app-group and keychain-access-group entitlements. `application-identifier` and `team-identifier` are omitted by design, so the signer fills them in. Push uses `aps-environment`. The README states that this entitlement is granted only to paid teams and needs an explicit App ID with Push enabled. iCloud and associated domains are not documented (Unverified; inspect `codesign -d --entitlements` on the approved IPA after download).
 
 **What survives re-signing with a paid dev profile.**
+
 - App groups and keychain groups: the signer rewrites the identifiers. The new group IDs must be registered as App Groups on the portal and enabled on each App ID that uses them. Data from the original install is not carried over.
 - Extensions: they survive if each gets its own App ID and a profile. Each appex must also be signed with its own entitlements.
 - Push: `aps-environment` is allowed on a paid team, but notifications only arrive if a sender uses your team's APNs credentials for your bundle ID. The upstream push backend uses the original app's keys. The README says the supported route is Bark via a self-hosted apollo-backend (Unverified for a paid account in practice).

@@ -51,14 +51,16 @@ public enum ProfileCacheRenewal {
 
         /// The five keys every envelope carries once the renewal started.
         public static let keys = [
-            "cachedProfilesMoved", "cachedProfilesSkipped", "cachedProfilesMovedTo", "cachedProfilesStrayInTmp",
+            "cachedProfilesMoved", "cachedProfilesSkipped", "cachedProfilesMovedTo",
+            "cachedProfilesStrayInTmp",
             "renewScanTruncated",
         ]
 
         /// The one rendering of the outcome; nothing else writes these keys.
         public var json: [String: JSONValue] {
             [
-                "cachedProfilesMoved": .number(Double(moved)), "cachedProfilesSkipped": .number(Double(skipped)),
+                "cachedProfilesMoved": .number(Double(moved)),
+                "cachedProfilesSkipped": .number(Double(skipped)),
                 "cachedProfilesMovedTo": .array(movedTo.map { .string($0) }),
                 "cachedProfilesStrayInTmp": .array(strayInTmp.map { .string($0) }),
                 "renewScanTruncated": .number(Double(truncated)),
@@ -96,7 +98,9 @@ public enum ProfileCacheRenewal {
         guard fd >= 0 else { return nil }
         defer { close(fd) }
         var st = stat()
-        guard fstat(fd, &st) == 0, st.st_mode & S_IFMT == S_IFREG, st.st_size <= off_t(maxProfileBytes) else { return nil }
+        guard fstat(fd, &st) == 0, st.st_mode & S_IFMT == S_IFREG,
+            st.st_size <= off_t(maxProfileBytes)
+        else { return nil }
         var data = Data()
         var buffer = [UInt8](repeating: 0, count: 64 * 1024)
         while true {
@@ -114,14 +118,17 @@ public enum ProfileCacheRenewal {
 
     /// A label for one of Xcode's folders, for the ledger and the envelope: never a path.
     static func folderLabel(_ path: String, index: Int) -> String {
-        if path.hasSuffix("/Library/Developer/Xcode/UserData/Provisioning Profiles") { return "xcode-userdata" }
+        if path.hasSuffix("/Library/Developer/Xcode/UserData/Provisioning Profiles") {
+            return "xcode-userdata"
+        }
         if path.hasSuffix("/Library/MobileDevice/Provisioning Profiles") { return "mobiledevice" }
         return "folder-\(index + 1)"
     }
 
     private static func moveFailed(
         _ message: String = "A cached provisioning profile could not be moved aside.",
-        fix: String = "Check the permissions of Xcode's provisioning profile folder and of $SIDELOAD_HOME/tmp; nothing was built."
+        fix: String =
+            "Check the permissions of Xcode's provisioning profile folder and of $SIDELOAD_HOME/tmp; nothing was built."
     ) -> SideloadError {
         SideloadError("PROFILE_MOVE_FAILED", message, fix: fix)
     }
@@ -129,21 +136,26 @@ public enum ProfileCacheRenewal {
     private static let crossVolume = SideloadError(
         "RENEW_CROSS_VOLUME",
         "$SIDELOAD_HOME/tmp is on a different volume than Xcode's provisioning profile folder, so a cached profile cannot be moved aside without copying.",
-        fix: "Put $SIDELOAD_HOME on the same volume as ~/Library (the default ~/.sideload is), or run provision without --renew. Nothing was built.")
+        fix:
+            "Put $SIDELOAD_HOME on the same volume as ~/Library (the default ~/.sideload is), or run provision without --renew. Nothing was built."
+    )
 
     /// Moves every matching profile in `directories` into `tmp`. Never throws; see `Outcome.error`. The seams are for
     /// tests: `fs` is the syscalls, `beforeMove` is called with the path after the bytes were decoded and matched, and
     /// before the identity re-check; `afterCheck` after the re-check and right before the rename.
     public static func moveOwnProfiles(
-        in directories: [String], bundleId: String, platform: String, to tmp: String, runner: any Runner
+        in directories: [String], bundleId: String, platform: String, to tmp: String,
+        runner: any Runner
     ) async -> Outcome {
         await moveOwnProfiles(
-            in: directories, bundleId: bundleId, platform: platform, to: tmp, runner: runner, beforeMove: { _ in },
+            in: directories, bundleId: bundleId, platform: platform, to: tmp, runner: runner,
+            beforeMove: { _ in },
             afterCheck: { _ in })
     }
 
     static func moveOwnProfiles(
-        in directories: [String], bundleId: String, platform: String, to tmp: String, runner: any Runner,
+        in directories: [String], bundleId: String, platform: String, to tmp: String,
+        runner: any Runner,
         now: Date = Date(), progress: RenewProgress = RenewProgress(), fs: RenewFS = .live,
         journal: RenewJournal = .none, beforeMove: (String) -> Void, afterCheck: (String) -> Void
     ) async -> Outcome {
@@ -154,9 +166,13 @@ public enum ProfileCacheRenewal {
 
         // Setup, once: the destination folder, and its volume.
         do { try fs.mkdir(tmp) } catch { return stop(moveFailed()) }
-        guard let tmpStat = fs.stat(tmp), tmpStat.st_mode & S_IFMT == S_IFDIR else { return stop(moveFailed()) }
+        guard let tmpStat = fs.stat(tmp), tmpStat.st_mode & S_IFMT == S_IFDIR else {
+            return stop(moveFailed())
+        }
         for dir in directories {
-            if let dirStat = fs.stat(dir), dirStat.st_dev != tmpStat.st_dev { return stop(crossVolume) }
+            if let dirStat = fs.stat(dir), dirStat.st_dev != tmpStat.st_dev {
+                return stop(crossVolume)
+            }
         }
 
         for (index, dir) in directories.enumerated() {
@@ -172,7 +188,9 @@ public enum ProfileCacheRenewal {
                         fix: "Check that the folder exists and is readable."))
             }
             let profiles = names.filter { $0.hasSuffix(".mobileprovision") }.sorted()
-            progress.update { $0.truncated += max(0, profiles.count - XcodeManagedProfileSource.maxFiles) }
+            progress.update {
+                $0.truncated += max(0, profiles.count - XcodeManagedProfileSource.maxFiles)
+            }
             for name in profiles.prefix(XcodeManagedProfileSource.maxFiles) {
                 let path = dir + "/" + name
                 guard let candidate = readCandidate(path) else {
@@ -182,7 +200,8 @@ public enum ProfileCacheRenewal {
                 // Decode exactly the bytes just read (stdin), not whatever the path holds by now.
                 let result = await runner.run(
                     CommandSpec(
-                        executable: "/usr/bin/security", args: ["cms", "-D"], timeout: toolTimeout, stdin: candidate.bytes))
+                        executable: "/usr/bin/security", args: ["cms", "-D"], timeout: toolTimeout,
+                        stdin: candidate.bytes))
                 guard result.code == 0, let profile = ProvisioningProfile.parse(result.stdout),
                     isOurs(profile, bundleId: bundleId, platform: platform)
                 else { continue }
@@ -195,7 +214,8 @@ public enum ProfileCacheRenewal {
                 }
                 afterCheck(path)
                 if let error = await move(
-                    path, name: name, folder: folder, tmp: tmp, identity: candidate.identity, now: now, progress: progress, fs: fs,
+                    path, name: name, folder: folder, tmp: tmp, identity: candidate.identity,
+                    now: now, progress: progress, fs: fs,
                     journal: journal)
                 {
                     return stop(error)
@@ -209,7 +229,8 @@ public enum ProfileCacheRenewal {
     /// an error stops the scan. Between the intent and the end of the syscalls the progress is locked, so a signal
     /// handler's snapshot never sees half a move and a sealed progress refuses to start one.
     private static func move(
-        _ path: String, name: String, folder: String, tmp: String, identity: Identity, now: Date, progress: RenewProgress, fs: RenewFS,
+        _ path: String, name: String, folder: String, tmp: String, identity: Identity, now: Date,
+        progress: RenewProgress, fs: RenewFS,
         journal: RenewJournal
     ) async -> SideloadError? {
         enum Step { case moved, putBack, stray, failed(Int32) }
@@ -221,7 +242,9 @@ public enum ProfileCacheRenewal {
             guard await journal.intent(entry) else {
                 return moveFailed(
                     "A cached provisioning profile was not moved aside because the move could not be recorded in the ledger.",
-                    fix: "Check the permissions and free space of $SIDELOAD_HOME; nothing was built.")
+                    fix:
+                        "Check the permissions and free space of $SIDELOAD_HOME; nothing was built."
+                )
             }
             var step = Step.failed(0)
             let ran = progress.critical { outcome in
@@ -231,7 +254,9 @@ public enum ProfileCacheRenewal {
                     return
                 }
                 // rename(2) keeps the inode, so what landed in tmp can be checked against what was vetted.
-                if let landed = fs.lstat(destination), landed.st_dev == identity.dev, landed.st_ino == identity.ino {
+                if let landed = fs.lstat(destination), landed.st_dev == identity.dev,
+                    landed.st_ino == identity.ino
+                {
                     _ = chmod(destination, 0o600)
                     outcome.moved += 1
                     outcome.movedTo.append(relative)
@@ -331,7 +356,9 @@ struct RenewFS: Sendable {
         list: { dir in
             do {
                 return try FileManager.default.contentsOfDirectory(atPath: dir)
-            } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
+            } catch let error as NSError
+                where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError
+            {
                 return nil
             }
         },

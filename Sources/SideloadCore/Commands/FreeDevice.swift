@@ -18,9 +18,12 @@ struct FreeTarget: Sendable {
     var key: String { "\(alias)/\(app.rawValue)" }
 
     /// Usage, config, then the saved device and its platform, in that order. Throws a `SideloadError`.
-    static func resolve(app appName: String?, device alias: String?, services: Services, usageFix: String) throws -> FreeTarget {
+    static func resolve(
+        app appName: String?, device alias: String?, services: Services, usageFix: String
+    ) throws -> FreeTarget {
         guard let appName, !appName.isEmpty, let alias, !alias.isEmpty else {
-            throw SideloadError("USAGE", "This command needs --app and --device <alias>.", fix: usageFix)
+            throw SideloadError(
+                "USAGE", "This command needs --app and --device <alias>.", fix: usageFix)
         }
         let app = try parseApp(appName)
         let config = try services.store.load()
@@ -30,7 +33,8 @@ struct FreeTarget: Sendable {
     static func parseApp(_ appName: String) throws -> ProvisionApp {
         guard let app = ProvisionApp(rawValue: appName) else {
             throw SideloadError(
-                "USAGE", "Unknown app \"\(printableCut(appName))\".", fix: "Use one of: \(ProvisionApp.names.joined(separator: ", ")).")
+                "USAGE", "Unknown app \"\(printableCut(appName))\".",
+                fix: "Use one of: \(ProvisionApp.names.joined(separator: ", ")).")
         }
         return app
     }
@@ -44,29 +48,36 @@ struct FreeTarget: Sendable {
         let bundleId = prefix + ".free." + app.suffix
         guard Config.isFreeBundleId(bundleId, prefix: prefix) else {
             throw SideloadError(
-                "BUNDLE_ID_NOT_ALLOWED", "The free team may only be used for the configured <prefix>.free. namespace.",
+                "BUNDLE_ID_NOT_ALLOWED",
+                "The free team may only be used for the configured <prefix>.free. namespace.",
                 fix: "Check bundleIdPrefix in config.json.")
         }
         guard config.devices[alias] != nil else {
             throw SideloadError(
                 "DEVICE_NOT_SAVED", "No saved device with alias \"\(printableAlias(alias))\".",
-                fix: "sideload device save --alias <alias> --match <device name> --platform ios|tvos --yes")
+                fix:
+                    "sideload device save --alias <alias> --match <device name> --platform ios|tvos --yes"
+            )
         }
         let device = try config.requireDevice(alias)
         guard DeviceCommand.isValidAlias(alias), let udid = device.udid, !udid.isEmpty else {
             throw SideloadError(
                 "DEVICE_NOT_SAVED", "The saved device has no UDID, which the profile check needs.",
-                fix: "Re-save it: sideload device save --alias <alias> --match <device name> --platform ios|tvos --yes")
+                fix:
+                    "Re-save it: sideload device save --alias <alias> --match <device name> --platform ios|tvos --yes"
+            )
         }
         guard device.platform == app.devicePlatform else {
             throw SideloadError(
                 "PLATFORM_MISMATCH",
                 "\(app.rawValue) needs a \(app.devicePlatform) device; the saved device is \(device.platform ?? "of unknown platform").",
                 fix: app == .stremioTVOS
-                    ? "Use --device with a saved Apple TV (tvos)." : "Use --device with a saved iPhone or iPad (ios).")
+                    ? "Use --device with a saved Apple TV (tvos)."
+                    : "Use --device with a saved iPhone or iPad (ios).")
         }
         return FreeTarget(
-            app: app, alias: alias, config: config, prefix: prefix, bundleId: bundleId, device: device, udid: udid)
+            app: app, alias: alias, config: config, prefix: prefix, bundleId: bundleId,
+            device: device, udid: udid)
     }
 
     /// The target's identifying fields, merged into every envelope the command prints. Aliases only.
@@ -99,7 +110,9 @@ func printableAlias(_ value: String) -> String {
 }
 
 /// Whole seconds, so what is recorded survives the ledger's ISO 8601 round trip unchanged.
-func wholeSeconds(_ date: Date) -> Date { Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down)) }
+func wholeSeconds(_ date: Date) -> Date {
+    Date(timeIntervalSince1970: date.timeIntervalSince1970.rounded(.down))
+}
 
 enum FreeSession {
     /// The keychain read and `FreeIdentityGuard.settleInFlight`, before anything else. A locked keychain is
@@ -120,7 +133,8 @@ enum FreeSession {
             throw SideloadError(
                 "FREE_CERT_CHANGED",
                 "The free team's signing identities changed during an earlier run that did not finish (\(change.addedFp8.count) added, \(change.removedFp8.count) removed). Nothing was changed on the device.",
-                fix: "Auto-refresh is suspended. The owner checks Xcode > Settings > Accounts > Manage Certificates and the lab (something created or revoked a free certificate). Run provision by hand once satisfied.",
+                fix:
+                    "Auto-refresh is suspended. The owner checks Xcode > Settings > Accounts > Manage Certificates and the lab (something created or revoked a free certificate). Run provision by hand once satisfied.",
                 data: [
                     "identityChanged": true, "suspended": true,
                     "addedFp8": .array(change.addedFp8.map { .string($0) }),
@@ -131,13 +145,18 @@ enum FreeSession {
     }
 
     /// The pinned free identity, as `sign` resolves it.
-    static func pinned(_ identities: [KeychainCertificate], config: Config, app: String, alias: String, now: Date) throws
+    static func pinned(
+        _ identities: [KeychainCertificate], config: Config, app: String, alias: String, now: Date
+    ) throws
         -> (identity: FreeIdentity, reference: CertReference)
     {
         guard let pinnedFp8 = try config.freeTeamCertFp8() else {
             throw SideloadError(
-                "FREE_IDENTITY_NOT_PINNED", "No free-team identity is pinned yet, so the signed app cannot be checked.",
-                fix: "The owner runs `sideload provision --app \(app) --device \(alias) --yes` first; its first success pins the identity.")
+                "FREE_IDENTITY_NOT_PINNED",
+                "No free-team identity is pinned yet, so the signed app cannot be checked.",
+                fix:
+                    "The owner runs `sideload provision --app \(app) --device \(alias) --yes` first; its first success pins the identity."
+            )
         }
         let identity: FreeIdentity
         switch CertCheck.pinnedFree(identities, fp8: pinnedFp8, now: now) {
@@ -146,12 +165,15 @@ enum FreeSession {
             throw SideloadError(
                 "FREE_IDENTITY_MISSING",
                 "The pinned free-team identity (\(pinnedFp8)) is not in the keychain, or is expired or untrusted.",
-                fix: "Check Xcode > Settings > Accounts > Manage Certificates and the login keychain (owner action). sideload never creates a certificate.",
+                fix:
+                    "Check Xcode > Settings > Accounts > Manage Certificates and the login keychain (owner action). sideload never creates a certificate.",
                 data: ["pinnedFp8": .string(pinnedFp8)])
         case .ambiguous:
             throw SideloadError(
-                "FREE_IDENTITY_AMBIGUOUS", "More than one valid free-team identity has the pinned fingerprint prefix.",
-                fix: "The owner removes the duplicate in Keychain Access; sideload does not delete keychain items.",
+                "FREE_IDENTITY_AMBIGUOUS",
+                "More than one valid free-team identity has the pinned fingerprint prefix.",
+                fix:
+                    "The owner removes the duplicate in Keychain Access; sideload does not delete keychain items.",
                 data: ["pinnedFp8": .string(pinnedFp8)])
         }
         guard let reference = CertReference(identity.sha1) else {
@@ -178,12 +200,15 @@ struct FreeDeviceCalls: Sendable {
         var spawnError: String?
     }
 
-    func call(_ args: [String], timeoutSec: Int, positional: [String] = []) async throws -> Outcome {
+    func call(_ args: [String], timeoutSec: Int, positional: [String] = []) async throws -> Outcome
+    {
         do {
             let res = try await services.deviceCtl.run(
-                args, deviceAlias: alias, timeoutSec: timeoutSec, positional: positional, scope: .free(bundleId: bundleId))
+                args, deviceAlias: alias, timeoutSec: timeoutSec, positional: positional,
+                scope: .free(bundleId: bundleId))
             return Outcome(
-                code: res.code, json: res.json, stderr: res.stderr, timedOut: res.timedOut, spawnError: res.spawnError)
+                code: res.code, json: res.json, stderr: res.stderr, timedOut: res.timedOut,
+                spawnError: res.spawnError)
         } catch let error as SideloadError where error.code == "OUTPUT_LIMIT" {
             // A device outcome, like the canary's: the caller classifies it.
             return Outcome(overflow: true)
@@ -196,12 +221,16 @@ struct FreeDeviceCalls: Sendable {
     /// too (see `uninstall` and `FreeInstallRun.perform`). Every such result is `unknown` in `SlotRule`: settled only by
     /// the table's target state or by a snapshot taken after the op's window. A spawn error never ran anything, so it is not.
     func uncertain(_ out: Outcome, _ failure: FreeInstallFailure?) -> Bool {
-        out.timedOut || out.overflow || (out.code == nil && out.spawnError == nil) || failure?.code == "TIMEOUT"
+        out.timedOut || out.overflow || (out.code == nil && out.spawnError == nil)
+            || failure?.code == "TIMEOUT"
     }
 
-    func classify(_ operation: FreeInstallClassifier.Operation, _ out: Outcome) -> FreeInstallFailure? {
+    func classify(_ operation: FreeInstallClassifier.Operation, _ out: Outcome)
+        -> FreeInstallFailure?
+    {
         FreeInstallClassifier.failure(
-            operation, exitCode: out.code, json: out.json, stderr: out.stderr, timedOut: out.timedOut,
+            operation, exitCode: out.code, json: out.json, stderr: out.stderr,
+            timedOut: out.timedOut,
             overflow: out.overflow, spawnError: out.spawnError, bundleId: bundleId)
     }
 
@@ -222,7 +251,8 @@ struct FreeDeviceCalls: Sendable {
     /// then falls back to the reserve (installd's refusal stays the backstop). Run once per command, near the snapshot.
     func freeProfiles() async -> FreeTeamProfiles? {
         guard
-            let out = try? await call(["device", "profile", "list", "--type", "provisioning"], timeoutSec: 60),
+            let out = try? await call(
+                ["device", "profile", "list", "--type", "provisioning"], timeoutSec: 60),
             out.code == 0, !out.timedOut, !out.overflow, out.spawnError == nil
         else { return nil }
         return FreeTeamProfiles.parse(out.json)
@@ -246,7 +276,8 @@ struct FreeDeviceCalls: Sendable {
 
     /// `devicectl device info files --domain-type appDataContainer --domain-identifier <id> --recurse`.
     func listFiles(timeoutSec: Int) async -> Outcome {
-        await quietCall(["device", "info", "files"] + appDataFlags + ["--recurse"], timeoutSec: timeoutSec)
+        await quietCall(
+            ["device", "info", "files"] + appDataFlags + ["--recurse"], timeoutSec: timeoutSec)
     }
 
     /// `devicectl device copy from ...`: one file out of the app's data container into `destination` (under `backups/`).
@@ -259,9 +290,13 @@ struct FreeDeviceCalls: Sendable {
         await copy("to", source: source, destination: destination, timeoutSec: timeoutSec)
     }
 
-    private func copy(_ direction: String, source: String, destination: String, timeoutSec: Int) async -> Outcome {
+    private func copy(_ direction: String, source: String, destination: String, timeoutSec: Int)
+        async -> Outcome
+    {
         await quietCall(
-            ["device", "copy", direction] + appDataFlags + ["--source", source, "--destination", destination], timeoutSec: timeoutSec)
+            ["device", "copy", direction] + appDataFlags + [
+                "--source", source, "--destination", destination,
+            ], timeoutSec: timeoutSec)
     }
 
     /// One snapshot read as data: the callers that already changed (or may have changed) the device need the failure as data,
@@ -276,11 +311,13 @@ struct FreeDeviceCalls: Sendable {
     func trySnapshot(timeoutSec: Int = 60) async -> SnapshotRead {
         let takenAt = services.clock.now()
         do {
-            return SnapshotRead(snapshot: try await snapshot(timeoutSec: timeoutSec), error: nil, takenAt: takenAt)
+            return SnapshotRead(
+                snapshot: try await snapshot(timeoutSec: timeoutSec), error: nil, takenAt: takenAt)
         } catch {
             return SnapshotRead(
                 snapshot: nil,
-                error: (error as? SideloadError) ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read."),
+                error: (error as? SideloadError)
+                    ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read."),
                 takenAt: takenAt)
         }
     }
@@ -295,23 +332,33 @@ struct FreeDeviceCalls: Sendable {
     /// (cancelled, or failed in a way that may have reached the device) counts too.
     func uninstall() async -> (failure: SideloadError?, result: SlotRule.Result) {
         do {
-            let out = try await call(["device", "uninstall", "app"], timeoutSec: SlotState.uninstallTimeoutSec, positional: [bundleId])
+            let out = try await call(
+                ["device", "uninstall", "app"], timeoutSec: SlotState.uninstallTimeoutSec,
+                positional: [bundleId])
             let failure = classify(.uninstall, out)
             return (failure?.error, result(failure, uncertain: uncertain(out, failure)))
         } catch {
-            return ((error as? SideloadError) ?? SideloadError("UNINSTALL_FAILED", "The uninstall did not finish."), .unknown)
+            return (
+                (error as? SideloadError)
+                    ?? SideloadError("UNINSTALL_FAILED", "The uninstall did not finish."), .unknown
+            )
         }
     }
 }
 
 /// An `UNEXPECTED_APP_DELTA` stop: counts only, never the other apps' IDs.
-func unexpectedDelta(_ delta: AppSnapshot.Delta, expectation: String, extra: [String: JSONValue] = [:]) -> SideloadError {
+func unexpectedDelta(
+    _ delta: AppSnapshot.Delta, expectation: String, extra: [String: JSONValue] = [:]
+) -> SideloadError {
     var data: [String: JSONValue] = [
-        "addedCount": .number(Double(delta.added.count)), "removedCount": .number(Double(delta.removed.count)),
+        "addedCount": .number(Double(delta.added.count)),
+        "removedCount": .number(Double(delta.removed.count)),
     ]
     data.merge(extra) { _, new in new }
     return SideloadError(
-        "UNEXPECTED_APP_DELTA", "The device's app list changed in a way this command does not explain (\(expectation)).",
-        fix: "A hard stop: check the device by hand. If our app landed wrongly, the owner can `sideload app remove` it.",
+        "UNEXPECTED_APP_DELTA",
+        "The device's app list changed in a way this command does not explain (\(expectation)).",
+        fix:
+            "A hard stop: check the device by hand. If our app landed wrongly, the owner can `sideload app remove` it.",
         data: data)
 }

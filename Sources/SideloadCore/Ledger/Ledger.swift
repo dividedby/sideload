@@ -42,10 +42,14 @@ public struct Ledger: Codable, Sendable, Equatable {
     public var extra: [String: JSONValue]
 
     public init(
-        updated: Date? = nil, certificates: [LedgerCertificate] = [], profiles: [LedgerProfile] = [],
-        exports: [LedgerExport] = [], freeAppIds: [LedgerFreeAppId] = [], freeProfiles: [LedgerFreeProfile] = [],
-        freeSuspended: LedgerFreeSuspension? = nil, freeProvisionInFlight: LedgerFreeInFlight? = nil,
-        freeRenewMoves: [LedgerFreeRenewMove] = [], freeSigned: [LedgerFreeSigned] = [], installs: [LedgerInstall] = [],
+        updated: Date? = nil, certificates: [LedgerCertificate] = [],
+        profiles: [LedgerProfile] = [],
+        exports: [LedgerExport] = [], freeAppIds: [LedgerFreeAppId] = [],
+        freeProfiles: [LedgerFreeProfile] = [],
+        freeSuspended: LedgerFreeSuspension? = nil,
+        freeProvisionInFlight: LedgerFreeInFlight? = nil,
+        freeRenewMoves: [LedgerFreeRenewMove] = [], freeSigned: [LedgerFreeSigned] = [],
+        installs: [LedgerInstall] = [],
         lent: [LedgerLent] = [], slots: [LedgerSlot] = [], extra: [String: JSONValue] = [:]
     ) {
         self.updated = updated
@@ -65,7 +69,8 @@ public struct Ledger: Codable, Sendable, Equatable {
     }
 
     private static let known: Set<String> = [
-        "schema", "updated", "certificates", "profiles", "exports", "freeAppIds", "freeProfiles", "freeSuspended",
+        "schema", "updated", "certificates", "profiles", "exports", "freeAppIds", "freeProfiles",
+        "freeSuspended",
         "freeProvisionInFlight", "freeRenewMoves", "freeSigned", "installs", "lent", "slots",
     ]
 
@@ -79,12 +84,19 @@ public struct Ledger: Codable, Sendable, Equatable {
         certificates = try c.decode([LedgerCertificate].self, forKey: AnyKey("certificates"))
         profiles = try c.decode([LedgerProfile].self, forKey: AnyKey("profiles"))
         exports = try c.decode([LedgerExport].self, forKey: AnyKey("exports"))
-        freeAppIds = try c.decodeIfPresent([LedgerFreeAppId].self, forKey: AnyKey("freeAppIds")) ?? []
-        freeProfiles = try c.decodeIfPresent([LedgerFreeProfile].self, forKey: AnyKey("freeProfiles")) ?? []
-        freeSuspended = try c.decodeIfPresent(LedgerFreeSuspension.self, forKey: AnyKey("freeSuspended"))
-        freeProvisionInFlight = try c.decodeIfPresent(LedgerFreeInFlight.self, forKey: AnyKey("freeProvisionInFlight"))
-        freeRenewMoves = try c.decodeIfPresent([LedgerFreeRenewMove].self, forKey: AnyKey("freeRenewMoves")) ?? []
-        freeSigned = try c.decodeIfPresent([LedgerFreeSigned].self, forKey: AnyKey("freeSigned")) ?? []
+        freeAppIds =
+            try c.decodeIfPresent([LedgerFreeAppId].self, forKey: AnyKey("freeAppIds")) ?? []
+        freeProfiles =
+            try c.decodeIfPresent([LedgerFreeProfile].self, forKey: AnyKey("freeProfiles")) ?? []
+        freeSuspended = try c.decodeIfPresent(
+            LedgerFreeSuspension.self, forKey: AnyKey("freeSuspended"))
+        freeProvisionInFlight = try c.decodeIfPresent(
+            LedgerFreeInFlight.self, forKey: AnyKey("freeProvisionInFlight"))
+        freeRenewMoves =
+            try c.decodeIfPresent([LedgerFreeRenewMove].self, forKey: AnyKey("freeRenewMoves"))
+            ?? []
+        freeSigned =
+            try c.decodeIfPresent([LedgerFreeSigned].self, forKey: AnyKey("freeSigned")) ?? []
         installs = try c.decodeIfPresent([LedgerInstall].self, forKey: AnyKey("installs")) ?? []
         lent = try c.decodeIfPresent([LedgerLent].self, forKey: AnyKey("lent")) ?? []
         slots = try c.decodeIfPresent([LedgerSlot].self, forKey: AnyKey("slots")) ?? []
@@ -103,7 +115,9 @@ public struct Ledger: Codable, Sendable, Equatable {
         if !freeProfiles.isEmpty { try c.encode(freeProfiles, forKey: AnyKey("freeProfiles")) }
         try c.encodeIfPresent(freeSuspended, forKey: AnyKey("freeSuspended"))
         try c.encodeIfPresent(freeProvisionInFlight, forKey: AnyKey("freeProvisionInFlight"))
-        if !freeRenewMoves.isEmpty { try c.encode(freeRenewMoves, forKey: AnyKey("freeRenewMoves")) }
+        if !freeRenewMoves.isEmpty {
+            try c.encode(freeRenewMoves, forKey: AnyKey("freeRenewMoves"))
+        }
         if !freeSigned.isEmpty { try c.encode(freeSigned, forKey: AnyKey("freeSigned")) }
         if !installs.isEmpty { try c.encode(installs, forKey: AnyKey("installs")) }
         if !lent.isEmpty { try c.encode(lent, forKey: AnyKey("lent")) }
@@ -169,7 +183,8 @@ public struct LedgerFreeProfile: Codable, Sendable, Equatable {
     public var file: String
 
     public init(
-        id: String, device: String, deviceTail: String, app: String, bundleId: String, profileUuid: String,
+        id: String, device: String, deviceTail: String, app: String, bundleId: String,
+        profileUuid: String,
         created: Date?, expires: Date, certFp8: String, file: String
     ) {
         self.id = id
@@ -216,7 +231,8 @@ public struct LedgerFreeSigned: Codable, Sendable, Equatable {
     public var droppedEntitlements: [String]
 
     public init(
-        id: String, device: String, app: String, bundleId: String, version: String, sha256Prefix: String,
+        id: String, device: String, app: String, bundleId: String, version: String,
+        sha256Prefix: String,
         profileUuid: String, profileExpires: Date, certFp8: String, signedAt: Date, path: String,
         strippedExtensions: [LedgerStrippedExtension], droppedEntitlements: [String]
     ) {
@@ -249,7 +265,8 @@ public struct LedgerInstallRefresh: Codable, Sendable, Equatable {
     public var suspended: Bool
 
     public init(
-        lastAttempt: Date? = nil, lastResult: String? = nil, lastCode: String? = nil, consecutiveFailures: Int = 0,
+        lastAttempt: Date? = nil, lastResult: String? = nil, lastCode: String? = nil,
+        consecutiveFailures: Int = 0,
         nextEligible: Date? = nil, attemptsByDay: [String: Int] = [:], suspended: Bool = false
     ) {
         self.lastAttempt = lastAttempt
@@ -288,10 +305,14 @@ public struct LedgerInstall: Codable, Sendable, Equatable {
     public var opAt: Date?
 
     public init(
-        id: String, device: String, deviceTail: String, app: String, bundleId: String, team: String = "free",
-        profileUuid: String, profileCreated: Date?, profileExpires: Date, certFp8: String, version: String,
-        sha256Prefix: String, signedAt: Date, installedAt: Date, strippedExtensions: [LedgerStrippedExtension],
-        droppedEntitlements: [String], present: Bool = true, refresh: LedgerInstallRefresh = LedgerInstallRefresh(),
+        id: String, device: String, deviceTail: String, app: String, bundleId: String,
+        team: String = "free",
+        profileUuid: String, profileCreated: Date?, profileExpires: Date, certFp8: String,
+        version: String,
+        sha256Prefix: String, signedAt: Date, installedAt: Date,
+        strippedExtensions: [LedgerStrippedExtension],
+        droppedEntitlements: [String], present: Bool = true,
+        refresh: LedgerInstallRefresh = LedgerInstallRefresh(),
         opAt: Date? = nil
     ) {
         self.id = id
@@ -335,7 +356,10 @@ public struct LedgerLent: Codable, Sendable, Equatable {
     public var state: String
     public var opAt: Date?
 
-    public init(app: String, device: String, to: String, since: Date, state: String = LedgerLent.lent, opAt: Date? = nil) {
+    public init(
+        app: String, device: String, to: String, since: Date, state: String = LedgerLent.lent,
+        opAt: Date? = nil
+    ) {
         self.app = app
         self.device = device
         self.to = to
@@ -427,7 +451,8 @@ public struct LedgerSlot: Codable, Sendable, Equatable {
     public var seenAt: Date?
 
     public init(
-        device: String, app: String, presence: LedgerSlotPresence, lentTo: String? = nil, since: Date? = nil,
+        device: String, app: String, presence: LedgerSlotPresence, lentTo: String? = nil,
+        since: Date? = nil,
         op: LedgerSlotOp? = nil, seenAt: Date? = nil
     ) {
         self.id = "\(device)/\(app)"
@@ -567,9 +592,13 @@ extension KeyedDecodingContainer where K == AnyKey {
         return extra
     }
 
-    fileprivate func value<T: Decodable>(_ key: String) throws -> T { try decode(T.self, forKey: AnyKey(key)) }
+    fileprivate func value<T: Decodable>(_ key: String) throws -> T {
+        try decode(T.self, forKey: AnyKey(key))
+    }
 
-    fileprivate func optional<T: Decodable>(_ key: String) throws -> T? { try decodeIfPresent(T.self, forKey: AnyKey(key)) }
+    fileprivate func optional<T: Decodable>(_ key: String) throws -> T? {
+        try decodeIfPresent(T.self, forKey: AnyKey(key))
+    }
 }
 
 extension KeyedEncodingContainer where K == AnyKey {
@@ -577,7 +606,9 @@ extension KeyedEncodingContainer where K == AnyKey {
         for (key, value) in extra { try encode(value, forKey: AnyKey(key)) }
     }
 
-    fileprivate mutating func put(_ value: some Encodable, _ key: String) throws { try encode(value, forKey: AnyKey(key)) }
+    fileprivate mutating func put(_ value: some Encodable, _ key: String) throws {
+        try encode(value, forKey: AnyKey(key))
+    }
 
     fileprivate mutating func putIfPresent(_ value: (some Encodable)?, _ key: String) throws {
         try encodeIfPresent(value, forKey: AnyKey(key))
@@ -618,7 +649,8 @@ extension LedgerCertificate: Codable {
 
 extension LedgerProfile: Codable {
     private static let known: Set<String> = [
-        "uuid", "team", "applicationId", "wildcard", "created", "expires", "deviceCount", "deviceTails", "certFp8s",
+        "uuid", "team", "applicationId", "wildcard", "created", "expires", "deviceCount",
+        "deviceTails", "certFp8s",
         "source", "firstSeen", "lastSeen", "present",
     ]
 
@@ -661,7 +693,8 @@ extension LedgerProfile: Codable {
 
 extension LedgerExport: Codable {
     private static let known: Set<String> = [
-        "id", "createdAt", "certFp8", "profileUuid", "p12File", "p12Sha256Prefix", "encryption", "passwordItem",
+        "id", "createdAt", "certFp8", "profileUuid", "p12File", "p12Sha256Prefix", "encryption",
+        "passwordItem",
         "kitPath", "verified",
     ]
 

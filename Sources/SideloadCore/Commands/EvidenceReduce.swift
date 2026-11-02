@@ -13,7 +13,8 @@ struct SubjectTokens: Equatable, Sendable {
 
     /// Hardware and OS words a device name is usually built from; they identify nobody and would only block Apple's text.
     static let generic: Set<String> = [
-        "iphone", "ipad", "ipod", "mac", "macbook", "pro", "air", "mini", "imac", "studio", "apple", "tv", "watch",
+        "iphone", "ipad", "ipod", "mac", "macbook", "pro", "air", "mini", "imac", "studio", "apple",
+        "tv", "watch",
         "local", "development", "distribution", "developer",
     ]
 
@@ -34,25 +35,36 @@ struct SubjectTokens: Equatable, Sendable {
 
     /// The pieces of a name: split at anything that is not a letter or digit, then folded.
     static func words(_ s: String) -> [String] {
-        s.split(whereSeparator: { !($0.isLetter || $0.isNumber) }).map { fold(String($0)) }.filter { !$0.isEmpty }
+        s.split(whereSeparator: { !($0.isLetter || $0.isNumber) }).map { fold(String($0)) }.filter {
+            !$0.isEmpty
+        }
     }
 
     /// `Kind: Person Name (PERSONALID)`, the signing identity common-name shape; shared with `InstallLogScrubber`.
-    static let identityShape = try! NSRegularExpression(pattern: #"^[^:]*:\s*(.+?)\s*\(([A-Z0-9]{10})\)\s*$"#)
+    static let identityShape = try! NSRegularExpression(
+        pattern: #"^[^:]*:\s*(.+?)\s*\(([A-Z0-9]{10})\)\s*$"#)
 
     /// Everything that must not appear: device names and hostnames (split on `-._ ` and punctuation), the login,
     /// the full name's words, the person's name in each signing identity's common name, this Mac's computer name
     /// and local host name, and the home folder's name. Each folded, with a copy minus a trailing `s`.
     static func make(_ subjects: EvidenceSubjects) -> SubjectTokens {
-        var sources = subjects.names + [subjects.login, subjects.fullName, subjects.computerName, subjects.localHostName]
+        var sources =
+            subjects.names + [
+                subjects.login, subjects.fullName, subjects.computerName, subjects.localHostName,
+            ]
         if let home = subjects.homeName { sources.append(home) }
         for cn in subjects.identityNames {
             let ns = cn as NSString
-            if let m = identityShape.firstMatch(in: cn, range: NSRange(location: 0, length: ns.length)) {
+            if let m = identityShape.firstMatch(
+                in: cn, range: NSRange(location: 0, length: ns.length))
+            {
                 sources.append(ns.substring(with: m.range(at: 1)))
             } else {
                 // The personal ID is a 10-character code that looks like the team ID; it is not a person's name.
-                sources.append(contentsOf: words(cn).filter { !($0.count == 10 && $0.contains(where: \.isNumber)) })
+                sources.append(
+                    contentsOf: words(cn).filter {
+                        !($0.count == 10 && $0.contains(where: \.isNumber))
+                    })
             }
         }
         var found: [String] = []
@@ -101,12 +113,15 @@ enum MessageFilter {
     /// A longer input is not even normalised.
     private static let maxInput = 4096
 
-    private static let allowed: Set<Character> = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,;:()'-")
+    private static let allowed: Set<Character> = Set(
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,;:()'-")
 
     /// NFKC, curly apostrophes straightened, whitespace runs collapsed to one space, trimmed.
     static func normalize(_ raw: String) -> String {
         var s = raw.precomposedStringWithCompatibilityMapping
-        for c in ["\u{2019}", "\u{2018}", "\u{02BC}"] { s = s.replacingOccurrences(of: c, with: "'") }
+        for c in ["\u{2019}", "\u{2018}", "\u{02BC}"] {
+            s = s.replacingOccurrences(of: c, with: "'")
+        }
         return s.split(whereSeparator: \.isWhitespace).joined(separator: " ")
     }
 
@@ -127,10 +142,14 @@ enum MessageFilter {
                 }
             }
         }
-        if let bundleId, !bundleId.isEmpty { rest = rest.replacingOccurrences(of: bundleId, with: " ") }
+        if let bundleId, !bundleId.isEmpty {
+            rest = rest.replacingOccurrences(of: bundleId, with: " ")
+        }
 
         guard rest.allSatisfy({ allowed.contains($0) }) else { return nil }
-        for run in rest.split(whereSeparator: { !($0.isASCII && ($0.isLetter || $0.isNumber || $0 == "'")) }) {
+        for run in rest.split(whereSeparator: {
+            !($0.isASCII && ($0.isLetter || $0.isNumber || $0 == "'"))
+        }) {
             guard isKnown(String(run).lowercased()) else { return nil }
         }
         if tokens.appears(in: rest) { return nil }
@@ -139,7 +158,10 @@ enum MessageFilter {
 
     private static func isKnown(_ run: String) -> Bool {
         if EvidenceVocabulary.words.contains(run) { return true }
-        if run.wholeMatch(of: /0x[0-9a-f]{1,8}/) != nil || run.wholeMatch(of: /[0-9]{1,10}/) != nil { return true }
+        if run.wholeMatch(of: /0x[0-9a-f]{1,8}/) != nil || run.wholeMatch(of: /[0-9]{1,10}/) != nil
+        {
+            return true
+        }
         return false
     }
 }
@@ -154,7 +176,8 @@ enum ErrorChain {
     /// Error domains Apple's tools use for an install failure (the 2026-10-20 capture plus `MobileDeviceErrorDomain`).
     /// Kept exactly, without the subject-token check; `EvidenceSchema.knownDomains` is the verifier's own copy.
     static let knownDomains: Set<String> = [
-        "com.apple.dt.CoreDeviceError", "com.apple.dt.MobileDeviceErrorDomain", "IXUserPresentableErrorDomain",
+        "com.apple.dt.CoreDeviceError", "com.apple.dt.MobileDeviceErrorDomain",
+        "IXUserPresentableErrorDomain",
         "MIInstallerErrorDomain",
     ]
 
@@ -187,7 +210,9 @@ enum ErrorChain {
     }
 
     /// `json` is the `devicectl --json-output` document. Fields not named here are never read.
-    static func reduce(json: JSONValue?, stderr: String, tokens: SubjectTokens, bundleId: String?) -> Reduction {
+    static func reduce(json: JSONValue?, stderr: String, tokens: SubjectTokens, bundleId: String?)
+        -> Reduction
+    {
         var out = Reduction()
         if case .object(let top)? = json {
             if case .object(let info)? = top["info"], case .string(let o)? = info["outcome"] {
@@ -205,7 +230,9 @@ enum ErrorChain {
 
     /// A run of nine or more hex digits mixing letters and digits: the shape of an ID or a hash.
     private static func hasHexRun(_ s: String) -> Bool {
-        var run = 0, digit = false, letter = false
+        var run = 0
+        var digit = false
+        var letter = false
         for c in s + " " {
             if c.isASCII, c.isHexDigit {
                 run += 1
@@ -228,7 +255,9 @@ enum ErrorChain {
     // MARK: nodes
 
     private static func intValue(_ v: JSONValue?) -> Int? {
-        guard case .number(let n)? = v, n == n.rounded(), abs(n) < 9_007_199_254_740_992 else { return nil }
+        guard case .number(let n)? = v, n == n.rounded(), abs(n) < 9_007_199_254_740_992 else {
+            return nil
+        }
         return Int(n)
     }
 
@@ -236,7 +265,8 @@ enum ErrorChain {
     private static func text(_ v: JSONValue?) -> String? {
         switch v {
         case .string(let s)?: return s
-        case .object(let o)?: if case .string(let s)? = o["string"], o.count == 1 { return s } else { return nil }
+        case .object(let o)?:
+            if case .string(let s)? = o["string"], o.count == 1 { return s } else { return nil }
         default: return nil
         }
     }
@@ -247,8 +277,13 @@ enum ErrorChain {
         return v
     }
 
-    private static func visit(_ raw: JSONValue, depth: Int, _ tokens: SubjectTokens, _ bundleId: String?, _ out: inout Reduction) {
-        guard case .object(let obj) = raw, case .string(let domain)? = obj["domain"], let code = intValue(obj["code"]) else {
+    private static func visit(
+        _ raw: JSONValue, depth: Int, _ tokens: SubjectTokens, _ bundleId: String?,
+        _ out: inout Reduction
+    ) {
+        guard case .object(let obj) = raw, case .string(let domain)? = obj["domain"],
+            let code = intValue(obj["code"])
+        else {
             out.omittedNodes += 1
             return
         }
@@ -264,7 +299,9 @@ enum ErrorChain {
         // A known Apple domain is a fixed string, so it is kept whole even when a short subject token (`ice`) happens to
         // sit inside it; any other domain must pass the subject check.
         if knownDomains.contains(domain)
-            || (domain.utf16.count <= 96 && domain.wholeMatch(of: /[A-Za-z][A-Za-z0-9]*(\.[A-Za-z0-9]+)*/) != nil && keepable(domain, tokens))
+            || (domain.utf16.count <= 96
+                && domain.wholeMatch(of: /[A-Za-z][A-Za-z0-9]*(\.[A-Za-z0-9]+)*/) != nil
+                && keepable(domain, tokens))
         {
             node.domain = domain
         } else {
@@ -275,7 +312,9 @@ enum ErrorChain {
 
         func message(_ key: String) -> String? {
             guard let value = userInfo[key] else { return nil }
-            if let s = text(value), let admitted = MessageFilter.admit(s, tokens: tokens, bundleId: bundleId) {
+            if let s = text(value),
+                let admitted = MessageFilter.admit(s, tokens: tokens, bundleId: bundleId)
+            {
                 return admitted
             }
             out.omittedMessages += 1
@@ -283,13 +322,16 @@ enum ErrorChain {
         }
         // The signature template carries a path; it is never emitted, only its parts.
         if let value = userInfo["NSLocalizedDescription"], let s = text(value),
-            let m = MessageFilter.normalize(s).wholeMatch(of: /Failed to verify code signature of (\S+) : (0x[0-9a-fA-F]{8}) \((.+)\)/)
+            let m = MessageFilter.normalize(s).wholeMatch(
+                of: /Failed to verify code signature of (\S+) : (0x[0-9a-fA-F]{8}) \((.+)\)/)
         {
             let sigMessage = MessageFilter.admit(String(m.3), tokens: tokens, bundleId: bundleId)
             if sigMessage == nil { out.omittedMessages += 1 }
-            let last = m.1.split(separator: "/", omittingEmptySubsequences: true).last.map(String.init)
+            let last = m.1.split(separator: "/", omittingEmptySubsequences: true).last.map(
+                String.init)
             node.codeSignature = CodeSignature(
-                code: String(m.2).lowercased(), message: sigMessage, appBundle: last == "Canary.app" ? "Canary.app" : nil)
+                code: String(m.2).lowercased(), message: sigMessage,
+                appBundle: last == "Canary.app" ? "Canary.app" : nil)
         } else {
             node.description = message("NSLocalizedDescription")
         }
@@ -297,7 +339,9 @@ enum ErrorChain {
         node.recoverySuggestion = message("NSLocalizedRecoverySuggestion")
 
         if let legacy = text(userInfo["LegacyErrorString"]) {
-            if legacy.utf16.count <= 64, legacy.wholeMatch(of: /[A-Za-z][A-Za-z0-9]{0,63}/) != nil, keepable(legacy, tokens) {
+            if legacy.utf16.count <= 64, legacy.wholeMatch(of: /[A-Za-z][A-Za-z0-9]{0,63}/) != nil,
+                keepable(legacy, tokens)
+            {
                 node.legacyErrorString = legacy
             } else {
                 out.omittedMessages += 1
@@ -323,13 +367,17 @@ enum ErrorChain {
     private static func libMISNumber(_ v: JSONValue?) -> String? {
         var inner = v
         if case .object(let o)? = v, o.count == 1 { inner = o["int"] ?? o["uint"] }
-        guard case .number(let n)? = inner, n == n.rounded(), abs(n) < 9_007_199_254_740_992 else { return nil }
+        guard case .number(let n)? = inner, n == n.rounded(), abs(n) < 9_007_199_254_740_992 else {
+            return nil
+        }
         return String(Int64(n))
     }
 
     // MARK: stderr
 
-    private static func reduceStderr(_ stderr: String, _ tokens: SubjectTokens, _ bundleId: String?, _ out: inout Reduction) {
+    private static func reduceStderr(
+        _ stderr: String, _ tokens: SubjectTokens, _ bundleId: String?, _ out: inout Reduction
+    ) {
         var seen = Set<String>()
         var scanned = 0
         for line in stderr.split(whereSeparator: \.isNewline) {
@@ -340,12 +388,18 @@ enum ErrorChain {
                 out.omittedStderrLines += 1
                 continue
             }
-            guard let admitted = MessageFilter.admit(String(line), tokens: tokens, bundleId: bundleId) else {
+            guard
+                let admitted = MessageFilter.admit(String(line), tokens: tokens, bundleId: bundleId)
+            else {
                 out.omittedStderrLines += 1
                 continue
             }
             guard seen.insert(admitted).inserted else { continue }
-            if out.stderr.count < maxStderrLines { out.stderr.append(admitted) } else { out.omittedStderrLines += 1 }
+            if out.stderr.count < maxStderrLines {
+                out.stderr.append(admitted)
+            } else {
+                out.omittedStderrLines += 1
+            }
         }
     }
 }

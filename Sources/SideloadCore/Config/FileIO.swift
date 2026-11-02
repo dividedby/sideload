@@ -11,7 +11,9 @@ func ioError(_ operation: String, _ code: Int32 = errno) -> SideloadError {
 
 func randomHex(bytes: Int) -> String {
     var rng = SystemRandomNumberGenerator()
-    return (0..<bytes).map { _ in String(format: "%02x", UInt8.random(in: .min ... .max, using: &rng)) }.joined()
+    return (0..<bytes).map { _ in
+        String(format: "%02x", UInt8.random(in: .min ... .max, using: &rng))
+    }.joined()
 }
 
 /// lstat-based existence: a dangling symlink exists. Only ENOENT means absent.
@@ -24,11 +26,15 @@ func pathExists(_ path: String) throws -> Bool {
 
 /// Normalises a path: absolute, no `.`/`..`/empty components, no trailing slash.
 func resolvePath(_ path: String) -> String {
-    let absolute = path.hasPrefix("/") ? path : FileManager.default.currentDirectoryPath + "/" + path
+    let absolute =
+        path.hasPrefix("/") ? path : FileManager.default.currentDirectoryPath + "/" + path
     var parts: [Substring] = []
     for part in absolute.split(separator: "/", omittingEmptySubsequences: true) {
         if part == "." { continue }
-        if part == ".." { _ = parts.popLast(); continue }
+        if part == ".." {
+            _ = parts.popLast()
+            continue
+        }
         parts.append(part)
     }
     return "/" + parts.joined(separator: "/")
@@ -127,7 +133,9 @@ enum AppendFile {
         if fd < 0 { throw ioError("open log") }
         defer { close(fd) }
         var written: Int
-        repeat { written = Darwin.write(fd, bytes, bytes.count) } while written < 0 && errno == EINTR
+        repeat {
+            written = Darwin.write(fd, bytes, bytes.count)
+        } while written < 0 && errno == EINTR
         if written != bytes.count { throw ioError("write log", written < 0 ? errno : EIO) }
     }
 }
@@ -204,13 +212,15 @@ final class FileLock: Sendable {
             let remaining = deadline - ContinuousClock.now
             if remaining <= .zero {
                 throw SideloadError(
-                    "BUSY", "Another sideload process is updating \(name).json.", fix: "Wait a few seconds and retry.")
+                    "BUSY", "Another sideload process is updating \(name).json.",
+                    fix: "Wait a few seconds and retry.")
             }
             do {
                 try await Task.sleep(for: min(retryInterval, remaining))
             } catch {
                 throw SideloadError(
-                    "CANCELLED", "Cancelled while waiting for the \(name) lock.", fix: "Retry the command.")
+                    "CANCELLED", "Cancelled while waiting for the \(name) lock.",
+                    fix: "Retry the command.")
             }
         }
     }

@@ -25,17 +25,22 @@ enum AgentPlist {
 
         /// `refresh --auto` every 30 minutes (`StartInterval`); launchd coalesces missed runs.
         static let refresh = Agent(
-            label: "io.github.dividedby.sideload.refresh", arguments: ["refresh", "--auto"], schedule: .interval(seconds: 1800),
+            label: "io.github.dividedby.sideload.refresh", arguments: ["refresh", "--auto"],
+            schedule: .interval(seconds: 1800),
             runAtLoad: false, errorFile: "launchd-refresh.err", hasKillSwitch: true)
         /// `status --notify --check-updates` daily at 09:00, and once when it is loaded.
         static let status = Agent(
-            label: "io.github.dividedby.sideload.status", arguments: ["status", "--notify", "--check-updates"],
-            schedule: .daily(hour: 9, minute: 0), runAtLoad: true, errorFile: "launchd-status.err", hasKillSwitch: false)
+            label: "io.github.dividedby.sideload.status",
+            arguments: ["status", "--notify", "--check-updates"],
+            schedule: .daily(hour: 9, minute: 0), runAtLoad: true, errorFile: "launchd-status.err",
+            hasKillSwitch: false)
     }
 
     /// `logs` is the sideload home's `logs/`; `sideloadHome` is set only when the home is not the default, so the agent's
     /// process finds the same one. No `KeepAlive`: a failed run is not retried before the next one is due.
-    static func render(_ agent: Agent, binary: String, logs: String, sideloadHome: String?) -> String {
+    static func render(_ agent: Agent, binary: String, logs: String, sideloadHome: String?)
+        -> String
+    {
         var lines = [
             #"<?xml version="1.0" encoding="UTF-8"?>"#,
             #"<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">"#,
@@ -44,7 +49,9 @@ enum AgentPlist {
         ]
         // Keys in the order `plutil` writes them (sorted), so the text is stable.
         if let sideloadHome {
-            lines += ["\t<key>EnvironmentVariables</key>", "\t<dict>", "\t\t<key>SIDELOAD_HOME</key>"]
+            lines += [
+                "\t<key>EnvironmentVariables</key>", "\t<dict>", "\t\t<key>SIDELOAD_HOME</key>",
+            ]
             lines += ["\t\t" + string(sideloadHome), "\t</dict>"]
         }
         lines += ["\t<key>Label</key>", "\t" + string(agent.label)]
@@ -94,7 +101,13 @@ enum AgentPlist {
 
     /// The word as a shell argument: left bare when it is made of safe characters, else single-quoted.
     static func shellQuoted(_ word: String) -> String {
-        if !word.isEmpty, word.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "_@%+=:,./-".contains($0)) }) { return word }
+        if !word.isEmpty,
+            word.allSatisfy({
+                $0.isASCII && ($0.isLetter || $0.isNumber || "_@%+=:,./-".contains($0))
+            })
+        {
+            return word
+        }
         return "'" + word.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
     }
 }
@@ -103,27 +116,40 @@ extension AgentPlist {
     /// The envelope both `--print-agent` commands print: the plist, where to put it and the commands the owner runs to load,
     /// start and stop it. No lock, no subprocess, no file is written and no device is read: agents run it freely; the printed
     /// `launchctl` commands are the owner's (Ask the owner first). `command` is the CLI command, for the messages.
-    static func printed(_ agent: Agent, command: String, _ services: Services, binary: String?) -> Envelope {
-        let user = services.localUser.homeDirectory.isEmpty ? NSHomeDirectory() : services.localUser.homeDirectory
+    static func printed(_ agent: Agent, command: String, _ services: Services, binary: String?)
+        -> Envelope
+    {
+        let user =
+            services.localUser.homeDirectory.isEmpty
+            ? NSHomeDirectory() : services.localUser.homeDirectory
         let bin = binary ?? user + "/.local/bin/sideload"
         guard bin.hasPrefix("/"), !hasControlCharacter(bin) else {
             return .fail(
-                command, code: "USAGE", message: "--binary must be an absolute path without control characters.",
-                fix: "Pass the full path of the installed sideload binary, e.g. --binary \(user)/.local/bin/sideload.")
+                command, code: "USAGE",
+                message: "--binary must be an absolute path without control characters.",
+                fix:
+                    "Pass the full path of the installed sideload binary, e.g. --binary \(user)/.local/bin/sideload."
+            )
         }
 
         let home = services.home
         // The other paths come from SIDELOAD_HOME and the user's home: one with a control character could not go in the
         // plist, and a line break could end the printed here-document early.
-        let paths = [user, home.home, home.logs] + (agent.hasKillSwitch ? [home.refreshDisabled] : [])
+        let paths =
+            [user, home.home, home.logs] + (agent.hasKillSwitch ? [home.refreshDisabled] : [])
         guard !paths.contains(where: hasControlCharacter) else {
             return .fail(
                 command, code: "PATH_UNSAFE",
-                message: "The sideload home or the home folder path contains a control character, which a launchd plist cannot hold.",
-                fix: "Use a home folder and a SIDELOAD_HOME without control characters, then run \(command) --print-agent again.")
+                message:
+                    "The sideload home or the home folder path contains a control character, which a launchd plist cannot hold.",
+                fix:
+                    "Use a home folder and a SIDELOAD_HOME without control characters, then run \(command) --print-agent again."
+            )
         }
-        let isDefaultHome = home.home == Paths.resolveHome(environment: [:], homeDirectory: user).home
-        let plist = render(agent, binary: bin, logs: home.logs, sideloadHome: isDefaultHome ? nil : home.home)
+        let isDefaultHome =
+            home.home == Paths.resolveHome(environment: [:], homeDirectory: user).home
+        let plist = render(
+            agent, binary: bin, logs: home.logs, sideloadHome: isDefaultHome ? nil : home.home)
         let agents = user + "/Library/LaunchAgents"
         let path = agents + "/" + agent.label + ".plist"
         let quoted = shellQuoted

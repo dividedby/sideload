@@ -45,7 +45,8 @@ struct DoctorResultView: View {
         case .done(let summary):
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text(summary.ok ? "Doctor: all checks passed" : "Doctor: needs attention").fontWeight(.semibold)
+                    Text(summary.ok ? "Doctor: all checks passed" : "Doctor: needs attention")
+                        .fontWeight(.semibold)
                     Spacer()
                     Button("Hide") { model.dismissDoctor() }.buttonStyle(.link)
                 }
@@ -68,7 +69,8 @@ struct DoctorRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.message).font(.callout).fixedSize(horizontal: false, vertical: true)
                 if let fix = row.fix, row.severity == .warn || row.severity == .fail {
-                    Text(fix).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Text(fix).font(.caption).foregroundStyle(.secondary).fixedSize(
+                        horizontal: false, vertical: true)
                 }
             }
         }

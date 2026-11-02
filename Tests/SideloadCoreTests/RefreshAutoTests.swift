@@ -14,24 +14,30 @@ private let today = RefreshPolicy.dayKey(testNow, timeZone: utc)
 // MARK: pure gates
 
 private func subject(
-    _ app: ProvisionApp = .stremioIOS, days: Double = 2, present: Bool = true, lent: Bool = false, installed: Bool = true,
+    _ app: ProvisionApp = .stremioIOS, days: Double = 2, present: Bool = true, lent: Bool = false,
+    installed: Bool = true,
     signedVersion: String? = "1.2.3", refresh: LedgerInstallRefresh = LedgerInstallRefresh()
 ) -> RefreshPolicy.Subject {
     var install = installRecord(app, present: present, refresh: refresh)
     install.profileExpires = daysFromNow(days)
     let signed = signedVersion.map {
         LedgerFreeSigned(
-            id: "iphone/\(app.rawValue)", device: "iphone", app: app.rawValue, bundleId: "x", version: $0, sha256Prefix: "abcd1234",
-            profileUuid: "u", profileExpires: daysFromNow(days), certFp8: "deadbeef", signedAt: daysFromNow(-1), path: "p",
+            id: "iphone/\(app.rawValue)", device: "iphone", app: app.rawValue, bundleId: "x",
+            version: $0, sha256Prefix: "abcd1234",
+            profileUuid: "u", profileExpires: daysFromNow(days), certFp8: "deadbeef",
+            signedAt: daysFromNow(-1), path: "p",
             strippedExtensions: [], droppedEntitlements: [])
     }
-    return RefreshPolicy.Subject(app: app, install: installed ? install : nil, signed: signed, profile: nil, lent: lent)
+    return RefreshPolicy.Subject(
+        app: app, install: installed ? install : nil, signed: signed, profile: nil, lent: lent)
 }
 
 private func gate(
-    _ subject: RefreshPolicy.Subject, pending: Bool = false, deviceAttempts: Int = 0, now: Date = testNow
+    _ subject: RefreshPolicy.Subject, pending: Bool = false, deviceAttempts: Int = 0,
+    now: Date = testNow
 ) -> RefreshPolicy.AutoSkip? {
-    RefreshPolicy.autoGate(subject, slotPending: pending, deviceAttempts: deviceAttempts, now: now, timeZone: utc)
+    RefreshPolicy.autoGate(
+        subject, slotPending: pending, deviceAttempts: deviceAttempts, now: now, timeZone: utc)
 }
 
 @Suite("refresh --auto: the gates")
@@ -53,33 +59,63 @@ struct RefreshAutoGateTests {
         #expect(gate(subject(), pending: true) == .slotPending)
         #expect(gate(subject(signedVersion: "2.0.0")) == .signedVersionDiffers)
         #expect(gate(subject(days: 5.01)) == .notDue)
-        #expect(gate(subject(refresh: LedgerInstallRefresh(nextEligible: testNow.addingTimeInterval(1)))) == .backoff)
-        #expect(gate(subject(refresh: LedgerInstallRefresh(attemptsByDay: [today: 2]))) == .installCap)
+        #expect(
+            gate(
+                subject(refresh: LedgerInstallRefresh(nextEligible: testNow.addingTimeInterval(1))))
+                == .backoff)
+        #expect(
+            gate(subject(refresh: LedgerInstallRefresh(attemptsByDay: [today: 2]))) == .installCap)
         #expect(gate(subject(), deviceAttempts: 4) == .deviceCap)
-        #expect(gate(subject(refresh: LedgerInstallRefresh(lastAttempt: testNow.addingTimeInterval(-299)))) == .recentAttempt)
+        #expect(
+            gate(
+                subject(
+                    refresh: LedgerInstallRefresh(lastAttempt: testNow.addingTimeInterval(-299))))
+                == .recentAttempt)
     }
 
-    @Test("the boundaries: the backoff ends at nextEligible, the gap at 5 minutes, yesterday's attempts do not count")
+    @Test(
+        "the boundaries: the backoff ends at nextEligible, the gap at 5 minutes, yesterday's attempts do not count"
+    )
     func boundaries() {
         #expect(gate(subject(refresh: LedgerInstallRefresh(nextEligible: testNow))) == nil)
-        #expect(gate(subject(refresh: LedgerInstallRefresh(lastAttempt: testNow.addingTimeInterval(-300)))) == nil)
+        #expect(
+            gate(
+                subject(
+                    refresh: LedgerInstallRefresh(lastAttempt: testNow.addingTimeInterval(-300))))
+                == nil)
         #expect(gate(subject(refresh: LedgerInstallRefresh(attemptsByDay: [today: 1]))) == nil)
-        #expect(gate(subject(refresh: LedgerInstallRefresh(attemptsByDay: ["2000-01-01": 9]))) == nil)
+        #expect(
+            gate(subject(refresh: LedgerInstallRefresh(attemptsByDay: ["2000-01-01": 9]))) == nil)
         #expect(gate(subject(), deviceAttempts: 3) == nil)
         // No signed record: nothing to compare, so the version gate does not apply.
         #expect(gate(subject(signedVersion: nil)) == nil)
     }
 
-    @Test("the gates run in a fixed order: a lent slot is LENT, not NOT_PRESENT; a suspension beats a pending slot beats a version")
+    @Test(
+        "the gates run in a fixed order: a lent slot is LENT, not NOT_PRESENT; a suspension beats a pending slot beats a version"
+    )
     func order() {
         let everything = LedgerInstallRefresh(
-            lastAttempt: testNow, nextEligible: testNow.addingTimeInterval(60), attemptsByDay: [today: 9], suspended: true)
-        #expect(gate(subject(days: 30, present: false, lent: true, signedVersion: "9", refresh: everything), pending: true, deviceAttempts: 9) == .lent)
-        #expect(gate(subject(days: 30, signedVersion: "9", refresh: everything), pending: true, deviceAttempts: 9) == .suspended)
+            lastAttempt: testNow, nextEligible: testNow.addingTimeInterval(60),
+            attemptsByDay: [today: 9], suspended: true)
+        #expect(
+            gate(
+                subject(
+                    days: 30, present: false, lent: true, signedVersion: "9", refresh: everything),
+                pending: true, deviceAttempts: 9) == .lent)
+        #expect(
+            gate(
+                subject(days: 30, signedVersion: "9", refresh: everything), pending: true,
+                deviceAttempts: 9) == .suspended)
         var quiet = everything
         quiet.suspended = false
-        #expect(gate(subject(days: 30, signedVersion: "9", refresh: quiet), pending: true, deviceAttempts: 9) == .slotPending)
-        #expect(gate(subject(days: 30, signedVersion: "9", refresh: quiet), deviceAttempts: 9) == .signedVersionDiffers)
+        #expect(
+            gate(
+                subject(days: 30, signedVersion: "9", refresh: quiet), pending: true,
+                deviceAttempts: 9) == .slotPending)
+        #expect(
+            gate(subject(days: 30, signedVersion: "9", refresh: quiet), deviceAttempts: 9)
+                == .signedVersionDiffers)
         #expect(gate(subject(days: 30, refresh: quiet), deviceAttempts: 9) == .notDue)
         #expect(gate(subject(refresh: quiet), deviceAttempts: 9) == .backoff)
         quiet.nextEligible = nil
@@ -95,7 +131,15 @@ struct RefreshAutoGateTests {
         let lockProbes = Box(0)
         func run(kill: Bool, ledger: Ledger?, busy: Bool) -> RefreshPolicy.AutoSkip? {
             RefreshPolicy.runGate(
-                killSwitch: kill, ledger: { ledgerReads.value += 1; return ledger }(), lockBusy: { lockProbes.value += 1; return busy }())
+                killSwitch: kill,
+                ledger: {
+                    ledgerReads.value += 1
+                    return ledger
+                }(),
+                lockBusy: {
+                    lockProbes.value += 1
+                    return busy
+                }())
         }
         #expect(run(kill: true, ledger: nil, busy: true) == .killSwitch)
         #expect(ledgerReads.value == 0 && lockProbes.value == 0)
@@ -110,21 +154,36 @@ struct RefreshAutoGateTests {
         #expect(run(kill: false, ledger: Ledger(), busy: false) == nil)
     }
 
-    @Test("only devices the owner opted in with a valid reserve are acted on; an opted-in one with a bad reserve is reported")
+    @Test(
+        "only devices the owner opted in with a valid reserve are acted on; an opted-in one with a bad reserve is reported"
+    )
     func devices() throws {
-        let good = SavedDevice(udid: savedUdid("1"), platform: "ios", autoRefresh: true, freeSlotsReserved: 1)
-        let bad = SavedDevice(udid: savedUdid("2"), platform: "tvos", autoRefresh: true, freeSlotsReserved: 9)
-        let off = SavedDevice(udid: savedUdid("3"), platform: "ios", autoRefresh: false, freeSlotsReserved: 0)
-        let (eligible, invalid) = RefreshPolicy.autoDevices(["b": good, "a": good, "tv": bad, "off": off, "bad alias!": good])
+        let good = SavedDevice(
+            udid: savedUdid("1"), platform: "ios", autoRefresh: true, freeSlotsReserved: 1)
+        let bad = SavedDevice(
+            udid: savedUdid("2"), platform: "tvos", autoRefresh: true, freeSlotsReserved: 9)
+        let off = SavedDevice(
+            udid: savedUdid("3"), platform: "ios", autoRefresh: false, freeSlotsReserved: 0)
+        let (eligible, invalid) = RefreshPolicy.autoDevices([
+            "b": good, "a": good, "tv": bad, "off": off, "bad alias!": good,
+        ])
         #expect(eligible == ["a", "b"] && invalid == ["tv"])
     }
 
-    @Test("a certificate, keychain, account or ledger failure ends the run for every device; a slot or delta failure only its device")
+    @Test(
+        "a certificate, keychain, account or ledger failure ends the run for every device; a slot or delta failure only its device"
+    )
     func stops() {
-        for code in ["FREE_CERT_CHANGED", "IDENTITY_CHECK_FAILED", "FREE_IDENTITY_ADDED", "KEYCHAIN_LOCKED", "ACCOUNT_NOT_SIGNED_IN", "LEDGER_INVALID"] {
+        for code in [
+            "FREE_CERT_CHANGED", "IDENTITY_CHECK_FAILED", "FREE_IDENTITY_ADDED", "KEYCHAIN_LOCKED",
+            "ACCOUNT_NOT_SIGNED_IN", "LEDGER_INVALID",
+        ] {
             #expect(RefreshPolicy.stopsWholeRun(code), "\(code)")
         }
-        for code in ["SLOT_PENDING", "UNEXPECTED_APP_DELTA", "SIGN_FAILED", "DEVICE_LOCKED", "VERSION_NOT_AVAILABLE"] {
+        for code in [
+            "SLOT_PENDING", "UNEXPECTED_APP_DELTA", "SIGN_FAILED", "DEVICE_LOCKED",
+            "VERSION_NOT_AVAILABLE",
+        ] {
             #expect(!RefreshPolicy.stopsWholeRun(code), "\(code)")
         }
     }
@@ -144,15 +203,22 @@ private final class NoticeRunner: Runner {
 
 @Suite("refresh --auto: notifier and log")
 struct RefreshAutoOutputTests {
-    @Test("the message is the last argument, never part of the script, and is cut to aliases, app names, numbers and codes")
+    @Test(
+        "the message is the last argument, never part of the script, and is cut to aliases, app names, numbers and codes"
+    )
     func notifierArguments() async {
         let runner = NoticeRunner()
-        let ok = await Notifier(runner: runner).notify("-- stremio-ios @ iphone failed DEVICE_LOCKED, next 14:30, 4 d left\" & (do shell script \"x\") `$(id)`")
+        let ok = await Notifier(runner: runner).notify(
+            "-- stremio-ios @ iphone failed DEVICE_LOCKED, next 14:30, 4 d left\" & (do shell script \"x\") `$(id)`"
+        )
         #expect(ok)
         let spec = runner.seen.withLock { $0 }[0]
         #expect(spec.executable == "/usr/bin/osascript" && spec.timeout == .seconds(10))
         let message = spec.args.last ?? ""
-        #expect(message == "stremio-ios @ iphone failed DEVICE_LOCKED, next 14:30, 4 d left  do shell script x id")
+        #expect(
+            message
+                == "stremio-ios @ iphone failed DEVICE_LOCKED, next 14:30, 4 d left  do shell script x id"
+        )
         #expect(!spec.args.dropLast().contains { $0.contains("shell") || $0.contains("stremio") })
         #expect(spec.args.dropLast().filter { $0 == "-e" }.count == 3)
         #expect(Notifier.sanitised("---x") == "x" && Notifier.sanitised("é/\\;'\n") == "")
@@ -161,73 +227,107 @@ struct RefreshAutoOutputTests {
 
     @Test("a notification that fails or times out is only reported, never thrown")
     func notifierFailure() async {
-        #expect(await Notifier(runner: NoticeRunner(RunResult(code: 1, stderr: "not allowed"))).notify("x @ y refreshed") == false)
-        #expect(await Notifier(runner: NoticeRunner(RunResult(code: nil, timedOut: true))).notify("x @ y refreshed") == false)
-        #expect(await Notifier(runner: NoticeRunner(RunResult(code: nil, spawnError: "ENOENT"))).notify("x @ y refreshed") == false)
-        #expect(await Notifier(runner: NoticeRunner()).notify("\u{1F600}") == false, "nothing left to say")
+        #expect(
+            await Notifier(runner: NoticeRunner(RunResult(code: 1, stderr: "not allowed"))).notify(
+                "x @ y refreshed") == false)
+        #expect(
+            await Notifier(runner: NoticeRunner(RunResult(code: nil, timedOut: true))).notify(
+                "x @ y refreshed") == false)
+        #expect(
+            await Notifier(runner: NoticeRunner(RunResult(code: nil, spawnError: "ENOENT"))).notify(
+                "x @ y refreshed") == false)
+        #expect(
+            await Notifier(runner: NoticeRunner()).notify("\u{1F600}") == false,
+            "nothing left to say")
     }
 
     @Test("the texts")
     func texts() {
-        #expect(Notifier.refreshed(app: "stremio", alias: "iphone", daysLeft: 7) == "stremio @ iphone refreshed, 7 d left")
         #expect(
-            Notifier.failed(app: "stremio", alias: "iphone", code: "DEVICE_LOCKED", next: "14:30", daysLeft: 4)
+            Notifier.refreshed(app: "stremio", alias: "iphone", daysLeft: 7)
+                == "stremio @ iphone refreshed, 7 d left")
+        #expect(
+            Notifier.failed(
+                app: "stremio", alias: "iphone", code: "DEVICE_LOCKED", next: "14:30", daysLeft: 4)
                 == "stremio @ iphone failed DEVICE_LOCKED, next 14:30, 4 d left")
-        #expect(Notifier.failed(app: "a", alias: "b", code: "X_Y", next: nil, daysLeft: -2) == "a @ b failed X_Y, 0 d left")
-        #expect(Notifier.suspended(app: "a", alias: "b", code: "X_Y").hasPrefix("a @ b suspended after X_Y"))
+        #expect(
+            Notifier.failed(app: "a", alias: "b", code: "X_Y", next: nil, daysLeft: -2)
+                == "a @ b failed X_Y, 0 d left")
+        #expect(
+            Notifier.suspended(app: "a", alias: "b", code: "X_Y").hasPrefix(
+                "a @ b suspended after X_Y"))
     }
 
     @Test("a code that is not a plain code, or holds a device-ID-sized run of hex, is OTHER")
     func logCodes() {
         #expect(RefreshLog.code("DEVICE_LOCKED") == "DEVICE_LOCKED")
-        for raw in [savedUdid("1"), savedCoreId("1"), "device iphone is locked", "lower_case", "", "A", "ABCDEF0123456789", "/Users/x/y"] {
+        for raw in [
+            savedUdid("1"), savedCoreId("1"), "device iphone is locked", "lower_case", "", "A",
+            "ABCDEF0123456789", "/Users/x/y",
+        ] {
             #expect(RefreshLog.code(raw) == "OTHER", "\(raw)")
         }
         #expect(RefreshLog.alias("iphone") == "iphone" && RefreshLog.alias("my phone!") == "?")
     }
 
-    @Test("the log is 0600, one object per line with sorted keys, and rotates at 1 MiB into a single older file")
+    @Test(
+        "the log is 0600, one object per line with sorted keys, and rotates at 1 MiB into a single older file"
+    )
     func logFileAndRotation() async throws {
         try await withTestHome { paths, _ in
             let log = RefreshLog(paths: paths, clock: FixedClock(testNow), run: "abc12345")
             log.record("run", ["ok": true, "z": 1])
             #expect(modeOf(paths.refreshLog) == 0o600)
             let text = try String(contentsOfFile: paths.refreshLog, encoding: .utf8)
-            #expect(text == "{\"event\":\"run\",\"ok\":true,\"run\":\"abc12345\",\"ts\":\"2026-10-19T12:00:00.000Z\",\"z\":1}\n")
+            #expect(
+                text
+                    == "{\"event\":\"run\",\"ok\":true,\"run\":\"abc12345\",\"ts\":\"2026-10-19T12:00:00.000Z\",\"z\":1}\n"
+            )
             // Fill the file to the limit, then write once more.
             let handle = try FileHandle(forWritingTo: URL(fileURLWithPath: paths.refreshLog))
             try handle.seekToEnd()
-            try handle.write(contentsOf: Data(repeating: UInt8(ascii: "x"), count: RefreshLog.rotateAt))
+            try handle.write(
+                contentsOf: Data(repeating: UInt8(ascii: "x"), count: RefreshLog.rotateAt))
             try handle.close()
             log.record("run", ["n": 2])
             #expect(listing(paths.logs).sorted() == ["refresh.jsonl", "refresh.jsonl.1"])
-            #expect(try String(contentsOfFile: paths.refreshLog, encoding: .utf8).contains("\"n\":2"))
-            #expect(try Data(contentsOf: URL(fileURLWithPath: paths.refreshLog + ".1")).count > RefreshLog.rotateAt)
+            #expect(
+                try String(contentsOfFile: paths.refreshLog, encoding: .utf8).contains("\"n\":2"))
+            #expect(
+                try Data(contentsOf: URL(fileURLWithPath: paths.refreshLog + ".1")).count
+                    > RefreshLog.rotateAt)
             #expect(modeOf(paths.refreshLog) == 0o600 && modeOf(paths.refreshLog + ".1") == 0o600)
             // A second rotation replaces the older file rather than adding a third.
             let again = try FileHandle(forWritingTo: URL(fileURLWithPath: paths.refreshLog))
             try again.seekToEnd()
-            try again.write(contentsOf: Data(repeating: UInt8(ascii: "y"), count: RefreshLog.rotateAt))
+            try again.write(
+                contentsOf: Data(repeating: UInt8(ascii: "y"), count: RefreshLog.rotateAt))
             try again.close()
             log.record("run", ["n": 3])
             #expect(listing(paths.logs).sorted() == ["refresh.jsonl", "refresh.jsonl.1"])
         }
     }
 
-    @Test("record cleans every field itself: aliases, codes, the keys of a tally, plain tokens; nothing that is not a scalar")
+    @Test(
+        "record cleans every field itself: aliases, codes, the keys of a tally, plain tokens; nothing that is not a scalar"
+    )
     func recordCleans() async throws {
         try await withTestHome { paths, _ in
             let log = RefreshLog(paths: paths, clock: FixedClock(testNow), run: "abc12345")
             log.record(
                 "install",
                 [
-                    "device": .string(savedUdid("1")), "app": "stremio-ios", "reason": "not a code", "code": .string(savedCoreId("1")),
-                    "decision": "/Users/someone/x", "skipped": ["KILL_SWITCH": 2, "lower": 1, "bad one": 4, "ok": "no"],
+                    "device": .string(savedUdid("1")), "app": "stremio-ios", "reason": "not a code",
+                    "code": .string(savedCoreId("1")),
+                    "decision": "/Users/someone/x",
+                    "skipped": ["KILL_SWITCH": 2, "lower": 1, "bad one": 4, "ok": "no"],
                     "nested": ["a": 1], "list": [1], "n": 3, "flag": true,
                 ])
             let data = try #require(try readFile(paths.refreshLog))
             let line = try JSONDecoder().decode(JSONValue.self, from: data)
-            #expect(line["device"] == "?" && line["app"] == "stremio-ios" && line["reason"] == "OTHER" && line["code"] == "OTHER")
+            #expect(
+                line["device"] == "?" && line["app"] == "stremio-ios" && line["reason"] == "OTHER"
+                    && line["code"] == "OTHER")
             #expect(line["decision"] == "?" && line["nested"] == .null && line["list"] == .null)
             #expect(line["n"] == 3 && line["flag"] == true && line["event"] == "install")
             #expect(line["skipped"] == ["KILL_SWITCH": 2, "OTHER": 5])
@@ -236,7 +336,8 @@ struct RefreshAutoOutputTests {
 
     @Test("a log that cannot be written never fails the caller")
     func logWriteFailure() throws {
-        let log = RefreshLog(paths: Paths(home: "/dev/null/x"), clock: FixedClock(testNow), run: "r")
+        let log = RefreshLog(
+            paths: Paths(home: "/dev/null/x"), clock: FixedClock(testNow), run: "r")
         log.record("run")
     }
 }
@@ -274,7 +375,9 @@ private final class AutoRunner: Runner {
                 return value.noticeResult
             }
         }
-        if spec.executable == "xcrun", spec.args.first == "devicectl", DeviceSimRunner.words(spec) == "list devices" {
+        if spec.executable == "xcrun", spec.args.first == "devicectl",
+            DeviceSimRunner.words(spec) == "list devices"
+        {
             let listing = state.withLock { value -> JSONValue? in
                 value.listCalls += 1
                 return value.listing
@@ -300,16 +403,23 @@ private typealias CallBox = Box<[String]>
 private func bundleId(_ app: ProvisionApp) -> String { carrierPrefix + ".free." + app.suffix }
 
 private func seedInstall(
-    _ ledger: inout Ledger, _ app: ProvisionApp, days: Double, installed: Bool = true, present: Bool = true,
+    _ ledger: inout Ledger, _ app: ProvisionApp, days: Double, installed: Bool = true,
+    present: Bool = true,
     refresh: LedgerInstallRefresh = LedgerInstallRefresh()
 ) {
     let key = "\(app.devicePlatform == "tvos" ? "appletv" : "iphone")/\(app.rawValue)"
     let expires = daysFromNow(days)
-    for i in ledger.freeProfiles.indices where ledger.freeProfiles[i].id == key { ledger.freeProfiles[i].expires = expires }
-    for i in ledger.freeSigned.indices where ledger.freeSigned[i].id == key { ledger.freeSigned[i].profileExpires = expires }
+    for i in ledger.freeProfiles.indices where ledger.freeProfiles[i].id == key {
+        ledger.freeProfiles[i].expires = expires
+    }
+    for i in ledger.freeSigned.indices where ledger.freeSigned[i].id == key {
+        ledger.freeSigned[i].profileExpires = expires
+    }
     ledger.installs.removeAll { $0.id == key }
     if installed {
-        var record = installRecord(app, alias: app.devicePlatform == "tvos" ? "appletv" : "iphone", present: present, refresh: refresh)
+        var record = installRecord(
+            app, alias: app.devicePlatform == "tvos" ? "appletv" : "iphone", present: present,
+            refresh: refresh)
         record.profileExpires = expires
         ledger.installs.append(record)
     }
@@ -317,12 +427,14 @@ private func seedInstall(
 
 private let phoneAndTV: JSONValue = deviceListJSON(
     phoneEntryJSON(),
-    deviceEntryJSON(name: "Test Apple TV", udid: savedUdid("2"), coreId: savedCoreId("2"), platform: "tvOS"))
+    deviceEntryJSON(
+        name: "Test Apple TV", udid: savedUdid("2"), coreId: savedCoreId("2"), platform: "tvOS"))
 
 /// A world with `apps` signed (and on the device), the iPhone (and the Apple TV, if `optIn` names it) opted in to auto-refresh.
 private func withAutoWorld(
     _ apps: [ProvisionApp] = [.stremioIOS], profileDays: Double = 2, optIn: [String] = ["iphone"],
-    listing: JSONValue? = phoneAndTV, manifest seedVersions: Bool = true, ledger tweak: ((inout Ledger) -> Void)? = nil,
+    listing: JSONValue? = phoneAndTV, manifest seedVersions: Bool = true,
+    ledger tweak: ((inout Ledger) -> Void)? = nil,
     snapshotFailures: Set<Int> = [], _ body: (AutoWorld) async throws -> Void
 ) async throws {
     var script = DeviceScript()
@@ -340,7 +452,11 @@ private func withAutoWorld(
         }
         // The installed version (1.2.3) is a fetched, approved version on disk, as auto-refresh needs it to be.
         if seedVersions {
-            try seedManifest(w, apps.filter { $0 != .filler }.map { manifestEntry("1.2.3", app: $0.rawValue, fetchedDays: -9) })
+            try seedManifest(
+                w,
+                apps.filter { $0 != .filler }.map {
+                    manifestEntry("1.2.3", app: $0.rawValue, fetchedDays: -9)
+                })
         }
         let runner = AutoRunner(w.runner, listing: listing)
         var services = w.services
@@ -360,7 +476,9 @@ private func failStep(_ code: String) -> Envelope {
 /// Scripted steps that record `provision <app>`, `provision <app> renew`, `sign <app>` and `install <app>`.
 private func autoSteps(
     _ log: CallBox,
-    provision: @escaping @Sendable (ProvisionOptions) async -> Envelope = { okStep("provision", $0.app) },
+    provision: @escaping @Sendable (ProvisionOptions) async -> Envelope = {
+        okStep("provision", $0.app)
+    },
     sign: @escaping @Sendable (SignOptions) async -> Envelope = { okStep("sign", $0.app) },
     install: @escaping @Sendable (InstallOptions) async -> Envelope = { okStep("install", $0.app) }
 ) -> RefreshSteps {
@@ -390,7 +508,9 @@ private func autoResults(_ out: Envelope, device: String = "iphone") -> [JSONVal
     return entry?["results"]?.array ?? []
 }
 
-private func autoResult(_ out: Envelope, _ app: ProvisionApp, device: String = "iphone") -> JSONValue? {
+private func autoResult(_ out: Envelope, _ app: ProvisionApp, device: String = "iphone")
+    -> JSONValue?
+{
     autoResults(out, device: device).first { $0["app"] == .string(app.rawValue) }
 }
 
@@ -399,7 +519,9 @@ private func skippedCount(_ out: Envelope, _ code: String) -> Int {
     return 0
 }
 
-private func fields(_ a: AutoWorld, _ app: ProvisionApp = .stremioIOS) throws -> LedgerInstallRefresh {
+private func fields(_ a: AutoWorld, _ app: ProvisionApp = .stremioIOS) throws
+    -> LedgerInstallRefresh
+{
     try #require(try a.w.ledger().installs.first { $0.id == "iphone/\(app.rawValue)" }).refresh
 }
 
@@ -418,20 +540,25 @@ private func logged(_ a: AutoWorld, _ event: String) throws -> [JSONValue] {
 struct RefreshAutoTests {
     // MARK: the happy path
 
-    @Test("a due install is provisioned, signed and installed; the owner is told; the envelope, the ledger and the log agree")
+    @Test(
+        "a due install is provisioned, signed and installed; the owner is told; the envelope, the ledger and the log agree"
+    )
     func happyPath() async throws {
         try await withAutoWorld(profileDays: 2) { a in
             let log = CallBox([])
             let out = await auto(a, autoSteps(log))
             #expect(out.ok && out.exitCode == 0 && out.command == "refresh", "\(out.errors)")
             #expect(out.data["auto"] == true)
-            #expect(log.value == ["provision stremio-ios", "sign stremio-ios", "install stremio-ios"])
+            #expect(
+                log.value == ["provision stremio-ios", "sign stremio-ios", "install stremio-ios"])
             let item = try #require(autoResult(out, .stremioIOS))
             #expect(item["status"] == "renewed" && item["daysLeftBefore"] == 2)
             #expect(a.runner.listCalls == 1)
             #expect(a.runner.notices == ["stremio-ios @ iphone refreshed, 2 d left"])
             let refresh = try fields(a)
-            #expect(refresh.attemptsByDay == [today: 1] && refresh.lastResult == "refreshed" && refresh.consecutiveFailures == 0)
+            #expect(
+                refresh.attemptsByDay == [today: 1] && refresh.lastResult == "refreshed"
+                    && refresh.consecutiveFailures == 0)
 
             // One `run` line, an `install` decision, one line per step, and the attempt's result.
             let lines = try logLines(a)
@@ -441,7 +568,9 @@ struct RefreshAutoTests {
             #expect(try logged(a, "step").count == 3)
             #expect(Set(lines.compactMap { $0["run"]?.string }).count == 1)
             let result = try #require(try logged(a, "result").first)
-            #expect(result["decision"] == "renewed" && result["notified"] == true && result["daysLeft"] == 2)
+            #expect(
+                result["decision"] == "renewed" && result["notified"] == true
+                    && result["daysLeft"] == 2)
             #expect(result["newExpires"]?.string?.hasPrefix("2026-10-21") == true)
             #expect(try logged(a, "step").map { $0["step"] } == ["provision", "sign", "install"])
             #expect(runs[0]["ok"] == true && runs[0]["renewed"] == 1)
@@ -454,7 +583,8 @@ struct RefreshAutoTests {
         try await withAutoWorld(profileDays: 2) { a in
             let log = CallBox([])
             let out = await RefreshCommand.run(
-                a.services, RefreshOptions(device: "iphone", yes: true), steps: autoSteps(log), timeZone: utc)
+                a.services, RefreshOptions(device: "iphone", yes: true), steps: autoSteps(log),
+                timeZone: utc)
             #expect(out.ok && log.value.count == 3)
             #expect(a.runner.notices.isEmpty)
             #expect(!FileManager.default.fileExists(atPath: a.w.paths.refreshLog))
@@ -469,7 +599,9 @@ struct RefreshAutoTests {
             let log = CallBox([])
             let out = await auto(a, autoSteps(log))
             #expect(out.ok && skippedCount(out, "NOT_DUE") == 1)
-            #expect(log.value.isEmpty && a.runner.listCalls == 0 && a.runner.notices.isEmpty && a.w.runner.deviceCalls.isEmpty)
+            #expect(
+                log.value.isEmpty && a.runner.listCalls == 0 && a.runner.notices.isEmpty
+                    && a.w.runner.deviceCalls.isEmpty)
             // Not-due decisions are the quiet ones: only the run line is logged.
             let lines = try logLines(a)
             #expect(lines.map { $0["event"] } == ["run"])
@@ -481,7 +613,8 @@ struct RefreshAutoTests {
         try await withAutoWorld(profileDays: 2, optIn: []) { a in
             let log = CallBox([])
             let out = await auto(a, autoSteps(log))
-            #expect(out.ok && autoResults(out).isEmpty && out.data["devices"]?.array?.isEmpty == true)
+            #expect(
+                out.ok && autoResults(out).isEmpty && out.data["devices"]?.array?.isEmpty == true)
             #expect(log.value.isEmpty && a.runner.listCalls == 0)
         }
     }
@@ -491,16 +624,20 @@ struct RefreshAutoTests {
         try await withAutoWorld(profileDays: 2) { a in
             var config = try a.w.config()
             config.devices["iphone"] = SavedDevice(
-                udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios", autoRefresh: true, freeSlotsReserved: 9)
+                udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios",
+                autoRefresh: true, freeSlotsReserved: 9)
             let saved = config
             try await a.w.store.update { $0 = saved }
             let log = CallBox([])
             let out = await auto(a, autoSteps(log))
-            #expect(out.ok && skippedCount(out, "CONFIG_INVALID") == 1 && log.value.isEmpty && a.runner.listCalls == 0)
+            #expect(
+                out.ok && skippedCount(out, "CONFIG_INVALID") == 1 && log.value.isEmpty
+                    && a.runner.listCalls == 0)
         }
     }
 
-    @Test("the kill switch file: the whole run is a skip before anything else is read, probed or run")
+    @Test(
+        "the kill switch file: the whole run is a skip before anything else is read, probed or run")
     func killSwitch() async throws {
         try await withAutoWorld(profileDays: 2) { a in
             try Data().write(to: URL(fileURLWithPath: a.w.paths.refreshDisabled))
@@ -518,7 +655,12 @@ struct RefreshAutoTests {
 
     @Test("a free-team suspension on the ledger: FREE_CERT_CHANGED, a skip; auto never clears it")
     func freeSuspension() async throws {
-        try await withAutoWorld(profileDays: 2, ledger: { $0.freeSuspended = LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow) }) { a in
+        try await withAutoWorld(
+            profileDays: 2,
+            ledger: {
+                $0.freeSuspended = LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow)
+            }
+        ) { a in
             let log = CallBox([])
             let out = await auto(a, autoSteps(log))
             #expect(out.ok && skippedCount(out, "FREE_CERT_CHANGED") == 1)
@@ -557,44 +699,74 @@ struct RefreshAutoTests {
     // MARK: one test per install gate
 
     enum GateCase: String, CaseIterable, CustomTestStringConvertible {
-        case notRecorded = "NOT_RECORDED", lent = "LENT", notPresent = "NOT_PRESENT", suspended = "SUSPENDED"
-        case slotPending = "SLOT_PENDING", signedVersionDiffers = "SIGNED_VERSION_DIFFERS", notDue = "NOT_DUE"
-        case backoff = "BACKOFF", installCap = "INSTALL_CAP", deviceCap = "DEVICE_CAP", recentAttempt = "RECENT_ATTEMPT"
+        case notRecorded = "NOT_RECORDED"
+        case lent = "LENT"
+        case notPresent = "NOT_PRESENT"
+        case suspended = "SUSPENDED"
+        case slotPending = "SLOT_PENDING"
+        case signedVersionDiffers = "SIGNED_VERSION_DIFFERS"
+        case notDue = "NOT_DUE"
+        case backoff = "BACKOFF"
+        case installCap = "INSTALL_CAP"
+        case deviceCap = "DEVICE_CAP"
+        case recentAttempt = "RECENT_ATTEMPT"
 
         var testDescription: String { rawValue }
 
-        var apps: [ProvisionApp] { self == .slotPending || self == .deviceCap ? [.stremioIOS, .apollo] : [.stremioIOS] }
+        var apps: [ProvisionApp] {
+            self == .slotPending || self == .deviceCap ? [.stremioIOS, .apollo] : [.stremioIOS]
+        }
 
         func seed(_ ledger: inout Ledger) {
             switch self {
             case .notRecorded: seedInstall(&ledger, .stremioIOS, days: 2, installed: false)
             case .lent:
                 seedInstall(&ledger, .stremioIOS, days: 2, present: false)
-                ledger.lent = [LedgerLent(app: "stremio-ios", device: "iphone", to: "lab", since: daysFromNow(-1))]
+                ledger.lent = [
+                    LedgerLent(
+                        app: "stremio-ios", device: "iphone", to: "lab", since: daysFromNow(-1))
+                ]
             case .notPresent: seedInstall(&ledger, .stremioIOS, days: 2, present: false)
-            case .suspended: seedInstall(&ledger, .stremioIOS, days: 2, refresh: LedgerInstallRefresh(suspended: true))
+            case .suspended:
+                seedInstall(
+                    &ledger, .stremioIOS, days: 2, refresh: LedgerInstallRefresh(suspended: true))
             case .slotPending:
                 // The lab is in the middle of lending another app of the same device.
                 seedInstall(&ledger, .apollo, days: 2, present: false)
-                ledger.lent = [LedgerLent(app: "apollo", device: "iphone", to: "lab", since: daysFromNow(-1), state: LedgerLent.lending, opAt: testNow)]
+                ledger.lent = [
+                    LedgerLent(
+                        app: "apollo", device: "iphone", to: "lab", since: daysFromNow(-1),
+                        state: LedgerLent.lending, opAt: testNow)
+                ]
             case .signedVersionDiffers:
                 for i in ledger.freeSigned.indices { ledger.freeSigned[i].version = "9.9.9" }
             case .notDue: seedInstall(&ledger, .stremioIOS, days: 6)
             case .backoff:
-                seedInstall(&ledger, .stremioIOS, days: 2, refresh: LedgerInstallRefresh(nextEligible: testNow.addingTimeInterval(600)))
+                seedInstall(
+                    &ledger, .stremioIOS, days: 2,
+                    refresh: LedgerInstallRefresh(nextEligible: testNow.addingTimeInterval(600)))
             case .installCap:
-                seedInstall(&ledger, .stremioIOS, days: 2, refresh: LedgerInstallRefresh(attemptsByDay: [today: 2]))
+                seedInstall(
+                    &ledger, .stremioIOS, days: 2,
+                    refresh: LedgerInstallRefresh(attemptsByDay: [today: 2]))
             case .deviceCap:
-                seedInstall(&ledger, .apollo, days: 30, refresh: LedgerInstallRefresh(attemptsByDay: [today: 4]))
+                seedInstall(
+                    &ledger, .apollo, days: 30,
+                    refresh: LedgerInstallRefresh(attemptsByDay: [today: 4]))
             case .recentAttempt:
-                seedInstall(&ledger, .stremioIOS, days: 2, refresh: LedgerInstallRefresh(lastAttempt: testNow.addingTimeInterval(-60)))
+                seedInstall(
+                    &ledger, .stremioIOS, days: 2,
+                    refresh: LedgerInstallRefresh(lastAttempt: testNow.addingTimeInterval(-60)))
             }
         }
     }
 
-    @Test("each install gate skips with its own code: no step, no devicectl, no notification, no counter moved", arguments: GateCase.allCases)
+    @Test(
+        "each install gate skips with its own code: no step, no devicectl, no notification, no counter moved",
+        arguments: GateCase.allCases)
     func gates(_ gateCase: GateCase) async throws {
-        try await withAutoWorld(gateCase.apps, profileDays: 2, ledger: { gateCase.seed(&$0) }) { a in
+        try await withAutoWorld(gateCase.apps, profileDays: 2, ledger: { gateCase.seed(&$0) }) {
+            a in
             let before = try a.w.ledger().installs
             let log = CallBox([])
             let out = await auto(a, autoSteps(log))
@@ -602,11 +774,15 @@ struct RefreshAutoTests {
             #expect(autoResult(out, .stremioIOS)?["status"] == "skipped")
             #expect(autoResult(out, .stremioIOS)?["code"] == .string(gateCase.rawValue))
             #expect(skippedCount(out, gateCase.rawValue) >= 1)
-            #expect(log.value.isEmpty && a.runner.listCalls == 0 && a.runner.notices.isEmpty && a.w.runner.deviceCalls.isEmpty)
+            #expect(
+                log.value.isEmpty && a.runner.listCalls == 0 && a.runner.notices.isEmpty
+                    && a.w.runner.deviceCalls.isEmpty)
             #expect(try a.w.ledger().installs == before)
             if gateCase != .notDue {
                 let decisions = try logged(a, "install").filter { $0["app"] == "stremio-ios" }
-                #expect(decisions.count == 1 && decisions[0]["decision"] == "skip" && decisions[0]["reason"] == .string(gateCase.rawValue))
+                #expect(
+                    decisions.count == 1 && decisions[0]["decision"] == "skip"
+                        && decisions[0]["reason"] == .string(gateCase.rawValue))
             }
         }
     }
@@ -615,15 +791,20 @@ struct RefreshAutoTests {
     func unknownAppUnlisted() async throws {
         try await withAutoWorld([.stremioIOS], profileDays: 6) { a in
             let out = await auto(a, autoSteps(CallBox([])))
-            #expect(autoResults(out).map { $0["app"] } == ["stremio-ios"], "apollo and the filler have no record")
+            #expect(
+                autoResults(out).map { $0["app"] } == ["stremio-ios"],
+                "apollo and the filler have no record")
         }
     }
 
     // MARK: the device
 
-    @Test("a device that is not visible is DEVICE_NOT_VISIBLE: not an attempt, not a failure, silent")
+    @Test(
+        "a device that is not visible is DEVICE_NOT_VISIBLE: not an attempt, not a failure, silent")
     func deviceNotVisible() async throws {
-        for listing in [deviceListJSON(), deviceListJSON(phoneEntryJSON(tunnel: "unavailable")), nil] as [JSONValue?] {
+        for listing in [
+            deviceListJSON(), deviceListJSON(phoneEntryJSON(tunnel: "unavailable")), nil,
+        ] as [JSONValue?] {
             try await withAutoWorld(profileDays: 2, listing: listing) { a in
                 let before = try a.w.ledger().installs
                 let log = CallBox([])
@@ -637,22 +818,30 @@ struct RefreshAutoTests {
         }
     }
 
-    @Test("a paired device with no live connection is probed by its app list and renewed when it answers")
+    @Test(
+        "a paired device with no live connection is probed by its app list and renewed when it answers"
+    )
     func disconnectedProbed() async throws {
-        try await withAutoWorld(profileDays: 2, listing: deviceListJSON(phoneEntryJSON(tunnel: "disconnected"))) { a in
+        try await withAutoWorld(
+            profileDays: 2, listing: deviceListJSON(phoneEntryJSON(tunnel: "disconnected"))
+        ) { a in
             let log = CallBox([])
             let out = await auto(a, autoSteps(log))
             #expect(out.ok, "\(out.errors)")
             #expect(autoResult(out, .stremioIOS)?["status"] == "renewed")
-            #expect(log.value == ["provision stremio-ios", "sign stremio-ios", "install stremio-ios"])
+            #expect(
+                log.value == ["provision stremio-ios", "sign stremio-ios", "install stremio-ios"])
             #expect(skippedCount(out, "DEVICE_NOT_VISIBLE") == 0)
         }
     }
 
-    @Test("a probe that gets no answer is DEVICE_NOT_VISIBLE: nothing provisioned, not an attempt, silent, the code logged")
+    @Test(
+        "a probe that gets no answer is DEVICE_NOT_VISIBLE: nothing provisioned, not an attempt, silent, the code logged"
+    )
     func disconnectedProbeFails() async throws {
         try await withAutoWorld(
-            profileDays: 2, listing: deviceListJSON(phoneEntryJSON(tunnel: "disconnected")), snapshotFailures: [1]
+            profileDays: 2, listing: deviceListJSON(phoneEntryJSON(tunnel: "disconnected")),
+            snapshotFailures: [1]
         ) { a in
             let before = try a.w.ledger().installs
             let log = CallBox([])
@@ -660,7 +849,8 @@ struct RefreshAutoTests {
             #expect(out.ok && out.errors.isEmpty, "\(out.errors)")
             #expect(autoResult(out, .stremioIOS)?["code"] == "DEVICE_NOT_VISIBLE")
             #expect(skippedCount(out, "DEVICE_NOT_VISIBLE") == 1)
-            #expect(log.value.isEmpty && a.runner.notices.isEmpty && a.w.runner.installCalls.isEmpty)
+            #expect(
+                log.value.isEmpty && a.runner.notices.isEmpty && a.w.runner.installCalls.isEmpty)
             #expect(try a.w.ledger().installs == before)
             #expect(try fields(a).attemptsByDay.isEmpty)
             let skip = try #require(try logged(a, "install").first { $0["app"] == "stremio-ios" })
@@ -669,9 +859,13 @@ struct RefreshAutoTests {
         }
     }
 
-    @Test("a connected device whose app list fails is still an attempt (the install is blocked), not DEVICE_NOT_VISIBLE")
+    @Test(
+        "a connected device whose app list fails is still an attempt (the install is blocked), not DEVICE_NOT_VISIBLE"
+    )
     func connectedSnapshotFails() async throws {
-        try await withAutoWorld(profileDays: 2, listing: deviceListJSON(phoneEntryJSON()), snapshotFailures: [1]) { a in
+        try await withAutoWorld(
+            profileDays: 2, listing: deviceListJSON(phoneEntryJSON()), snapshotFailures: [1]
+        ) { a in
             let log = CallBox([])
             let out = await auto(a, autoSteps(log))
             #expect(skippedCount(out, "DEVICE_NOT_VISIBLE") == 0)
@@ -684,13 +878,21 @@ struct RefreshAutoTests {
 
     @Test("one devicectl listing serves every device, and none is made when nothing is a candidate")
     func oneListing() async throws {
-        try await withAutoWorld([.stremioIOS, .apollo, .stremioTVOS], profileDays: 2, optIn: ["iphone", "appletv"]) { a in
+        try await withAutoWorld(
+            [.stremioIOS, .apollo, .stremioTVOS], profileDays: 2, optIn: ["iphone", "appletv"]
+        ) { a in
             let log = CallBox([])
             let out = await auto(a, autoSteps(log))
             #expect(out.ok, "\(out.errors)")
             #expect(a.runner.listCalls == 1)
-            #expect(Set(log.value.filter { $0.hasPrefix("install") }) == ["install stremio-ios", "install apollo", "install stremio-tvos"])
-            #expect(out.data["devices"]?.array?.compactMap { $0["alias"]?.string } == ["appletv", "iphone"])
+            #expect(
+                Set(log.value.filter { $0.hasPrefix("install") }) == [
+                    "install stremio-ios", "install apollo", "install stremio-tvos",
+                ])
+            #expect(
+                out.data["devices"]?.array?.compactMap { $0["alias"]?.string } == [
+                    "appletv", "iphone",
+                ])
         }
     }
 
@@ -701,7 +903,8 @@ struct RefreshAutoTests {
             let log = CallBox([])
             let out = await auto(a, autoSteps(log))
             #expect(out.ok && autoResult(out, .stremioIOS)?["code"] == "NOT_PRESENT")
-            #expect(log.value.isEmpty && a.w.runner.installCalls.isEmpty && a.runner.notices.isEmpty)
+            #expect(
+                log.value.isEmpty && a.w.runner.installCalls.isEmpty && a.runner.notices.isEmpty)
             let counted = try fields(a).attemptsByDay
             #expect(counted.isEmpty)
         }
@@ -709,7 +912,9 @@ struct RefreshAutoTests {
 
     // MARK: failures, caps and backoff
 
-    @Test("a failed renewal is ok:false, exit 1, backed off, counted and notified; the next runs follow the ladder and the caps across days")
+    @Test(
+        "a failed renewal is ok:false, exit 1, backed off, counted and notified; the next runs follow the ladder and the caps across days"
+    )
     func capsAndBackoffAcrossDays() async throws {
         try await withAutoWorld(profileDays: 2) { a in
             let log = CallBox([])
@@ -720,13 +925,20 @@ struct RefreshAutoTests {
             #expect(!first.ok && first.exitCode == 1 && first.errors.map(\.code) == ["TIMEOUT"])
             #expect(autoResult(first, .stremioIOS)?["status"] == "failed" && attempts() == 1)
             var f = try fields(a)
-            #expect(f.consecutiveFailures == 1 && f.nextEligible == testNow.addingTimeInterval(1800) && !f.suspended)
-            #expect(a.runner.notices.count == 1 && a.runner.notices[0].hasPrefix("stremio-ios @ iphone failed TIMEOUT, next 12:30, 2 d left"))
+            #expect(
+                f.consecutiveFailures == 1 && f.nextEligible == testNow.addingTimeInterval(1800)
+                    && !f.suspended)
+            #expect(
+                a.runner.notices.count == 1
+                    && a.runner.notices[0].hasPrefix(
+                        "stremio-ios @ iphone failed TIMEOUT, next 12:30, 2 d left")
+            )
 
             // Inside the backoff: a skip, and no attempt.
             a.w.clock.advance(600)
             let early = await auto(a, steps)
-            #expect(early.ok && autoResult(early, .stremioIOS)?["code"] == "BACKOFF" && attempts() == 1)
+            #expect(
+                early.ok && autoResult(early, .stremioIOS)?["code"] == "BACKOFF" && attempts() == 1)
 
             // Past it: the second attempt, then an hour of backoff.
             a.w.clock.advance(1300)
@@ -739,7 +951,9 @@ struct RefreshAutoTests {
             // The backoff is over but the install has had its two attempts for the day.
             a.w.clock.advance(3700)
             let capped = await auto(a, steps)
-            #expect(capped.ok && autoResult(capped, .stremioIOS)?["code"] == "INSTALL_CAP" && attempts() == 2)
+            #expect(
+                capped.ok && autoResult(capped, .stremioIOS)?["code"] == "INSTALL_CAP"
+                    && attempts() == 2)
 
             // The next local day opens a new count: attempt 3 (2 h of backoff), attempt 4 (4 h), then the cap again.
             a.w.clock.advance(86_400)
@@ -751,16 +965,22 @@ struct RefreshAutoTests {
             a.w.clock.advance(7200)
             #expect(!(await auto(a, steps)).ok && attempts() == 4)
             f = try fields(a)
-            #expect(f.consecutiveFailures == 4 && f.nextEligible == a.w.clock.now().addingTimeInterval(4 * 3600))
+            #expect(
+                f.consecutiveFailures == 4
+                    && f.nextEligible == a.w.clock.now().addingTimeInterval(4 * 3600))
             a.w.clock.advance(4 * 3600 + 1)
             let again = await auto(a, steps)
-            #expect(again.ok && autoResult(again, .stremioIOS)?["code"] == "INSTALL_CAP" && attempts() == 4)
+            #expect(
+                again.ok && autoResult(again, .stremioIOS)?["code"] == "INSTALL_CAP"
+                    && attempts() == 4)
             // Every attempt was told to the owner, and nothing else was.
             #expect(a.runner.notices.count == 4)
         }
     }
 
-    @Test("the device cap: at most 4 attempts a day across the device's apps, checked again before each app")
+    @Test(
+        "the device cap: at most 4 attempts a day across the device's apps, checked again before each app"
+    )
     func deviceCap() async throws {
         try await withAutoWorld(
             [.stremioIOS, .apollo, .filler], profileDays: 3,
@@ -780,15 +1000,21 @@ struct RefreshAutoTests {
             let second = await auto(a, steps)
             // The soonest app takes the 4th attempt of the day; the other two are held back by the device cap.
             #expect(log.value.count == 4 && log.value.last == "provision stremio-ios")
-            #expect(autoResult(second, .apollo)?["code"] == "DEVICE_CAP" && autoResult(second, .filler)?["code"] == "DEVICE_CAP")
-            let counts = try [ProvisionApp.stremioIOS, .apollo, .filler].map { try fields(a, $0).attemptsByDay[today] }
+            #expect(
+                autoResult(second, .apollo)?["code"] == "DEVICE_CAP"
+                    && autoResult(second, .filler)?["code"] == "DEVICE_CAP")
+            let counts = try [ProvisionApp.stremioIOS, .apollo, .filler].map {
+                try fields(a, $0).attemptsByDay[today]
+            }
             #expect(counts == [2, 1, 1])
             let installs = try a.w.ledger().installs
             #expect(RefreshPolicy.deviceAttempts(installs, device: "iphone", today: today) == 4)
         }
     }
 
-    @Test("a permanent failure suspends the install and tells the owner so; auto leaves it alone until a manual success")
+    @Test(
+        "a permanent failure suspends the install and tells the owner so; auto leaves it alone until a manual success"
+    )
     func suspendedUntilManualSuccess() async throws {
         try await withAutoWorld(profileDays: 2) { a in
             let log = CallBox([])
@@ -798,7 +1024,8 @@ struct RefreshAutoTests {
             #expect(try fields(a).suspended)
             #expect(a.runner.notices.count == 2)
             #expect(a.runner.notices[0].hasPrefix("stremio-ios @ iphone failed GUARD_FAILED"))
-            #expect(a.runner.notices[1].hasPrefix("stremio-ios @ iphone suspended after GUARD_FAILED"))
+            #expect(
+                a.runner.notices[1].hasPrefix("stremio-ios @ iphone suspended after GUARD_FAILED"))
             #expect(try logged(a, "result")[0]["suspended"] == true)
 
             // Days later, with the backoff long over and the profile expired, auto still does not touch it.
@@ -812,7 +1039,8 @@ struct RefreshAutoTests {
 
             // A manual success clears it, and auto goes on from there.
             let manual = await RefreshCommand.run(
-                a.services, RefreshOptions(device: "iphone", yes: true), steps: autoSteps(log), timeZone: utc)
+                a.services, RefreshOptions(device: "iphone", yes: true), steps: autoSteps(log),
+                timeZone: utc)
             let cleared = try fields(a)
             #expect(manual.ok && !cleared.suspended)
             a.w.clock.advance(7200)
@@ -821,61 +1049,96 @@ struct RefreshAutoTests {
         }
     }
 
-    @Test("PROFILE_NOT_RENEWED is retried once with --renew, exactly like a manual run, and never registers a device")
+    @Test(
+        "PROFILE_NOT_RENEWED is retried once with --renew, exactly like a manual run, and never registers a device"
+    )
     func renewRetry() async throws {
         try await withAutoWorld(profileDays: 2) { a in
             let log = CallBox([])
-            let works = autoSteps(log, provision: { $0.renew ? okStep("provision", $0.app) : failStep("PROFILE_NOT_RENEWED") })
+            let works = autoSteps(
+                log,
+                provision: {
+                    $0.renew ? okStep("provision", $0.app) : failStep("PROFILE_NOT_RENEWED")
+                })
             let out = await auto(a, works)
             #expect(out.ok && autoResult(out, .stremioIOS)?["renewRetried"] == true)
-            #expect(log.value == ["provision stremio-ios", "provision stremio-ios renew", "sign stremio-ios", "install stremio-ios"])
+            #expect(
+                log.value == [
+                    "provision stremio-ios", "provision stremio-ios renew", "sign stremio-ios",
+                    "install stremio-ios",
+                ])
         }
         try await withAutoWorld(profileDays: 2) { a in
             let log = CallBox([])
-            let out = await auto(a, autoSteps(log, provision: { _ in failStep("PROFILE_NOT_RENEWED") }))
-            #expect(!out.ok && log.value == ["provision stremio-ios", "provision stremio-ios renew"])
+            let out = await auto(
+                a, autoSteps(log, provision: { _ in failStep("PROFILE_NOT_RENEWED") }))
+            #expect(
+                !out.ok && log.value == ["provision stremio-ios", "provision stremio-ios renew"])
             let refresh = try fields(a)
             #expect(refresh.suspended && refresh.lastCode == "PROFILE_NOT_RENEWED")
-            #expect(try logged(a, "step").filter { $0["step"] == "provision" }.count == 1, "one provision step, retry included")
+            #expect(
+                try logged(a, "step").filter { $0["step"] == "provision" }.count == 1,
+                "one provision step, retry included")
         }
     }
 
     // MARK: the whole run stops
 
-    @Test("a certificate change stops the run: the rest of the device and the other devices are skipped with its code")
+    @Test(
+        "a certificate change stops the run: the rest of the device and the other devices are skipped with its code"
+    )
     func certificateChange() async throws {
-        try await withAutoWorld([.stremioIOS, .apollo, .stremioTVOS], profileDays: 2, optIn: ["iphone", "appletv"]) { a in
+        try await withAutoWorld(
+            [.stremioIOS, .apollo, .stremioTVOS], profileDays: 2, optIn: ["iphone", "appletv"]
+        ) { a in
             let log = CallBox([])
-            let out = await auto(a, autoSteps(log, provision: { _ in failStep("FREE_CERT_CHANGED") }))
+            let out = await auto(
+                a, autoSteps(log, provision: { _ in failStep("FREE_CERT_CHANGED") }))
             #expect(!out.ok && out.exitCode == 1 && out.errors.map(\.code) == ["FREE_CERT_CHANGED"])
             // Devices go in alias order, so the Apple TV is first; one provision was asked for and nothing after it.
             #expect(log.value == ["provision stremio-tvos"])
             #expect(autoResult(out, .stremioTVOS, device: "appletv")?["status"] == "failed")
             for app in [ProvisionApp.stremioIOS, .apollo] {
-                #expect(autoResult(out, app)?["status"] == "skipped" && autoResult(out, app)?["code"] == "FREE_CERT_CHANGED")
+                #expect(
+                    autoResult(out, app)?["status"] == "skipped"
+                        && autoResult(out, app)?["code"] == "FREE_CERT_CHANGED")
             }
             let counted = try fields(a).attemptsByDay
             #expect(counted.isEmpty)
             // The skips the stop caused say so in the log, and still carry the days left.
             let caused = try logged(a, "install").filter { $0["stopped"] == true }
             #expect(Set(caused.compactMap { $0["app"]?.string }) == ["stremio-ios", "apollo"])
-            #expect(caused.allSatisfy { $0["reason"] == "FREE_CERT_CHANGED" && $0["daysLeft"] == 2 })
-            #expect(a.runner.notices.count == 2, "told once for the attempt, once for the suspension")
+            #expect(
+                caused.allSatisfy { $0["reason"] == "FREE_CERT_CHANGED" && $0["daysLeft"] == 2 })
+            #expect(
+                a.runner.notices.count == 2, "told once for the attempt, once for the suspension")
         }
     }
 
     @Test("a slot operation that shows up mid-run stops that device only")
     func slotPendingMidRun() async throws {
-        try await withAutoWorld([.stremioIOS, .apollo, .stremioTVOS], profileDays: 2, optIn: ["iphone", "appletv"]) { a in
+        try await withAutoWorld(
+            [.stremioIOS, .apollo, .stremioTVOS], profileDays: 2, optIn: ["iphone", "appletv"]
+        ) { a in
             let log = CallBox([])
             let out = await auto(
-                a, autoSteps(log, install: { $0.app == "stremio-tvos" ? failStep("SLOT_PENDING") : okStep("install", $0.app) }))
+                a,
+                autoSteps(
+                    log,
+                    install: {
+                        $0.app == "stremio-tvos"
+                            ? failStep("SLOT_PENDING") : okStep("install", $0.app)
+                    }))
             #expect(!out.ok && out.errors.map(\.code) == ["SLOT_PENDING"])
-            #expect(autoResult(out, .stremioIOS)?["status"] == "renewed" && autoResult(out, .apollo)?["status"] == "renewed")
+            #expect(
+                autoResult(out, .stremioIOS)?["status"] == "renewed"
+                    && autoResult(out, .apollo)?["status"] == "renewed")
         }
     }
 
-    @Test("a busy lock mid-run is a skip, not a failure: the attempt is given back, nothing is said, the rest waits for the next run")
+    @Test(
+        "a busy lock mid-run is a skip, not a failure: the attempt is given back, nothing is said, the rest waits for the next run"
+    )
     func busyMidRun() async throws {
         for step in ["provision", "sign"] {
             try await withAutoWorld(
@@ -888,23 +1151,36 @@ struct RefreshAutoTests {
                 let log = CallBox([])
                 let busy = autoSteps(
                     log,
-                    provision: { step == "provision" ? failStep("OPERATION_IN_PROGRESS") : okStep("provision", $0.app) },
+                    provision: {
+                        step == "provision"
+                            ? failStep("OPERATION_IN_PROGRESS") : okStep("provision", $0.app)
+                    },
                     sign: { _ in failStep("OPERATION_IN_PROGRESS") })
                 let out = await auto(a, busy)
                 #expect(out.ok && out.exitCode == 0, "\(step): \(out.errors)")
-                #expect(autoResult(out, .stremioIOS)?["status"] == "skipped" && autoResult(out, .stremioIOS)?["code"] == "OPERATION_IN_PROGRESS")
-                #expect(autoResult(out, .apollo)?["code"] == "OPERATION_IN_PROGRESS", "the lock is shared, so the run ends")
+                #expect(
+                    autoResult(out, .stremioIOS)?["status"] == "skipped"
+                        && autoResult(out, .stremioIOS)?["code"] == "OPERATION_IN_PROGRESS")
+                #expect(
+                    autoResult(out, .apollo)?["code"] == "OPERATION_IN_PROGRESS",
+                    "the lock is shared, so the run ends")
                 #expect(log.value.allSatisfy { $0.hasSuffix("stremio-ios") })
                 let refresh = try fields(a)
-                #expect(refresh.attemptsByDay.isEmpty && refresh.consecutiveFailures == 0 && refresh.nextEligible == nil)
-                #expect(refresh.lastResult == "skipped" && refresh.lastCode == "OPERATION_IN_PROGRESS" && !refresh.suspended)
+                #expect(
+                    refresh.attemptsByDay.isEmpty && refresh.consecutiveFailures == 0
+                        && refresh.nextEligible == nil)
+                #expect(
+                    refresh.lastResult == "skipped" && refresh.lastCode == "OPERATION_IN_PROGRESS"
+                        && !refresh.suspended)
                 #expect(try fields(a, .apollo).attemptsByDay.isEmpty)
                 #expect(a.runner.notices.isEmpty)
             }
         }
     }
 
-    @Test("the 20-minute deadline: no new app is started after it; the app that ran counts, the rest are left for the next run")
+    @Test(
+        "the 20-minute deadline: no new app is started after it; the app that ran counts, the rest are left for the next run"
+    )
     func deadline() async throws {
         try await withAutoWorld(
             [.stremioIOS, .apollo], profileDays: 2,
@@ -924,10 +1200,15 @@ struct RefreshAutoTests {
             let out = await auto(a, slow)
             #expect(out.ok, "\(out.errors)")
             #expect(autoResult(out, .stremioIOS)?["status"] == "renewed")
-            #expect(autoResult(out, .apollo)?["code"] == "DEADLINE" && skippedCount(out, "DEADLINE") == 1)
+            #expect(
+                autoResult(out, .apollo)?["code"] == "DEADLINE"
+                    && skippedCount(out, "DEADLINE") == 1)
             let skip = try #require(try logged(a, "install").first { $0["reason"] == "DEADLINE" })
-            #expect(skip["app"] == "apollo" && skip["daysLeft"] == 2 && skip["stopped"] == nil, "an own skip, with its days left")
-            #expect(log.value == ["provision stremio-ios", "sign stremio-ios", "install stremio-ios"])
+            #expect(
+                skip["app"] == "apollo" && skip["daysLeft"] == 2 && skip["stopped"] == nil,
+                "an own skip, with its days left")
+            #expect(
+                log.value == ["provision stremio-ios", "sign stremio-ios", "install stremio-ios"])
             let apollo = try fields(a, .apollo)
             #expect(apollo.attemptsByDay.isEmpty && apollo.consecutiveFailures == 0)
             #expect(a.runner.notices.count == 1)
@@ -939,7 +1220,9 @@ struct RefreshAutoTests {
     @Test("the installed version is signed even when a newer one is approved")
     func keepsInstalledVersion() async throws {
         try await withAutoWorld(profileDays: 2, manifest: false) { a in
-            try seedManifest(a.w, [manifestEntry("1.2.3", fetchedDays: -9), manifestEntry("2.0.0", fetchedDays: -1)])
+            try seedManifest(
+                a.w,
+                [manifestEntry("1.2.3", fetchedDays: -9), manifestEntry("2.0.0", fetchedDays: -1)])
             let signs = Box<[SignOptions]>([])
             let steps = autoSteps(
                 CallBox([]),
@@ -952,12 +1235,24 @@ struct RefreshAutoTests {
         }
     }
 
-    @Test("the installed version is not a fetched, approved version on disk: VERSION_NOT_AVAILABLE, before any step, backed off, told, not suspended")
+    @Test(
+        "the installed version is not a fetched, approved version on disk: VERSION_NOT_AVAILABLE, before any step, backed off, told, not suspended"
+    )
     func versionRefusal() async throws {
         let cases: [(String, [ManifestEntry], Set<String>)] = [
             ("not in the manifest", [manifestEntry("2.0.0", fetchedDays: -1)], []),
-            ("fetched, never approved", [manifestEntry("1.2.3", approved: false, fetchedDays: -9), manifestEntry("2.0.0", fetchedDays: -1)], []),
-            ("approved, file gone", [manifestEntry("1.2.3", fetchedDays: -9), manifestEntry("2.0.0", fetchedDays: -1)], ["1.2.3"]),
+            (
+                "fetched, never approved",
+                [
+                    manifestEntry("1.2.3", approved: false, fetchedDays: -9),
+                    manifestEntry("2.0.0", fetchedDays: -1),
+                ], []
+            ),
+            (
+                "approved, file gone",
+                [manifestEntry("1.2.3", fetchedDays: -9), manifestEntry("2.0.0", fetchedDays: -1)],
+                ["1.2.3"]
+            ),
             ("empty manifest", [], []),
         ]
         for (name, entries, missing) in cases {
@@ -965,20 +1260,32 @@ struct RefreshAutoTests {
                 try seedManifest(a.w, entries, missing: missing)
                 let log = CallBox([])
                 let out = await auto(a, autoSteps(log))
-                #expect(!out.ok && out.errors.map(\.code) == ["VERSION_NOT_AVAILABLE"], "\(name): \(out.errors)")
+                #expect(
+                    !out.ok && out.errors.map(\.code) == ["VERSION_NOT_AVAILABLE"],
+                    "\(name): \(out.errors)")
                 #expect(log.value.isEmpty, "\(name): no provision, no sign, no install")
                 #expect(!out.warnings.contains("RENEW_VERSION_CHANGED"), "\(name)")
                 let refresh = try fields(a)
-                #expect(refresh.lastCode == "VERSION_NOT_AVAILABLE" && refresh.consecutiveFailures == 1 && !refresh.suspended, "\(name)")
-                #expect(refresh.nextEligible == testNow.addingTimeInterval(1800) && refresh.attemptsByDay == [today: 1], "\(name)")
-                #expect(a.runner.notices.count == 1 && a.runner.notices[0].contains("failed VERSION_NOT_AVAILABLE"), "\(name)")
+                #expect(
+                    refresh.lastCode == "VERSION_NOT_AVAILABLE" && refresh.consecutiveFailures == 1
+                        && !refresh.suspended, "\(name)")
+                #expect(
+                    refresh.nextEligible == testNow.addingTimeInterval(1800)
+                        && refresh.attemptsByDay == [today: 1], "\(name)")
+                #expect(
+                    a.runner.notices.count == 1
+                        && a.runner.notices[0].contains("failed VERSION_NOT_AVAILABLE"), "\(name)")
                 let result = try #require(autoResult(out, .stremioIOS))
-                #expect(result["steps"]?["provision"] == "skipped" && result["steps"]?["sign"] == "skipped", "\(name)")
+                #expect(
+                    result["steps"]?["provision"] == "skipped"
+                        && result["steps"]?["sign"] == "skipped", "\(name)")
             }
         }
     }
 
-    @Test("a renewal that needs no sign step (provision and sign already done) does not need the installed version")
+    @Test(
+        "a renewal that needs no sign step (provision and sign already done) does not need the installed version"
+    )
     func installOnlyNeedsNoVersion() async throws {
         try await withAutoWorld(
             profileDays: 5, manifest: false,
@@ -998,7 +1305,9 @@ struct RefreshAutoTests {
 
     // MARK: logs, notices and the command line
 
-    @Test("no device ID, device name or path reaches the log, the envelope or a notification, whatever a step says")
+    @Test(
+        "no device ID, device name or path reaches the log, the envelope or a notification, whatever a step says"
+    )
     func nothingIdentifying() async throws {
         try await withAutoWorld(profileDays: 2) { a in
             let leaky = autoSteps(
@@ -1006,7 +1315,9 @@ struct RefreshAutoTests {
                 provision: { _ in
                     .fail(
                         "provision", code: savedUdid("1"),
-                        message: "\(savedUdid("1")) \(savedCoreId("1")) Test iPhone /Users/someone/x", fix: nil)
+                        message:
+                            "\(savedUdid("1")) \(savedCoreId("1")) Test iPhone /Users/someone/x",
+                        fix: nil)
                 })
             let out = await auto(a, leaky)
             let printed = try out.printed().text
@@ -1015,7 +1326,9 @@ struct RefreshAutoTests {
                 #expect(!printed.contains(secret), "\(secret)")
             }
             for text in [log, a.runner.notices.joined(separator: "\n")] {
-                for secret in [savedUdid("1"), savedCoreId("1"), "Test iPhone", "/Users/", "someone"] {
+                for secret in [
+                    savedUdid("1"), savedCoreId("1"), "Test iPhone", "/Users/", "someone",
+                ] {
                     #expect(!text.contains(secret), "\(secret)")
                 }
             }
@@ -1044,16 +1357,24 @@ struct RefreshAutoTests {
             _ = await auto(a, autoSteps(CallBox([])))
             let runs = try logged(a, "run")
             #expect(runs.count == 3)
-            #expect(Set(runs.compactMap { $0["run"]?.string }).count == 3, "each invocation has its own id")
+            #expect(
+                Set(runs.compactMap { $0["run"]?.string }).count == 3,
+                "each invocation has its own id")
         }
     }
 
-    @Test("through the command line: --auto takes no other option (--print-agent and --binary included), and exit codes follow ok")
+    @Test(
+        "through the command line: --auto takes no other option (--print-agent and --binary included), and exit codes follow ok"
+    )
     func commandLine() async throws {
         try await withAutoWorld(profileDays: 6) { a in
-            for extra in [["--yes"], ["--device", "iphone"], ["--app", "apollo"], ["--within", "3"], ["--force"], ["--print-agent"], ["--binary", "/opt/sl/sideload"]] {
+            for extra in [
+                ["--yes"], ["--device", "iphone"], ["--app", "apollo"], ["--within", "3"],
+                ["--force"], ["--print-agent"], ["--binary", "/opt/sl/sideload"],
+            ] {
                 let out = await run(argv: ["refresh", "--auto"] + extra, services: a.services)
-                #expect(!out.ok && out.exitCode == 1 && out.errors.first?.code == "USAGE", "\(extra)")
+                #expect(
+                    !out.ok && out.exitCode == 1 && out.errors.first?.code == "USAGE", "\(extra)")
             }
             let ok = await run(argv: ["refresh", "--auto"], services: a.services)
             #expect(ok.ok && ok.exitCode == 0 && ok.command == "refresh" && ok.data["auto"] == true)
@@ -1072,12 +1393,15 @@ private func manifestEntry(
 ) -> ManifestEntry {
     let digest = String(repeating: "ab", count: 32)
     return ManifestEntry(
-        app: app, version: version, file: "\(app)/\(version)/App.ipa", urlHost: "example.test", sha256: digest,
+        app: app, version: version, file: "\(app)/\(version)/App.ipa", urlHost: "example.test",
+        sha256: digest,
         upstreamDigest: digest, size: 1000, fetchedAt: daysFromNow(fetchedDays), approved: approved,
         approvedAt: approved ? daysFromNow(fetchedDays) : nil)
 }
 
-private func seedManifest(_ w: InstallWorld, _ entries: [ManifestEntry], missing: Set<String> = []) throws {
+private func seedManifest(_ w: InstallWorld, _ entries: [ManifestEntry], missing: Set<String> = [])
+    throws
+{
     var manifest = Manifest()
     manifest.entries = entries
     let store = ManifestStore(paths: w.paths)
@@ -1089,8 +1413,8 @@ private func seedManifest(_ w: InstallWorld, _ entries: [ManifestEntry], missing
     }
 }
 
-private extension Envelope {
-    var warnings: [String] {
+extension Envelope {
+    fileprivate var warnings: [String] {
         data["warnings"]?.array?.compactMap { $0["code"]?.string } ?? []
     }
 }

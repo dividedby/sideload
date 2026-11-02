@@ -26,7 +26,8 @@ struct EntitlementReduction: Equatable, Sendable {
     /// The property list `codesign --entitlements` reads.
     var plist: [String: Any] {
         var out: [String: Any] = [
-            Self.applicationIdentifierKey: applicationIdentifier, Self.teamIdentifierKey: teamIdentifier,
+            Self.applicationIdentifierKey: applicationIdentifier,
+            Self.teamIdentifierKey: teamIdentifier,
         ]
         out[Self.getTaskAllowKey] = getTaskAllow
         if let keychainGroup { out[Self.keychainGroupsKey] = [keychainGroup] }
@@ -50,7 +51,8 @@ enum EntitlementReducer {
 
         let bundleId = String(applicationIdentifier.dropFirst(team.count + 1))
         var reduction = EntitlementReduction(
-            applicationIdentifier: applicationIdentifier, teamIdentifier: team, getTaskAllow: getTaskAllow, keychainGroup: nil,
+            applicationIdentifier: applicationIdentifier, teamIdentifier: team,
+            getTaskAllow: getTaskAllow, keychainGroup: nil,
             dropped: [], appGroups: BinaryTools.appGroups(original))
 
         // All three are written from the profile, so an original of the same name is replaced, not dropped.
@@ -70,7 +72,9 @@ enum EntitlementReducer {
 
     /// Splits the groups that go away: those the main app declares (a warning) and those only a stripped
     /// extension declared (information). Both lists are sorted and de-duplicated.
-    static func groupSplit(app: [String], stripped: [StrippedBundle]) -> (declaredByApp: [String], extensionsOnly: [String]) {
+    static func groupSplit(app: [String], stripped: [StrippedBundle]) -> (
+        declaredByApp: [String], extensionsOnly: [String]
+    ) {
         let mine = Set(app)
         let theirs = Set(stripped.flatMap(\.appGroups))
         return (mine.sorted(), theirs.subtracting(mine).sorted())

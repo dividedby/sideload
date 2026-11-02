@@ -54,7 +54,9 @@ public struct SecurityKeychainSecretStore: SecretStore {
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess else { throw KeychainFailure.fromPasswordRead(status: status) }
+        guard status == errSecSuccess else {
+            throw KeychainFailure.fromPasswordRead(status: status)
+        }
         guard let data = result as? Data, let password = String(data: data, encoding: .utf8) else {
             throw KeychainFailure.passwordUnreadable(errSecDecode)
         }

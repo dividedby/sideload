@@ -19,7 +19,8 @@ struct RefreshLog: Sendable {
     static func newRunId() -> String { String(UUID().uuidString.lowercased().prefix(8)) }
 
     func record(_ event: String, _ fields: [String: JSONValue] = [:]) {
-        var line = Dictionary(uniqueKeysWithValues: fields.map { ($0.key, Self.cleaned($0.key, $0.value)) })
+        var line = Dictionary(
+            uniqueKeysWithValues: fields.map { ($0.key, Self.cleaned($0.key, $0.value)) })
         line["ts"] = .string(ProgressLog.isoTimestamp(clock.now()))
         line["run"] = .string(Self.token(run))
         line["event"] = .string(Self.token(event))
@@ -42,14 +43,18 @@ struct RefreshLog: Sendable {
     /// A failure or skip code: upper case words as this code base writes them. Anything else, or anything that holds a run of
     /// hex digits long enough to be a device ID, is `OTHER`.
     static func code(_ raw: String) -> String {
-        guard raw.wholeMatch(of: /[A-Z][A-Z0-9_]{1,47}/) != nil, raw.firstMatch(of: /[0-9A-F]{12}/) == nil else { return "OTHER" }
+        guard raw.wholeMatch(of: /[A-Z][A-Z0-9_]{1,47}/) != nil,
+            raw.firstMatch(of: /[0-9A-F]{12}/) == nil
+        else { return "OTHER" }
         return raw
     }
 
     /// A plain word or timestamp (`renewed-not-installed`, `2026-10-21T12:00:00.000Z`); anything else, or a run of hex digits
     /// long enough to be a device ID, is `?`.
     static func token(_ raw: String) -> String {
-        guard raw.wholeMatch(of: /[A-Za-z0-9:.\-]{1,40}/) != nil, raw.firstMatch(of: /[0-9A-Fa-f]{12}/) == nil else { return "?" }
+        guard raw.wholeMatch(of: /[A-Za-z0-9:.\-]{1,40}/) != nil,
+            raw.firstMatch(of: /[0-9A-Fa-f]{12}/) == nil
+        else { return "?" }
         return raw
     }
 
@@ -67,7 +72,11 @@ struct RefreshLog: Sendable {
             for (name, count) in counts {
                 guard case .number(let n) = count else { continue }
                 let clean = code(name)
-                if case .number(let before)? = tally[clean] { tally[clean] = .number(before + n) } else { tally[clean] = count }
+                if case .number(let before)? = tally[clean] {
+                    tally[clean] = .number(before + n)
+                } else {
+                    tally[clean] = count
+                }
             }
             return .object(tally)
         case .bool, .number: return value

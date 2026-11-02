@@ -37,7 +37,8 @@ public struct PosixSpawnRunner: Runner {
 
     /// Tests inject a short grace period, a recording signal sender, and a pipe factory that can fail.
     init(
-        children: LiveChildren, grace: Duration, signalGroup: @escaping @Sendable (pid_t, Int32) -> Int32,
+        children: LiveChildren, grace: Duration,
+        signalGroup: @escaping @Sendable (pid_t, Int32) -> Int32,
         pipeFactory: @escaping @Sendable () -> (read: Int32, write: Int32)? = makePipe,
         afterSpawn: @escaping @Sendable () -> Void = {},
         reap: @escaping Reap = { waitpid($0, $1, WNOHANG) },
@@ -55,8 +56,10 @@ public struct PosixSpawnRunner: Runner {
     public func run(_ spec: CommandSpec) async -> RunResult {
         let waker = Waker()
         let job = Execution(
-            spec: spec, children: children, grace: grace.nanoseconds, signalGroup: signalGroup, waker: waker,
-            pipeFactory: pipeFactory, afterSpawn: afterSpawn, reap: reap, reapTimeout: reapTimeout.nanoseconds)
+            spec: spec, children: children, grace: grace.nanoseconds, signalGroup: signalGroup,
+            waker: waker,
+            pipeFactory: pipeFactory, afterSpawn: afterSpawn, reap: reap,
+            reapTimeout: reapTimeout.nanoseconds)
         return await withTaskCancellationHandler {
             await withCheckedContinuation { (continuation: CheckedContinuation<RunResult, Never>) in
                 let thread = Thread { continuation.resume(returning: job.run()) }
@@ -74,7 +77,8 @@ extension Duration {
     var nanoseconds: UInt64 {
         let (seconds, attoseconds) = components
         guard seconds > 0 || attoseconds > 0 else { return 0 }
-        let (product, overflow) = UInt64(max(seconds, 0)).multipliedReportingOverflow(by: 1_000_000_000)
+        let (product, overflow) = UInt64(max(seconds, 0)).multipliedReportingOverflow(
+            by: 1_000_000_000)
         if overflow { return UInt64.max / 4 }
         return min(product &+ UInt64(max(attoseconds, 0) / 1_000_000_000), UInt64.max / 4)
     }
@@ -141,13 +145,18 @@ private struct Execution: Sendable {
         var made: [(read: Int32, write: Int32)] = []
         for _ in 0..<4 {
             guard let pair = pipeFactory() else {
-                for p in made { close(p.read); close(p.write) }
+                for p in made {
+                    close(p.read)
+                    close(p.write)
+                }
                 return spawnFailure("EMFILE")
             }
             made.append(pair)
         }
         let (stdinPipe, outPipe, errPipe, wakePipe) = (made[0], made[1], made[2], made[3])
-        var parentFds = [stdinPipe.write, outPipe.read, errPipe.read, wakePipe.read, wakePipe.write]
+        var parentFds = [
+            stdinPipe.write, outPipe.read, errPipe.read, wakePipe.read, wakePipe.write,
+        ]
         let childFds = [stdinPipe.read, outPipe.write, errPipe.write]
 
         // A closed registry means an interrupt is under way and the process is about to exit: don't spawn.
@@ -156,7 +165,8 @@ private struct Execution: Sendable {
             (parentFds + childFds).forEach { close($0) }
             return spawnFailure("INTERRUPTED")
         }
-        let (pid, spawnErrno) = spawn(path: path, stdin: stdinPipe.read, stdout: outPipe.write, stderr: errPipe.write)
+        let (pid, spawnErrno) = spawn(
+            path: path, stdin: stdinPipe.read, stdout: outPipe.write, stderr: errPipe.write)
         childFds.forEach { close($0) }
         guard spawnErrno == 0 else {
             children.endSpawn(pgid: nil)
@@ -176,7 +186,10 @@ private struct Execution: Sendable {
         var errFd = errPipe.read
         let input = [UInt8](spec.stdin ?? Data())
         var inputOffset = 0
-        if input.isEmpty { close(inFd); inFd = -1 }  // stdin is always closed so tools never wait on it
+        if input.isEmpty {
+            close(inFd)
+            inFd = -1
+        }  // stdin is always closed so tools never wait on it
 
         var outBytes: [UInt8] = []
         var errBytes: [UInt8] = []
@@ -211,11 +224,20 @@ private struct Execution: Sendable {
             hardStop = now() &+ Self.drainAfterKill
         }
         func closeOutputs() {
-            if outFd >= 0 { close(outFd); outFd = -1 }
-            if errFd >= 0 { close(errFd); errFd = -1 }
+            if outFd >= 0 {
+                close(outFd)
+                outFd = -1
+            }
+            if errFd >= 0 {
+                close(errFd)
+                errFd = -1
+            }
         }
         func closeInput() {
-            if inFd >= 0 { close(inFd); inFd = -1 }
+            if inFd >= 0 {
+                close(inFd)
+                inFd = -1
+            }
         }
         func readOutput(stdout isStdout: Bool) {
             let fd = isStdout ? outFd : errFd
@@ -223,7 +245,11 @@ private struct Execution: Sendable {
             if n > 0 {
                 let room = max(0, spec.maxOutputBytes - outBytes.count - errBytes.count)
                 let kept = min(n, room)
-                if isStdout { outBytes.append(contentsOf: chunk[0..<kept]) } else { errBytes.append(contentsOf: chunk[0..<kept]) }
+                if isStdout {
+                    outBytes.append(contentsOf: chunk[0..<kept])
+                } else {
+                    errBytes.append(contentsOf: chunk[0..<kept])
+                }
                 if n > room {
                     overflow = true
                     escalate()
@@ -239,7 +265,10 @@ private struct Execution: Sendable {
             if !pipesOpen {
                 let r = reap(pid, &status)
                 if r == pid { break loop }
-                if r < 0 && errno != EINTR { reapFailed = true; break loop }  // ECHILD: the exit status is unknown
+                if r < 0 && errno != EINTR {
+                    reapFailed = true
+                    break loop
+                }  // ECHILD: the exit status is unknown
             }
 
             let t = now()
@@ -309,7 +338,9 @@ private struct Execution: Sendable {
                     closeInput()
                 } else {
                     let n = input.withUnsafeBytes {
-                        write(inFd, $0.baseAddress! + inputOffset, min(input.count - inputOffset, 64 * 1024))
+                        write(
+                            inFd, $0.baseAddress! + inputOffset,
+                            min(input.count - inputOffset, 64 * 1024))
                     }
                     if n > 0 {
                         inputOffset += n
@@ -343,7 +374,8 @@ private struct Execution: Sendable {
         }
         return RunResult(
             code: code, signal: signal, stdout: String(decoding: outBytes, as: UTF8.self),
-            stderr: String(decoding: errBytes, as: UTF8.self), timedOut: timedOut, overflow: overflow)
+            stderr: String(decoding: errBytes, as: UTF8.self), timedOut: timedOut,
+            overflow: overflow)
     }
 
     // MARK: - Helpers
@@ -369,7 +401,9 @@ private struct Execution: Sendable {
         // Own process group; every other fd closed in the child; default signal dispositions, because
         // the CLI ignores SIGINT/SIGTERM/SIGHUP/SIGPIPE for its DispatchSources and ignored signals
         // would otherwise survive exec and make children immune to the group SIGTERM.
-        let flags = POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | POSIX_SPAWN_CLOEXEC_DEFAULT
+        let flags =
+            POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK
+            | POSIX_SPAWN_CLOEXEC_DEFAULT
         posix_spawnattr_setflags(&attr, Int16(flags))
         posix_spawnattr_setpgroup(&attr, 0)
         var defaults = sigset_t()
@@ -380,12 +414,16 @@ private struct Execution: Sendable {
         sigemptyset(&mask)
         posix_spawnattr_setsigmask(&attr, &mask)
 
-        var argv: [UnsafeMutablePointer<CChar>?] = ([spec.executable] + spec.args).map { strdup($0) }
+        var argv: [UnsafeMutablePointer<CChar>?] = ([spec.executable] + spec.args).map {
+            strdup($0)
+        }
         argv.append(nil)
         defer { argv.forEach { free($0) } }
 
         // The environment is passed through unchanged.
-        var envp: [UnsafeMutablePointer<CChar>?] = ProcessInfo.processInfo.environment.map { strdup("\($0.key)=\($0.value)") }
+        var envp: [UnsafeMutablePointer<CChar>?] = ProcessInfo.processInfo.environment.map {
+            strdup("\($0.key)=\($0.value)")
+        }
         envp.append(nil)
         defer { envp.forEach { free($0) } }
 
@@ -429,7 +467,9 @@ private func resolveExecutable(_ name: String) -> String? {
     for dir in searchPath.split(separator: ":", omittingEmptySubsequences: true) {
         let candidate = "\(dir)/\(name)"
         var info = stat()
-        if stat(candidate, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG, access(candidate, X_OK) == 0 {
+        if stat(candidate, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG,
+            access(candidate, X_OK) == 0
+        {
             return candidate
         }
     }

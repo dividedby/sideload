@@ -63,8 +63,11 @@ public struct SavedDevice: Codable, Sendable, Equatable {
     public func requireFreeSlotsReserved(alias: String) throws -> Int {
         guard let reserved = freeSlotsReserved else {
             throw SideloadError(
-                "CONFIG_INVALID", "Saved device \"\(alias)\" has a freeSlotsReserved outside 0 to 3.",
-                fix: "Run `sideload device slots --alias \(alias) --reserved <0-3> --yes` (owner) or fix config.json.")
+                "CONFIG_INVALID",
+                "Saved device \"\(alias)\" has a freeSlotsReserved outside 0 to 3.",
+                fix:
+                    "Run `sideload device slots --alias \(alias) --reserved <0-3> --yes` (owner) or fix config.json."
+            )
         }
         return reserved
     }
@@ -78,7 +81,8 @@ public struct SavedDevice: Codable, Sendable, Equatable {
     }
 
     public init(
-        udid: String? = nil, coreDeviceId: String? = nil, platform: String? = nil, name: String? = nil,
+        udid: String? = nil, coreDeviceId: String? = nil, platform: String? = nil,
+        name: String? = nil,
         hostnames: [String] = [], autoRefresh: Bool = false, freeSlotsReserved: Int = 0,
         lendableApp: String? = nil, extra: [String: JSONValue] = [:]
     ) {
@@ -94,7 +98,8 @@ public struct SavedDevice: Codable, Sendable, Equatable {
     }
 
     private static let known: Set<String> = [
-        "udid", "coreDeviceId", "platform", "name", "hostnames", "autoRefresh", "freeSlotsReserved", "lendableApp",
+        "udid", "coreDeviceId", "platform", "name", "hostnames", "autoRefresh", "freeSlotsReserved",
+        "lendableApp",
     ]
 
     public init(from decoder: any Decoder) throws {
@@ -106,7 +111,8 @@ public struct SavedDevice: Codable, Sendable, Equatable {
         hostnames = try c.decodeIfPresent([String].self, forKey: AnyKey("hostnames")) ?? []
         autoRefresh = try c.decodeIfPresent(Bool.self, forKey: AnyKey("autoRefresh")) ?? false
         // Lenient on range: an out-of-range value must not stop every command from loading the config.
-        freeSlotsReservedRaw = try c.decodeIfPresent(Int.self, forKey: AnyKey("freeSlotsReserved")) ?? 0
+        freeSlotsReservedRaw =
+            try c.decodeIfPresent(Int.self, forKey: AnyKey("freeSlotsReserved")) ?? 0
         lendableApp = try c.decodeIfPresent(String.self, forKey: AnyKey("lendableApp"))
         extra = [:]
         for key in c.allKeys where !Self.known.contains(key.stringValue) {
@@ -124,7 +130,9 @@ public struct SavedDevice: Codable, Sendable, Equatable {
         if !hostnames.isEmpty { try c.encode(hostnames, forKey: AnyKey("hostnames")) }
         // Written only when set, so a config that never used them is byte-identical to before.
         if autoRefresh { try c.encode(true, forKey: AnyKey("autoRefresh")) }
-        if freeSlotsReservedRaw != 0 { try c.encode(freeSlotsReservedRaw, forKey: AnyKey("freeSlotsReserved")) }
+        if freeSlotsReservedRaw != 0 {
+            try c.encode(freeSlotsReservedRaw, forKey: AnyKey("freeSlotsReserved"))
+        }
         try c.encodeIfPresent(lendableApp, forKey: AnyKey("lendableApp"))
     }
 }
@@ -159,9 +167,11 @@ public struct Config: Codable, Sendable, Equatable {
     public var extra: [String: JSONValue]
 
     public init(
-        teamId: String = Team.id, devices: [String: SavedDevice] = [:], apps: [String: JSONValue] = [:],
+        teamId: String = Team.id, devices: [String: SavedDevice] = [:],
+        apps: [String: JSONValue] = [:],
         approvedSources: [JSONValue] = [], minFreeGB: Double = 2, lastNotified: [String: Int] = [:],
-        bundleIdPrefix: String? = nil, appleSupportCase: String? = nil, extra: [String: JSONValue] = [:]
+        bundleIdPrefix: String? = nil, appleSupportCase: String? = nil,
+        extra: [String: JSONValue] = [:]
     ) {
         self.teamId = teamId
         self.devices = devices
@@ -175,24 +185,29 @@ public struct Config: Codable, Sendable, Equatable {
     }
 
     private static let known: Set<String> = [
-        "teamId", "devices", "apps", "approvedSources", "minFreeGB", "lastNotified", "bundleIdPrefix",
+        "teamId", "devices", "apps", "approvedSources", "minFreeGB", "lastNotified",
+        "bundleIdPrefix",
         "appleSupportCase",
     ]
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: AnyKey.self)
         teamId = try c.decodeIfPresent(String.self, forKey: AnyKey("teamId")) ?? Team.id
-        devices = try c.decodeIfPresent([String: SavedDevice].self, forKey: AnyKey("devices")) ?? [:]
+        devices =
+            try c.decodeIfPresent([String: SavedDevice].self, forKey: AnyKey("devices")) ?? [:]
         apps = try c.decodeIfPresent([String: JSONValue].self, forKey: AnyKey("apps")) ?? [:]
-        approvedSources = try c.decodeIfPresent([JSONValue].self, forKey: AnyKey("approvedSources")) ?? []
+        approvedSources =
+            try c.decodeIfPresent([JSONValue].self, forKey: AnyKey("approvedSources")) ?? []
         minFreeGB = try c.decodeIfPresent(Double.self, forKey: AnyKey("minFreeGB")) ?? 2
-        lastNotified = try c.decodeIfPresent([String: Int].self, forKey: AnyKey("lastNotified")) ?? [:]
+        lastNotified =
+            try c.decodeIfPresent([String: Int].self, forKey: AnyKey("lastNotified")) ?? [:]
         bundleIdPrefix = try c.decodeIfPresent(String.self, forKey: AnyKey("bundleIdPrefix"))
         if let number = try? c.decode(Int.self, forKey: AnyKey("appleSupportCase")) {
             appleSupportCase = String(number)
             appleSupportCaseWasNumber = true
         } else {
-            appleSupportCase = try c.decodeIfPresent(String.self, forKey: AnyKey("appleSupportCase"))
+            appleSupportCase = try c.decodeIfPresent(
+                String.self, forKey: AnyKey("appleSupportCase"))
         }
         extra = [:]
         for key in c.allKeys where !Self.known.contains(key.stringValue) {
@@ -245,12 +260,14 @@ extension Config {
             throw SideloadError("CONFIG_INVALID", "config.json is not valid JSON.", fix: fixConfig)
         }
         guard case .object(let fields) = json else {
-            throw SideloadError("CONFIG_INVALID", "config.json must contain a JSON object.", fix: fixConfig)
+            throw SideloadError(
+                "CONFIG_INVALID", "config.json must contain a JSON object.", fix: fixConfig)
         }
         if let team = fields["teamId"], team != .string(Team.id) { throw teamError(team) }
         if let devices = fields["devices"] {
             guard case .object = devices else {
-                throw SideloadError("CONFIG_INVALID", "config.json devices must be an object.", fix: fixConfig)
+                throw SideloadError(
+                    "CONFIG_INVALID", "config.json devices must be an object.", fix: fixConfig)
             }
         }
         do {
@@ -262,14 +279,17 @@ extension Config {
             throw SideloadError(
                 "CONFIG_INVALID", "config.json has \(place) of the wrong type.",
                 fix: path.isEmpty
-                    ? fixConfig : "Fix the value of `\(path)` in $SIDELOAD_HOME/config.json, or remove the key.")
+                    ? fixConfig
+                    : "Fix the value of `\(path)` in $SIDELOAD_HOME/config.json, or remove the key."
+            )
         }
     }
 
     private static func keyPath(_ error: DecodingError) -> String {
         let context: DecodingError.Context
         switch error {
-        case .typeMismatch(_, let c), .valueNotFound(_, let c), .keyNotFound(_, let c), .dataCorrupted(let c):
+        case .typeMismatch(_, let c), .valueNotFound(_, let c), .keyNotFound(_, let c),
+            .dataCorrupted(let c):
             context = c
         @unknown default:
             return ""
@@ -308,8 +328,11 @@ extension Config {
         guard case .object(let app)? = apps[alias], let team = app["team"] else { return .paid }
         guard case .string(let value) = team, let parsed = AppTeam(rawValue: value) else {
             throw SideloadError(
-                "CONFIG_INVALID", "config.json has `apps.\(alias).team` of the wrong type or value.",
-                fix: "Set `apps.\(alias).team` to \"free\" in $SIDELOAD_HOME/config.json, or remove the key.")
+                "CONFIG_INVALID",
+                "config.json has `apps.\(alias).team` of the wrong type or value.",
+                fix:
+                    "Set `apps.\(alias).team` to \"free\" in $SIDELOAD_HOME/config.json, or remove the key."
+            )
         }
         return parsed
     }
@@ -321,7 +344,8 @@ extension Config {
         guard let prefix, CanaryCommand.isValidPrefix(prefix) else { return false }
         let head = prefix + ".free."
         guard bundleId.hasPrefix(head) else { return false }
-        return String(bundleId.dropFirst(head.count)).wholeMatch(of: /[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*/) != nil
+        return String(bundleId.dropFirst(head.count)).wholeMatch(
+            of: /[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*/) != nil
     }
 }
 
@@ -333,7 +357,9 @@ extension Config {
         guard let d = devices[alias] else {
             throw SideloadError(
                 "DEVICE_NOT_SAVED", "No saved device with alias \"\(alias)\".",
-                fix: "sideload device save --alias <alias> --match <device name> --platform ios|tvos --yes")
+                fix:
+                    "sideload device save --alias <alias> --match <device name> --platform ios|tvos --yes"
+            )
         }
         guard let deviceId = Self.nonEmpty(d.coreDeviceId) ?? Self.nonEmpty(d.udid) else {
             throw SideloadError(
@@ -341,7 +367,8 @@ extension Config {
                 fix: "Re-save it with `sideload device save`.")
         }
         return ResolvedDevice(
-            alias: alias, udid: d.udid, coreDeviceId: d.coreDeviceId, platform: d.platform, deviceId: deviceId,
+            alias: alias, udid: d.udid, coreDeviceId: d.coreDeviceId, platform: d.platform,
+            deviceId: deviceId,
             name: d.name, hostnames: d.hostnames)
     }
 

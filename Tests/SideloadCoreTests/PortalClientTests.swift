@@ -6,10 +6,12 @@ import Testing
 private let bearer = ASCSecret("test-bearer-value")
 
 private func client(
-    _ transport: FakeHTTPTransport, clock: any WallClock = FixedClock(testNow), sleeps: SleepLog = SleepLog(),
+    _ transport: FakeHTTPTransport, clock: any WallClock = FixedClock(testNow),
+    sleeps: SleepLog = SleepLog(),
     log: LogLines = LogLines()
 ) -> PortalClient {
-    PortalClient(transport: transport, token: bearer, clock: clock, sleep: sleeps.sleep, log: log.log)
+    PortalClient(
+        transport: transport, token: bearer, clock: clock, sleep: sleeps.sleep, log: log.log)
 }
 
 private func failure(_ block: () async throws -> PortalListing) async -> SideloadError? {
@@ -31,14 +33,18 @@ struct PortalClientTests {
             let transport = FakeHTTPTransport { _ in okPage([]) }
             _ = try await client(transport).list(resource)
             let request = try #require(transport.requests.first)
-            let parts = try #require(URLComponents(url: request.url, resolvingAgainstBaseURL: false))
+            let parts = try #require(
+                URLComponents(url: request.url, resolvingAgainstBaseURL: false))
             #expect(parts.scheme == "https" && parts.host == "api.appstoreconnect.apple.com")
             #expect(parts.path == resource.path)
-            let query = Dictionary(uniqueKeysWithValues: (parts.queryItems ?? []).map { ($0.name, $0.value ?? "") })
+            let query = Dictionary(
+                uniqueKeysWithValues: (parts.queryItems ?? []).map { ($0.name, $0.value ?? "") })
             #expect(query["limit"] == "200")
             let fields = try #require(query["fields[\(resource.rawValue)]"])
             for banned in ["name", "displayName", "profileContent", "serialNumber"] {
-                #expect(!fields.split(separator: ",").contains(Substring(banned)), "\(resource) must not request \(banned)")
+                #expect(
+                    !fields.split(separator: ",").contains(Substring(banned)),
+                    "\(resource) must not request \(banned)")
             }
             #expect(query.count == 2)
             #expect(request.bearer?.reveal { $0 } == "test-bearer-value")
@@ -48,7 +54,9 @@ struct PortalClientTests {
     @Test("follows links.next and concatenates the pages")
     func paging() async throws {
         let transport = FakeHTTPTransport { request in
-            if request.url.query?.contains("cursor=AQ") == true { return okPage([resource("devices", "2", [:])]) }
+            if request.url.query?.contains("cursor=AQ") == true {
+                return okPage([resource("devices", "2", [:])])
+            }
             return okPage([resource("devices", "1", [:])], next: next)
         }
         let log = LogLines()
@@ -59,17 +67,19 @@ struct PortalClientTests {
         #expect(log.all == ["portal: GET /v1/devices page 1", "portal: GET /v1/devices page 2"])
     }
 
-    @Test("a next link that leaves the API host or list is refused and the token goes nowhere else", arguments: [
-        "https://evil.example/v1/devices?cursor=AQ",
-        "http://api.appstoreconnect.apple.com/v1/devices?cursor=AQ",
-        "https://api.appstoreconnect.apple.com/v1/profiles?cursor=AQ",
-        "https://api.appstoreconnect.apple.com/v1/devices/123?cursor=AQ",
-        "https://api.appstoreconnect.apple.com@evil.example/v1/devices",
-        "https://user:pw@api.appstoreconnect.apple.com/v1/devices",
-        "https://api.appstoreconnect.apple.com:8443/v1/devices",
-        "https://api.appstoreconnect.apple.com.evil.example/v1/devices",
-        "//evil.example/v1/devices", "/v1/devices?cursor=AQ", "not a url",
-    ])
+    @Test(
+        "a next link that leaves the API host or list is refused and the token goes nowhere else",
+        arguments: [
+            "https://evil.example/v1/devices?cursor=AQ",
+            "http://api.appstoreconnect.apple.com/v1/devices?cursor=AQ",
+            "https://api.appstoreconnect.apple.com/v1/profiles?cursor=AQ",
+            "https://api.appstoreconnect.apple.com/v1/devices/123?cursor=AQ",
+            "https://api.appstoreconnect.apple.com@evil.example/v1/devices",
+            "https://user:pw@api.appstoreconnect.apple.com/v1/devices",
+            "https://api.appstoreconnect.apple.com:8443/v1/devices",
+            "https://api.appstoreconnect.apple.com.evil.example/v1/devices",
+            "//evil.example/v1/devices", "/v1/devices?cursor=AQ", "not a url",
+        ])
     func offHostNext(link: String) async {
         let transport = FakeHTTPTransport { _ in okPage([], next: link) }
         let error = await failure { try await client(transport).list(.devices) }
@@ -82,12 +92,15 @@ struct PortalClientTests {
         let transport = FakeHTTPTransport { _ in
             jsonResponse(["data": [], "links": ["next": 7]])
         }
-        #expect(await failure { try await client(transport).list(.devices) }?.code == "ASC_RESPONSE_INVALID")
+        #expect(
+            await failure { try await client(transport).list(.devices) }?.code
+                == "ASC_RESPONSE_INVALID")
     }
 
     @Test("stops at 20 pages and reports the list as truncated")
     func pageCap() async throws {
-        let transport = FakeHTTPTransport { _ in okPage([resource("devices", "x", [:])], next: next) }
+        let transport = FakeHTTPTransport { _ in okPage([resource("devices", "x", [:])], next: next)
+        }
         let listing = try await client(transport).list(.devices)
         #expect(listing.truncated)
         #expect(listing.items.count == 20)
@@ -98,7 +111,8 @@ struct PortalClientTests {
     func retryBackoff() async throws {
         let sleeps = SleepLog()
         let transport = FakeHTTPTransport(results: [
-            .success(errorResponse(500)), .success(errorResponse(429)), .success(okPage([resource("devices", "1", [:])])),
+            .success(errorResponse(500)), .success(errorResponse(429)),
+            .success(okPage([resource("devices", "1", [:])])),
         ])
         let listing = try await client(transport, sleeps: sleeps).list(.devices)
         #expect(listing.items.count == 1)
@@ -106,9 +120,11 @@ struct PortalClientTests {
         #expect(transport.requests.count == 3)
     }
 
-    @Test("gives up after two retries with the status's error code", arguments: [
-        (500, "ASC_HTTP_ERROR"), (503, "ASC_HTTP_ERROR"), (429, "ASC_RATE_LIMITED"),
-    ])
+    @Test(
+        "gives up after two retries with the status's error code",
+        arguments: [
+            (500, "ASC_HTTP_ERROR"), (503, "ASC_HTTP_ERROR"), (429, "ASC_RATE_LIMITED"),
+        ])
     func retryExhausted(status: Int, code: String) async {
         let transport = FakeHTTPTransport { _ in errorResponse(status) }
         let error = await failure { try await client(transport).list(.devices) }
@@ -136,20 +152,25 @@ struct PortalClientTests {
         #expect(sleeps.durations == [.seconds(1)])
 
         let alwaysTimeout = FakeHTTPTransport(results: [.failure(.timedOut)])
-        #expect(await failure { try await client(alwaysTimeout).list(.devices) }?.code == "ASC_NETWORK")
+        #expect(
+            await failure { try await client(alwaysTimeout).list(.devices) }?.code == "ASC_NETWORK")
         #expect(alwaysTimeout.requests.count == 3)
 
         for kind in [HTTPTransportError.failed, .bodyTooLarge, .disabled] {
             let transport = FakeHTTPTransport(results: [.failure(kind)])
-            #expect(await failure { try await client(transport).list(.devices) }?.code == "ASC_NETWORK")
+            #expect(
+                await failure { try await client(transport).list(.devices) }?.code == "ASC_NETWORK")
             #expect(transport.requests.count == 1, "\(kind) is not retried")
         }
     }
 
-    @Test("4xx other than 429 is not retried and maps to its code", arguments: [
-        (401, "ASC_UNAUTHORIZED"), (403, "ASC_FORBIDDEN"), (404, "ASC_HTTP_ERROR"), (400, "ASC_HTTP_ERROR"),
-        (302, "ASC_HTTP_ERROR"),
-    ])
+    @Test(
+        "4xx other than 429 is not retried and maps to its code",
+        arguments: [
+            (401, "ASC_UNAUTHORIZED"), (403, "ASC_FORBIDDEN"), (404, "ASC_HTTP_ERROR"),
+            (400, "ASC_HTTP_ERROR"),
+            (302, "ASC_HTTP_ERROR"),
+        ])
     func clientErrors(status: Int, code: String) async {
         let transport = FakeHTTPTransport { _ in errorResponse(status) }
         let error = await failure { try await client(transport).list(.devices) }
@@ -171,7 +192,9 @@ struct PortalClientTests {
 
     @Test("only a well-shaped Apple error code is kept, never the title or detail text")
     func appleCode() async {
-        let transport = FakeHTTPTransport { _ in errorResponse(500, code: "has spaces and text", detail: Canary.detail) }
+        let transport = FakeHTTPTransport { _ in
+            errorResponse(500, code: "has spaces and text", detail: Canary.detail)
+        }
         let error = await failure { try await client(transport).list(.devices) }
         #expect(error?.data["appleCode"] == nil)
         let text = String(describing: error)
@@ -179,22 +202,32 @@ struct PortalClientTests {
 
         let longCode = String(repeating: "A", count: 65)
         #expect(PortalClient.appleCode(errorResponse(500, code: longCode).body) == nil)
-        #expect(PortalClient.appleCode(errorResponse(500, code: "STATE.ERROR_1").body) == "STATE.ERROR_1")
+        #expect(
+            PortalClient.appleCode(errorResponse(500, code: "STATE.ERROR_1").body)
+                == "STATE.ERROR_1")
     }
 
-    @Test("unusable bodies are ASC_RESPONSE_INVALID", arguments: [
-        "not json", "[]", #"{"data":"x"}"#, #"{"meta":{}}"#, #"{"data":[{"attributes":{}}]}"#, #"{"data":[7]}"#, "",
-    ])
+    @Test(
+        "unusable bodies are ASC_RESPONSE_INVALID",
+        arguments: [
+            "not json", "[]", #"{"data":"x"}"#, #"{"meta":{}}"#, #"{"data":[{"attributes":{}}]}"#,
+            #"{"data":[7]}"#, "",
+        ])
     func invalidBodies(body: String) async {
         let transport = FakeHTTPTransport { _ in textResponse(body) }
-        #expect(await failure { try await client(transport).list(.devices) }?.code == "ASC_RESPONSE_INVALID")
+        #expect(
+            await failure { try await client(transport).list(.devices) }?.code
+                == "ASC_RESPONSE_INVALID")
     }
 
     @Test("tolerates unknown and missing attributes")
     func tolerant() async throws {
         let transport = FakeHTTPTransport { _ in
             okPage([
-                ["type": "devices", "id": "1", "attributes": ["future": [1, 2], "udid": "x"], "relationships": [:]],
+                [
+                    "type": "devices", "id": "1", "attributes": ["future": [1, 2], "udid": "x"],
+                    "relationships": [:],
+                ],
                 ["type": "devices", "id": "2"],
             ])
         }
@@ -207,7 +240,8 @@ struct PortalClientTests {
     func cancelledWait() async {
         let transport = FakeHTTPTransport { _ in errorResponse(500) }
         let cancelling = PortalClient(
-            transport: transport, token: bearer, clock: FixedClock(testNow), sleep: { _ in throw CancellationError() },
+            transport: transport, token: bearer, clock: FixedClock(testNow),
+            sleep: { _ in throw CancellationError() },
             log: { _ in })
         let error = await failure { try await cancelling.list(.devices) }
         #expect(error?.code == "CANCELLED")
@@ -215,7 +249,8 @@ struct PortalClientTests {
 
         let timeouts = FakeHTTPTransport(results: [.failure(.timedOut)])
         let onTimeout = PortalClient(
-            transport: timeouts, token: bearer, clock: FixedClock(testNow), sleep: { _ in throw CancellationError() },
+            transport: timeouts, token: bearer, clock: FixedClock(testNow),
+            sleep: { _ in throw CancellationError() },
             log: { _ in })
         #expect(await failure { try await onTimeout.list(.devices) }?.code == "CANCELLED")
         #expect(timeouts.requests.count == 1)
@@ -243,7 +278,8 @@ struct PortalClientTests {
         #expect(transport.requests.isEmpty)
 
         let services = Services(
-            runner: FakeRunner(), fs: FakeFileSystem.free(gb: 1), clock: FixedClock(testNow), keychain: FakeKeychain(),
+            runner: FakeRunner(), fs: FakeFileSystem.free(gb: 1), clock: FixedClock(testNow),
+            keychain: FakeKeychain(),
             home: Paths(home: "/nonexistent"))
         let sleeper = Task { try await services.sleep(.seconds(60)) }
         sleeper.cancel()
@@ -255,7 +291,8 @@ struct PortalClientTests {
         let clock = StepClock()
         let transport = FakeHTTPTransport { _ in errorResponse(500) }
         let slow = PortalClient(
-            transport: transport, token: bearer, clock: clock, sleep: { _ in clock.advance(200) }, log: { _ in })
+            transport: transport, token: bearer, clock: clock, sleep: { _ in clock.advance(200) },
+            log: { _ in })
         let error = await failure { try await slow.list(.devices) }
         #expect(error?.code == "ASC_NETWORK")
         #expect(transport.requests.count == 1)
@@ -264,12 +301,15 @@ struct PortalClientTests {
     @Test("the default Services transport refuses every request, so tests cannot reach the network")
     func defaultTransportThrows() async throws {
         let services = Services(
-            runner: FakeRunner(), fs: FakeFileSystem.free(gb: 1), clock: FixedClock(testNow), keychain: FakeKeychain(),
+            runner: FakeRunner(), fs: FakeFileSystem.free(gb: 1), clock: FixedClock(testNow),
+            keychain: FakeKeychain(),
             home: Paths(home: "/nonexistent"))
         let request = HTTPRequest(url: PortalClient.firstURL(.devices), bearer: bearer)
         await #expect(throws: HTTPTransportError.disabled) { try await services.http.get(request) }
         let error = await failure {
-            try await PortalClient(transport: services.http, token: bearer, clock: services.clock, sleep: { _ in }).list(.devices)
+            try await PortalClient(
+                transport: services.http, token: bearer, clock: services.clock, sleep: { _ in }
+            ).list(.devices)
         }
         #expect(error?.code == "ASC_NETWORK")
     }
@@ -278,9 +318,14 @@ struct PortalClientTests {
     func allowedPaths() {
         let ok = URL(string: "https://api.appstoreconnect.apple.com/v1/certificates")!
         #expect(PortalClient.isAllowed(ok))
-        #expect(!PortalClient.isAllowed(URL(string: "https://api.appstoreconnect.apple.com/v1/apps")!))
-        #expect(!PortalClient.isAllowed(URL(string: "https://api.appstoreconnect.apple.com/v1/certificates/ABC")!))
-        #expect(!PortalClient.isAllowed(URL(string: "https://api.appstoreconnect.apple.com/v1/certificates#frag")!))
+        #expect(
+            !PortalClient.isAllowed(URL(string: "https://api.appstoreconnect.apple.com/v1/apps")!))
+        #expect(
+            !PortalClient.isAllowed(
+                URL(string: "https://api.appstoreconnect.apple.com/v1/certificates/ABC")!))
+        #expect(
+            !PortalClient.isAllowed(
+                URL(string: "https://api.appstoreconnect.apple.com/v1/certificates#frag")!))
         #expect(!PortalClient.isAllowed(ok, path: "/v1/devices"))
     }
 
@@ -289,6 +334,9 @@ struct PortalClientTests {
         #expect(PortalResource(cliName: "bundle-ids") == .bundleIds)
         #expect(PortalResource(cliName: "bundleIds") == nil)
         #expect(PortalResource(cliName: "certificates") == .certificates)
-        #expect(PortalResource.allCases.map(\.cliName) == ["certificates", "bundle-ids", "devices", "profiles"])
+        #expect(
+            PortalResource.allCases.map(\.cliName) == [
+                "certificates", "bundle-ids", "devices", "profiles",
+            ])
     }
 }

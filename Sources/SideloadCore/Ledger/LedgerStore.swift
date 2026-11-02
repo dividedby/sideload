@@ -10,14 +10,19 @@ public struct LedgerStore: Sendable {
     /// The final write; injectable so tests can fail it.
     let writer: @Sendable (Data, String) throws -> Void
 
-    public init(paths: Paths, lockTimeout: Duration = .seconds(5), retryInterval: Duration = .milliseconds(25)) {
-        self.init(paths: paths, lockTimeout: lockTimeout, retryInterval: retryInterval) { data, path in
+    public init(
+        paths: Paths, lockTimeout: Duration = .seconds(5),
+        retryInterval: Duration = .milliseconds(25)
+    ) {
+        self.init(paths: paths, lockTimeout: lockTimeout, retryInterval: retryInterval) {
+            data, path in
             try AtomicFile.write(data, to: path)
         }
     }
 
     init(
-        paths: Paths, lockTimeout: Duration = .seconds(5), retryInterval: Duration = .milliseconds(25),
+        paths: Paths, lockTimeout: Duration = .seconds(5),
+        retryInterval: Duration = .milliseconds(25),
         writer: @escaping @Sendable (Data, String) throws -> Void
     ) {
         self.paths = paths
@@ -38,7 +43,9 @@ public struct LedgerStore: Sendable {
         } catch {
             throw SideloadError(
                 "LEDGER_INVALID", "ledger.json is not a valid schema \(Ledger.schema) ledger.",
-                fix: "Move $SIDELOAD_HOME/ledger.json aside, then run `sideload ledger refresh` to start a new one.")
+                fix:
+                    "Move $SIDELOAD_HOME/ledger.json aside, then run `sideload ledger refresh` to start a new one."
+            )
         }
     }
 
@@ -80,6 +87,8 @@ public struct LedgerStore: Sendable {
     }()
 
     private func acquireLock() async throws -> FileLock {
-        try await FileLock.acquire(path: paths.ledgerLock, name: "ledger", timeout: lockTimeout, retryInterval: retryInterval)
+        try await FileLock.acquire(
+            path: paths.ledgerLock, name: "ledger", timeout: lockTimeout,
+            retryInterval: retryInterval)
     }
 }

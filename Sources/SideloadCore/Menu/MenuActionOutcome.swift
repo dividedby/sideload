@@ -39,13 +39,17 @@ public struct MenuActionOutcome: Sendable, Equatable {
 
     public static let busyHeadline = "Busy — another sideload or lab run is signing. Try again."
     static let cancelNote = "A stopped build leaves a marker the next free command settles."
-    static let deviceNote = "The device may have finished; the row shows Change in progress until the window ends."
+    static let deviceNote =
+        "The device may have finished; the row shows Change in progress until the window ends."
     static let savedDeviceNote =
         "Next: Add app… on its card, with Developer Mode on. If Apple says it is not registered, the result offers to register it. After the first install, trust the developer on the device: Settings › General › VPN & Device Management."
-    static let autoRenewOnNote = "Nothing was renewed now. Installs with 5 days or fewer left renew while you are logged in."
-    static let autoRenewOffNote = "Installs expire after 7 days unless you renew them by hand: Renew… on the card."
+    static let autoRenewOnNote =
+        "Nothing was renewed now. Installs with 5 days or fewer left renew while you are logged in."
+    static let autoRenewOffNote =
+        "Installs expire after 7 days unless you renew them by hand: Renew… on the card."
     /// Replaces `provision`'s CLI fix when the result offers "Register and retry…".
-    static let registerFix = "Register and retry… asks first, then registers it on the free team and carries on."
+    static let registerFix =
+        "Register and retry… asks first, then registers it on the free team and carries on."
 
     /// - Parameter cancelled: the menu's Cancel was used. The model's flag decides, not the `INTERRUPTED` code: `refresh`
     ///   looks at the task only between apps, so a cancel in the middle of a step comes back as that step's failure.
@@ -61,40 +65,56 @@ public struct MenuActionOutcome: Sendable, Equatable {
         case .renew(_, let app): readRenew(app, alias: alias, envelope: envelope, action: action)
         case .install(_, let app):
             let name = MenuFormat.appName(app)
-            readSingle(envelope, action: action, app: app, done: "Installed \(name) on \(alias)", failed: "Install failed")
+            readSingle(
+                envelope, action: action, app: app, done: "Installed \(name) on \(alias)",
+                failed: "Install failed")
             if envelope.ok { notes += Self.warningNotes(envelope) }
         case .remove(_, let app):
             let name = MenuFormat.appName(app)
             let gone = envelope.data["wasPresent"] == .bool(false)
             readSingle(
                 envelope, action: action, app: app,
-                done: gone ? "\(name) was already gone from \(alias)" : "Removed \(name) from \(alias)", failed: "Remove failed")
+                done: gone
+                    ? "\(name) was already gone from \(alias)" : "Removed \(name) from \(alias)",
+                failed: "Remove failed")
             if envelope.ok { notes += Self.warningNotes(envelope) }
         case .lendable(_, let app):
             let name = app.map(MenuFormat.appName)
             readSingle(
                 envelope, action: action, app: app ?? "",
-                done: name.map { "\($0) is lendable on \(alias)" } ?? "Lending is off on \(alias)", failed: "Setting not saved")
+                done: name.map { "\($0) is lendable on \(alias)" } ?? "Lending is off on \(alias)",
+                failed: "Setting not saved")
         case .autoRenew(_, let on):
             readSingle(
-                envelope, action: action, app: "", done: on ? "Auto-renew is on for \(alias)" : "Auto-renew is off for \(alias)",
+                envelope, action: action, app: "",
+                done: on ? "Auto-renew is on for \(alias)" : "Auto-renew is off for \(alias)",
                 failed: "Setting not saved")
             if envelope.ok { notes = [on ? Self.autoRenewOnNote : Self.autoRenewOffNote] }
         case .addFetch(_, let app):
-            readFetch(app, alias: alias, envelope: envelope, action: action, cancelled: cancelled, chain: .add)
+            readFetch(
+                app, alias: alias, envelope: envelope, action: action, cancelled: cancelled,
+                chain: .add)
         case .updateFetch(_, let app, let from):
-            readFetch(app, alias: alias, envelope: envelope, action: action, cancelled: cancelled, chain: .update(from: from))
+            readFetch(
+                app, alias: alias, envelope: envelope, action: action, cancelled: cancelled,
+                chain: .update(from: from))
         case .saveDevice(let alias, _):
-            readSingle(envelope, action: action, app: "", done: "Saved \(alias)", failed: "Device not saved")
+            readSingle(
+                envelope, action: action, app: "", done: "Saved \(alias)",
+                failed: "Device not saved")
             if envelope.ok { notes = [Self.savedDeviceNote] }
         case .addApprove(_, let app, let fetched), .addRegister(_, let app, let fetched):
             let done = "Added \(MenuFormat.appName(app)) \(fetched.version) to \(alias)"
             readChain(action, app: app, done: done, envelope: envelope)
         case .updateApprove(_, let app, let from, let fetched):
             let versions = "\(MenuFormat.version(from)) → \(MenuFormat.version(fetched.version))"
-            readChain(action, app: app, done: "Updated \(MenuFormat.appName(app)) \(versions) on \(alias)", envelope: envelope)
+            readChain(
+                action, app: app,
+                done: "Updated \(MenuFormat.appName(app)) \(versions) on \(alias)",
+                envelope: envelope)
         case .reinstallPrevious(_, let app, _, let to):
-            let done = "Reinstalled \(MenuFormat.appName(app)) \(MenuFormat.version(to.version)) on \(alias)"
+            let done =
+                "Reinstalled \(MenuFormat.appName(app)) \(MenuFormat.version(to.version)) on \(alias)"
             readChain(action, app: app, done: done, envelope: envelope)
         }
         // A run that finished cleanly despite the click lost nothing, so it is reported as done.
@@ -110,7 +130,9 @@ public struct MenuActionOutcome: Sendable, Equatable {
                 let steps = Self.chainSteps(envelope)
                 // Only an install that started may have finished on the device.
                 if steps.installStarted { notes.append(Self.deviceNote) }
-                if !steps.done.isEmpty, let chain = action.chainKind { notes.append(chain.keptNote) }
+                if !steps.done.isEmpty, let chain = action.chainKind {
+                    notes.append(chain.keptNote)
+                }
             case .renew, .lendable, .autoRenew, .saveDevice: break
             }
             // What finished before the stop stays visible; what was cut short is not a failure to retry.
@@ -121,10 +143,14 @@ public struct MenuActionOutcome: Sendable, Equatable {
     /// The action was not run because it was no longer available when the owner confirmed.
     public static func notRun(_ reason: String) -> MenuActionOutcome {
         MenuActionOutcome(
-            kind: .failed, headline: "Not run", lines: [], issues: [MenuIssue(code: "NOT_RUN", message: reason)], notes: [])
+            kind: .failed, headline: "Not run", lines: [],
+            issues: [MenuIssue(code: "NOT_RUN", message: reason)], notes: [])
     }
 
-    init(kind: Kind, headline: String, lines: [MenuResultLine], issues: [MenuIssue], notes: [String], proceed: MenuAction? = nil) {
+    init(
+        kind: Kind, headline: String, lines: [MenuResultLine], issues: [MenuIssue], notes: [String],
+        proceed: MenuAction? = nil
+    ) {
         self.kind = kind
         self.headline = headline
         self.lines = lines
@@ -135,11 +161,17 @@ public struct MenuActionOutcome: Sendable, Equatable {
 
     // MARK: refresh
 
-    private mutating func readRenew(_ app: String?, alias: String, envelope: Envelope, action: MenuAction) {
+    private mutating func readRenew(
+        _ app: String?, alias: String, envelope: Envelope, action: MenuAction
+    ) {
         let results = Self.results(envelope)
         let errors = envelope.errors
-        let renewedCount = results.filter { $0.status == .renewed || $0.status == .renewedNotInstalled }.count
-        if renewedCount == 0, !errors.isEmpty, errors.allSatisfy({ $0.code == OperationLock.busyCode }) {
+        let renewedCount = results.filter {
+            $0.status == .renewed || $0.status == .renewedNotInstalled
+        }.count
+        if renewedCount == 0, !errors.isEmpty,
+            errors.allSatisfy({ $0.code == OperationLock.busyCode })
+        {
             becomeBusy(action)
             return
         }
@@ -157,20 +189,31 @@ public struct MenuActionOutcome: Sendable, Equatable {
             case .failed:
                 // A failed app takes its message from the error entry that names it ("<app>: ...").
                 var issue: MenuIssue?
-                if let index = errors.indices.first(where: { !claimed.contains($0) && errors[$0].message.hasPrefix("\(key): ") }) {
+                if let index = errors.indices.first(where: {
+                    !claimed.contains($0) && errors[$0].message.hasPrefix("\(key): ")
+                }) {
                     claimed.insert(index)
                     let entry = errors[index]
-                    issue = MenuIssue(code: entry.code, message: String(entry.message.dropFirst(key.count + 2)), fix: entry.fix)
+                    issue = MenuIssue(
+                        code: entry.code, message: String(entry.message.dropFirst(key.count + 2)),
+                        fix: entry.fix)
                 }
                 let code = issue?.code ?? result.code ?? "INTERNAL_ERROR"
                 issue = issue ?? MenuIssue(code: code, message: "The renewal did not finish.")
                 if code == RefreshPolicy.interrupted {
-                    lines.append(line(key, name, .neutral, "Stopped", retry: .renew(device: alias, app: key)))
+                    lines.append(
+                        line(key, name, .neutral, "Stopped", retry: .renew(device: alias, app: key))
+                    )
                 } else if code == OperationLock.busyCode {
-                    lines.append(line(key, name, .neutral, "Busy · try again", retry: .renew(device: alias, app: key)))
+                    lines.append(
+                        line(
+                            key, name, .neutral, "Busy · try again",
+                            retry: .renew(device: alias, app: key)))
                 } else {
                     lines.append(
-                        line(key, name, .failed, "Failed · \(code)", issue: issue, retry: .renew(device: alias, app: key)))
+                        line(
+                            key, name, .failed, "Failed · \(code)", issue: issue,
+                            retry: .renew(device: alias, app: key)))
                 }
             }
         }
@@ -180,10 +223,14 @@ public struct MenuActionOutcome: Sendable, Equatable {
                 issues.append(MenuIssue(code: entry.code, message: entry.message, fix: entry.fix))
             }
         }
-        if results.isEmpty, !envelope.ok { lines.append(line("", "", .neutral, "Not run", retry: action)) }
+        if results.isEmpty, !envelope.ok {
+            lines.append(line("", "", .neutral, "Not run", retry: action))
+        }
 
         // Apps that were meant to run and did not (failed, or skipped by a stop) count; policy skips ("not due") do not.
-        let attempted = results.filter { $0.status == .failed || ($0.status == .skipped && !RefreshPolicy.isPolicySkip($0.code)) }.count
+        let attempted = results.filter {
+            $0.status == .failed || ($0.status == .skipped && !RefreshPolicy.isPolicySkip($0.code))
+        }.count
         notes += Self.warningNotes(envelope, excluding: ["APP_LENT"])
         if envelope.ok {
             kind = .done
@@ -191,7 +238,9 @@ public struct MenuActionOutcome: Sendable, Equatable {
             headline =
                 renewedCount == 0
                 ? "Nothing needed renewing on \(alias)"
-                : renewedCount == 1 && app != nil ? "Renewed \(target) on \(alias)" : "Renewed \(renewedCount) app\(renewedCount == 1 ? "" : "s") on \(alias)"
+                : renewedCount == 1 && app != nil
+                    ? "Renewed \(target) on \(alias)"
+                    : "Renewed \(renewedCount) app\(renewedCount == 1 ? "" : "s") on \(alias)"
         } else {
             kind = .failed
             headline =
@@ -244,7 +293,9 @@ public struct MenuActionOutcome: Sendable, Equatable {
 
     // MARK: install, remove, lendable
 
-    private mutating func readSingle(_ envelope: Envelope, action: MenuAction, app: String, done: String, failed: String) {
+    private mutating func readSingle(
+        _ envelope: Envelope, action: MenuAction, app: String, done: String, failed: String
+    ) {
         if envelope.ok {
             kind = .done
             headline = done
@@ -254,7 +305,9 @@ public struct MenuActionOutcome: Sendable, Equatable {
     }
 
     /// A command that did not succeed: the busy card when the lock was busy, else the failed headline with the command's errors.
-    private mutating func readFailure(_ envelope: Envelope, action: MenuAction, app: String, failed: String) {
+    private mutating func readFailure(
+        _ envelope: Envelope, action: MenuAction, app: String, failed: String
+    ) {
         if envelope.errors.first?.code == OperationLock.busyCode {
             becomeBusy(action)
             return
@@ -262,11 +315,17 @@ public struct MenuActionOutcome: Sendable, Equatable {
         kind = .failed
         headline = failed
         issues = envelope.errors.map { MenuIssue(code: $0.code, message: $0.message, fix: $0.fix) }
-        lines = [line(app, app.isEmpty ? "" : MenuFormat.appName(app), .failed, "Not completed", retry: action)]
+        lines = [
+            line(
+                app, app.isEmpty ? "" : MenuFormat.appName(app), .failed, "Not completed",
+                retry: action)
+        ]
     }
 
     /// The messages of the command's `warnings[]` (REFRESH_STATE_NOT_RECORDED, LAST_FREE_APP_REMOVED, ...).
-    private static func warningNotes(_ envelope: Envelope, excluding skipped: Set<String> = []) -> [String] {
+    private static func warningNotes(_ envelope: Envelope, excluding skipped: Set<String> = [])
+        -> [String]
+    {
         guard case .array(let warnings)? = envelope.data["warnings"] else { return [] }
         var notes: [String] = []
         for case .object(let warning) in warnings {
@@ -279,16 +338,20 @@ public struct MenuActionOutcome: Sendable, Equatable {
 
     // MARK: add app, update, reinstall previous version
 
-    static let addKeptNote = "Steps already done are kept; Add app again resumes where this stopped."
-    static let updateKeptNote = "Steps already done are kept; Update again resumes where this stopped."
-    static let reinstallKeptNote = "Steps already done are kept; Reinstall previous version again resumes where this stopped."
+    static let addKeptNote =
+        "Steps already done are kept; Add app again resumes where this stopped."
+    static let updateKeptNote =
+        "Steps already done are kept; Update again resumes where this stopped."
+    static let reinstallKeptNote =
+        "Steps already done are kept; Reinstall previous version again resumes where this stopped."
     /// Added to a failed install of Reinstall previous version: an older build over a newer one is iOS's to refuse.
     static let rollbackFix =
         "iOS may refuse an older build over a newer one. The installed app is unchanged; Renew or Update… returns to the installed or newest version."
 
     /// Stage 1: the fetched version's facts for the second confirm. No result card on success.
     private mutating func readFetch(
-        _ app: String, alias: String, envelope: Envelope, action: MenuAction, cancelled: Bool, chain: AddChain
+        _ app: String, alias: String, envelope: Envelope, action: MenuAction, cancelled: Bool,
+        chain: AddChain
     ) {
         guard envelope.ok else {
             readFailure(envelope, action: action, app: app, failed: "Fetch failed")
@@ -297,7 +360,10 @@ public struct MenuActionOutcome: Sendable, Equatable {
         guard let fetched = Self.fetched(envelope) else {
             kind = .failed
             headline = "Fetch failed"
-            issues = [MenuIssue(code: "INTERNAL_ERROR", message: "fetch did not report the version it stored.")]
+            issues = [
+                MenuIssue(
+                    code: "INTERNAL_ERROR", message: "fetch did not report the version it stored.")
+            ]
             lines = [line(app, MenuFormat.appName(app), .failed, "Not completed", retry: action)]
             return
         }
@@ -315,19 +381,23 @@ public struct MenuActionOutcome: Sendable, Equatable {
 
     private static func fetched(_ envelope: Envelope) -> MenuFetched? {
         guard case .string(let version)? = envelope.data["version"], !version.isEmpty,
-            case .string(let sha256)? = envelope.data["sha256"], case .number(let size)? = envelope.data["size"]
+            case .string(let sha256)? = envelope.data["sha256"],
+            case .number(let size)? = envelope.data["size"]
         else { return nil }
         func text(_ key: String) -> String? {
             if case .string(let value)? = envelope.data[key] { return value }
             return nil
         }
         var extensions = 0
-        if case .object(let inspect)? = envelope.data["inspect"], case .number(let count)? = inspect["extensionCount"] {
+        if case .object(let inspect)? = envelope.data["inspect"],
+            case .number(let count)? = inspect["extensionCount"]
+        {
             extensions = Int(count)
         }
         return MenuFetched(
             version: version, build: text("build"), sha256: sha256, size: Int64(size),
-            minOS: OSVersion.strictest([text("minOS"), text("inspectMinOS")]), extensionCount: extensions,
+            minOS: OSVersion.strictest([text("minOS"), text("inspectMinOS")]),
+            extensionCount: extensions,
             alreadyApproved: envelope.data["alreadyApproved"] == .bool(true))
     }
 
@@ -344,8 +414,10 @@ public struct MenuActionOutcome: Sendable, Equatable {
         var result = ChainSteps()
         if case .array(let items)? = envelope.data["steps"] {
             for case .object(let item) in items {
-                guard case .string(let name)? = item["step"], let step = MenuActionRunner.ChainStep(rawValue: name),
-                    case .string(let raw)? = item["status"], let status = MenuActionRunner.ChainStepStatus(rawValue: raw)
+                guard case .string(let name)? = item["step"],
+                    let step = MenuActionRunner.ChainStep(rawValue: name),
+                    case .string(let raw)? = item["status"],
+                    let status = MenuActionRunner.ChainStepStatus(rawValue: raw)
                 else { continue }
                 if status == .failed { result.failed = step } else { result.done[step] = status }
             }
@@ -357,12 +429,16 @@ public struct MenuActionOutcome: Sendable, Equatable {
 
     /// Stage 2 of Add app and of Update, and Reinstall previous version: one line per step that ran or was skipped, as the run's own
     /// record of what is now done. `done` is the headline of a success.
-    private mutating func readChain(_ action: MenuAction, app: String, done: String, envelope: Envelope) {
+    private mutating func readChain(
+        _ action: MenuAction, app: String, done: String, envelope: Envelope
+    ) {
         guard let chain = action.chainKind else { return }
         let alias = action.device
         let steps = Self.chainSteps(envelope)
         // Busy before the first step did anything changed nothing: the plain busy card. Later it is a stop with partial state.
-        if !envelope.ok, steps.failed == chain.steps.first, steps.done.isEmpty, envelope.errors.first?.code == OperationLock.busyCode {
+        if !envelope.ok, steps.failed == chain.steps.first, steps.done.isEmpty,
+            envelope.errors.first?.code == OperationLock.busyCode
+        {
             becomeBusy(action)
             return
         }
@@ -400,8 +476,11 @@ public struct MenuActionOutcome: Sendable, Equatable {
 
     /// Add app's own confirm that registers the device, when Apple refused the device at `provision` and nothing asked for
     /// registration yet. Only here: Update, Reinstall and Renew never offer it.
-    private static func registerRetry(_ action: MenuAction, _ envelope: Envelope, steps: ChainSteps) -> MenuAction? {
-        guard case .addApprove(let device, let app, var fetched) = action, steps.failed == .provision,
+    private static func registerRetry(_ action: MenuAction, _ envelope: Envelope, steps: ChainSteps)
+        -> MenuAction?
+    {
+        guard case .addApprove(let device, let app, var fetched) = action,
+            steps.failed == .provision,
             envelope.errors.first?.code == ProvisionClassifier.deviceNotRegistered
         else { return nil }
         if steps.done[.approve] != nil { fetched.alreadyApproved = true }
@@ -417,7 +496,8 @@ public struct MenuActionOutcome: Sendable, Equatable {
         case .addRegister(let device, let app, var fetched) where !fetched.alreadyApproved:
             fetched.alreadyApproved = true
             return .addRegister(device: device, app: app, fetched: fetched)
-        case .updateApprove(let device, let app, let from, var fetched) where !fetched.alreadyApproved:
+        case .updateApprove(let device, let app, let from, var fetched)
+        where !fetched.alreadyApproved:
             fetched.alreadyApproved = true
             return .updateApprove(device: device, app: app, from: from, fetched: fetched)
         default: return nil
@@ -427,24 +507,36 @@ public struct MenuActionOutcome: Sendable, Equatable {
     /// One line per step the chain has that ran, was skipped or failed, in its order. A failed install of Reinstall previous
     /// version gets the rollback text added to its own fix.
     private mutating func appendStepLines(
-        _ action: MenuAction, _ chain: ChainKind, _ envelope: Envelope, steps: ChainSteps, retry: MenuAction?
+        _ action: MenuAction, _ chain: ChainKind, _ envelope: Envelope, steps: ChainSteps,
+        retry: MenuAction?
     ) {
         for step in chain.steps {
             if let status = steps.done[step] {
                 let skipped = status == .skipped
-                lines.append(line(step.rawValue, step.title, skipped ? .neutral : .good, step.text(skipped: skipped, appIdNew: steps.appIdNew)))
+                lines.append(
+                    line(
+                        step.rawValue, step.title, skipped ? .neutral : .good,
+                        step.text(skipped: skipped, appIdNew: steps.appIdNew)))
             } else if step == steps.failed {
                 let entry = envelope.errors.first
                 let code = entry?.code ?? "INTERNAL_ERROR"
-                var fix = [entry?.fix, step == .install ? chain.installFix : nil].compactMap { $0 }.joined(separator: " ")
-                if code == ProvisionClassifier.deviceNotRegistered, case .addRegister? = retry, case .addApprove = action {
+                var fix = [entry?.fix, step == .install ? chain.installFix : nil].compactMap { $0 }
+                    .joined(separator: " ")
+                if code == ProvisionClassifier.deviceNotRegistered, case .addRegister? = retry,
+                    case .addApprove = action
+                {
                     fix = Self.registerFix
                 }
-                let issue = MenuIssue(code: code, message: entry?.message ?? "The step did not finish.", fix: fix.isEmpty ? nil : fix)
+                let issue = MenuIssue(
+                    code: code, message: entry?.message ?? "The step did not finish.",
+                    fix: fix.isEmpty ? nil : fix)
                 if code == RefreshPolicy.interrupted {
                     lines.append(line(step.rawValue, step.title, .neutral, "Stopped", retry: retry))
                 } else {
-                    lines.append(line(step.rawValue, step.title, .failed, "Failed · \(code)", issue: issue, retry: retry))
+                    lines.append(
+                        line(
+                            step.rawValue, step.title, .failed, "Failed · \(code)", issue: issue,
+                            retry: retry))
                 }
             }
         }
@@ -460,7 +552,8 @@ public struct MenuActionOutcome: Sendable, Equatable {
     }
 
     private func line(
-        _ app: String, _ name: String, _ tone: MenuTone, _ text: String, issue: MenuIssue? = nil, retry: MenuAction? = nil
+        _ app: String, _ name: String, _ tone: MenuTone, _ text: String, issue: MenuIssue? = nil,
+        retry: MenuAction? = nil
     ) -> MenuResultLine {
         MenuResultLine(app: app, name: name, tone: tone, text: text, issue: issue, retry: retry)
     }

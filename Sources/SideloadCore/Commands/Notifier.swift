@@ -29,7 +29,8 @@ struct Notifier: Sendable {
     /// The argument vector: the script lines, then the message.
     static func arguments(for message: String) -> [String] {
         [
-            "-e", "on run argv", "-e", "display notification (item 1 of argv) with title \"\(title)\"", "-e", "end run",
+            "-e", "on run argv", "-e",
+            "display notification (item 1 of argv) with title \"\(title)\"", "-e", "end run",
             sanitised(message),
         ]
     }
@@ -39,7 +40,8 @@ struct Notifier: Sendable {
         guard !Self.sanitised(message).isEmpty else { return false }
         let result = await runner.run(
             CommandSpec(
-                executable: Self.executable, args: Self.arguments(for: message), timeout: Self.timeout, maxOutputBytes: 4096))
+                executable: Self.executable, args: Self.arguments(for: message),
+                timeout: Self.timeout, maxOutputBytes: 4096))
         return result.code == 0 && !result.timedOut && result.spawnError == nil
     }
 
@@ -51,7 +53,9 @@ struct Notifier: Sendable {
     }
 
     /// "stremio-ios @ iphone failed DEVICE_LOCKED, next 14:30, 4 d left".
-    static func failed(app: String, alias: String, code: String, next: String?, daysLeft: Int?) -> String {
+    static func failed(app: String, alias: String, code: String, next: String?, daysLeft: Int?)
+        -> String
+    {
         "\(app) @ \(alias) failed \(code)" + (next.map { ", next \($0)" } ?? "") + left(daysLeft)
     }
 
@@ -70,10 +74,14 @@ struct Notifier: Sendable {
     static func expired(_ name: String) -> String { "\(name) expired" }
 
     /// "restore waiting: stremio-ios @ iphone".
-    static func restoreWaiting(app: String, alias: String) -> String { "restore waiting: \(app) @ \(alias)" }
+    static func restoreWaiting(app: String, alias: String) -> String {
+        "restore waiting: \(app) @ \(alias)"
+    }
 
     /// "Apollo 4.0.2 available", "Stremio 1.9.6b142 available" (the app's display name, the manifest's version spelling).
-    static func updateAvailable(app: String, version: String) -> String { "\(MenuFormat.appName(app)) \(version) available" }
+    static func updateAvailable(app: String, version: String) -> String {
+        "\(MenuFormat.appName(app)) \(version) available"
+    }
 
     /// The parts, in the order given, as one message that `sanitised` leaves whole: when they would not all fit in
     /// `maxLength`, the last ones are left out and the message ends with ", +N more". When even the first part alone
@@ -82,7 +90,8 @@ struct Notifier: Sendable {
         let clean = parts.map(sanitised).filter { !$0.isEmpty }
         for count in stride(from: clean.count, through: 1, by: -1) {
             let more = clean.count - count
-            let text = clean.prefix(count).joined(separator: ", ") + (more > 0 ? ", +\(more) more" : "")
+            let text =
+                clean.prefix(count).joined(separator: ", ") + (more > 0 ? ", +\(more) more" : "")
             if text.count <= maxLength { return text }
         }
         return clean.first ?? ""

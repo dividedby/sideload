@@ -1,1 +1,11 @@
-{"command":"provision","errors":[{"code":"IO_ERROR","fix":null,"message":"injected fault at storeProfile"}],"ok":false}
+{
+  "command": "provision",
+  "errors": [
+    {
+      "code": "IO_ERROR",
+      "fix": null,
+      "message": "injected fault at storeProfile"
+    }
+  ],
+  "ok": false
+}

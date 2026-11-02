@@ -22,7 +22,8 @@ public enum MenuLoader {
         guard FileManager.default.fileExists(atPath: services.home.config) else {
             return .firstRun(
                 MenuIssue(
-                    code: "NOT_SET_UP", message: "sideload has not been set up on this Mac yet (no config.json).",
+                    code: "NOT_SET_UP",
+                    message: "sideload has not been set up on this Mac yet (no config.json).",
                     fix: firstRunFix))
         }
         let config: Config
@@ -35,7 +36,9 @@ public enum MenuLoader {
         var notices: [MenuIssue] = []
         var canaryStatus: String?
         do {
-            if case .string(let status)? = try CanaryHistory.read(services.home.canaryLog).records.last?["status"] {
+            if case .string(let status)? = try CanaryHistory.read(services.home.canaryLog).records
+                .last?["status"]
+            {
                 canaryStatus = status
             }
         } catch {
@@ -51,14 +54,18 @@ public enum MenuLoader {
         }
         // The same pending-restore warning `status` prints; an unreadable ledger says nothing about which apps are lent.
         if ledgerReadable {
-            for entry in PendingRestores.find(services, config: config, ledger: ledger, now: services.clock.now()) {
+            for entry in PendingRestores.find(
+                services, config: config, ledger: ledger, now: services.clock.now())
+            {
                 notices.append(MenuIssue(PendingRestores.warning(entry)))
             }
         }
         return .ready(
             MenuInputs(
-                now: services.clock.now(), canaryStatus: canaryStatus, config: config, ledger: ledger,
-                probe: .checking, notices: notices, ledgerReadable: ledgerReadable, autoRefreshAvailable: true,
+                now: services.clock.now(), canaryStatus: canaryStatus, config: config,
+                ledger: ledger,
+                probe: .checking, notices: notices, ledgerReadable: ledgerReadable,
+                autoRefreshAvailable: true,
                 upstream: MenuUpdates.cached(services), stored: MenuPrevious.stored(services)))
     }
 
@@ -77,7 +84,9 @@ public enum MenuLoader {
     /// Sorted, so reads happen in a stable order.
     public static func visibleAliases(_ config: Config, probe: DeviceProbe) -> [String] {
         config.devices.keys.sorted().filter { alias in
-            config.devices[alias].map { MenuSnapshotBuilder.presence(of: $0, probe: probe).isVisible } ?? false
+            config.devices[alias].map {
+                MenuSnapshotBuilder.presence(of: $0, probe: probe).isVisible
+            } ?? false
         }
     }
 
@@ -86,7 +95,9 @@ public enum MenuLoader {
     /// because `FreeDeviceCalls` carries one; `info apps` is not an app mutation and the ID is never sent. A failed, locked
     /// or timed-out read keeps its error code and never looks like an empty device. `prefix` is the loaded config's
     /// `bundleIdPrefix`, so the read does not load the config a second time.
-    public static func readApps(_ services: Services, alias: String, prefix: String?) async -> DeviceAppsProbe {
+    public static func readApps(_ services: Services, alias: String, prefix: String?) async
+        -> DeviceAppsProbe
+    {
         guard let bundleId = ProvisionApp.apollo.freeBundleId(prefix: prefix) else {
             return .failed(code: "CONFIG_MISSING", takenAt: services.clock.now())
         }
@@ -99,16 +110,20 @@ public enum MenuLoader {
     /// The first paint of a load: the freshly read local files over what the last load learned (the device list and the
     /// cached app reads), so rows change only when a new answer differs. Only a launch with nothing known says "checking…".
     public static func firstPaint(
-        _ local: Local, cache: MenuAppsCache, renewing: Bool = false, checked: [String: MenuUpstream] = [:]
+        _ local: Local, cache: MenuAppsCache, renewing: Bool = false,
+        checked: [String: MenuUpstream] = [:]
     ) -> MenuPanel {
-        panel(local, probe: cache.lastProbe ?? .checking, apps: cache.entries, renewing: renewing, checked: checked)
+        panel(
+            local, probe: cache.lastProbe ?? .checking, apps: cache.entries, renewing: renewing,
+            checked: checked)
     }
 
     /// `apps` holds what was read per alias; a missing key means the device was not asked. `renewing` is a Renew started
     /// from the menu that is still running: the icon says so (`MenuIcon.State.renewing`), and only then. `checked` is what the
     /// update check of this session listed; it replaces a listing of `updates.json` that is not newer than it.
     public static func panel(
-        _ local: Local, probe: DeviceProbe, apps: [String: DeviceAppsProbe] = [:], renewing: Bool = false,
+        _ local: Local, probe: DeviceProbe, apps: [String: DeviceAppsProbe] = [:],
+        renewing: Bool = false,
         checked: [String: MenuUpstream] = [:]
     ) -> MenuPanel {
         switch local {
@@ -136,7 +151,9 @@ public enum DeviceAppsProbe: Sendable, Equatable {
 
     /// The successful read, if this is one.
     var appsRead: AppsRead? {
-        if case .read(let snapshot, let takenAt) = self { return AppsRead(snapshot: snapshot, takenAt: takenAt) }
+        if case .read(let snapshot, let takenAt) = self {
+            return AppsRead(snapshot: snapshot, takenAt: takenAt)
+        }
         return nil
     }
 
@@ -212,16 +229,21 @@ public struct DoctorSummary: Sendable, Equatable {
         var rows: [Row] = []
         if case .array(let checks)? = envelope.data["checks"] {
             for case .object(let check) in checks {
-                guard case .string(let id)? = check["id"], case .string(let message)? = check["message"] else { continue }
+                guard case .string(let id)? = check["id"],
+                    case .string(let message)? = check["message"]
+                else { continue }
                 var severity = CheckResult.Severity.info
-                if case .string(let raw)? = check["severity"], let parsed = CheckResult.Severity(rawValue: raw) {
+                if case .string(let raw)? = check["severity"],
+                    let parsed = CheckResult.Severity(rawValue: raw)
+                {
                     severity = parsed
                 }
                 var fix: String?
                 if case .string(let text)? = check["fix"] { fix = Redactor.redactPatterns(text) }
                 rows.append(
                     Row(
-                        id: id + "-\(rows.count)", severity: severity, message: Redactor.redactPatterns(message), fix: fix))
+                        id: id + "-\(rows.count)", severity: severity,
+                        message: Redactor.redactPatterns(message), fix: fix))
             }
         }
         self.init(ok: envelope.ok, rows: rows)

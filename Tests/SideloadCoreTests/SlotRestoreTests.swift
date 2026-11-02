@@ -12,9 +12,13 @@ private let sentinel = "SENTINEL-SESSION-TOKEN-7c41"
 private let prefs = "Library/Preferences/io.github.dividedby.free.stremio.plist"
 private let library = "Documents/library-9b2e.json"
 
-private let files: [String: Data] = [prefs: Data((sentinel + "prefs").utf8), library: Data((sentinel + "library").utf8)]
+private let files: [String: Data] = [
+    prefs: Data((sentinel + "prefs").utf8), library: Data((sentinel + "library").utf8),
+]
 
-private func script(_ faults: DataFaults = DataFaults(), files: [String: Data] = files) -> DeviceScript {
+private func script(_ faults: DataFaults = DataFaults(), files: [String: Data] = files)
+    -> DeviceScript
+{
     var script = DeviceScript(initial: [stremioId: true])
     script.container = files
     script.dataFaults = faults
@@ -29,35 +33,44 @@ private func faults(_ change: (inout DataFaults) -> Void) -> DataFaults {
     return value
 }
 
-private extension InstallWorld {
-    var appBackups: String { paths.backups + "/iphone/stremio-ios" }
-    var finishedBackups: [String] { listing(appBackups).sorted().filter { !$0.hasSuffix(".partial") } }
-    func manifest(_ name: String) throws -> AppDataBackup.Manifest {
+extension InstallWorld {
+    fileprivate var appBackups: String { paths.backups + "/iphone/stremio-ios" }
+    fileprivate var finishedBackups: [String] {
+        listing(appBackups).sorted().filter { !$0.hasSuffix(".partial") }
+    }
+    fileprivate func manifest(_ name: String) throws -> AppDataBackup.Manifest {
         let raw = try Data(contentsOf: URL(fileURLWithPath: "\(appBackups)/\(name)/manifest.json"))
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
         return try decoder.decode(AppDataBackup.Manifest.self, from: raw)
     }
-    func lend() async -> Envelope { await slot("lend", device: "iphone", to: "lab") }
-    func giveBack() async -> Envelope { await slot("return", device: "iphone") }
-    func restore(
-        _ services: Services? = nil, device: String? = "iphone", app: String? = nil, yes: Bool = true, udid: String? = nil,
+    fileprivate func lend() async -> Envelope { await slot("lend", device: "iphone", to: "lab") }
+    fileprivate func giveBack() async -> Envelope { await slot("return", device: "iphone") }
+    fileprivate func restore(
+        _ services: Services? = nil, device: String? = "iphone", app: String? = nil,
+        yes: Bool = true, udid: String? = nil,
         to: String? = nil
     ) async -> Envelope {
         await SlotCommand.run(
             services ?? self.services,
             SlotOptions(sub: "restore", device: device, udid: udid, to: to, app: app, yes: yes))
     }
-    var xcrunCalls: Int { runner.calls.filter { $0.executable == "xcrun" }.count }
-    var pushes: [CommandSpec] { runner.dataCalls.filter { DeviceSimRunner.words($0) == "device copy to" } }
+    fileprivate var xcrunCalls: Int { runner.calls.filter { $0.executable == "xcrun" }.count }
+    fileprivate var pushes: [CommandSpec] {
+        runner.dataCalls.filter { DeviceSimRunner.words($0) == "device copy to" }
+    }
     /// A lend whose backup holds both files, and a return whose restore then fails on `faults`; the backup stays unrestored.
-    func lendAndFailedReturn(_ failing: DataFaults = faults { $0.copyToFails = [prefs] }) async throws {
+    fileprivate func lendAndFailedReturn(
+        _ failing: DataFaults = faults { $0.copyToFails = [prefs] }
+    ) async throws {
         #expect(await lend().ok)
         runner.arm(script(failing))
         let back = await giveBack()
         #expect(back.ok && json(back)["dataRestored"] == false, "\(back.errors)")
     }
-    func ledgerBytes() throws -> Data { try Data(contentsOf: URL(fileURLWithPath: paths.ledger)) }
+    fileprivate func ledgerBytes() throws -> Data {
+        try Data(contentsOf: URL(fileURLWithPath: paths.ledger))
+    }
 }
 
 private func warningCodes(_ out: Envelope) -> [String] {
@@ -70,18 +83,23 @@ struct SlotRestoreTests {
 
     @Test("usage, then the saved alias, then --yes: nothing runs before the owner confirms")
     func dispatch() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             #expect(await w.restore(device: nil).errorCodes == ["USAGE"])
             #expect(await w.restore(device: "").errorCodes == ["USAGE"])
             #expect(await w.restore(udid: "x").errorCodes == ["USAGE"], "the owner uses the alias")
             #expect(await w.restore(to: "lab").errorCodes == ["USAGE"])
             #expect(await w.restore(device: "nope").errorCodes == ["DEVICE_NOT_SAVED"])
             #expect(await w.restore(app: "nonsense").errorCodes == ["USAGE"])
-            let lend = await SlotCommand.run(w.services, SlotOptions(sub: "lend", device: "iphone", to: "lab", yes: true))
+            let lend = await SlotCommand.run(
+                w.services, SlotOptions(sub: "lend", device: "iphone", to: "lab", yes: true))
             #expect(lend.errorCodes == ["USAGE"], "slot lend does not take --yes")
-            let lendApp = await SlotCommand.run(w.services, SlotOptions(sub: "lend", device: "iphone", to: "lab", app: "stremio-ios"))
+            let lendApp = await SlotCommand.run(
+                w.services,
+                SlotOptions(sub: "lend", device: "iphone", to: "lab", app: "stremio-ios"))
             #expect(lendApp.errorCodes == ["USAGE"])
-            let back = await SlotCommand.run(w.services, SlotOptions(sub: "return", device: "iphone", yes: true))
+            let back = await SlotCommand.run(
+                w.services, SlotOptions(sub: "return", device: "iphone", yes: true))
             #expect(back.errorCodes == ["USAGE"], "slot return does not take --yes")
         }
         // No --app and no lendable app on the device.
@@ -89,13 +107,16 @@ struct SlotRestoreTests {
             #expect(await w.restore().errorCodes == ["USAGE"])
         }
         // Without --yes: CONFIRM_REQUIRED, no lock, no subprocess, no ledger write.
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             let before = try w.ledgerBytes()
             let held = try OperationLock.acquire(paths: w.paths)
             defer { held.release() }
             let out = await w.restore(yes: false)
             #expect(out.errorCodes == ["CONFIRM_REQUIRED"], "the lock is not even tried")
-            #expect(json(out)["action"] == "restore" && json(out)["device"] == "iphone" && json(out)["app"] == "stremio-ios")
+            #expect(
+                json(out)["action"] == "restore" && json(out)["device"] == "iphone"
+                    && json(out)["app"] == "stremio-ios")
             #expect(w.runner.calls.isEmpty)
             #expect(try w.ledgerBytes() == before)
         }
@@ -103,7 +124,8 @@ struct SlotRestoreTests {
 
     @Test("a busy lock is OPERATION_IN_PROGRESS and nothing else happens")
     func busy() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.lendAndFailedReturn()
             let calls = w.runner.calls.count
             let before = try w.ledgerBytes()
@@ -117,29 +139,46 @@ struct SlotRestoreTests {
 
     // MARK: success and retry
 
-    @Test("after a failed return-restore, slot restore pushes the backup, relists, marks it, and writes no ledger or install call")
+    @Test(
+        "after a failed return-restore, slot restore pushes the backup, relists, marks it, and writes no ledger or install call"
+    )
     func happyPath() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.lendAndFailedReturn()
-            #expect(w.runner.container(stremioId).keys.sorted() == [library], "the failed return restored one file")
+            #expect(
+                w.runner.container(stremioId).keys.sorted() == [library],
+                "the failed return restored one file")
             let ledgerBefore = try w.ledgerBytes()
             let installs = w.runner.installCalls.count
             w.runner.arm(script())
             let out = await w.restore()
             #expect(out.ok, "\(out.errors)")
             let printed = json(out)
-            #expect(printed["action"] == "restore" && printed["device"] == "iphone" && printed["app"] == "stremio-ios")
-            #expect(printed["dataRestored"] == true && printed["dataFilesRestored"] == 2 && printed["dataFilesFailed"] == 0)
+            #expect(
+                printed["action"] == "restore" && printed["device"] == "iphone"
+                    && printed["app"] == "stremio-ios")
+            #expect(
+                printed["dataRestored"] == true && printed["dataFilesRestored"] == 2
+                    && printed["dataFilesFailed"] == 0)
             #expect(warningCodes(out).isEmpty)
-            #expect(w.runner.container(stremioId) == [library: files[library]!, prefs: files[prefs]!])
+            #expect(
+                w.runner.container(stremioId) == [library: files[library]!, prefs: files[prefs]!])
             let manifest = try w.manifest(try #require(w.finishedBackups.last))
             #expect(manifest.restoredAt == testNow && manifest.supersededAt == nil)
             #expect(w.finishedBackups.count == 1, "the backup is kept")
             #expect(try w.ledgerBytes() == ledgerBefore, "not a slot operation")
             #expect(w.runner.installCalls.count == installs)
-            let words = w.runner.calls.filter { $0.executable == "xcrun" }.map { DeviceSimRunner.words($0) }
-            #expect(!words.suffix(from: words.count - 5).contains { $0.contains("install") || $0.contains("uninstall") })
-            #expect(words.lastIndex(of: "device info files")! > words.lastIndex(of: "device copy to")!, "relisted to compare")
+            let words = w.runner.calls.filter { $0.executable == "xcrun" }.map {
+                DeviceSimRunner.words($0)
+            }
+            #expect(
+                !words.suffix(from: words.count - 5).contains {
+                    $0.contains("install") || $0.contains("uninstall")
+                })
+            #expect(
+                words.lastIndex(of: "device info files")! > words.lastIndex(of: "device copy to")!,
+                "relisted to compare")
             try w.expectClean(out)
             // Once marked, a rerun has nothing to do.
             let again = await w.restore()
@@ -149,7 +188,8 @@ struct SlotRestoreTests {
 
     @Test("failures keep the backup and are repeatable: INCOMPLETE, then UNVERIFIED, then success")
     func retry() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.lendAndFailedReturn()
             let name = try #require(w.finishedBackups.last)
             // 1: a push the device drops.
@@ -157,66 +197,90 @@ struct SlotRestoreTests {
             let dropped = await w.restore()
             #expect(dropped.errorCodes == ["RESTORE_FAILED"], "\(dropped.errors)")
             var printed = json(dropped)
-            #expect(printed["cause"] == "DATA_RESTORE_INCOMPLETE" && printed["dataRestored"] == false)
-            #expect(printed["kept"] == true && printed["dataFilesFailed"] == 1, "only the file the return could not push is missing")
+            #expect(
+                printed["cause"] == "DATA_RESTORE_INCOMPLETE" && printed["dataRestored"] == false)
+            #expect(
+                printed["kept"] == true && printed["dataFilesFailed"] == 1,
+                "only the file the return could not push is missing")
             #expect(warningCodes(dropped) == ["DATA_RESTORE_INCOMPLETE"])
             let retryFix = json(dropped)["warnings"]?.array?.first?["fix"]?.string ?? ""
-            #expect(retryFix.contains("sideload slot restore --device iphone --app stremio-ios --yes"), "the retry names the app it used")
+            #expect(
+                retryFix.contains("sideload slot restore --device iphone --app stremio-ios --yes"),
+                "the retry names the app it used")
             #expect(try w.manifest(name).restoredAt == nil)
             // 2: the relisting cannot be read (the lend's, the return's and the first run's listings came before).
-            let listings = w.runner.dataCalls.filter { DeviceSimRunner.words($0) == "device info files" }.count
+            let listings = w.runner.dataCalls.filter {
+                DeviceSimRunner.words($0) == "device info files"
+            }.count
             w.runner.arm(script(faults { $0.listFailsOn = [listings + 1] }))
             let unverified = await w.restore()
             #expect(unverified.errorCodes == ["RESTORE_FAILED"])
             printed = json(unverified)
-            #expect(printed["cause"] == "DATA_RESTORE_UNVERIFIED" && printed["dataFilesRestored"] == 2 && printed["dataFilesFailed"] == 0)
-            #expect(printed["kept"] == true && warningCodes(unverified) == ["DATA_RESTORE_UNVERIFIED"])
+            #expect(
+                printed["cause"] == "DATA_RESTORE_UNVERIFIED" && printed["dataFilesRestored"] == 2
+                    && printed["dataFilesFailed"] == 0)
+            #expect(
+                printed["kept"] == true && warningCodes(unverified) == ["DATA_RESTORE_UNVERIFIED"])
             #expect(try w.manifest(name).restoredAt == nil)
             // 3: clean.
             w.runner.arm(script())
             let done = await w.restore()
             #expect(done.ok && json(done)["dataRestored"] == true, "\(done.errors)")
             #expect(try w.manifest(name).restoredAt == testNow)
-            #expect(w.runner.container(stremioId) == [library: files[library]!, prefs: files[prefs]!])
+            #expect(
+                w.runner.container(stremioId) == [library: files[library]!, prefs: files[prefs]!])
         }
     }
 
     @Test("a partial backup restores what was saved, with the same warning as the return")
     func partialBackup() async throws {
-        try await withInstallWorld(script: script(faults { $0.copyFromFails = [prefs] }), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(
+            script: script(faults { $0.copyFromFails = [prefs] }), lendable: "stremio-ios",
+            ledger: prepare
+        ) { w in
             #expect(await w.lend().ok)
             w.runner.arm(script(faults { $0.copyToFails = [library] }))
             #expect(json(await w.giveBack())["dataRestored"] == false)
             w.runner.arm(script(files: [:]))
             let out = await w.restore()
-            #expect(out.ok && json(out)["dataRestored"] == true && json(out)["dataFilesRestored"] == 1)
+            #expect(
+                out.ok && json(out)["dataRestored"] == true && json(out)["dataFilesRestored"] == 1)
             #expect(warningCodes(out) == ["DATA_RESTORE_PARTIAL_BACKUP"])
         }
     }
 
     // MARK: nothing pending
 
-    @Test("already restored, no backup, and backups turned off: NO_PENDING_RESTORE with booleans, and no device call")
+    @Test(
+        "already restored, no backup, and backups turned off: NO_PENDING_RESTORE with booleans, and no device call"
+    )
     func nothingPending() async throws {
         // Already restored by the return.
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             #expect(await w.lend().ok)
             #expect(json(await w.giveBack())["dataRestored"] == true)
             let calls = w.xcrunCalls
             let out = await w.restore()
             #expect(out.errorCodes == ["NO_PENDING_RESTORE"])
-            #expect(json(out)["restored"] == true && json(out)["superseded"] == false && json(out)["unreadable"] == false)
+            #expect(
+                json(out)["restored"] == true && json(out)["superseded"] == false
+                    && json(out)["unreadable"] == false)
             #expect(w.xcrunCalls == calls, "a local read: no device call")
         }
         // No backup ever made.
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             let out = await w.restore()
             #expect(out.errorCodes == ["NO_PENDING_RESTORE"])
-            #expect(json(out)["restored"] == false && json(out)["superseded"] == false && json(out)["unreadable"] == false)
+            #expect(
+                json(out)["restored"] == false && json(out)["superseded"] == false
+                    && json(out)["unreadable"] == false)
             #expect(w.xcrunCalls == 0)
         }
         // backupData false.
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.store.update { $0.apps["stremio-ios"] = ["backupData": false] }
             #expect(await w.lend().ok)
             #expect(await w.giveBack().ok)
@@ -226,9 +290,12 @@ struct SlotRestoreTests {
         }
     }
 
-    @Test("an unreadable newest manifest is NO_PENDING_RESTORE unreadable, and no older backup is used instead")
+    @Test(
+        "an unreadable newest manifest is NO_PENDING_RESTORE unreadable, and no older backup is used instead"
+    )
     func unreadable() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.lendAndFailedReturn()
             let older = try #require(w.finishedBackups.last)
             let baseline = w.pushes.count
@@ -245,16 +312,20 @@ struct SlotRestoreTests {
             // A symlinked manifest is not read either.
             try FileManager.default.removeItem(atPath: newer + "/manifest.json")
             try FileManager.default.createSymbolicLink(
-                atPath: newer + "/manifest.json", withDestinationPath: "\(w.appBackups)/\(older)/manifest.json")
+                atPath: newer + "/manifest.json",
+                withDestinationPath: "\(w.appBackups)/\(older)/manifest.json")
             #expect(json(await w.restore())["unreadable"] == true)
             #expect(w.pushes.count == baseline, "no push from restore")
         }
     }
 
-    @Test("a backup folder that cannot be read, or that is a link, is unreadable and nothing behind it is followed")
+    @Test(
+        "a backup folder that cannot be read, or that is a link, is unreadable and nothing behind it is followed"
+    )
     func unreadableFolders() async throws {
         // lstat fails with something other than ENOENT: not "no backup".
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.lendAndFailedReturn()
             let device = w.paths.backups + "/iphone"
             chmod(device, 0)
@@ -262,30 +333,38 @@ struct SlotRestoreTests {
             let calls = w.xcrunCalls
             let out = await w.restore()
             #expect(out.errorCodes == ["NO_PENDING_RESTORE"])
-            #expect(json(out)["unreadable"] == true && json(out)["restored"] == false && json(out)["superseded"] == false)
+            #expect(
+                json(out)["unreadable"] == true && json(out)["restored"] == false
+                    && json(out)["superseded"] == false)
             #expect(w.xcrunCalls == calls)
         }
         // The newest backup folder is a symlink to a real, pending backup.
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.lendAndFailedReturn()
             let real = try #require(w.finishedBackups.last)
             let manifestPath = "\(w.appBackups)/\(real)/manifest.json"
             let bytes = try Data(contentsOf: URL(fileURLWithPath: manifestPath))
             try FileManager.default.createSymbolicLink(
-                atPath: w.appBackups + "/29990101T000000Z-aaaa", withDestinationPath: "\(w.appBackups)/\(real)")
+                atPath: w.appBackups + "/29990101T000000Z-aaaa",
+                withDestinationPath: "\(w.appBackups)/\(real)")
             let pushes = w.pushes.count
             let calls = w.xcrunCalls
             let out = await w.restore()
             #expect(out.errorCodes == ["NO_PENDING_RESTORE"] && json(out)["unreadable"] == true)
             #expect(w.xcrunCalls == calls && w.pushes.count == pushes)
-            #expect(try Data(contentsOf: URL(fileURLWithPath: manifestPath)) == bytes, "nothing behind the link was touched")
+            #expect(
+                try Data(contentsOf: URL(fileURLWithPath: manifestPath)) == bytes,
+                "nothing behind the link was touched")
         }
         // The app's folder is a symlink to the real one.
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.lendAndFailedReturn()
             let moved = w.paths.backups + "/iphone/elsewhere"
             try FileManager.default.moveItem(atPath: w.appBackups, toPath: moved)
-            try FileManager.default.createSymbolicLink(atPath: w.appBackups, withDestinationPath: moved)
+            try FileManager.default.createSymbolicLink(
+                atPath: w.appBackups, withDestinationPath: moved)
             let name = try #require(listing(moved).first)
             let manifestPath = "\(moved)/\(name)/manifest.json"
             let bytes = try Data(contentsOf: URL(fileURLWithPath: manifestPath))
@@ -295,17 +374,21 @@ struct SlotRestoreTests {
             #expect(w.xcrunCalls == calls)
             #expect(try Data(contentsOf: URL(fileURLWithPath: manifestPath)) == bytes)
             // Nor does a lend follow it to mark anything (backup and supersede both refuse the link).
-            let target = try FreeTarget.resolve(app: .stremioIOS, alias: "iphone", config: try w.config())
+            let target = try FreeTarget.resolve(
+                app: .stremioIOS, alias: "iphone", config: try w.config())
             AppDataBackup.supersedeOlder(w.services, target, than: testNow.addingTimeInterval(60))
             AppDataBackup.markUninstalled(w.services, target, since: testNow)
             #expect(try Data(contentsOf: URL(fileURLWithPath: manifestPath)) == bytes)
         }
     }
 
-    @Test("a link at the device's folder (to a real backup, to a folder without the app, or dangling) is unreadable, not no backup")
+    @Test(
+        "a link at the device's folder (to a real backup, to a folder without the app, or dangling) is unreadable, not no backup"
+    )
     func linkedDeviceFolder() async throws {
         for destination in ["real", "empty", "dangling"] {
-            try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+                w in
                 try await w.lendAndFailedReturn()
                 let device = w.paths.backups + "/iphone"
                 let moved = w.paths.home + "/moved-iphone"
@@ -321,24 +404,34 @@ struct SlotRestoreTests {
                     try makeDirectories(target, mode: 0o700)
                 default: target = w.paths.home + "/does-not-exist"
                 }
-                try FileManager.default.createSymbolicLink(atPath: device, withDestinationPath: target)
+                try FileManager.default.createSymbolicLink(
+                    atPath: device, withDestinationPath: target)
                 let calls = w.xcrunCalls
                 let pushes = w.pushes.count
                 let out = await w.restore()
                 #expect(out.errorCodes == ["NO_PENDING_RESTORE"], "\(destination): \(out.errors)")
                 #expect(json(out)["unreadable"] == true, "\(destination)")
-                #expect(json(out)["restored"] == false && json(out)["superseded"] == false && json(out)["notUninstalled"] == false)
-                #expect(w.xcrunCalls == calls && w.pushes.count == pushes, "\(destination): no device call")
-                #expect(try Data(contentsOf: URL(fileURLWithPath: manifestPath)) == bytes, "nothing behind the link was touched")
+                #expect(
+                    json(out)["restored"] == false && json(out)["superseded"] == false
+                        && json(out)["notUninstalled"] == false)
+                #expect(
+                    w.xcrunCalls == calls && w.pushes.count == pushes,
+                    "\(destination): no device call")
+                #expect(
+                    try Data(contentsOf: URL(fileURLWithPath: manifestPath)) == bytes,
+                    "nothing behind the link was touched")
             }
         }
     }
 
-    @Test("a link, or an unreadable file, anywhere a manifest entry points into is unreadable before any device call")
+    @Test(
+        "a link, or an unreadable file, anywhere a manifest entry points into is unreadable before any device call"
+    )
     func linkedData() async throws {
         // data/, data/Library, and the entry's own file as a link; then a regular file that cannot be opened.
         for linked in ["data", "data/Library", "data/" + prefs, "unopenable"] {
-            try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+            try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+                w in
                 try await w.lendAndFailedReturn()
                 let name = try #require(w.finishedBackups.last)
                 let root = "\(w.appBackups)/\(name)"
@@ -347,7 +440,8 @@ struct SlotRestoreTests {
                 } else {
                     let moved = w.paths.home + "/moved-data"
                     try FileManager.default.moveItem(atPath: root + "/" + linked, toPath: moved)
-                    try FileManager.default.createSymbolicLink(atPath: root + "/" + linked, withDestinationPath: moved)
+                    try FileManager.default.createSymbolicLink(
+                        atPath: root + "/" + linked, withDestinationPath: moved)
                 }
                 defer { if linked == "unopenable" { chmod(root + "/data/" + prefs, 0o600) } }
                 let calls = w.xcrunCalls
@@ -355,8 +449,12 @@ struct SlotRestoreTests {
                 let out = await w.restore()
                 #expect(out.errorCodes == ["NO_PENDING_RESTORE"], "\(linked): \(out.errors)")
                 #expect(json(out)["unreadable"] == true, "\(linked)")
-                #expect(json(out)["restored"] == false && json(out)["superseded"] == false && json(out)["notUninstalled"] == false)
-                #expect(w.xcrunCalls == calls && w.pushes.count == pushes, "\(linked): no snapshot and no push")
+                #expect(
+                    json(out)["restored"] == false && json(out)["superseded"] == false
+                        && json(out)["notUninstalled"] == false)
+                #expect(
+                    w.xcrunCalls == calls && w.pushes.count == pushes,
+                    "\(linked): no snapshot and no push")
                 #expect(try w.manifest(name).restoredAt == nil)
             }
         }
@@ -364,7 +462,9 @@ struct SlotRestoreTests {
 
     // MARK: a lend that never took the app off the device
 
-    @Test("a backup whose lend's uninstall failed outright is never restorable: the app and its live data stayed")
+    @Test(
+        "a backup whose lend's uninstall failed outright is never restorable: the app and its live data stayed"
+    )
     func uninstallFailed() async throws {
         let locked = try loadFixtureJSON("install-locked.json")
         var failing = script()
@@ -375,48 +475,62 @@ struct SlotRestoreTests {
             #expect(w.runner.deviceApps.keys.contains(stremioId))
             let name = try #require(w.finishedBackups.last)
             let manifest = try w.manifest(name)
-            #expect(manifest.uninstalledAt == nil && manifest.restoredAt == nil && manifest.supersededAt == nil)
+            #expect(
+                manifest.uninstalledAt == nil && manifest.restoredAt == nil
+                    && manifest.supersededAt == nil)
             let calls = w.xcrunCalls
             let out = await w.restore()
             #expect(out.errorCodes == ["NO_PENDING_RESTORE"])
             #expect(json(out)["notUninstalled"] == true && json(out)["superseded"] == false)
             #expect(json(out)["restored"] == false && json(out)["unreadable"] == false)
-            #expect(out.errors.first?.message.contains("later lend") == false, "the message does not blame a later lend")
+            #expect(
+                out.errors.first?.message.contains("later lend") == false,
+                "the message does not blame a later lend")
             #expect(w.xcrunCalls == calls, "no snapshot and no push")
             #expect(w.pushes.isEmpty)
         }
     }
 
-    @Test("a backup with no uninstall mark (one from before the field) is reported as such, not as superseded")
+    @Test(
+        "a backup with no uninstall mark (one from before the field) is reported as such, not as superseded"
+    )
     func noMark() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.lendAndFailedReturn()
             let name = try #require(w.finishedBackups.last)
             var old = try w.manifest(name)
             old.uninstalledAt = nil
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            try encoder.encode(old).write(to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
+            try encoder.encode(old).write(
+                to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
             let out = await w.restore()
             #expect(out.errorCodes == ["NO_PENDING_RESTORE"])
             #expect(json(out)["notUninstalled"] == true && json(out)["superseded"] == false)
             #expect(out.errors.first?.message.contains("later lend") == false)
             // A real supersede is reported too, and each boolean on its own: superseded and still unmarked.
             old.supersededAt = testNow
-            try encoder.encode(old).write(to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
+            try encoder.encode(old).write(
+                to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
             let again = await w.restore()
             #expect(json(again)["superseded"] == true && json(again)["notUninstalled"] == true)
             #expect(json(again)["restored"] == false && json(again)["unreadable"] == false)
-            #expect(again.errors.first?.message.contains("later lend") == true, "the message names the most relevant reason")
+            #expect(
+                again.errors.first?.message.contains("later lend") == true,
+                "the message names the most relevant reason")
             // Superseded with the mark set: notUninstalled is false.
             old.uninstalledAt = testNow
-            try encoder.encode(old).write(to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
+            try encoder.encode(old).write(
+                to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
             let marked = await w.restore()
             #expect(json(marked)["superseded"] == true && json(marked)["notUninstalled"] == false)
         }
     }
 
-    @Test("a lend that settles an undone earlier lend takes its `since` from the settled record: the old backup is superseded, not marked")
+    @Test(
+        "a lend that settles an undone earlier lend takes its `since` from the settled record: the old backup is superseded, not marked"
+    )
     func settledSince() async throws {
         // Lend 1 backs up, its uninstall times out and the app (and its live data) stays on the device.
         var first = script()
@@ -431,7 +545,9 @@ struct SlotRestoreTests {
             let second = await w.lend()
             #expect(second.ok, "\(second.errors)")
             let manifest = try w.manifest(b1)
-            #expect(manifest.supersededAt != nil, "lend 2 has a new `since`, so lend 1's backup is older")
+            #expect(
+                manifest.supersededAt != nil,
+                "lend 2 has a new `since`, so lend 1's backup is older")
             #expect(manifest.uninstalledAt == nil, "lend 1 never took the app off the device")
             #expect(w.finishedBackups == [b1])
             #expect(await w.giveBack().ok)
@@ -445,7 +561,8 @@ struct SlotRestoreTests {
 
     @Test("a backup folder whose listing fails is unreadable, not no backup")
     func unlistable() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.lendAndFailedReturn()
             chmod(w.appBackups, 0)
             defer { chmod(w.appBackups, 0o700) }
@@ -457,18 +574,23 @@ struct SlotRestoreTests {
         }
     }
 
-    @Test("the uninstall mark: set by a confirmed lend; set by the return that finds the app gone; a resumed lend keeps its backup")
+    @Test(
+        "the uninstall mark: set by a confirmed lend; set by the return that finds the app gone; a resumed lend keeps its backup"
+    )
     func uninstallMark() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             #expect(await w.lend().ok)
             let name = try #require(w.finishedBackups.last)
-            #expect(try w.manifest(name).uninstalledAt == testNow, "marked at the confirmed uninstall")
+            #expect(
+                try w.manifest(name).uninstalledAt == testNow, "marked at the confirmed uninstall")
             // A manifest from before the field: the return that reinstalls the app records it before the push.
             var old = try w.manifest(name)
             old.uninstalledAt = nil
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            try encoder.encode(old).write(to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
+            try encoder.encode(old).write(
+                to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
             w.runner.arm(script(faults { $0.copyToFails = [prefs] }))
             #expect(json(await w.giveBack())["dataRestored"] == false)
             #expect(try w.manifest(name).uninstalledAt == testNow)
@@ -476,9 +598,11 @@ struct SlotRestoreTests {
             #expect(await w.restore().ok, "restorable after the return")
         }
         // A lend resumed with the same `since` neither supersedes nor un-marks its own backup.
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             #expect(await w.lend().ok)
-            let target = try FreeTarget.resolve(app: .stremioIOS, alias: "iphone", config: try w.config())
+            let target = try FreeTarget.resolve(
+                app: .stremioIOS, alias: "iphone", config: try w.config())
             AppDataBackup.supersedeOlder(w.services, target, than: testNow)
             AppDataBackup.markUninstalled(w.services, target, since: testNow)
             let manifest = try w.manifest(try #require(w.finishedBackups.last))
@@ -486,7 +610,9 @@ struct SlotRestoreTests {
         }
     }
 
-    @Test("an uncertain uninstall settled as lent marks the backup: at L3 by the next lend, and at T4 by the return before its install")
+    @Test(
+        "an uncertain uninstall settled as lent marks the backup: at L3 by the next lend, and at T4 by the return before its install"
+    )
     func settledLentMark() async throws {
         // L3: lend 1 cannot list the device after its uninstall; lend 2 finds the app gone and records the slot lent. The
         // return then stops after its install, before its restore, and its rerun is a no-op: slot restore is the retry.
@@ -508,11 +634,14 @@ struct SlotRestoreTests {
             #expect(w.runner.deviceApps.keys.contains(stremioId))
             #expect(w.pushes.isEmpty, "the crash came before the restore")
             let rerun = await w.giveBack()
-            #expect(rerun.ok && json(rerun)["nothingLent"] == true, "the crash came after the return was recorded: \(rerun.errors)")
+            #expect(
+                rerun.ok && json(rerun)["nothingLent"] == true,
+                "the crash came after the return was recorded: \(rerun.errors)")
             #expect(w.pushes.isEmpty, "a no-op return never restores")
             let out = await w.restore()
             #expect(out.ok && json(out)["dataRestored"] == true, "\(out.errors)")
-            #expect(w.runner.container(stremioId) == [library: files[library]!, prefs: files[prefs]!])
+            #expect(
+                w.runner.container(stremioId) == [library: files[library]!, prefs: files[prefs]!])
         }
         // T4: the same uncertain lend, then a return that stops at its intent, before the install: already marked.
         try await withInstallWorld(script: blind, lendable: "stremio-ios", ledger: prepare) { w in
@@ -528,9 +657,12 @@ struct SlotRestoreTests {
 
     // MARK: staleness
 
-    @Test("a later lend supersedes an earlier unrestored backup, even when it saved nothing: slot restore never pushes it")
+    @Test(
+        "a later lend supersedes an earlier unrestored backup, even when it saved nothing: slot restore never pushes it"
+    )
     func superseded() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.lendAndFailedReturn(faults { $0.copyToFails = [prefs, library] })
             let name = try #require(w.finishedBackups.last)
             #expect(try w.manifest(name).supersededAt == nil, "pending until a later lend")
@@ -538,8 +670,12 @@ struct SlotRestoreTests {
             w.runner.arm(script(faults { $0.listFails = true }))
             #expect(await w.lend().ok)
             let superseded = try w.manifest(name)
-            #expect(superseded.supersededAt == testNow.addingTimeInterval(86_400) && superseded.restoredAt == nil)
-            #expect(modeOf("\(w.appBackups)/\(name)/manifest.json") == 0o600 && modeOf("\(w.appBackups)/\(name)") == 0o700)
+            #expect(
+                superseded.supersededAt == testNow.addingTimeInterval(86_400)
+                    && superseded.restoredAt == nil)
+            #expect(
+                modeOf("\(w.appBackups)/\(name)/manifest.json") == 0o600
+                    && modeOf("\(w.appBackups)/\(name)") == 0o700)
             #expect(await w.giveBack().ok)
             let pushes = w.pushes.count
             let out = await w.restore()
@@ -549,11 +685,15 @@ struct SlotRestoreTests {
         }
     }
 
-    @Test("supersedeOlder leaves the lend's own backup, restored ones and other apps alone; old manifests decode")
+    @Test(
+        "supersedeOlder leaves the lend's own backup, restored ones and other apps alone; old manifests decode"
+    )
     func supersedeRules() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             #expect(await w.lend().ok)
-            let target = try FreeTarget.resolve(app: .stremioIOS, alias: "iphone", config: try w.config())
+            let target = try FreeTarget.resolve(
+                app: .stremioIOS, alias: "iphone", config: try w.config())
             let name = try #require(w.finishedBackups.last)
             // The same lend (a resumed one): not older.
             AppDataBackup.supersedeOlder(w.services, target, than: testNow)
@@ -565,7 +705,8 @@ struct SlotRestoreTests {
             AppDataBackup.supersedeOlder(w.services, target, than: testNow.addingTimeInterval(60))
             #expect(try w.manifest(name).restoredAt != nil && w.manifest(name).supersededAt == nil)
             // Never throws on a missing folder.
-            let other = try FreeTarget.resolve(app: .apollo, alias: "iphone", config: try w.config())
+            let other = try FreeTarget.resolve(
+                app: .apollo, alias: "iphone", config: try w.config())
             AppDataBackup.supersedeOlder(w.services, other, than: testNow.addingTimeInterval(60))
         }
         // A manifest written before the field existed decodes, and encodes without it.
@@ -582,7 +723,8 @@ struct SlotRestoreTests {
 
     @Test("while the app is lent, in any phase: ALREADY_LENT, and no device call")
     func alreadyLent() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             #expect(await w.lend().ok)
             let calls = w.xcrunCalls
             let before = try w.ledgerBytes()
@@ -598,7 +740,8 @@ struct SlotRestoreTests {
     func pending() async throws {
         let timedOut = DeviceScript(
             initial: [stremioId: true], uninstallLandsAfter: 100, uninstallTimeoutRemoves: false)
-        try await withInstallWorld(script: timedOut, lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: timedOut, lendable: "stremio-ios", ledger: prepare) {
+            w in
             #expect(await w.lend().errorCodes == ["TIMEOUT"])
             let calls = w.xcrunCalls
             let out = await w.restore()
@@ -607,9 +750,12 @@ struct SlotRestoreTests {
         }
     }
 
-    @Test("the app must be installed: APP_NOT_INSTALLED after app remove, SNAPSHOT_FAILED when the list cannot be read")
+    @Test(
+        "the app must be installed: APP_NOT_INSTALLED after app remove, SNAPSHOT_FAILED when the list cannot be read"
+    )
     func device() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.lendAndFailedReturn()
             let before = try w.ledgerBytes()
             let baseline = w.pushes.count
@@ -633,14 +779,21 @@ struct SlotRestoreTests {
 
     @Test("a changed free identity set or a locked keychain stops it before anything else")
     func session() async throws {
-        let marker = LedgerFreeInFlight(beforeFp8: ["00000000"], startedAt: testNow, app: "stremio-ios", device: "iphone")
+        let marker = LedgerFreeInFlight(
+            beforeFp8: ["00000000"], startedAt: testNow, app: "stremio-ios", device: "iphone")
         try await withInstallWorld(
-            script: script(), lendable: "stremio-ios", ledger: { prepare(&$0); $0.freeProvisionInFlight = marker }
+            script: script(), lendable: "stremio-ios",
+            ledger: {
+                prepare(&$0)
+                $0.freeProvisionInFlight = marker
+            }
         ) { w in
             #expect(await w.restore().errorCodes == ["FREE_CERT_CHANGED"])
             #expect(w.runner.calls.isEmpty)
         }
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", keychain: [nil], ledger: prepare) { w in
+        try await withInstallWorld(
+            script: script(), lendable: "stremio-ios", keychain: [nil], ledger: prepare
+        ) { w in
             #expect(await w.restore().errorCodes == ["KEYCHAIN_LOCKED"])
             #expect(w.runner.calls.isEmpty)
         }
@@ -648,9 +801,12 @@ struct SlotRestoreTests {
 
     // MARK: secrets, scope and time
 
-    @Test("output, progress lines and the ledger carry counts and booleans only; modes hold; every call is scoped to the free ID")
+    @Test(
+        "output, progress lines and the ledger carry counts and booleans only; modes hold; every call is scoped to the free ID"
+    )
     func secrets() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.lendAndFailedReturn()
             let lines = Mutex<[String]>([])
             var services = w.services
@@ -661,9 +817,14 @@ struct SlotRestoreTests {
             let ok = await w.restore(services)
             #expect(failed.errorCodes == ["RESTORE_FAILED"] && ok.ok)
             let name = try #require(w.finishedBackups.last)
-            var text = try failed.printed().text + (try ok.printed().text) + lines.withLock { $0 }.joined(separator: "\n")
+            var text =
+                try failed.printed().text + (try ok.printed().text)
+                + lines.withLock { $0 }.joined(separator: "\n")
             text += String(decoding: try w.ledgerBytes(), as: UTF8.self)
-            for secret in [sentinel, "library-9b2e", "Preferences", "Documents", "Library", "backups", "thumb", name, savedUdid("1"), savedCoreId("1")] {
+            for secret in [
+                sentinel, "library-9b2e", "Preferences", "Documents", "Library", "backups", "thumb",
+                name, savedUdid("1"), savedCoreId("1"),
+            ] {
                 #expect(!text.contains(secret), "\(secret) leaked")
             }
             for key in ["dataRestored", "dataFilesRestored", "dataFilesFailed"] {
@@ -673,23 +834,35 @@ struct SlotRestoreTests {
                 }
             }
             let root = "\(w.appBackups)/\(name)"
-            for dir in [w.paths.backups, w.paths.backups + "/iphone", w.appBackups, root, root + "/data"] {
+            for dir in [
+                w.paths.backups, w.paths.backups + "/iphone", w.appBackups, root, root + "/data",
+            ] {
                 #expect(modeOf(dir) == 0o700, "\(dir.dropFirst(w.paths.home.count))")
             }
             #expect(modeOf(root + "/manifest.json") == 0o600)
             for spec in w.runner.dataCalls {
-                #expect(spec.args[spec.args.firstIndex(of: "--domain-identifier")! + 1] == stremioId)
-                #expect(spec.args[spec.args.firstIndex(of: "--domain-type")! + 1] == "appDataContainer")
+                #expect(
+                    spec.args[spec.args.firstIndex(of: "--domain-identifier")! + 1] == stremioId)
+                #expect(
+                    spec.args[spec.args.firstIndex(of: "--domain-type")! + 1] == "appDataContainer")
             }
-            #expect(!w.runner.deviceArgv.contains { $0.contains("io.github.dividedby.free") && $0 != stremioId && !$0.hasPrefix("/") && !$0.hasPrefix("Library") })
+            #expect(
+                !w.runner.deviceArgv.contains {
+                    $0.contains("io.github.dividedby.free") && $0 != stremioId && !$0.hasPrefix("/")
+                        && !$0.hasPrefix("Library")
+                })
         }
     }
 
-    @Test("the restore stays within 120 s even when every push hangs to the Runner's kill; each call is cut to what is left")
+    @Test(
+        "the restore stays within 120 s even when every push hangs to the Runner's kill; each call is cut to what is left"
+    )
     func wallTime() async throws {
         var many: [String: Data] = [:]
         for index in 1...8 { many["Documents/f\(index).json"] = Data((sentinel + "\(index)").utf8) }
-        try await withInstallWorld(script: script(files: many), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(
+            script: script(files: many), lendable: "stremio-ios", ledger: prepare
+        ) { w in
             #expect(await w.lend().ok)
             w.runner.arm(script(faults { $0.copyToFails = Set(many.keys) }, files: many))
             #expect(json(await w.giveBack())["dataRestored"] == false)
@@ -700,8 +873,12 @@ struct SlotRestoreTests {
             let elapsed = w.clock.now().timeIntervalSince(started)
             #expect(out.errorCodes == ["RESTORE_FAILED"] && json(out)["dataFilesFailed"] == 8)
             #expect(elapsed <= 120, "took \(elapsed) s")
-            let timeouts = w.pushes.dropFirst(pushed).map { $0.args[$0.args.firstIndex(of: "--timeout")! + 1] }
-            #expect(timeouts == ["30", "30"], "30 s each, then under 5 s left once the Runner's 23 s are kept back: \(timeouts)")
+            let timeouts = w.pushes.dropFirst(pushed).map {
+                $0.args[$0.args.firstIndex(of: "--timeout")! + 1]
+            }
+            #expect(
+                timeouts == ["30", "30"],
+                "30 s each, then under 5 s left once the Runner's 23 s are kept back: \(timeouts)")
             let name = try #require(w.finishedBackups.last)
             #expect(try w.manifest(name).restoredAt == nil)
         }
@@ -709,15 +886,20 @@ struct SlotRestoreTests {
 
     // MARK: status and the menu (the pending-restore warning)
 
-    @Test("status and the menu flag a restore that is waiting, never while the app is lent, and drop it once restored")
+    @Test(
+        "status and the menu flag a restore that is waiting, never while the app is lent, and drop it once restored"
+    )
     func statusFlag() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             func pending() throws -> (JSONValue, String) {
                 let out = StatusCommand.run(w.services)
                 return (json(out), try out.printed().text)
             }
             func notices() -> [String] {
-                guard case .ready(let inputs) = MenuLoader.loadLocal(w.services) else { return ["not ready"] }
+                guard case .ready(let inputs) = MenuLoader.loadLocal(w.services) else {
+                    return ["not ready"]
+                }
                 return inputs.notices.map(\.code)
             }
             var (printed, _) = try pending()
@@ -726,23 +908,35 @@ struct SlotRestoreTests {
             #expect(await w.lend().ok)
             (printed, _) = try pending()
             #expect(printed["pendingRestores"] == [] && notices() == [])
-            #expect(!(printed["warnings"]?.array ?? []).contains { $0["code"] == "DATA_RESTORE_PENDING" })
+            #expect(
+                !(printed["warnings"]?.array ?? []).contains {
+                    $0["code"] == "DATA_RESTORE_PENDING"
+                })
             // A return whose restore failed leaves it waiting, once the return's own push can no longer be running: the slot is
             // recorded returned before the push, and status takes no lock.
             w.runner.arm(script(faults { $0.copyToFails = [prefs] }))
             #expect(json(await w.giveBack())["dataRestored"] == false)
             (printed, _) = try pending()
-            #expect(printed["pendingRestores"] == [] && notices() == [], "inside the window the return may still be pushing")
+            #expect(
+                printed["pendingRestores"] == [] && notices() == [],
+                "inside the window the return may still be pushing")
             w.clock.advance(PendingRestores.settleWindow)
             let calls = w.runner.calls.count
             let text: String
             (printed, text) = try pending()
             #expect(printed["pendingRestores"] == [["device": "iphone", "app": "stremio-ios"]])
-            let warning = try #require(printed["warnings"]?.array?.first { $0["code"] == "DATA_RESTORE_PENDING" })
-            #expect(warning["fix"] == "The owner runs `sideload slot restore --device iphone --app stremio-ios --yes`.")
-            #expect(printed["state"] != "critical", "a pending restore is a warning, not an expiry state")
+            let warning = try #require(
+                printed["warnings"]?.array?.first { $0["code"] == "DATA_RESTORE_PENDING" })
+            #expect(
+                warning["fix"]
+                    == "The owner runs `sideload slot restore --device iphone --app stremio-ios --yes`."
+            )
+            #expect(
+                printed["state"] != "critical",
+                "a pending restore is a warning, not an expiry state")
             #expect(notices() == ["DATA_RESTORE_PENDING"])
-            #expect(w.runner.calls.count == calls, "status and the menu's local load run no subprocess")
+            #expect(
+                w.runner.calls.count == calls, "status and the menu's local load run no subprocess")
             for secret in [sentinel, prefs, library, "Preferences", w.paths.backups, "manifest"] {
                 #expect(!text.contains(secret), "status printed \(secret)")
             }
@@ -754,36 +948,50 @@ struct SlotRestoreTests {
         }
     }
 
-    @Test("an operation inside its window on any slot of the device hides the flag, exactly while slot restore's gate refuses")
+    @Test(
+        "an operation inside its window on any slot of the device hides the flag, exactly while slot restore's gate refuses"
+    )
     func statusDeviceBusy() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.lendAndFailedReturn()
             w.clock.advance(PendingRestores.settleWindow)
-            #expect(json(StatusCommand.run(w.services))["pendingRestores"] == [["device": "iphone", "app": "stremio-ios"]])
+            #expect(
+                json(StatusCommand.run(w.services))["pendingRestores"] == [
+                    ["device": "iphone", "app": "stremio-ios"]
+                ])
             try await LedgerStore(paths: w.paths).update { ledger in
                 ledger.slots.append(
                     LedgerSlot(
                         device: "iphone", app: "apollo", presence: .absent,
-                        op: LedgerSlotOp(kind: .install, by: .install, startedAt: w.clock.now(), window: 600)))
+                        op: LedgerSlotOp(
+                            kind: .install, by: .install, startedAt: w.clock.now(), window: 600)))
             }
             #expect(json(StatusCommand.run(w.services))["pendingRestores"] == [])
             #expect(await w.restore().errorCodes == ["SLOT_PENDING"], "slot restore refuses it too")
             // Past its window the op no longer gates slot restore, so it no longer hides the flag either.
             w.clock.advance(TimeInterval(SlotRule.window(.install) + 1))
-            #expect(json(StatusCommand.run(w.services))["pendingRestores"] == [["device": "iphone", "app": "stremio-ios"]])
+            #expect(
+                json(StatusCommand.run(w.services))["pendingRestores"] == [
+                    ["device": "iphone", "app": "stremio-ios"]
+                ])
         }
     }
 
-    @Test("a backup kept by a lend that never removed the app is not flagged (slot restore would refuse it too)")
+    @Test(
+        "a backup kept by a lend that never removed the app is not flagged (slot restore would refuse it too)"
+    )
     func statusIgnoresUnmarked() async throws {
-        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) { w in
+        try await withInstallWorld(script: script(), lendable: "stremio-ios", ledger: prepare) {
+            w in
             try await w.lendAndFailedReturn()
             let name = try #require(w.finishedBackups.last)
             var manifest = try w.manifest(name)
             manifest.uninstalledAt = nil
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
-            try encoder.encode(manifest).write(to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
+            try encoder.encode(manifest).write(
+                to: URL(fileURLWithPath: "\(w.appBackups)/\(name)/manifest.json"))
             w.clock.advance(PendingRestores.settleWindow)
             #expect(json(StatusCommand.run(w.services))["pendingRestores"] == [])
             #expect(await w.restore().errorCodes == ["NO_PENDING_RESTORE"])
@@ -793,43 +1001,50 @@ struct SlotRestoreTests {
     // MARK: the lab's debug hook
 
     #if DEBUG
-    @Test("SIDELOAD_TEST_FORCE_SLOT does not apply to restore")
-    func debugHook() async throws {
-        var candidates: [URL] = []
-        for bundle in Bundle.allBundles where bundle.bundleURL.pathExtension == "xctest" {
-            candidates.append(bundle.bundleURL.deletingLastPathComponent().appendingPathComponent("sideload"))
-        }
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        candidates.append(root.appendingPathComponent(".build/debug/sideload"))
-        let binary = try #require(
-            candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) },
-            "build the sideload executable first (swift build)")
-        try await withTestHome(config: iphoneConfig(bundleIdPrefix: carrierPrefix)) { paths, _ in
-            for mode in ["pending", "return-failed", "bogus"] {
-                let process = Process()
-                process.executableURL = binary
-                // No --yes: the command stops at CONFIRM_REQUIRED before any lock, keychain or device.
-                process.arguments = ["slot", "restore", "--device", "iphone", "--app", "stremio-ios"]
-                var env = ProcessInfo.processInfo.environment
-                env["SIDELOAD_HOME"] = paths.home
-                env["SIDELOAD_TEST_FORCE_SLOT"] = mode
-                process.environment = env
-                let out = Pipe()
-                process.standardOutput = out
-                process.standardError = FileHandle.nullDevice
-                process.standardInput = FileHandle.nullDevice
-                try process.run()
-                let pid = process.processIdentifier
-                let watchdog = DispatchWorkItem { kill(pid, SIGKILL) }
-                DispatchQueue.global().asyncAfter(deadline: .now() + 15, execute: watchdog)
-                let data = out.fileHandleForReading.readDataToEndOfFile()
-                process.waitUntilExit()
-                watchdog.cancel()
-                let printed = try decodeJSON(String(decoding: data, as: UTF8.self))
-                #expect(printed["errors"]?.array?.first?["code"] == "CONFIRM_REQUIRED", "\(mode): \(printed)")
-                #expect(printed["action"] == "restore")
+        @Test("SIDELOAD_TEST_FORCE_SLOT does not apply to restore")
+        func debugHook() async throws {
+            var candidates: [URL] = []
+            for bundle in Bundle.allBundles where bundle.bundleURL.pathExtension == "xctest" {
+                candidates.append(
+                    bundle.bundleURL.deletingLastPathComponent().appendingPathComponent("sideload"))
+            }
+            let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+                .deletingLastPathComponent().deletingLastPathComponent()
+            candidates.append(root.appendingPathComponent(".build/debug/sideload"))
+            let binary = try #require(
+                candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) },
+                "build the sideload executable first (swift build)")
+            try await withTestHome(config: iphoneConfig(bundleIdPrefix: carrierPrefix)) {
+                paths, _ in
+                for mode in ["pending", "return-failed", "bogus"] {
+                    let process = Process()
+                    process.executableURL = binary
+                    // No --yes: the command stops at CONFIRM_REQUIRED before any lock, keychain or device.
+                    process.arguments = [
+                        "slot", "restore", "--device", "iphone", "--app", "stremio-ios",
+                    ]
+                    var env = ProcessInfo.processInfo.environment
+                    env["SIDELOAD_HOME"] = paths.home
+                    env["SIDELOAD_TEST_FORCE_SLOT"] = mode
+                    process.environment = env
+                    let out = Pipe()
+                    process.standardOutput = out
+                    process.standardError = FileHandle.nullDevice
+                    process.standardInput = FileHandle.nullDevice
+                    try process.run()
+                    let pid = process.processIdentifier
+                    let watchdog = DispatchWorkItem { kill(pid, SIGKILL) }
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 15, execute: watchdog)
+                    let data = out.fileHandleForReading.readDataToEndOfFile()
+                    process.waitUntilExit()
+                    watchdog.cancel()
+                    let printed = try decodeJSON(String(decoding: data, as: UTF8.self))
+                    #expect(
+                        printed["errors"]?.array?.first?["code"] == "CONFIRM_REQUIRED",
+                        "\(mode): \(printed)")
+                    #expect(printed["action"] == "restore")
+                }
             }
         }
-    }
     #endif
 }

@@ -55,39 +55,59 @@ struct MenuModelActionTests {
 
     /// One reachable device with Apollo recorded (5.5 days left: renewable, and `ok` for the ring). `refresh` waits at the
     /// gate when `held`, and leaves post-result work behind when `postEmit`.
-    private func world(held: Bool, postEmit: Bool = false, postEmitWaitsForCancel: Bool = false) async throws -> World {
+    private func world(held: Bool, postEmit: Bool = false, postEmitWaitsForCancel: Bool = false)
+        async throws -> World
+    {
         let dir = try makeTempDir()
         let paths = Paths(home: dir.path)
         try paths.ensureHome()
         try await seed(paths, config: menuConfig(), ledger: menuLedger([("iphone", "apollo", 5.5)]))
         let list = deviceListJSON(phoneEntryJSON(seed: "1"))
-        let runner = SlowDeviceRunner(menuDeviceScript(devices: list, apps: { _ in .apps([menuBundleId("apollo")]) }))
+        let runner = SlowDeviceRunner(
+            menuDeviceScript(devices: list, apps: { _ in .apps([menuBundleId("apollo")]) }))
         let services = Services(
-            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: MutableClock(testNow), keychain: FakeKeychain(), home: paths)
+            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: MutableClock(testNow),
+            keychain: FakeKeychain(), home: paths)
         let gate = ActionGate()
         var steps = MenuActionSteps()
         steps.refresh = { services, options in
-            gate.record("refresh \(options.device ?? "") \(options.app ?? "all") force=\(options.force) yes=\(options.yes)")
+            gate.record(
+                "refresh \(options.device ?? "") \(options.app ?? "all") force=\(options.force) yes=\(options.yes)"
+            )
             if postEmit {
                 services.postEmit.add { gate.record("postEmit lists=\(runner.lists)") }
             }
             if postEmitWaitsForCancel {
                 services.postEmit.add {
                     gate.record("postEmit waiting")
-                    for _ in 0..<300 where !Task.isCancelled { try? await Task.sleep(for: .milliseconds(10)) }
+                    for _ in 0..<300 where !Task.isCancelled {
+                        try? await Task.sleep(for: .milliseconds(10))
+                    }
                     gate.record("postEmit cancelled=\(Task.isCancelled)")
                 }
             }
             if held { await gate.wait() }
             return Envelope(
                 ok: true, command: "refresh",
-                data: ["results": [["app": "apollo", "status": "renewed", "daysLeftBefore": 5, "daysLeftAfter": 7]]])
+                data: [
+                    "results": [
+                        [
+                            "app": "apollo", "status": "renewed", "daysLeftBefore": 5,
+                            "daysLeftAfter": 7,
+                        ]
+                    ]
+                ])
         }
-        return World(model: MenuModel(services: services, steps: steps), runner: runner, gate: gate, dir: dir)
+        return World(
+            model: MenuModel(services: services, steps: steps), runner: runner, gate: gate, dir: dir
+        )
     }
 
-    private func loadedWorld(held: Bool = true, postEmit: Bool = false, postEmitWaitsForCancel: Bool = false) async throws -> World {
-        let w = try await world(held: held, postEmit: postEmit, postEmitWaitsForCancel: postEmitWaitsForCancel)
+    private func loadedWorld(
+        held: Bool = true, postEmit: Bool = false, postEmitWaitsForCancel: Bool = false
+    ) async throws -> World {
+        let w = try await world(
+            held: held, postEmit: postEmit, postEmitWaitsForCancel: postEmitWaitsForCancel)
         w.model.reload(force: true)
         await w.model.loadTask?.value
         return w
@@ -122,7 +142,9 @@ struct MenuModelActionTests {
         #expect(w.model.actionState == .idle && !w.model.actionBusy)
     }
 
-    @Test("running: the options are exact, the icon says renewing only meanwhile, one action at a time, reloads are skipped")
+    @Test(
+        "running: the options are exact, the icon says renewing only meanwhile, one action at a time, reloads are skipped"
+    )
     func running() async throws {
         let w = try await loadedWorld()
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -164,7 +186,9 @@ struct MenuModelActionTests {
         #expect(w.model.panel.icon.state != .renewing)
     }
 
-    @Test("after the command: the device's read is forgotten and the device is read again at once, past the debounce")
+    @Test(
+        "after the command: the device's read is forgotten and the device is read again at once, past the debounce"
+    )
     func rereadsAfterwards() async throws {
         let w = try await loadedWorld(held: false)
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -197,7 +221,9 @@ struct MenuModelActionTests {
         #expect(w.runner.lists == listsBefore + 1)
     }
 
-    @Test("Cancel marks the run as cancelling; reopening the panel during the run shows the running state and reloads nothing")
+    @Test(
+        "Cancel marks the run as cancelling; reopening the panel during the run shows the running state and reloads nothing"
+    )
     func cancel() async throws {
         let w = try await loadedWorld()
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -233,7 +259,8 @@ struct MenuModelActionTests {
         w.model.confirm()
         try await until { w.gate.calls.contains("postEmit waiting") }
         guard case .finished = w.model.actionState else {
-            Issue.record("expected the result while the post-result work runs: \(w.model.actionState)")
+            Issue.record(
+                "expected the result while the post-result work runs: \(w.model.actionState)")
             return
         }
         #expect(w.model.actionBusy)
@@ -266,7 +293,9 @@ struct MenuModelActionTests {
         #expect(w.gate.calls == ["refresh iphone apollo force=true yes=true"])
     }
 
-    @Test("confirm() runs only what the owner saw: a changed confirm is shown again instead of run, an identical one runs")
+    @Test(
+        "confirm() runs only what the owner saw: a changed confirm is shown again instead of run, an identical one runs"
+    )
     func confirmRechecks() async throws {
         let w = try await loadedWorld(held: false)
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -278,7 +307,10 @@ struct MenuModelActionTests {
         // The App ID count in the confirm changes while it is open.
         let paths = Paths(home: w.dir.path)
         var ledger = menuLedger([("iphone", "apollo", 5.5)])
-        ledger.freeAppIds = [LedgerFreeAppId(bundleId: menuBundleId("apollo"), epochStart: testNow.addingTimeInterval(-3_600))]
+        ledger.freeAppIds = [
+            LedgerFreeAppId(
+                bundleId: menuBundleId("apollo"), epochStart: testNow.addingTimeInterval(-3_600))
+        ]
         try await seed(paths, config: menuConfig(), ledger: ledger)
         w.model.reload(force: true)
         await w.model.loadTask?.value
@@ -304,7 +336,8 @@ struct MenuModelActionTests {
         w.model.request(renew)
         let paths = Paths(home: w.dir.path)
         var ledger = menuLedger([("iphone", "apollo", 5.5)])
-        ledger.freeSuspended = LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow, addedFp8: ["aaaaaaaa"], removedFp8: [])
+        ledger.freeSuspended = LedgerFreeSuspension(
+            code: "FREE_CERT_CHANGED", at: testNow, addedFp8: ["aaaaaaaa"], removedFp8: [])
         try await seed(paths, config: menuConfig(), ledger: ledger)
         w.model.reload(force: true)
         await w.model.loadTask?.value
@@ -313,7 +346,9 @@ struct MenuModelActionTests {
             Issue.record("expected the reason, got \(w.model.actionState)")
             return
         }
-        #expect(outcome.headline == "Not run" && outcome.issues.first?.message == "Free certificate changed")
+        #expect(
+            outcome.headline == "Not run"
+                && outcome.issues.first?.message == "Free certificate changed")
         #expect(w.gate.calls.isEmpty && !w.model.actionBusy)
     }
 
@@ -321,7 +356,9 @@ struct MenuModelActionTests {
     func lendableNotCancellable() async throws {
         let w = try await loadedWorld()
         defer { try? FileManager.default.removeItem(at: w.dir) }
-        #expect(MenuActions.cancellable(renew) && !MenuActions.cancellable(.lendable(device: "iphone", app: nil)))
+        #expect(
+            MenuActions.cancellable(renew)
+                && !MenuActions.cancellable(.lendable(device: "iphone", app: nil)))
         w.model.cancelAction()
         #expect(w.model.actionState == .idle)
     }

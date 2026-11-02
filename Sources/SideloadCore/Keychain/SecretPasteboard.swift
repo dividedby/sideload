@@ -22,7 +22,9 @@ public struct UnavailableSecretPasteboard: SecretPasteboard {
     public func copy(_ secret: String) throws {
         throw SideloadError(
             "PASTEBOARD_UNAVAILABLE", "No pasteboard is configured.",
-            fix: "The sideload CLI wires the macOS pasteboard; read the password in Keychain Access instead.")
+            fix:
+                "The sideload CLI wires the macOS pasteboard; read the password in Keychain Access instead."
+        )
     }
 
     public func clearIfOurs() -> Bool { false }
@@ -58,7 +60,11 @@ public enum ClearOutcome: Sendable, Equatable {
 /// that it was already cleared: when `clear()` returns, the pasteboard no longer holds the password, unless the
 /// caller gave up waiting (the handler waits at most 500 ms).
 public final class ConcealedClipboard: SecretPasteboard {
-    private enum Slot { case empty, ours(Int), cleared, changed }
+    private enum Slot {
+        case empty
+        case ours(Int)
+        case cleared, changed
+    }
 
     private let backend: any PasteboardBackend
     private let slot = Mutex(Slot.empty)
@@ -74,7 +80,8 @@ public final class ConcealedClipboard: SecretPasteboard {
             throw SideloadError(
                 "PASTEBOARD_FAILED", "The password could not be placed on the pasteboard.",
                 fix:
-                    "Read it in Keychain Access instead (service \(SecurityKeychainSecretStore.service), account \(SecurityKeychainSecretStore.account)).")
+                    "Read it in Keychain Access instead (service \(SecurityKeychainSecretStore.service), account \(SecurityKeychainSecretStore.account))."
+            )
         }
     }
 

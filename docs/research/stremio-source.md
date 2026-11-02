@@ -16,15 +16,15 @@ raw files on 2026-10-19; nothing was downloaded.
 
 ## Details
 
-| Field | Value (latest on 2026-10-19) |
-|---|---|
-| Index JSON | `https://raw.githubusercontent.com/gorlev/stremio-altstore/main/stremio-tvos.json` |
-| Source identifier | `community.stremio.tvos` |
-| Version / build | 2.0.8 / 23, dated 2026-09-10 |
-| Download URL | `https://dl.strem.io/apple/2.0.8b23/tvos/stremio_tvOS.ipa` |
-| Size | 74,055,518 bytes |
-| Published sha256 | `46cbac96b1f4cf9b767699a5ad88ac856743f91caf030b0c99a584e99ce20f23` |
-| History | 8 entries, back to 2.0.1 build 15 |
+| Field             | Value (latest on 2026-10-19)                                                       |
+| ----------------- | ---------------------------------------------------------------------------------- |
+| Index JSON        | `https://raw.githubusercontent.com/gorlev/stremio-altstore/main/stremio-tvos.json` |
+| Source identifier | `community.stremio.tvos`                                                           |
+| Version / build   | 2.0.8 / 23, dated 2026-09-10                                                       |
+| Download URL      | `https://dl.strem.io/apple/2.0.8b23/tvos/stremio_tvOS.ipa`                         |
+| Size              | 74,055,518 bytes                                                                   |
+| Published sha256  | `46cbac96b1f4cf9b767699a5ad88ac856743f91caf030b0c99a584e99ce20f23`                 |
+| History           | 8 entries, back to 2.0.1 build 15                                                  |
 
 The repo is not a fork, has about 50 stars, and was last pushed 2026-09-18. `github.com/Stremio/stremio-tvos`
 returns 404, so there is no public official source repo under that name.

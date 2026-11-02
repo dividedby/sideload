@@ -24,7 +24,9 @@ enum IdentitySelection {
     /// The candidate whose certificate reference matches, provided it is the paid team's: first OU is the paid
     /// team and the free team's OU appears nowhere in the subject. The check is repeated here on purpose, so a
     /// bug upstream can never export another team's key.
-    static func pick<Item>(_ candidates: [(certificate: KeychainCertificate, item: Item)], reference: CertReference) throws
+    static func pick<Item>(
+        _ candidates: [(certificate: KeychainCertificate, item: Item)], reference: CertReference
+    ) throws
         -> Item
     {
         guard let match = candidates.first(where: { $0.certificate.reference == reference.hex })
@@ -65,7 +67,8 @@ public struct SecurityIdentityExporter: IdentityExporter {
         var candidates: [(certificate: KeychainCertificate, item: SecIdentity)] = []
         for identity in identities {
             var certificate: SecCertificate?
-            guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess, let certificate,
+            guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess,
+                let certificate,
                 let read = CertificateReader.read(certificate: certificate)
             else { continue }
             candidates.append((read, identity))
@@ -82,7 +85,9 @@ public struct SecurityIdentityExporter: IdentityExporter {
         let exportStatus = withExtendedLifetime(passphrase) {
             SecItemExport(identity, .formatPKCS12, [], &parameters, &exported)
         }
-        guard exportStatus == errSecSuccess else { throw KeychainFailure.from(status: exportStatus) }
+        guard exportStatus == errSecSuccess else {
+            throw KeychainFailure.from(status: exportStatus)
+        }
         guard let exported else { throw KeychainFailure.status(errSecInternalError) }
         return exported as Data
     }

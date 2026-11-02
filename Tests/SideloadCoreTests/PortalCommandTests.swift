@@ -19,7 +19,8 @@ private struct Outcome {
 }
 
 private func invoke(
-    _ argv: [String], config: Config? = Config(bundleIdPrefix: "com.example"), configured: Bool = true,
+    _ argv: [String], config: Config? = Config(bundleIdPrefix: "com.example"),
+    configured: Bool = true,
     keychain: FakeKeychain = FakeKeychain(), script: @escaping FakeHTTPTransport.Script
 ) async throws -> Outcome {
     try await withTestHome(config: config) { paths, _ in
@@ -38,7 +39,8 @@ private func invoke(
         let (text, json) = try envelope.printed()
         let commandsLog = (try? String(contentsOfFile: paths.commandsLog, encoding: .utf8)) ?? ""
         return Outcome(
-            envelope: envelope, text: text, json: json, transport: transport, runner: runner, logLines: lines.all,
+            envelope: envelope, text: text, json: json, transport: transport, runner: runner,
+            logLines: lines.all,
             commandsLog: commandsLog, pem: pem)
     }
 }
@@ -52,12 +54,16 @@ private let allRows = routed(
 struct PortalCommandTests {
     @Test("no argument lists all four resources in order, with GET requests only")
     func all() async throws {
-        let out = try await invoke(["portal"], keychain: FakeKeychain([try keychainCert(TestCerts.paid)]), script: allRows)
+        let out = try await invoke(
+            ["portal"], keychain: FakeKeychain([try keychainCert(TestCerts.paid)]), script: allRows)
         #expect(out.envelope.ok, "\(out.envelope.errors)")
         #expect(out.envelope.exitCode == 0)
         #expect(out.json["command"] == "portal" && out.json["team"] == "7AGMPUPP64")
         #expect(out.json["key"] == ["role": "Developer", "idTail": "2345"])
-        #expect(out.transport.requests.map(\.url.path) == ["/v1/certificates", "/v1/bundleIds", "/v1/devices", "/v1/profiles"])
+        #expect(
+            out.transport.requests.map(\.url.path) == [
+                "/v1/certificates", "/v1/bundleIds", "/v1/devices", "/v1/profiles",
+            ])
         for name in ["certificates", "bundleIds", "devices", "profiles"] {
             #expect(out.envelope.section(name)?["status"] == "ok", "\(name)")
         }
@@ -81,7 +87,8 @@ struct PortalCommandTests {
     func showIdentifiers() async throws {
         let hidden = try await invoke(["portal", "bundle-ids"], script: allRows)
         #expect(!hidden.text.contains(Canary.foreignIdentifier))
-        let shown = try await invoke(["portal", "bundle-ids", "--show-identifiers"], script: allRows)
+        let shown = try await invoke(
+            ["portal", "bundle-ids", "--show-identifiers"], script: allRows)
         #expect(shown.text.contains(Canary.foreignIdentifier))
         #expect(!shown.text.contains(Canary.appName))
         let flagFirst = try await invoke(["portal", "--show-identifiers"], script: allRows)
@@ -89,10 +96,14 @@ struct PortalCommandTests {
         #expect(flagFirst.transport.requests.count == 4)
     }
 
-    @Test("usage errors make no request and read no key", arguments: [
-        ["portal", "bogus"], ["portal", "devices", "profiles"], ["portal", "--nope"], ["portal", "--yes"],
-        ["portal", "--show-identifiers=1"], ["portal", "--device", "x"], ["portal", "bundleIds"],
-    ])
+    @Test(
+        "usage errors make no request and read no key",
+        arguments: [
+            ["portal", "bogus"], ["portal", "devices", "profiles"], ["portal", "--nope"],
+            ["portal", "--yes"],
+            ["portal", "--show-identifiers=1"], ["portal", "--device", "x"],
+            ["portal", "bundleIds"],
+        ])
     func usage(argv: [String]) async throws {
         let out = try await invoke(argv, script: allRows)
         #expect(out.code == "USAGE", "\(argv)")
@@ -143,7 +154,8 @@ struct PortalCommandTests {
     @Test("a forbidden list does not hide the others and the exit is 1")
     func partial() async throws {
         let out = try await invoke(["portal"]) { request in
-            request.url.path == "/v1/certificates" ? errorResponse(403, code: "FORBIDDEN_ERROR") : try allRows(request)
+            request.url.path == "/v1/certificates"
+                ? errorResponse(403, code: "FORBIDDEN_ERROR") : try allRows(request)
         }
         #expect(!out.envelope.ok && out.envelope.exitCode == 1)
         #expect(out.envelope.errorCodes == ["ASC_FORBIDDEN"])
@@ -157,7 +169,8 @@ struct PortalCommandTests {
     func cancelled() async throws {
         try await withPortalHome { home in
             let transport = FakeHTTPTransport { _ in errorResponse(500) }
-            let (services, _) = portalServices(home.paths, http: transport, sleep: { _ in throw CancellationError() })
+            let (services, _) = portalServices(
+                home.paths, http: transport, sleep: { _ in throw CancellationError() })
             let envelope = await run(argv: ["portal"], services: services)
             #expect(envelope.errorCodes == ["CANCELLED"])
             #expect(envelope.exitCode == 1)
@@ -184,7 +197,12 @@ struct PortalCommandTests {
     @Test("help lists portal as built, with its usage line")
     func help() async throws {
         let out = try await invoke(["help"], script: allRows)
-        #expect(out.json["built"] == ["doctor", "device", "canary", "ledger", "portal", "export-cert", "status", "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot", "updates", "clean"])
+        #expect(
+            out.json["built"] == [
+                "doctor", "device", "canary", "ledger", "portal", "export-cert", "status",
+                "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot",
+                "updates", "clean",
+            ])
         let usage = out.json["usage"]?.array?.compactMap(\.string) ?? []
         #expect(usage.contains { $0.hasPrefix("portal") && $0.contains("--show-identifiers") })
         #expect(out.json["commands"]?.array?.count == 17)

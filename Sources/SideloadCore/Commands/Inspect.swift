@@ -19,10 +19,13 @@ public enum InspectCommand {
         limits: InspectLimits = InspectLimits()
     ) async -> Envelope {
         guard let path = options.path, !path.isEmpty else {
-            return .fail(command, code: "USAGE", message: "inspect needs the path of an .ipa file.", fix: "Run `sideload inspect <path.ipa>`.")
+            return .fail(
+                command, code: "USAGE", message: "inspect needs the path of an .ipa file.",
+                fix: "Run `sideload inspect <path.ipa>`.")
         }
         let inspector = IPAInspector(
-            runner: services.runner, tmp: services.home.tmp, registry: registry, limits: limits, log: services.log)
+            runner: services.runner, tmp: services.home.tmp, registry: registry, limits: limits,
+            log: services.log)
         do {
             return .result(command, try await inspector.inspect(path: path))
         } catch {

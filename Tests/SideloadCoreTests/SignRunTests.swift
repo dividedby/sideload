@@ -16,10 +16,13 @@ private func warningCodes(_ envelope: Envelope) -> [String] {
 }
 
 /// Nothing may have been placed or recorded.
-private func expectNothingKept(_ w: SignWorld, sourceLocation: SourceLocation = #_sourceLocation) throws {
+private func expectNothingKept(_ w: SignWorld, sourceLocation: SourceLocation = #_sourceLocation)
+    throws
+{
     #expect(!FileManager.default.fileExists(atPath: w.signedApp), sourceLocation: sourceLocation)
     #expect(try w.ledger().freeSigned.isEmpty, sourceLocation: sourceLocation)
-    #expect(w.leftovers.isEmpty, "scratch folders left: \(w.leftovers)", sourceLocation: sourceLocation)
+    #expect(
+        w.leftovers.isEmpty, "scratch folders left: \(w.leftovers)", sourceLocation: sourceLocation)
 }
 
 @Suite("sign: Stremio iOS (one WidgetKit appex)")
@@ -30,11 +33,17 @@ struct SignStremioIOSTests {
             let out = await w.run()
             #expect(out.ok, "\(out.errors)")
             #expect(out.command == "sign" && out.errorCodes.isEmpty)
-            #expect(out.data["app"] == "stremio-ios" && out.data["device"] == "iphone" && out.data["bundleId"] == .string(stremioId))
+            #expect(
+                out.data["app"] == "stremio-ios" && out.data["device"] == "iphone"
+                    && out.data["bundleId"] == .string(stremioId))
             #expect(out.data["version"] == "1.9.6b142")
             #expect(out.data["signed"] == .string(w.relativeSigned))
-            #expect(out.data["profile"]?["uuid"] == .string(signProfileUUID) && out.data["profile"]?["daysLeft"] == 5)
-            #expect(out.data["deviceOS"]?["source"] == "devicectl list devices" && out.data["deviceOS"]?["version"] == "26.0")
+            #expect(
+                out.data["profile"]?["uuid"] == .string(signProfileUUID)
+                    && out.data["profile"]?["daysLeft"] == 5)
+            #expect(
+                out.data["deviceOS"]?["source"] == "devicectl list devices"
+                    && out.data["deviceOS"]?["version"] == "26.0")
 
             // The one widget, with what it declared.
             let stripped = try #require(out.data["stripped"]?.array)
@@ -42,40 +51,65 @@ struct SignStremioIOSTests {
             #expect(stripped[0]["path"] == "PlugIns/StremioDownloadsWidget.appex")
             #expect(stripped[0]["bundleId"] == "com.stremio.pal.downloads-widget")
             #expect(stripped[0]["extensionPoint"] == "com.apple.widgetkit-extension")
-            #expect(strings(stripped[0]["entitlementKeys"]) == ["com.apple.security.application-groups"])
+            #expect(
+                strings(stripped[0]["entitlementKeys"]) == ["com.apple.security.application-groups"]
+            )
             #expect(strings(stripped[0]["appGroups"]) == ["group.com.stremio.pal"])
 
             // A group only the stripped extension used is information, not a warning.
             #expect(strings(out.data["appGroups"]?["declaredByApp"]) == [])
-            #expect(strings(out.data["appGroups"]?["onlyInStrippedExtensions"]) == ["group.com.stremio.pal"])
+            #expect(
+                strings(out.data["appGroups"]?["onlyInStrippedExtensions"]) == [
+                    "group.com.stremio.pal"
+                ])
             #expect(!warningCodes(out).contains("APP_GROUP_DROPPED"))
-            #expect(strings(out.data["droppedEntitlements"]) == ["aps-environment", "com.apple.developer.associated-domains"])
+            #expect(
+                strings(out.data["droppedEntitlements"]) == [
+                    "aps-environment", "com.apple.developer.associated-domains",
+                ])
 
             // The bundle on disk.
             let app = w.signedApp
-            #expect(try plistDictionary(app + "/Info.plist")["CFBundleIdentifier"] as? String == stremioId)
+            #expect(
+                try plistDictionary(app + "/Info.plist")["CFBundleIdentifier"] as? String
+                    == stremioId)
             let names = tree(app)
-            #expect(!names.contains { $0.lowercased().hasSuffix(".appex") } && !names.contains("PlugIns"))
-            #expect(try Data(contentsOf: URL(fileURLWithPath: app + "/embedded.mobileprovision")) == Data(contentsOf: URL(fileURLWithPath: profileFile(w, uuid: signProfileUUID))))
+            #expect(
+                !names.contains { $0.lowercased().hasSuffix(".appex") }
+                    && !names.contains("PlugIns"))
+            #expect(
+                try Data(contentsOf: URL(fileURLWithPath: app + "/embedded.mobileprovision"))
+                    == Data(contentsOf: URL(fileURLWithPath: profileFile(w, uuid: signProfileUUID)))
+            )
             #expect(names.contains("_CodeSignature"))
 
             // Signed with the entitlements the free profile grants and nothing else.
             let ent = try await signedEntitlements(app)
-            #expect(Set(ent.keys) == ["application-identifier", "com.apple.developer.team-identifier", "get-task-allow", "keychain-access-groups"])
+            #expect(
+                Set(ent.keys) == [
+                    "application-identifier", "com.apple.developer.team-identifier",
+                    "get-task-allow", "keychain-access-groups",
+                ])
             #expect(ent["application-identifier"] as? String == Team.free + "." + stremioId)
             #expect(ent["com.apple.developer.team-identifier"] as? String == Team.free)
-            #expect(ent["get-task-allow"] as? Bool == true, "the profile's value; the original's false is not copied")
+            #expect(
+                ent["get-task-allow"] as? Bool == true,
+                "the profile's value; the original's false is not copied")
             #expect(ent["keychain-access-groups"] as? [String] == [Team.free + "." + stremioId])
 
             // Independently verified, and nothing left behind.
             let verify = await PosixSpawnRunner().run(
-                CommandSpec(executable: "/usr/bin/codesign", args: ["--verify", "--strict", "--deep", app], timeout: .seconds(60)))
+                CommandSpec(
+                    executable: "/usr/bin/codesign", args: ["--verify", "--strict", "--deep", app],
+                    timeout: .seconds(60)))
             #expect(verify.code == 0, "\(verify.stderr)")
             #expect(w.leftovers.isEmpty)
         }
     }
 
-    @Test("the signing order: nested code innermost first, the app with its entitlements, then verify; only the pinned SHA-1")
+    @Test(
+        "the signing order: nested code innermost first, the app with its entitlements, then verify; only the pinned SHA-1"
+    )
     func order() async throws {
         try await withSignWorld(app: .stremioIOS) { w in
             #expect(await w.run().ok)
@@ -83,13 +117,18 @@ struct SignStremioIOSTests {
             let signing = calls.filter { $0.contains("-s") }
             #expect(signing.count == 3)
             for args in signing {
-                #expect(args.starts(with: ["-f", "-s", w.pinnedSha1, "--timestamp=none"]), "\(args)")
+                #expect(
+                    args.starts(with: ["-f", "-s", w.pinnedSha1, "--timestamp=none"]), "\(args)")
             }
             // The two nested items, then the app.
             #expect(signing[0].count == 5 && signing[0][4].hasSuffix("/Frameworks/Core.framework"))
             #expect(signing[1].count == 5 && signing[1][4].hasSuffix("/Frameworks/libhelper.dylib"))
-            #expect(signing[2].count == 8 && signing[2][4] == "--entitlements" && signing[2][5].hasSuffix("/entitlements.plist"))
-            #expect(signing[2][6] == "--generate-entitlement-der" && signing[2][7].hasSuffix("/Stremio.app"))
+            #expect(
+                signing[2].count == 8 && signing[2][4] == "--entitlements"
+                    && signing[2][5].hasSuffix("/entitlements.plist"))
+            #expect(
+                signing[2][6] == "--generate-entitlement-der"
+                    && signing[2][7].hasSuffix("/Stremio.app"))
             // Verification follows the last signature; the guard's reads follow that.
             let verify = try #require(calls.firstIndex { $0.first == "--verify" })
             #expect(calls[verify].dropLast() == ["--verify", "--strict", "--deep"])
@@ -99,14 +138,20 @@ struct SignStremioIOSTests {
         }
     }
 
-    @Test("the guard runs on the result and its reads are in the log; no identity name is ever passed to codesign")
+    @Test(
+        "the guard runs on the result and its reads are in the log; no identity name is ever passed to codesign"
+    )
     func guardAndNames() async throws {
         try await withSignWorld(app: .stremioIOS) { w in
             #expect(await w.run().ok)
             let codesign = w.runner.codesignCalls.map(\.args)
             #expect(codesign.contains { $0.first == "-dvv" })
             #expect(codesign.contains { $0.contains { $0.hasPrefix("--extract-certificates=") } })
-            #expect(w.runner.calls.contains { $0.executable == "/usr/bin/security" && $0.args.prefix(3) == ["cms", "-D", "-i"] })
+            #expect(
+                w.runner.calls.contains {
+                    $0.executable == "/usr/bin/security"
+                        && $0.args.prefix(3) == ["cms", "-D", "-i"]
+                })
             for args in w.runner.signingArgs {
                 let value = try #require(args.firstIndex(of: "-s").map { args[$0 + 1] })
                 #expect(value == w.pinnedSha1 && value.count == 40)
@@ -123,35 +168,55 @@ struct SignStremioIOSTests {
             let ledger = try w.ledger()
             #expect(ledger.freeSigned.count == 1)
             let entry = try #require(ledger.freeSigned.first)
-            #expect(entry.id == "iphone/stremio-ios" && entry.device == "iphone" && entry.app == "stremio-ios")
+            #expect(
+                entry.id == "iphone/stremio-ios" && entry.device == "iphone"
+                    && entry.app == "stremio-ios")
             #expect(entry.bundleId == stremioId && entry.version == "1.9.6b142")
             #expect(entry.sha256Prefix == String(w.sha256.prefix(8)))
-            #expect(entry.profileUuid == signProfileUUID && entry.certFp8 == LedgerSync.fp8(w.pinnedSha1))
+            #expect(
+                entry.profileUuid == signProfileUUID
+                    && entry.certFp8 == LedgerSync.fp8(w.pinnedSha1))
             #expect(entry.signedAt == testNow && entry.profileExpires == daysFromNow(5))
             #expect(entry.path == w.relativeSigned)
-            #expect(entry.strippedExtensions == [LedgerStrippedExtension(path: "PlugIns/StremioDownloadsWidget.appex", bundleId: "com.stremio.pal.downloads-widget")])
-            #expect(entry.droppedEntitlements == ["aps-environment", "com.apple.developer.associated-domains"])
+            #expect(
+                entry.strippedExtensions == [
+                    LedgerStrippedExtension(
+                        path: "PlugIns/StremioDownloadsWidget.appex",
+                        bundleId: "com.stremio.pal.downloads-widget")
+                ])
+            #expect(
+                entry.droppedEntitlements == [
+                    "aps-environment", "com.apple.developer.associated-domains",
+                ])
             // The provision records are untouched.
             #expect(ledger.freeProfiles.count == 1)
-            for part in ["builds/signed", "builds/signed/stremio-ios", "builds/signed/stremio-ios/iphone"] {
+            for part in [
+                "builds/signed", "builds/signed/stremio-ios", "builds/signed/stremio-ios/iphone",
+            ] {
                 #expect(modeOf(w.paths.home + "/" + part) == 0o700, "\(part)")
             }
             // The ledger holds neither a device ID nor a name.
-            let text = String(decoding: try Data(contentsOf: URL(fileURLWithPath: w.paths.ledger)), as: UTF8.self)
+            let text = String(
+                decoding: try Data(contentsOf: URL(fileURLWithPath: w.paths.ledger)), as: UTF8.self)
             let signedPart = try #require(text.range(of: "freeSigned"))
             let tail = String(text[signedPart.lowerBound...])
-            #expect(!tail.contains(savedUdid("1")) && !tail.contains("Test iPhone") && !tail.contains("Apple Development"))
+            #expect(
+                !tail.contains(savedUdid("1")) && !tail.contains("Test iPhone")
+                    && !tail.contains("Apple Development"))
         }
     }
 
-    @Test("the printed object carries no UDID, CoreDevice ID, device or identity name, and no profile content")
+    @Test(
+        "the printed object carries no UDID, CoreDevice ID, device or identity name, and no profile content"
+    )
     func hygiene() async throws {
         try await withSignWorld(app: .stremioIOS) { w in
             let out = await w.run()
             #expect(out.ok)
             let text = try out.printed().text
             for forbidden in [
-                savedUdid("1"), savedCoreId("1"), "Test iPhone", "Test Apple TV", "Apple Development", "TEST000002",
+                savedUdid("1"), savedCoreId("1"), "Test iPhone", "Test Apple TV",
+                "Apple Development", "TEST000002",
                 "ProvisionedDevices", "DeveloperCertificates", w.pinnedSha1, "/Users/",
             ] {
                 #expect(!text.contains(forbidden), "printed output contains \(forbidden)")
@@ -162,7 +227,9 @@ struct SignStremioIOSTests {
         }
     }
 
-    @Test("signing again replaces the signed app in one swap: one ledger entry, the old bundle gone, no scratch left")
+    @Test(
+        "signing again replaces the signed app in one swap: one ledger entry, the old bundle gone, no scratch left"
+    )
     func resign() async throws {
         try await withSignWorld(app: .stremioIOS) { w in
             #expect(await w.run().ok)
@@ -189,10 +256,16 @@ struct SignStremioTVOSTests {
             #expect(out.data["device"] == "appletv" && out.data["bundleId"] == .string(stremioId))
             #expect(out.data["stripped"] == [])
             #expect(out.data["signed"] == "builds/signed/stremio-tvos/appletv/Stremio.app")
-            #expect(try plistDictionary(w.signedApp + "/Info.plist")["CFBundleIdentifier"] as? String == stremioId)
+            #expect(
+                try plistDictionary(w.signedApp + "/Info.plist")["CFBundleIdentifier"] as? String
+                    == stremioId)
             #expect(strings(out.data["droppedEntitlements"]) == [])
             let ent = try await signedEntitlements(w.signedApp)
-            #expect(Set(ent.keys) == ["application-identifier", "com.apple.developer.team-identifier", "get-task-allow", "keychain-access-groups"])
+            #expect(
+                Set(ent.keys) == [
+                    "application-identifier", "com.apple.developer.team-identifier",
+                    "get-task-allow", "keychain-access-groups",
+                ])
             #expect(!warningCodes(out).contains("APP_GROUP_DROPPED"))
         }
     }
@@ -218,16 +291,25 @@ struct SignApolloTests {
             let warnings = out.data["warnings"]?.array ?? []
             let group = try #require(warnings.first { $0["code"] == "APP_GROUP_DROPPED" })
             #expect(group["message"]?.string?.contains("group.com.christianselig.apollo") == true)
-            #expect(strings(out.data["appGroups"]?["declaredByApp"]) == ["group.com.christianselig.apollo"])
+            #expect(
+                strings(out.data["appGroups"]?["declaredByApp"]) == [
+                    "group.com.christianselig.apollo"
+                ])
             #expect(out.data["stripped"] == [])
-            #expect(strings(out.data["droppedEntitlements"]) == ["com.apple.developer.associated-domains", "com.apple.security.application-groups"])
+            #expect(
+                strings(out.data["droppedEntitlements"]) == [
+                    "com.apple.developer.associated-domains",
+                    "com.apple.security.application-groups",
+                ])
             #expect(out.data["bundleId"] == .string(apolloId))
             #expect(out.data["signed"] == "builds/signed/apollo/iphone/Apollo.app")
 
             let ent = try await signedEntitlements(w.signedApp)
             #expect(ent["com.apple.security.application-groups"] == nil)
             #expect(ent["keychain-access-groups"] as? [String] == [Team.free + "." + apolloId])
-            #expect(ent["get-task-allow"] as? Bool == true, "written from the profile although the original had none")
+            #expect(
+                ent["get-task-allow"] as? Bool == true,
+                "written from the profile although the original had none")
 
             // The newest approved version was signed, and a newer unapproved one is mentioned.
             #expect(out.data["version"] == "1.0.0")
@@ -238,7 +320,9 @@ struct SignApolloTests {
 
 @Suite("sign: a chosen version")
 struct SignVersionTests {
-    @Test("SignOptions.version signs exactly that version even when a newer one is approved; nil keeps the newest")
+    @Test(
+        "SignOptions.version signs exactly that version even when a newer one is approved; nil keeps the newest"
+    )
     func chosenVersion() async throws {
         try await withSignWorld(app: .apollo, manifest: .newerApproved) { w in
             let newest = await w.run()
@@ -286,7 +370,9 @@ struct SignVersionTests {
     func empty() async throws {
         try await withSignWorld(app: .apollo, manifest: .newerApproved) { w in
             let out = await w.run(version: "")
-            #expect(out.errors.first?.code == "USAGE" && out.errors.first?.message == "--version needs a version.")
+            #expect(
+                out.errors.first?.code == "USAGE"
+                    && out.errors.first?.message == "--version needs a version.")
             #expect(w.runner.signingArgs.isEmpty)
         }
     }
@@ -299,17 +385,23 @@ struct SignVersionTests {
         }
     }
 
-    @Test("a version older than the installed one signs with the OLDER_THAN_INSTALLED warning; it is never a block")
+    @Test(
+        "a version older than the installed one signs with the OLDER_THAN_INSTALLED warning; it is never a block"
+    )
     func olderWarning() async throws {
-        try await withSignWorld(app: .apollo, manifest: .newerApproved, ledger: installed("3.9.0")) { w in
+        try await withSignWorld(app: .apollo, manifest: .newerApproved, ledger: installed("3.9.0"))
+        { w in
             let out = await w.run(version: "1.0.0")
             #expect(out.ok, "\(out.errors)")
             #expect(out.data["version"] == "1.0.0")
             let warnings = out.data["warnings"]?.array ?? []
-            let older = try #require(warnings.first { $0["code"]?.string == "OLDER_THAN_INSTALLED" })
+            let older = try #require(
+                warnings.first { $0["code"]?.string == "OLDER_THAN_INSTALLED" })
             let message = try #require(older["message"]?.string)
             #expect(message.hasPrefix("Signing 1.0.0, older than the installed 3.9.0;"))
-            #expect(message.contains("`install` goes over it and keeps the app's data") && message.contains("iOS may refuse an older build"))
+            #expect(
+                message.contains("`install` goes over it and keeps the app's data")
+                    && message.contains("iOS may refuse an older build"))
             #expect(older["fix"]?.string?.isEmpty == false)
             let signed = try w.ledger().freeSigned.first { $0.id == w.key }
             #expect(signed?.version == "1.0.0")
@@ -319,10 +411,14 @@ struct SignVersionTests {
     @Test("the same or a newer version: no warning")
     func noWarning() async throws {
         for (installed, version) in [("3.9.0", "3.9.0"), ("1.0.0", "3.9.0")] {
-            try await withSignWorld(app: .apollo, manifest: .newerApproved, ledger: self.installed(installed)) { w in
+            try await withSignWorld(
+                app: .apollo, manifest: .newerApproved, ledger: self.installed(installed)
+            ) { w in
                 let out = await w.run(version: version)
                 #expect(out.ok, "\(out.errors)")
-                #expect(!warningCodes(out).contains("OLDER_THAN_INSTALLED"), "\(installed) -> \(version)")
+                #expect(
+                    !warningCodes(out).contains("OLDER_THAN_INSTALLED"),
+                    "\(installed) -> \(version)")
             }
         }
     }
@@ -330,22 +426,30 @@ struct SignVersionTests {
 
 @Suite("sign: every kind of extension")
 struct SignStripEverythingTests {
-    @Test("a nested appex, Extensions/ and a Watch app with its own appex are all removed and the result verifies")
+    @Test(
+        "a nested appex, Extensions/ and a Watch app with its own appex are all removed and the result verifies"
+    )
     func everything() async throws {
         try await withSignWorld(app: .stremioIOS, variant: .everything) { w in
             let out = await w.run()
             #expect(out.ok, "\(out.errors)")
             let paths = (out.data["stripped"]?.array ?? []).compactMap { $0["path"]?.string }
-            #expect(paths == [
-                "Extensions/Kit.appex", "Frameworks/Core.framework/PlugIns/Deep.appex", "PlugIns/StremioDownloadsWidget.appex",
-                "Watch/Watch.app",
-            ])
+            #expect(
+                paths == [
+                    "Extensions/Kit.appex", "Frameworks/Core.framework/PlugIns/Deep.appex",
+                    "PlugIns/StremioDownloadsWidget.appex",
+                    "Watch/Watch.app",
+                ])
             let names = tree(w.signedApp)
             #expect(!names.contains { $0.lowercased().hasSuffix(".appex") })
-            #expect(!names.contains("Watch") && !names.contains("Extensions") && !names.contains("PlugIns"))
+            #expect(
+                !names.contains("Watch") && !names.contains("Extensions")
+                    && !names.contains("PlugIns"))
             let entry = try #require(try w.ledger().freeSigned.first)
             #expect(entry.strippedExtensions.map(\.path) == paths)
-            #expect(entry.strippedExtensions.first { $0.path == "Watch/Watch.app" }?.bundleId == "com.stremio.pal.watchkitapp")
+            #expect(
+                entry.strippedExtensions.first { $0.path == "Watch/Watch.app" }?.bundleId
+                    == "com.stremio.pal.watchkitapp")
         }
     }
 }
@@ -356,12 +460,16 @@ struct SignRollbackTests {
         throw SideloadError("LEDGER_WRITE_FAILED", "ledger.json could not be written.")
     })
 
-    @Test("a new placement whose ledger write fails is taken back out: nothing on disk, nothing recorded, placed:false")
+    @Test(
+        "a new placement whose ledger write fails is taken back out: nothing on disk, nothing recorded, placed:false"
+    )
     func newPlacement() async throws {
         try await withSignWorld(app: .apollo) { w in
             let out = await w.run(hooks: failingLedger)
             #expect(code(out) == "LEDGER_WRITE_FAILED")
-            #expect(out.data["placed"] == false && out.data["recorded"] == nil && out.data["signedPath"] == nil)
+            #expect(
+                out.data["placed"] == false && out.data["recorded"] == nil
+                    && out.data["signedPath"] == nil)
             #expect(out.errors.first?.fix?.contains("sign") == true)
             try expectNothingKept(w)
             // Nothing was lost: the same run, with a working ledger, succeeds.
@@ -370,7 +478,9 @@ struct SignRollbackTests {
         }
     }
 
-    @Test("a swap whose ledger write fails is swapped back: the previous signed app is in place and its record untouched")
+    @Test(
+        "a swap whose ledger write fails is swapped back: the previous signed app is in place and its record untouched"
+    )
     func swapRestored() async throws {
         try await withSignWorld(app: .apollo) { w in
             #expect(await w.run().ok)
@@ -387,7 +497,9 @@ struct SignRollbackTests {
         }
     }
 
-    @Test("when the undo itself fails the app stays in place and the error says so: signedPath relative, recorded:false")
+    @Test(
+        "when the undo itself fails the app stays in place and the error says so: signedPath relative, recorded:false"
+    )
     func restoreFails() async throws {
         try await withSignWorld(app: .apollo) { w in
             var hooks = failingLedger
@@ -411,25 +523,39 @@ struct SignRollbackTests {
         let dir = try makeTempDir().path
         defer { try? FileManager.default.removeItem(atPath: dir) }
         let fm = FileManager.default
-        for name in ["scratch", "dest"] { try fm.createDirectory(atPath: dir + "/" + name, withIntermediateDirectories: true) }
+        for name in ["scratch", "dest"] {
+            try fm.createDirectory(atPath: dir + "/" + name, withIntermediateDirectories: true)
+        }
         // A new placement: dest holds the new app, scratch has no app.
         try fm.createDirectory(atPath: dir + "/dest/App.app", withIntermediateDirectories: true)
-        #expect(SignCommand.restore(swapped: false, scratchApp: dir + "/scratch/App.app", destination: dir + "/dest/App.app"))
+        #expect(
+            SignCommand.restore(
+                swapped: false, scratchApp: dir + "/scratch/App.app",
+                destination: dir + "/dest/App.app"))
         #expect(listing(dir + "/dest").isEmpty && listing(dir + "/scratch") == ["App.app"])
         // A swap: scratch holds the old app, dest the new one.
         try fm.createDirectory(atPath: dir + "/dest/App.app", withIntermediateDirectories: true)
         fm.createFile(atPath: dir + "/dest/App.app/new", contents: nil)
         fm.createFile(atPath: dir + "/scratch/App.app/old", contents: nil)
-        #expect(SignCommand.restore(swapped: true, scratchApp: dir + "/scratch/App.app", destination: dir + "/dest/App.app"))
-        #expect(listing(dir + "/dest/App.app") == ["old"] && listing(dir + "/scratch/App.app") == ["new"])
+        #expect(
+            SignCommand.restore(
+                swapped: true, scratchApp: dir + "/scratch/App.app",
+                destination: dir + "/dest/App.app"))
+        #expect(
+            listing(dir + "/dest/App.app") == ["old"]
+                && listing(dir + "/scratch/App.app") == ["new"])
         // Nothing to restore from fails rather than pretending.
-        #expect(!SignCommand.restore(swapped: true, scratchApp: dir + "/missing", destination: dir + "/dest/App.app"))
+        #expect(
+            !SignCommand.restore(
+                swapped: true, scratchApp: dir + "/missing", destination: dir + "/dest/App.app"))
     }
 }
 
 @Suite("sign: failures after the archive is open")
 struct SignWorkFailureTests {
-    @Test("a watch app the stripper does not look for is found by the re-walk -> EXTENSION_REMAINS, nothing signed")
+    @Test(
+        "a watch app the stripper does not look for is found by the re-walk -> EXTENSION_REMAINS, nothing signed"
+    )
     func extensionRemains() async throws {
         try await withSignWorld(app: .stremioIOS, variant: .hiddenWatch) { w in
             let out = await w.run()
@@ -440,7 +566,9 @@ struct SignWorkFailureTests {
         }
     }
 
-    @Test("nested code sign does not handle (an XPC service) is refused by its relative path, before anything is signed")
+    @Test(
+        "nested code sign does not handle (an XPC service) is refused by its relative path, before anything is signed"
+    )
     func nestedCodeRefused() async throws {
         try await withSignWorld(app: .stremioIOS, variant: .xpc) { w in
             let out = await w.run()
@@ -462,10 +590,15 @@ struct SignWorkFailureTests {
         }
     }
 
-    @Test("codesign failing on the nested items, the app or the verification is CODESIGN_FAILED and nothing is kept")
+    @Test(
+        "codesign failing on the nested items, the app or the verification is CODESIGN_FAILED and nothing is kept"
+    )
     func codesignFails() async throws {
         let cases: [(SignScript, String)] = [
-            (SignScript(signingFailure: RunResult(code: 1, stderr: "boom /Users/someone/x")), "nested"),
+            (
+                SignScript(signingFailure: RunResult(code: 1, stderr: "boom /Users/someone/x")),
+                "nested"
+            ),
             (SignScript(failAfterSigningCalls: 2), "app"),
         ]
         for (script, step) in cases {
@@ -473,13 +606,17 @@ struct SignWorkFailureTests {
                 let out = await w.run()
                 #expect(code(out) == "CODESIGN_FAILED")
                 #expect(out.data["step"] == .string(step))
-                #expect(!(out.errors.first?.message.contains("someone") ?? false), "tool output is not echoed")
+                #expect(
+                    !(out.errors.first?.message.contains("someone") ?? false),
+                    "tool output is not echoed")
                 try expectNothingKept(w)
             }
         }
     }
 
-    @Test("a locked keychain at signing time is KEYCHAIN_LOCKED, and a missing identity FREE_IDENTITY_MISSING")
+    @Test(
+        "a locked keychain at signing time is KEYCHAIN_LOCKED, and a missing identity FREE_IDENTITY_MISSING"
+    )
     func keyProblems() async throws {
         let cases = [
             (RunResult(code: 1, stderr: "x: errSecInternalComponent"), "KEYCHAIN_LOCKED"),
@@ -493,7 +630,9 @@ struct SignWorkFailureTests {
         }
     }
 
-    @Test("the guard must pass: a team that is not the free team -> WRONG_TEAM, and the result is not placed")
+    @Test(
+        "the guard must pass: a team that is not the free team -> WRONG_TEAM, and the result is not placed"
+    )
     func guardTeam() async throws {
         try await withSignWorld(app: .apollo, script: SignScript(reportedTeam: Team.paid)) { w in
             let out = await w.run()
@@ -503,7 +642,9 @@ struct SignWorkFailureTests {
         }
     }
 
-    @Test("the guard proves the app was signed with the pinned certificate: another leaf -> GUARD_FAILED")
+    @Test(
+        "the guard proves the app was signed with the pinned certificate: another leaf -> GUARD_FAILED"
+    )
     func guardLeaf() async throws {
         let other = try certDER(TestCerts.other)
         try await withSignWorld(app: .apollo, script: SignScript(leaf: other)) { w in
@@ -519,12 +660,17 @@ struct SignWorkFailureTests {
             let before = tree(w.signedApp)
             // The same world, now with a runner whose guard sees the wrong team.
             let refusing = SignRunner(
-                pinnedSha1: w.pinnedSha1, script: SignScript(reportedTeam: Team.paid, leaf: try certDER(TestCerts.free)),
+                pinnedSha1: w.pinnedSha1,
+                script: SignScript(reportedTeam: Team.paid, leaf: try certDER(TestCerts.free)),
                 devices: deviceListJSON(
-                    deviceEntryJSON(name: "Test iPhone", udid: savedUdid("1"), coreId: savedCoreId("1"), osVersion: "26.0")))
+                    deviceEntryJSON(
+                        name: "Test iPhone", udid: savedUdid("1"), coreId: savedCoreId("1"),
+                        osVersion: "26.0")))
             var services = w.services
             services.runner = refusing
-            let out = await SignCommand.run(services, SignOptions(app: "apollo", device: "iphone", yes: true), registry: ScratchRegistry())
+            let out = await SignCommand.run(
+                services, SignOptions(app: "apollo", device: "iphone", yes: true),
+                registry: ScratchRegistry())
             #expect(code(out) == "WRONG_TEAM")
             #expect(tree(w.signedApp) == before)
             let signed = try w.ledger().freeSigned

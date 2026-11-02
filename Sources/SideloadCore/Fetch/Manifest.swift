@@ -55,7 +55,8 @@ public struct Manifest: Codable, Sendable, Equatable {
     }
 
     mutating func upsert(_ entry: ManifestEntry) {
-        if let i = entries.firstIndex(where: { $0.app == entry.app && $0.version == entry.version }) {
+        if let i = entries.firstIndex(where: { $0.app == entry.app && $0.version == entry.version })
+        {
             entries[i] = entry
         } else {
             entries.append(entry)
@@ -81,10 +82,15 @@ public struct ManifestStore: Sendable {
         guard let data = try readFile(paths.manifest) else { return Manifest() }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let manifest = try? decoder.decode(Manifest.self, from: data), manifest.schema == Manifest.schema else {
+        guard let manifest = try? decoder.decode(Manifest.self, from: data),
+            manifest.schema == Manifest.schema
+        else {
             throw SideloadError(
-                "MANIFEST_INVALID", "manifest.json is not a valid schema \(Manifest.schema) manifest.",
-                fix: "Move $SIDELOAD_HOME/manifest.json aside and run `sideload fetch --app <app>` again.")
+                "MANIFEST_INVALID",
+                "manifest.json is not a valid schema \(Manifest.schema) manifest.",
+                fix:
+                    "Move $SIDELOAD_HOME/manifest.json aside and run `sideload fetch --app <app>` again."
+            )
         }
         return manifest
     }
@@ -113,11 +119,17 @@ public struct ManifestStore: Sendable {
     /// Absolute path of an entry's file. A `file` that is not `<app>/<version>/<name>` of plain names is refused,
     /// so a hand-edited manifest cannot point outside `downloads/`.
     public func path(of entry: ManifestEntry) throws -> String {
-        let parts = entry.file.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-        guard parts.count == 3, parts[0] == entry.app, parts[1] == entry.version, parts.allSatisfy(SourceResolver.isSafeToken) else {
+        let parts = entry.file.split(separator: "/", omittingEmptySubsequences: false).map(
+            String.init)
+        guard parts.count == 3, parts[0] == entry.app, parts[1] == entry.version,
+            parts.allSatisfy(SourceResolver.isSafeToken)
+        else {
             throw SideloadError(
-                "MANIFEST_INVALID", "A manifest entry names a file outside downloads/<app>/<version>/.",
-                fix: "Move $SIDELOAD_HOME/manifest.json aside and run `sideload fetch --app <app>` again.")
+                "MANIFEST_INVALID",
+                "A manifest entry names a file outside downloads/<app>/<version>/.",
+                fix:
+                    "Move $SIDELOAD_HOME/manifest.json aside and run `sideload fetch --app <app>` again."
+            )
         }
         return paths.downloads + "/" + entry.file
     }
