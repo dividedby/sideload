@@ -10,12 +10,17 @@ private let apollo = menuBundleId("apollo")
 
 private func signed(_ app: String = "apollo", days: Double = 5) -> LedgerFreeSigned {
     LedgerFreeSigned(
-        id: "iphone/\(app)", device: "iphone", app: app, bundleId: menuBundleId(app), version: "1.0",
-        sha256Prefix: "0a1b2c3d", profileUuid: "UUID-1", profileExpires: daysFromNow(days), certFp8: "12345678",
-        signedAt: testNow, path: "builds/signed/\(app)/iphone/X.app", strippedExtensions: [], droppedEntitlements: [])
+        id: "iphone/\(app)", device: "iphone", app: app, bundleId: menuBundleId(app),
+        version: "1.0",
+        sha256Prefix: "0a1b2c3d", profileUuid: "UUID-1", profileExpires: daysFromNow(days),
+        certFp8: "12345678",
+        signedAt: testNow, path: "builds/signed/\(app)/iphone/X.app", strippedExtensions: [],
+        droppedEntitlements: [])
 }
 
-private func op(_ kind: LedgerSlotKind, startedAt: Date, by: LedgerSlotBy = .install) -> LedgerSlotOp {
+private func op(_ kind: LedgerSlotKind, startedAt: Date, by: LedgerSlotBy = .install)
+    -> LedgerSlotOp
+{
     LedgerSlotOp(kind: kind, by: by, startedAt: startedAt, window: SlotRule.window(kind))
 }
 
@@ -45,9 +50,12 @@ private enum LedgerCase: CaseIterable {
             return ledger
         case .signedOnly: return Ledger(freeSigned: [signed()])
         case .lent:
-            var ledger = Ledger(installs: [menuInstall("iphone", "apollo", days: 5, present: false)])
+            var ledger = Ledger(installs: [menuInstall("iphone", "apollo", days: 5, present: false)]
+            )
             ledger.slots = [
-                LedgerSlot(device: "iphone", app: "apollo", presence: .absent, lentTo: "lab", since: testNow.addingTimeInterval(-3_600))
+                LedgerSlot(
+                    device: "iphone", app: "apollo", presence: .absent, lentTo: "lab",
+                    since: testNow.addingTimeInterval(-3_600))
             ]
             SlotRule.project(&ledger)
             return ledger
@@ -59,7 +67,9 @@ private enum LedgerCase: CaseIterable {
     private func withOp(startedAt: Date) -> Ledger {
         var ledger = Ledger(installs: [menuInstall("iphone", "apollo", days: 5)])
         ledger.slots = [
-            LedgerSlot(device: "iphone", app: "apollo", presence: .present, op: op(.reinstall, startedAt: startedAt))
+            LedgerSlot(
+                device: "iphone", app: "apollo", presence: .present,
+                op: op(.reinstall, startedAt: startedAt))
         ]
         SlotRule.project(&ledger)
         return ledger
@@ -74,12 +84,17 @@ private enum DeviceState: CaseIterable {
         switch self {
         case .readHas: return (visible, ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)])
         case .readNot: return (visible, ["iphone": .read(menuSnapshot([]), takenAt: testNow)])
-        case .readFailed: return (visible, ["iphone": .failed(code: "DEVICE_LOCKED", takenAt: testNow)])
+        case .readFailed:
+            return (visible, ["iphone": .failed(code: "DEVICE_LOCKED", takenAt: testNow)])
         case .readChecking: return (visible, ["iphone": .checking])
         // A read that is still in the cache from when the device was visible says nothing once it is not.
         case .offline:
-            return (.listed([menuListed(link: "unavailable")]), ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)])
-        case .listFailed: return (.failed, ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)])
+            return (
+                .listed([menuListed(link: "unavailable")]),
+                ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)]
+            )
+        case .listFailed:
+            return (.failed, ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)])
         case .listChecking: return (.checking, [:])
         }
     }
@@ -113,8 +128,11 @@ struct MenuPresenceMatrixTests {
         for ledger in LedgerCase.allCases {
             for device in DeviceState.allCases {
                 let (probe, apps) = device.inputs()
-                let rows = menuBuild(ledger: ledger.ledger, probe: probe, apps: apps).devices[0].apps
-                #expect(rows.map(\.presence) == (device.expected(ledger).map { [$0] } ?? []), "\(ledger) / \(device)")
+                let rows = menuBuild(ledger: ledger.ledger, probe: probe, apps: apps).devices[0]
+                    .apps
+                #expect(
+                    rows.map(\.presence) == (device.expected(ledger).map { [$0] } ?? []),
+                    "\(ledger) / \(device)")
             }
         }
     }
@@ -122,17 +140,22 @@ struct MenuPresenceMatrixTests {
     @Test("only a countdown draws a bar; the other states say what they are, in neutral text")
     func rowShapes() {
         let words: [AppPresence: String] = [
-            .notInstalled: "Signed · not installed", .lent: "Lent to lab", .pending: "Change in progress",
+            .notInstalled: "Signed · not installed", .lent: "Lent to lab",
+            .pending: "Change in progress",
             .checking: "checking…",
         ]
         for ledger in LedgerCase.allCases {
             for device in DeviceState.allCases {
                 let (probe, apps) = device.inputs()
-                for row in menuBuild(ledger: ledger.ledger, probe: probe, apps: apps).devices[0].apps {
+                for row in menuBuild(ledger: ledger.ledger, probe: probe, apps: apps).devices[0]
+                    .apps
+                {
                     let label = "\(ledger) / \(device)"
                     if let text = words[row.presence] {
                         #expect(!row.showsBar && row.daysLabel == text, "\(label)")
-                        #expect(row.textTone == .neutral && row.barTone == .neutral && row.barFraction == 0, "\(label)")
+                        #expect(
+                            row.textTone == .neutral && row.barTone == .neutral
+                                && row.barFraction == 0, "\(label)")
                     } else {
                         #expect(row.showsBar && row.daysLabel == "5 d", "\(label)")
                     }
@@ -141,7 +164,9 @@ struct MenuPresenceMatrixTests {
         }
     }
 
-    @Test("the ring, the status items and the Renew items count what is or may be on the device, not what is gone or lent")
+    @Test(
+        "the ring, the status items and the Renew items count what is or may be on the device, not what is gone or lent"
+    )
     func ringMembership() {
         for ledger in LedgerCase.allCases {
             for device in DeviceState.allCases {
@@ -154,12 +179,16 @@ struct MenuPresenceMatrixTests {
                 #expect(snapshot.devices[0].renew.items.count == (inRing ? 2 : 1), "\(label)")
                 // "All apps (N)" counts the apps `refresh` would renew, which is not the same set as the rows.
                 let count = snapshot.devices[0].refreshSet.count
-                #expect(snapshot.devices[0].renew.items.first?.detail == (count == 0 ? nil : "(\(count))"), "\(label)")
+                #expect(
+                    snapshot.devices[0].renew.items.first?.detail
+                        == (count == 0 ? nil : "(\(count))"), "\(label)")
             }
         }
     }
 
-    @Test("a hand-installed app takes its date from freeSigned; a recorded one from installs[], whatever freeSigned says")
+    @Test(
+        "a hand-installed app takes its date from freeSigned; a recorded one from installs[], whatever freeSigned says"
+    )
     func dates() {
         let read = ["iphone": DeviceAppsProbe.read(menuSnapshot([apollo]), takenAt: testNow)]
         let hand = menuBuild(ledger: Ledger(freeSigned: [signed(days: 4)]), apps: read)
@@ -171,23 +200,39 @@ struct MenuPresenceMatrixTests {
         #expect(abs(installed.icon.fraction - 5.0 / 7.0) < 1e-9)
     }
 
-    @Test("a lent app needs no install record; one that is back on the device shows installed with no countdown")
+    @Test(
+        "a lent app needs no install record; one that is back on the device shows installed with no countdown"
+    )
     func lentWithoutInstallRecord() {
         var ledger = Ledger()
-        ledger.slots = [LedgerSlot(device: "iphone", app: "apollo", presence: .absent, lentTo: "lab", since: testNow)]
+        ledger.slots = [
+            LedgerSlot(
+                device: "iphone", app: "apollo", presence: .absent, lentTo: "lab", since: testNow)
+        ]
         SlotRule.project(&ledger)
         let lent = menuBuild(ledger: ledger).devices[0].apps
         #expect(lent.map(\.presence) == [.lent])
-        let back = menuBuild(ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)]).devices[0].apps
+        let back = menuBuild(
+            ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)]
+        ).devices[0].apps
         #expect(back.map(\.presence) == [.installed])
         #expect(back[0].daysLabel == "Installed" && !back[0].showsBar)
-        #expect(menuBuild(ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)]).icon == .unknown)
+        #expect(
+            menuBuild(
+                ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)]
+            ).icon == .unknown)
     }
 
-    @Test("a change in progress with no install record has a row but no date, so it stays out of the ring")
+    @Test(
+        "a change in progress with no install record has a row but no date, so it stays out of the ring"
+    )
     func pendingWithoutInstallRecord() {
         var ledger = Ledger()
-        ledger.slots = [LedgerSlot(device: "iphone", app: "apollo", presence: .unknown, op: op(.install, startedAt: testNow))]
+        ledger.slots = [
+            LedgerSlot(
+                device: "iphone", app: "apollo", presence: .unknown,
+                op: op(.install, startedAt: testNow))
+        ]
         SlotRule.project(&ledger)
         let snapshot = menuBuild(ledger: ledger)
         #expect(snapshot.devices[0].apps.map(\.presence) == [.pending])
@@ -195,64 +240,86 @@ struct MenuPresenceMatrixTests {
         #expect(snapshot.devices[0].renew.items.map(\.title) == ["All apps"])
     }
 
-    @Test("a read older than what the ledger knows is not used: a cached read from before a lend cannot undo it")
+    @Test(
+        "a read older than what the ledger knows is not used: a cached read from before a lend cannot undo it"
+    )
     func staleRead() {
         var ledger = LedgerCase.lent.ledger
         ledger.slots[0].since = testNow
         SlotRule.project(&ledger)
         let before = testNow.addingTimeInterval(-120)
-        let stale = menuBuild(ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: before)])
+        let stale = menuBuild(
+            ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: before)])
         #expect(stale.devices[0].apps.map(\.presence) == [.lent])
-        let fresh = menuBuild(ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)])
+        let fresh = menuBuild(
+            ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)])
         #expect(fresh.devices[0].apps.map(\.presence) == [.installed])
 
         var seen = LedgerCase.recorded.ledger
         seen.slots[0].seenAt = testNow
-        let older = menuBuild(ledger: seen, apps: ["iphone": .read(menuSnapshot([]), takenAt: before)])
+        let older = menuBuild(
+            ledger: seen, apps: ["iphone": .read(menuSnapshot([]), takenAt: before)])
         #expect(older.devices[0].apps.map(\.presence) == [.unconfirmed])
     }
 
-    @Test("app remove then an open inside 5 minutes: a cached read from before it cannot bring a removed app back")
+    @Test(
+        "app remove then an open inside 5 minutes: a cached read from before it cannot bring a removed app back"
+    )
     func staleReadCannotRestoreARemovedApp() {
         var ledger = LedgerCase.removed.ledger
         ledger.slots[0].seenAt = testNow
-        let before = DeviceAppsProbe.read(menuSnapshot([apollo]), takenAt: testNow.addingTimeInterval(-120))
+        let before = DeviceAppsProbe.read(
+            menuSnapshot([apollo]), takenAt: testNow.addingTimeInterval(-120))
         let stale = menuBuild(ledger: ledger, apps: ["iphone": before])
         #expect(stale.devices[0].apps.isEmpty)
         #expect(stale.icon.remaining == nil)
         #expect(stale.devices[0].renew.items.map(\.title) == ["All apps"])
         #expect(stale.devices[0].renew.items.first?.detail == nil)
         // The card says the read was not used (there are no rows to say it on, so only a card with rows shows the note).
-        let fresh = menuBuild(ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)])
+        let fresh = menuBuild(
+            ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)])
         #expect(fresh.devices[0].apps.map(\.presence) == [.installed])
         #expect(fresh.devices[0].appsNote == nil)
     }
 
-    @Test("a card whose rows show the ledger's record because a read was overtaken, or the device list failed, says so")
+    @Test(
+        "a card whose rows show the ledger's record because a read was overtaken, or the device list failed, says so"
+    )
     func lastKnownNote() {
         let ledger = menuLedger([("iphone", "apollo", 5)])
         var seen = ledger
         seen.slots[0].seenAt = testNow
         let overtaken = menuBuild(
-            ledger: seen, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow.addingTimeInterval(-120))])
+            ledger: seen,
+            apps: [
+                "iphone": .read(menuSnapshot([apollo]), takenAt: testNow.addingTimeInterval(-120))
+            ])
         #expect(overtaken.devices[0].apps.map(\.presence) == [.unconfirmed])
         #expect(overtaken.devices[0].appsNote == "Couldn't check apps · showing last known")
         let listFailed = menuBuild(ledger: ledger, probe: .failed)
         #expect(listFailed.devices[0].appsNote == "Couldn't check apps · showing last known")
         // Nothing to show, nothing to say; a good read and an offline device keep their own wording.
         #expect(menuBuild(probe: .failed).devices[0].appsNote == nil)
-        #expect(menuBuild(ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)]).devices[0].appsNote == nil)
-        #expect(menuBuild(ledger: ledger, probe: .listed([menuListed(link: "unavailable")])).devices[0].appsNote == nil)
+        #expect(
+            menuBuild(
+                ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)]
+            ).devices[0].appsNote == nil)
+        #expect(
+            menuBuild(ledger: ledger, probe: .listed([menuListed(link: "unavailable")])).devices[0]
+                .appsNote == nil)
     }
 
-    @Test("the overtaken-read note is for the rows that show the record because of it, not for any slot on the device")
+    @Test(
+        "the overtaken-read note is for the rows that show the record because of it, not for any slot on the device"
+    )
     func noteFollowsTheRows() {
         var ledger = LedgerCase.removed.ledger
         ledger.slots[0].seenAt = testNow
         ledger = menuLedger([("iphone", "stremio-ios", 5)], base: ledger)
         let stremio = menuBundleId("stremio-ios")
         // Taken before the remove of apollo: it cannot speak for apollo, but stremio's record is older than the read.
-        let read = DeviceAppsProbe.read(menuSnapshot([apollo, stremio]), takenAt: testNow.addingTimeInterval(-120))
+        let read = DeviceAppsProbe.read(
+            menuSnapshot([apollo, stremio]), takenAt: testNow.addingTimeInterval(-120))
         let card = menuBuild(ledger: ledger, apps: ["iphone": read]).devices[0]
         #expect(card.apps.map(\.presence) == [.installed])
         #expect(card.appsNote == nil)
@@ -263,11 +330,15 @@ struct MenuPresenceMatrixTests {
         var ledger = menuLedger([("gone", "apollo", 0.5)])
         ledger.freeSigned = [
             LedgerFreeSigned(
-                id: "gone/stremio-ios", device: "gone", app: "stremio-ios", bundleId: menuBundleId("stremio-ios"), version: "1.0",
-                sha256Prefix: "0a1b2c3d", profileUuid: "U", profileExpires: daysFromNow(0.5), certFp8: "12345678", signedAt: testNow,
+                id: "gone/stremio-ios", device: "gone", app: "stremio-ios",
+                bundleId: menuBundleId("stremio-ios"), version: "1.0",
+                sha256Prefix: "0a1b2c3d", profileUuid: "U", profileExpires: daysFromNow(0.5),
+                certFp8: "12345678", signedAt: testNow,
                 path: "x", strippedExtensions: [], droppedEntitlements: [])
         ]
-        let snapshot = menuBuild(ledger: ledger, apps: ["gone": .read(menuSnapshot([menuBundleId("stremio-ios")]), takenAt: testNow)])
+        let snapshot = menuBuild(
+            ledger: ledger,
+            apps: ["gone": .read(menuSnapshot([menuBundleId("stremio-ios")]), takenAt: testNow)])
         #expect(snapshot.devices.map(\.alias) == ["iphone"])
         #expect(snapshot.devices[0].apps.isEmpty)
         #expect(snapshot.icon == .unknown)
@@ -284,23 +355,30 @@ struct MenuRenewFailedTests {
 
     private let read = ["iphone": DeviceAppsProbe.read(menuSnapshot([apollo]), takenAt: testNow)]
 
-    @Test("a failed last renewal marks the row red and the icon, with the code when it has the plain shape")
+    @Test(
+        "a failed last renewal marks the row red and the icon, with the code when it has the plain shape"
+    )
     func failedRow() {
         let snapshot = menuBuild(ledger: failed("failed"), apps: read)
         #expect(snapshot.devices[0].apps[0].failure == "Renewal failed · DEVICE_LOCKED")
         #expect(snapshot.icon.state == .renewFailed)
         // The ring keeps its value under the badge.
         #expect(abs(snapshot.icon.fraction - 6.0 / 7.0) < 1e-9)
-        #expect(menuBuild(ledger: failed("failed", code: nil), apps: read).devices[0].apps[0].failure == "Renewal failed")
+        #expect(
+            menuBuild(ledger: failed("failed", code: nil), apps: read).devices[0].apps[0].failure
+                == "Renewal failed")
         for odd in ["Apple Development: Jane Doe", "lower_case", "WITH SPACE", ""] {
-            #expect(menuBuild(ledger: failed("failed", code: odd), apps: read).devices[0].apps[0].failure == "Renewal failed", "\(odd)")
+            #expect(
+                menuBuild(ledger: failed("failed", code: odd), apps: read).devices[0].apps[0]
+                    .failure == "Renewal failed", "\(odd)")
         }
     }
 
     @Test("a failure counts for installed, unconfirmed, checking and pending rows")
     func failureStates() {
         let ledger = failed("failed")
-        let unconfirmed = menuBuild(ledger: ledger, probe: .listed([menuListed(link: "unavailable")]))
+        let unconfirmed = menuBuild(
+            ledger: ledger, probe: .listed([menuListed(link: "unavailable")]))
         let checking = menuBuild(ledger: ledger, probe: .checking)
         for snapshot in [unconfirmed, checking, menuBuild(ledger: ledger, apps: read)] {
             #expect(snapshot.devices[0].apps[0].failure != nil)
@@ -313,20 +391,26 @@ struct MenuRenewFailedTests {
         #expect(row.presence == .pending && row.failure != nil)
     }
 
-    @Test("skipped and renewed-not-installed are not failures; neither is a failure on an app that is gone or lent")
+    @Test(
+        "skipped and renewed-not-installed are not failures; neither is a failure on an app that is gone or lent"
+    )
     func notFailures() {
         for result in ["skipped", "renewed-not-installed", "renewed", nil] {
             let snapshot = menuBuild(ledger: failed(result), apps: read)
             #expect(snapshot.devices[0].apps[0].failure == nil, "\(result ?? "nil")")
             #expect(snapshot.icon.state == .ok, "\(result ?? "nil")")
         }
-        let gone = menuBuild(ledger: failed("failed"), apps: ["iphone": .read(menuSnapshot([]), takenAt: testNow)])
+        let gone = menuBuild(
+            ledger: failed("failed"), apps: ["iphone": .read(menuSnapshot([]), takenAt: testNow)])
         #expect(gone.devices[0].apps[0].presence == .notInstalled)
         #expect(gone.devices[0].apps[0].failure == nil)
         #expect(gone.icon.state != .renewFailed)
 
         var lent = failed("failed")
-        lent.slots = [LedgerSlot(device: "iphone", app: "apollo", presence: .absent, lentTo: "lab", since: testNow)]
+        lent.slots = [
+            LedgerSlot(
+                device: "iphone", app: "apollo", presence: .absent, lentTo: "lab", since: testNow)
+        ]
         SlotRule.project(&lent)
         let held = menuBuild(ledger: lent)
         #expect(held.devices[0].apps[0].presence == .lent && held.devices[0].apps[0].failure == nil)
@@ -335,20 +419,29 @@ struct MenuRenewFailedTests {
 
     @Test("an input override still forces the renew failed state")
     func override() {
-        #expect(menuBuild(ledger: menuLedger([("iphone", "apollo", 6)]), renewFailed: true).icon.state == .renewFailed)
+        #expect(
+            menuBuild(ledger: menuLedger([("iphone", "apollo", 6)]), renewFailed: true).icon.state
+                == .renewFailed)
     }
 }
 
 @Suite("menu: the icon and the status follow what is on the device")
 struct MenuPresenceRingTests {
-    @Test("an app gone from the device and a lent app leave the ring and the worst state to the others")
+    @Test(
+        "an app gone from the device and a lent app leave the ring and the worst state to the others"
+    )
     func excluded() {
         var ledger = menuLedger([("iphone", "apollo", 0.5), ("iphone", "stremio-ios", 6)])
         // A third record: lent, with a profile that would be expired.
         ledger.installs.append(menuInstall("iphone", "filler", days: -2, present: false))
-        ledger.slots.append(LedgerSlot(device: "iphone", app: "filler", presence: .absent, lentTo: "lab", since: testNow))
+        ledger.slots.append(
+            LedgerSlot(
+                device: "iphone", app: "filler", presence: .absent, lentTo: "lab", since: testNow))
         SlotRule.project(&ledger)
-        let read = ["iphone": DeviceAppsProbe.read(menuSnapshot([menuBundleId("stremio-ios")]), takenAt: testNow)]
+        let read = [
+            "iphone": DeviceAppsProbe.read(
+                menuSnapshot([menuBundleId("stremio-ios")]), takenAt: testNow)
+        ]
         let snapshot = menuBuild(ledger: ledger, canary: "working", apps: read)
         #expect(snapshot.devices[0].apps.map(\.presence) == [.notInstalled, .lent, .installed])
         #expect(snapshot.icon.state == .ok)
@@ -368,25 +461,36 @@ struct MenuPresenceRingTests {
         #expect(unread.state == .critical)
     }
 
-    @Test("the apps note names why a visible device could not be read, once per card; offline devices keep their own line")
+    @Test(
+        "the apps note names why a visible device could not be read, once per card; offline devices keep their own line"
+    )
     func appsNote() {
         let ledger = menuLedger([("iphone", "apollo", 6)])
         func note(_ code: String) -> String? {
-            menuBuild(ledger: ledger, apps: ["iphone": .failed(code: code, takenAt: testNow)]).devices[0].appsNote
+            menuBuild(ledger: ledger, apps: ["iphone": .failed(code: code, takenAt: testNow)])
+                .devices[0].appsNote
         }
         #expect(note("DEVICE_LOCKED") == "Couldn't check apps (device locked) · showing last known")
         #expect(note("TIMEOUT") == "Couldn't check apps (timed out) · showing last known")
-        #expect(note("SNAPSHOT_FAILED") == "Couldn't check apps (couldn't read) · showing last known")
-        #expect(note("SOMETHING_ELSE") == "Couldn't check apps (couldn't read) · showing last known")
-        let read = menuBuild(ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)])
+        #expect(
+            note("SNAPSHOT_FAILED") == "Couldn't check apps (couldn't read) · showing last known")
+        #expect(
+            note("SOMETHING_ELSE") == "Couldn't check apps (couldn't read) · showing last known")
+        let read = menuBuild(
+            ledger: ledger, apps: ["iphone": .read(menuSnapshot([apollo]), takenAt: testNow)])
         #expect(read.devices[0].appsNote == nil)
         let offline = menuBuild(
-            ledger: ledger, probe: .listed([menuListed(link: "unavailable", lastSeen: testNow.addingTimeInterval(-3_600))]),
+            ledger: ledger,
+            probe: .listed([
+                menuListed(link: "unavailable", lastSeen: testNow.addingTimeInterval(-3_600))
+            ]),
             apps: ["iphone": .failed(code: "DEVICE_LOCKED", takenAt: testNow)])
         #expect(offline.devices[0].appsNote == nil)
         #expect(offline.devices[0].offlineNote == "Seen 1 h ago")
         // No per-row text about it.
-        #expect(menuBuild(ledger: ledger, apps: ["iphone": .failed(code: "TIMEOUT", takenAt: testNow)]).devices[0].apps[0].daysLabel == "6 d")
+        #expect(
+            menuBuild(ledger: ledger, apps: ["iphone": .failed(code: "TIMEOUT", takenAt: testNow)])
+                .devices[0].apps[0].daysLabel == "6 d")
     }
 
     @Test("checkingApps is true only while a visible device is being read")
@@ -394,8 +498,14 @@ struct MenuPresenceRingTests {
         let ledger = menuLedger([("iphone", "apollo", 6)])
         #expect(menuBuild(ledger: ledger, apps: ["iphone": .checking]).checkingApps)
         #expect(!menuBuild(ledger: ledger, apps: [:]).checkingApps)
-        #expect(!menuBuild(ledger: ledger, apps: ["iphone": .read(menuSnapshot([]), takenAt: testNow)]).checkingApps)
-        #expect(!menuBuild(ledger: ledger, probe: .listed([menuListed(link: "unavailable")]), apps: ["iphone": .checking]).checkingApps)
+        #expect(
+            !menuBuild(ledger: ledger, apps: ["iphone": .read(menuSnapshot([]), takenAt: testNow)])
+                .checkingApps)
+        #expect(
+            !menuBuild(
+                ledger: ledger, probe: .listed([menuListed(link: "unavailable")]),
+                apps: ["iphone": .checking]
+            ).checkingApps)
     }
 
     @Test("a snapshot carries no UDID, CoreDevice ID, device name, identity name or foreign app ID")
@@ -403,7 +513,9 @@ struct MenuPresenceRingTests {
         let foreign = "com.example.private-thing"
         let read = DeviceAppsProbe.read(menuSnapshot([apollo, foreign]), takenAt: testNow)
         let ledger = menuLedger([("iphone", "apollo", 2)])
-        for apps in [["iphone": read], ["iphone": .failed(code: "DEVICE_LOCKED", takenAt: testNow)], [:]] as [[String: DeviceAppsProbe]] {
+        for apps in [
+            ["iphone": read], ["iphone": .failed(code: "DEVICE_LOCKED", takenAt: testNow)], [:],
+        ] as [[String: DeviceAppsProbe]] {
             let snapshot = menuBuild(ledger: ledger, apps: apps)
             let text = String(describing: MenuPanel.loaded(snapshot))
             #expect(!text.contains(savedUdid("1")))
@@ -422,11 +534,15 @@ struct MenuPresenceSlotTests {
         _ ledger: Ledger = Ledger(), ids: [String]?, reserved: Int = 0, takenAt: Date = testNow,
         config: Config? = nil
     ) -> Int {
-        let apps: [String: DeviceAppsProbe] = ids.map { ["iphone": .read(menuSnapshot($0), takenAt: takenAt)] } ?? [:]
-        return menuBuild(config: config ?? menuConfig(reserved: ["iphone": reserved]), ledger: ledger, apps: apps).devices[0].freeSlots
+        let apps: [String: DeviceAppsProbe] =
+            ids.map { ["iphone": .read(menuSnapshot($0), takenAt: takenAt)] } ?? [:]
+        return menuBuild(
+            config: config ?? menuConfig(reserved: ["iphone": reserved]), ledger: ledger, apps: apps
+        ).devices[0].freeSlots
     }
 
-    @Test("the snapshot's managed apps count, hand-installed ones too; other developer apps never do")
+    @Test(
+        "the snapshot's managed apps count, hand-installed ones too; other developer apps never do")
     func managed() {
         #expect(free(ids: []) == 3)
         #expect(free(ids: [apollo]) == 2)
@@ -458,22 +574,34 @@ struct MenuPresenceSlotTests {
         // Lent plus a second app that is pending: both held.
         var two = LedgerCase.lent.ledger
         two.installs.append(menuInstall("iphone", "stremio-ios", days: 5))
-        two.slots.append(LedgerSlot(device: "iphone", app: "stremio-ios", presence: .present, op: op(.install, startedAt: testNow)))
+        two.slots.append(
+            LedgerSlot(
+                device: "iphone", app: "stremio-ios", presence: .present,
+                op: op(.install, startedAt: testNow)))
         SlotRule.project(&two)
         #expect(free(two, ids: []) == 1)
     }
 
-    @Test("an unreadable ledger or an out-of-range reserve leaves the slots unknown, whatever the device shows")
+    @Test(
+        "an unreadable ledger or an out-of-range reserve leaves the slots unknown, whatever the device shows"
+    )
     func unknown() {
         let unreadable = menuBuild(
-            ledger: Ledger(), apps: ["iphone": .read(menuSnapshot([]), takenAt: testNow)], ledgerReadable: false)
-        #expect(unreadable.devices[0].freeSlots == 0 && unreadable.devices[0].slotsLabel == "slots unknown")
+            ledger: Ledger(), apps: ["iphone": .read(menuSnapshot([]), takenAt: testNow)],
+            ledgerReadable: false)
+        #expect(
+            unreadable.devices[0].freeSlots == 0
+                && unreadable.devices[0].slotsLabel == "slots unknown")
         let badReserve = menuBuild(
-            config: menuConfig(reserved: ["iphone": 9]), apps: ["iphone": .read(menuSnapshot([]), takenAt: testNow)]).devices[0]
+            config: menuConfig(reserved: ["iphone": 9]),
+            apps: ["iphone": .read(menuSnapshot([]), takenAt: testNow)]
+        ).devices[0]
         #expect(badReserve.freeSlots == 0 && badReserve.slotsLabel == "slots unknown")
     }
 
-    @Test("without a prefix in the config the read cannot say which apps are ours: the ledger alone counts")
+    @Test(
+        "without a prefix in the config the read cannot say which apps are ours: the ledger alone counts"
+    )
     func noPrefix() {
         let ledger = menuLedger([("iphone", "apollo", 5)])
         #expect(free(ledger, ids: [], config: menuConfig(prefix: nil)) == 2)
@@ -495,22 +623,30 @@ struct MenuPresenceSlotTests {
 
 @Suite("menu: reading a device's apps")
 struct MenuReadAppsTests {
-    private func fixture(_ body: (Paths, Services, FakeRunner) async throws -> Void, apps: @escaping @Sendable (String) -> RunResultWithJSON)
+    private func fixture(
+        _ body: (Paths, Services, FakeRunner) async throws -> Void,
+        apps: @escaping @Sendable (String) -> RunResultWithJSON
+    )
         async throws
     {
         try await withTestHome(config: menuConfig()) { paths, _ in
             let runner = FakeRunner(menuDeviceScript(devices: nil, apps: apps))
             let services = Services(
-                runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow), keychain: FakeKeychain(), home: paths)
+                runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow),
+                keychain: FakeKeychain(), home: paths)
             try await body(paths, services, runner)
         }
     }
 
-    @Test("one devicectl info apps call by alias with a 15 s timeout, read only, taking no lock and writing nothing")
+    @Test(
+        "one devicectl info apps call by alias with a 15 s timeout, read only, taking no lock and writing nothing"
+    )
     func readOnly() async throws {
         try await fixture(
             { paths, services, runner in
-                try await LedgerStore(paths: paths).update { $0 = menuLedger([("iphone", "apollo", 5)]) }
+                try await LedgerStore(paths: paths).update {
+                    $0 = menuLedger([("iphone", "apollo", 5)])
+                }
                 try? FileManager.default.removeItem(atPath: paths.opLock)
                 let config = try Data(contentsOf: URL(fileURLWithPath: paths.config))
                 let ledger = try Data(contentsOf: URL(fileURLWithPath: paths.ledger))
@@ -528,28 +664,40 @@ struct MenuReadAppsTests {
                 #expect(call.executable == "xcrun")
                 #expect(Array(call.args.prefix(4)) == ["devicectl", "device", "info", "apps"])
                 let words = call.args.filter { !$0.hasPrefix("-") }
-                #expect(!words.contains { ["profile", "install", "uninstall", "launch", "copy", "files"].contains($0) })
+                #expect(
+                    !words.contains {
+                        ["profile", "install", "uninstall", "launch", "copy", "files"].contains($0)
+                    })
                 #expect(call.args.firstIndex(of: "--timeout").map { call.args[$0 + 1] } == "15")
                 #expect(call.timeout == .seconds(15 + DeviceCtl.runnerMarginSec))
                 // By saved alias: the call carries the saved CoreDevice ID, which only the config knows.
-                #expect(call.args.firstIndex(of: "--device").map { call.args[$0 + 1] } == savedCoreId("1"))
+                #expect(
+                    call.args.firstIndex(of: "--device").map { call.args[$0 + 1] }
+                        == savedCoreId("1"))
                 #expect(!FileManager.default.fileExists(atPath: paths.opLock))
                 #expect(try Data(contentsOf: URL(fileURLWithPath: paths.config)) == config)
                 #expect(try Data(contentsOf: URL(fileURLWithPath: paths.ledger)) == ledger)
             }, apps: { _ in .apps([apollo]) })
     }
 
-    @Test("a locked, timed-out or unreadable device is a failure with its code, never an empty device")
+    @Test(
+        "a locked, timed-out or unreadable device is a failure with its code, never an empty device"
+    )
     func failures() async throws {
         let cases: [(RunResultWithJSON, String)] = [
             (.locked, "DEVICE_LOCKED"), (.timedOut, "TIMEOUT"),
-            (RunResultWithJSON(result: RunResult(code: 0), json: ["info": ["outcome": "failure"]]), "SNAPSHOT_FAILED"),
+            (
+                RunResultWithJSON(
+                    result: RunResult(code: 0), json: ["info": ["outcome": "failure"]]),
+                "SNAPSHOT_FAILED"
+            ),
             (RunResultWithJSON(result: RunResult(code: 1), json: nil), "SNAPSHOT_FAILED"),
         ]
         for (reply, code) in cases {
             try await fixture(
                 { _, services, runner in
-                    let probe = await MenuLoader.readApps(services, alias: "iphone", prefix: menuPrefix)
+                    let probe = await MenuLoader.readApps(
+                        services, alias: "iphone", prefix: menuPrefix)
                     #expect(probe == .failed(code: code, takenAt: testNow), "\(code)")
                     #expect(runner.calls.count == 1)
                 }, apps: { _ in reply })
@@ -557,7 +705,10 @@ struct MenuReadAppsTests {
         // A complete empty list is an empty device, which is different.
         try await fixture(
             { _, services, _ in
-                guard case .read(let snapshot, _) = await MenuLoader.readApps(services, alias: "iphone", prefix: menuPrefix) else {
+                guard
+                    case .read(let snapshot, _) = await MenuLoader.readApps(
+                        services, alias: "iphone", prefix: menuPrefix)
+                else {
                     Issue.record("expected a read")
                     return
                 }
@@ -570,8 +721,11 @@ struct MenuReadAppsTests {
         try await withTestHome(config: menuConfig(prefix: nil)) { paths, _ in
             let runner = FakeRunner(menuDeviceScript(devices: nil, apps: { _ in .apps([]) }))
             let services = Services(
-                runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow), keychain: FakeKeychain(), home: paths)
-            #expect(await MenuLoader.readApps(services, alias: "iphone", prefix: nil) == .failed(code: "CONFIG_MISSING", takenAt: testNow))
+                runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow),
+                keychain: FakeKeychain(), home: paths)
+            #expect(
+                await MenuLoader.readApps(services, alias: "iphone", prefix: nil)
+                    == .failed(code: "CONFIG_MISSING", takenAt: testNow))
             #expect(runner.calls.isEmpty)
         }
     }
@@ -580,7 +734,10 @@ struct MenuReadAppsTests {
     func unsavedAlias() async throws {
         try await fixture(
             { _, services, runner in
-                guard case .failed = await MenuLoader.readApps(services, alias: "nobody", prefix: menuPrefix) else {
+                guard
+                    case .failed = await MenuLoader.readApps(
+                        services, alias: "nobody", prefix: menuPrefix)
+                else {
                     Issue.record("expected a failure")
                     return
                 }
@@ -595,9 +752,15 @@ struct MenuReadAppsTests {
                 let calls = FreeDeviceCalls(services: services, alias: "iphone", bundleId: apollo)
                 _ = await calls.trySnapshot()
                 _ = await calls.trySnapshot(timeoutSec: 15)
-                let timeouts = runner.calls.map { call in call.args.firstIndex(of: "--timeout").map { call.args[$0 + 1] } }
+                let timeouts = runner.calls.map { call in
+                    call.args.firstIndex(of: "--timeout").map { call.args[$0 + 1] }
+                }
                 #expect(timeouts == ["60", "15"])
-                #expect(runner.calls.map(\.timeout) == [.seconds(60 + DeviceCtl.runnerMarginSec), .seconds(15 + DeviceCtl.runnerMarginSec)])
+                #expect(
+                    runner.calls.map(\.timeout) == [
+                        .seconds(60 + DeviceCtl.runnerMarginSec),
+                        .seconds(15 + DeviceCtl.runnerMarginSec),
+                    ])
             }, apps: { _ in .apps([]) })
     }
 
@@ -607,8 +770,13 @@ struct MenuReadAppsTests {
         let phone = menuListed("1")
         let pad = menuListed("2")
         let tv = menuListed("3", link: "unavailable")
-        #expect(MenuLoader.visibleAliases(config, probe: .listed([phone, pad, tv])) == ["ipad", "iphone"])
-        #expect(MenuLoader.visibleAliases(config, probe: .listed([menuListed("2", paired: false)])).isEmpty)
+        #expect(
+            MenuLoader.visibleAliases(config, probe: .listed([phone, pad, tv])) == [
+                "ipad", "iphone",
+            ])
+        #expect(
+            MenuLoader.visibleAliases(config, probe: .listed([menuListed("2", paired: false)]))
+                .isEmpty)
         #expect(MenuLoader.visibleAliases(config, probe: .listed([])).isEmpty)
         #expect(MenuLoader.visibleAliases(config, probe: .failed).isEmpty)
         #expect(MenuLoader.visibleAliases(config, probe: .checking).isEmpty)
@@ -649,11 +817,14 @@ struct MenuAppsCacheTests {
         #expect(cache.needsRead("ipad", force: false, now: testNow))
     }
 
-    @Test("the first paint of a load reuses the last device list and the cached reads; with nothing known it says checking")
+    @Test(
+        "the first paint of a load reuses the last device list and the cached reads; with nothing known it says checking"
+    )
     func firstPaint() {
         let local = MenuLoader.Local.ready(
             MenuInputs(
-                now: testNow, canaryStatus: nil, config: menuConfig(), ledger: menuLedger([("iphone", "apollo", 5)]),
+                now: testNow, canaryStatus: nil, config: menuConfig(),
+                ledger: menuLedger([("iphone", "apollo", 5)]),
                 probe: .checking))
         guard case .loaded(let launch) = MenuLoader.firstPaint(local, cache: MenuAppsCache()) else {
             Issue.record("expected a loaded panel")

@@ -16,12 +16,15 @@ private struct Outcome {
 
     var code: String? { envelope.errors.first?.code }
     var config: JSONValue? {
-        (try? Data(contentsOf: URL(fileURLWithPath: paths.config))).flatMap { try? JSONDecoder().decode(JSONValue.self, from: $0) }
+        (try? Data(contentsOf: URL(fileURLWithPath: paths.config))).flatMap {
+            try? JSONDecoder().decode(JSONValue.self, from: $0)
+        }
     }
 }
 
 private func invoke(
-    _ options: DeviceOptions, config: Config? = noDevicesConfig, devices: JSONValue? = deviceListJSON(phoneEntryJSON()),
+    _ options: DeviceOptions, config: Config? = noDevicesConfig,
+    devices: JSONValue? = deviceListJSON(phoneEntryJSON()),
     _ check: (Outcome) throws -> Void
 ) async throws {
     try await withTestHome(config: config) { paths, _ in
@@ -63,14 +66,17 @@ struct DeviceCommandTests {
             #expect(out.envelope.exitCode == 0)
             #expect(out.json["command"] == "device save")
             #expect(!out.text.contains(savedUdid("1")) && !out.text.contains(savedCoreId("1")))
-            #expect(out.config?["devices"]?["iphone"] == [
-                "udid": .string(savedUdid("1")), "coreDeviceId": .string(savedCoreId("1")), "platform": "ios",
-                "name": "Test iPhone", "autoRefresh": true,
-            ])
+            #expect(
+                out.config?["devices"]?["iphone"] == [
+                    "udid": .string(savedUdid("1")), "coreDeviceId": .string(savedCoreId("1")),
+                    "platform": "ios",
+                    "name": "Test iPhone", "autoRefresh": true,
+                ])
             #expect(out.json["device"]?["name"] == "<device>")
             #expect(out.json["device"]?["autoRefresh"] == true)
             #expect(out.json["device"]?["alias"] == "iphone")
-            #expect(out.json["device"]?["coreDeviceId"] == .string("…" + savedCoreId("1").suffix(4)))
+            #expect(
+                out.json["device"]?["coreDeviceId"] == .string("…" + savedCoreId("1").suffix(4)))
             #expect(modeOf(out.paths.config) == 0o600)
         }
     }
@@ -78,7 +84,13 @@ struct DeviceCommandTests {
     @Test("matches by UDID or CoreDevice ID too")
     func matchesByID() async throws {
         for query in [savedUdid("1"), savedCoreId("1"), savedUdid("1").lowercased()] {
-            try await invoke(save { $0.alias = "p"; $0.match = query; $0.yes = true }) { out in
+            try await invoke(
+                save {
+                    $0.alias = "p"
+                    $0.match = query
+                    $0.yes = true
+                }
+            ) { out in
                 #expect(out.envelope.ok)
             }
         }
@@ -86,10 +98,18 @@ struct DeviceCommandTests {
 
     @Test("refuses simulators, wrong platform and zero matches")
     func notFound() async throws {
-        try await invoke(save { $0.yes = true }, devices: deviceListJSON(phoneEntryJSON(reality: "simulated"))) { out in
+        try await invoke(
+            save { $0.yes = true }, devices: deviceListJSON(phoneEntryJSON(reality: "simulated"))
+        ) { out in
             #expect(out.code == "DEVICE_NOT_FOUND")
         }
-        try await invoke(save { $0.alias = "tv"; $0.platform = "tvos"; $0.yes = true }) { out in
+        try await invoke(
+            save {
+                $0.alias = "tv"
+                $0.platform = "tvos"
+                $0.yes = true
+            }
+        ) { out in
             #expect(out.code == "DEVICE_NOT_FOUND")
             #expect(out.envelope.errors[0].fix?.contains("Remotes and Devices") == true)
         }
@@ -103,7 +123,8 @@ struct DeviceCommandTests {
     @Test("requires exactly one match")
     func ambiguous() async throws {
         let dup = deviceListJSON(
-            phoneEntryJSON(), deviceEntryJSON(name: "Test iPhone", udid: savedUdid("2"), coreId: savedCoreId("2")))
+            phoneEntryJSON(),
+            deviceEntryJSON(name: "Test iPhone", udid: savedUdid("2"), coreId: savedCoreId("2")))
         try await invoke(save { $0.yes = true }, devices: dup) { out in
             #expect(out.code == "AMBIGUOUS_MATCH")
             #expect(out.envelope.errors[0].message == "2 devices matched.")
@@ -118,7 +139,10 @@ struct DeviceCommandTests {
 
     @Test("refuses to overwrite an alias that points at a different device")
     func aliasExists() async throws {
-        let config = Config(devices: ["iphone": SavedDevice(udid: savedUdid("5"), coreDeviceId: savedCoreId("5"), platform: "ios")])
+        let config = Config(devices: [
+            "iphone": SavedDevice(
+                udid: savedUdid("5"), coreDeviceId: savedCoreId("5"), platform: "ios")
+        ])
         try await invoke(save { $0.yes = true }, config: config) { out in
             #expect(out.code == "ALIAS_EXISTS")
             #expect(out.config?["devices"]?["iphone"]?["udid"] == .string(savedUdid("5")))
@@ -130,9 +154,13 @@ struct DeviceCommandTests {
         let prior = SavedDevice(
             udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios", name: "Old Name",
             hostnames: ["old.example.invalid"], extra: ["note": "keep"])
-        let devices = deviceListJSON(deviceEntryJSON(
-            name: "Test iPhone", udid: savedUdid("1"), coreId: savedCoreId("1"), hostnames: ["new.example.invalid"]))
-        try await invoke(save { $0.yes = true }, config: Config(devices: ["iphone": prior]), devices: devices) { out in
+        let devices = deviceListJSON(
+            deviceEntryJSON(
+                name: "Test iPhone", udid: savedUdid("1"), coreId: savedCoreId("1"),
+                hostnames: ["new.example.invalid"]))
+        try await invoke(
+            save { $0.yes = true }, config: Config(devices: ["iphone": prior]), devices: devices
+        ) { out in
             #expect(out.envelope.ok)
             let saved = out.config?["devices"]?["iphone"]
             #expect(saved?["name"] == "Old Name")
@@ -143,8 +171,10 @@ struct DeviceCommandTests {
 
     @Test("a first save records the device's hostnames, never in the output")
     func hostnames() async throws {
-        let devices = deviceListJSON(deviceEntryJSON(
-            name: "Test iPhone", udid: savedUdid("1"), coreId: savedCoreId("1"), hostnames: ["h.example.invalid"]))
+        let devices = deviceListJSON(
+            deviceEntryJSON(
+                name: "Test iPhone", udid: savedUdid("1"), coreId: savedCoreId("1"),
+                hostnames: ["h.example.invalid"]))
         try await invoke(save { $0.yes = true }, devices: devices) { out in
             #expect(out.config?["devices"]?["iphone"]?["hostnames"] == ["h.example.invalid"])
             #expect(!out.text.contains("h.example.invalid"))
@@ -153,7 +183,8 @@ struct DeviceCommandTests {
 
     @Test("the save works against an existing config with other devices and keeps them")
     func keepsOthers() async throws {
-        let config = Config(devices: ["tv": SavedDevice(udid: savedUdid("4"), platform: "tvos")], minFreeGB: 3)
+        let config = Config(
+            devices: ["tv": SavedDevice(udid: savedUdid("4"), platform: "tvos")], minFreeGB: 3)
         try await invoke(save { $0.yes = true }, config: config) { out in
             #expect(out.config?["devices"]?["tv"]?["platform"] == "tvos")
             #expect(out.config?["minFreeGB"] == 3)
@@ -173,11 +204,14 @@ struct DeviceCommandTests {
             #expect(out.json["warnings"] == [])
             #expect(!out.text.contains(savedUdid("1")) && !out.text.contains(savedCoreId("1")))
         }
-        try await invoke(DeviceOptions(sub: "list"), config: iphoneConfig(), devices: deviceListJSON()) { out in
+        try await invoke(
+            DeviceOptions(sub: "list"), config: iphoneConfig(), devices: deviceListJSON()
+        ) { out in
             #expect(out.json["devices"]?.array?.first?["visibility"] == "absent")
         }
         let tunnelDown = deviceListJSON(phoneEntryJSON(tunnel: "unavailable"))
-        try await invoke(DeviceOptions(sub: "list"), config: iphoneConfig(), devices: tunnelDown) { out in
+        try await invoke(DeviceOptions(sub: "list"), config: iphoneConfig(), devices: tunnelDown) {
+            out in
             #expect(out.json["devices"]?.array?.first?["visibility"] == "unavailable")
         }
     }
@@ -191,7 +225,8 @@ struct DeviceCommandTests {
         }
     }
 
-    @Test("list sorts by alias and reports a devicectl failure as a warning with unknown visibility")
+    @Test(
+        "list sorts by alias and reports a devicectl failure as a warning with unknown visibility")
     func listWarning() async throws {
         let config = Config(devices: [
             "zz": SavedDevice(udid: savedUdid("2"), platform: "ios"),
@@ -199,12 +234,15 @@ struct DeviceCommandTests {
         ])
         try await withTestHome(config: config) { paths, _ in
             let (services, _) = fakeServices(paths, route: Route(devices: nil, devicectlCode: 1))
-            let (_, json) = try await DeviceCommand.run(services, DeviceOptions(sub: "list")).printed()
+            let (_, json) = try await DeviceCommand.run(services, DeviceOptions(sub: "list"))
+                .printed()
             #expect(json["ok"] == true)
             #expect(json["devices"]?.array?.compactMap { $0["alias"]?.string } == ["aa", "zz"])
             #expect(json["devices"]?.array?.allSatisfy { $0["visibility"] == "unknown" } == true)
             #expect(json["warnings"]?.array?.first?["code"] == "DEVICECTL_FAILED")
-            #expect(json["warnings"]?.array?.first?["fix"] == "Check that Xcode is installed, then retry.")
+            #expect(
+                json["warnings"]?.array?.first?["fix"]
+                    == "Check that Xcode is installed, then retry.")
         }
     }
 
@@ -221,11 +259,13 @@ struct DeviceCommandTests {
             #expect(out.code == "USAGE")
             #expect(out.runner.calls.isEmpty)
         }
-        try await invoke(DeviceOptions(sub: "save", alias: "x", match: "y", platform: "macos")) { out in
+        try await invoke(DeviceOptions(sub: "save", alias: "x", match: "y", platform: "macos")) {
+            out in
             #expect(out.code == "USAGE")
             #expect(out.envelope.errors[0].message == "Unknown platform \"macos\".")
         }
-        try await invoke(DeviceOptions(sub: "save", alias: "x", match: "", platform: "ios")) { out in
+        try await invoke(DeviceOptions(sub: "save", alias: "x", match: "", platform: "ios")) {
+            out in
             #expect(out.code == "USAGE")
         }
         try await invoke(DeviceOptions(sub: "wat")) { out in
@@ -237,18 +277,27 @@ struct DeviceCommandTests {
         }
     }
 
-    @Test("alias syntax", arguments: [
-        ("iphone", true), ("a", true), ("a-b_c", true), ("A1", true), (String(repeating: "a", count: 32), true),
-        (String(repeating: "a", count: 33), false), ("", false), ("-a", false), ("_a", false), ("a b", false),
-        ("a.b", false), ("ä", false), ("a\n", false),
-    ])
+    @Test(
+        "alias syntax",
+        arguments: [
+            ("iphone", true), ("a", true), ("a-b_c", true), ("A1", true),
+            (String(repeating: "a", count: 32), true),
+            (String(repeating: "a", count: 33), false), ("", false), ("-a", false), ("_a", false),
+            ("a b", false),
+            ("a.b", false), ("ä", false), ("a\n", false),
+        ])
     func alias(alias: String, valid: Bool) {
         #expect(DeviceCommand.isValidAlias(alias) == valid)
     }
 
     @Test("an invalid alias is USAGE and saves nothing")
     func badAlias() async throws {
-        try await invoke(save { $0.alias = "bad alias"; $0.yes = true }) { out in
+        try await invoke(
+            save {
+                $0.alias = "bad alias"
+                $0.yes = true
+            }
+        ) { out in
             #expect(out.code == "USAGE")
             #expect(out.envelope.errors[0].message.hasPrefix("Alias must be 1-32 chars"))
             #expect(out.runner.calls.isEmpty)

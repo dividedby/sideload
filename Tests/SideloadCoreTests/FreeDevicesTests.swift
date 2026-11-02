@@ -9,9 +9,12 @@ import Testing
 // Fakes only; the transport key is unverified until spike S1, so the raw values live here and nowhere else.
 
 /// A `devicectl list devices` document whose one phone has `transportType` set to `raw` (nil removes the key).
-private func phoneList(transport raw: String?, tunnel: String = "connected", pairing: String = "paired") -> JSONValue {
+private func phoneList(
+    transport raw: String?, tunnel: String = "connected", pairing: String = "paired"
+) -> JSONValue {
     var entry = deviceEntryJSON(
-        name: "Test iPhone", udid: savedUdid("1"), coreId: savedCoreId("1"), pairing: pairing, tunnel: tunnel)
+        name: "Test iPhone", udid: savedUdid("1"), coreId: savedCoreId("1"), pairing: pairing,
+        tunnel: tunnel)
     guard case .object(var top) = entry, case .object(var props)? = top["properties"],
         case .object(var conn)? = props["connection"]
     else { fatalError("fixture shape") }
@@ -32,21 +35,27 @@ private func configWith(_ d: SavedDevice, prefix: String? = nil) -> Config {
 
 private func savedPhone(autoRefresh: Bool = false, reserved: Int = 0) -> SavedDevice {
     SavedDevice(
-        udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios", autoRefresh: autoRefresh,
+        udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios",
+        autoRefresh: autoRefresh,
         freeSlotsReserved: reserved)
 }
 
 @Suite("transport")
 struct TransportParsingTests {
-    @Test("accepted values map to network or wired", arguments: [
-        ("localNetwork", DeviceTransport.network), ("network", .network), ("wifi", .network), ("Wi-Fi", .network),
-        ("wireless", .network), ("wired", .wired), ("USB", .wired), ("usb", .wired),
-    ])
+    @Test(
+        "accepted values map to network or wired",
+        arguments: [
+            ("localNetwork", DeviceTransport.network), ("network", .network), ("wifi", .network),
+            ("Wi-Fi", .network),
+            ("wireless", .network), ("wired", .wired), ("USB", .wired), ("usb", .wired),
+        ])
     func accepted(raw: String, expected: DeviceTransport) {
         #expect(parsedPhone(transport: raw).transport == expected)
     }
 
-    @Test("a missing, null, non-string or unrecognised value is unknown", arguments: [nil, "", "bluetooth", "carrierPigeon"])
+    @Test(
+        "a missing, null, non-string or unrecognised value is unknown",
+        arguments: [nil, "", "bluetooth", "carrierPigeon"])
     func unknown(raw: String?) {
         #expect(parsedPhone(transport: raw).transport == .unknown)
     }
@@ -75,13 +84,17 @@ struct TransportParsingTests {
 struct AutoEligibleTests {
     private static let transports: [DeviceTransport] = [.network, .wired, .unknown]
     /// The reach of an eligible device by its link; a link not here is never eligible.
-    private static let reach: [String: DeviceList.AutoReach] = ["connected": .connected, "disconnected": .probe]
+    private static let reach: [String: DeviceList.AutoReach] = [
+        "connected": .connected, "disconnected": .probe,
+    ]
 
     private func listed(
-        transport: DeviceTransport, paired: Bool = true, link: String = "connected", physical: Bool = true
+        transport: DeviceTransport, paired: Bool = true, link: String = "connected",
+        physical: Bool = true
     ) -> ListedDevice {
         ListedDevice(
-            name: "x", udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios", physical: physical,
+            name: "x", udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios",
+            physical: physical,
             paired: paired, link: link, transport: transport)
     }
 
@@ -93,7 +106,8 @@ struct AutoEligibleTests {
                     for link in ["connected", "disconnected", "unavailable"] {
                         let saved = savedPhone(autoRefresh: optIn)
                         let entry = listed(transport: transport, paired: paired, link: link)
-                        let expected = optIn && transport != .unknown && paired ? Self.reach[link] : nil
+                        let expected =
+                            optIn && transport != .unknown && paired ? Self.reach[link] : nil
                         #expect(DeviceList.autoReach(saved, listed: entry) == expected)
                         #expect(DeviceList.autoEligible(saved, listed: entry) == (expected != nil))
                     }
@@ -102,10 +116,15 @@ struct AutoEligibleTests {
         }
     }
 
-    @Test("an unavailable or unrecognised link is not available for auto", arguments: ["unavailable", "unknown", "weird", "Connected", ""])
+    @Test(
+        "an unavailable or unrecognised link is not available for auto",
+        arguments: ["unavailable", "unknown", "weird", "Connected", ""])
     func notConnected(link: String) {
         for transport in [DeviceTransport.network, .wired] {
-            #expect(!DeviceList.autoEligible(savedPhone(autoRefresh: true), listed: listed(transport: transport, link: link)))
+            #expect(
+                !DeviceList.autoEligible(
+                    savedPhone(autoRefresh: true), listed: listed(transport: transport, link: link))
+            )
         }
     }
 
@@ -113,22 +132,33 @@ struct AutoEligibleTests {
     func reach() {
         for transport in [DeviceTransport.network, .wired] {
             let saved = savedPhone(autoRefresh: true)
-            #expect(DeviceList.autoReach(saved, listed: listed(transport: transport, link: "disconnected")) == .probe)
+            #expect(
+                DeviceList.autoReach(
+                    saved, listed: listed(transport: transport, link: "disconnected")) == .probe)
             #expect(DeviceList.autoReach(saved, listed: listed(transport: transport)) == .connected)
-            #expect(DeviceList.autoReach(saved, listed: listed(transport: transport, paired: false, link: "disconnected")) == nil)
+            #expect(
+                DeviceList.autoReach(
+                    saved, listed: listed(transport: transport, paired: false, link: "disconnected")
+                ) == nil)
         }
     }
 
     @Test("an absent entry or a simulator is never eligible")
     func absent() {
         #expect(!DeviceList.autoEligible(savedPhone(autoRefresh: true), listed: nil))
-        #expect(!DeviceList.autoEligible(savedPhone(autoRefresh: true), listed: listed(transport: .wired, physical: false)))
+        #expect(
+            !DeviceList.autoEligible(
+                savedPhone(autoRefresh: true), listed: listed(transport: .wired, physical: false)))
     }
 
     @Test("both Wi-Fi and USB are eligible when opted in")
     func bothTransports() {
-        #expect(DeviceList.autoEligible(savedPhone(autoRefresh: true), listed: listed(transport: .network)))
-        #expect(DeviceList.autoEligible(savedPhone(autoRefresh: true), listed: listed(transport: .wired)))
+        #expect(
+            DeviceList.autoEligible(
+                savedPhone(autoRefresh: true), listed: listed(transport: .network)))
+        #expect(
+            DeviceList.autoEligible(
+                savedPhone(autoRefresh: true), listed: listed(transport: .wired)))
     }
 }
 
@@ -141,7 +171,9 @@ struct SavedDeviceConfigTests {
         #expect(cfg.devices["iphone"]?.autoRefresh == false)
         #expect(cfg.devices["iphone"]?.freeSlotsReserved == 0)
         let text = String(decoding: try cfg.encoded(), as: UTF8.self)
-        #expect(!text.contains("autoRefresh") && !text.contains("freeSlotsReserved"), "unset fields are not written")
+        #expect(
+            !text.contains("autoRefresh") && !text.contains("freeSlotsReserved"),
+            "unset fields are not written")
     }
 
     @Test("round-trips through ConfigStore.update and keeps unmodelled fields")
@@ -156,11 +188,13 @@ struct SavedDeviceConfigTests {
         }
     }
 
-    @Test("a wrong type is CONFIG_INVALID", arguments: [
-        #"{"devices":{"a":{"autoRefresh":"yes"}}}"#,
-        #"{"devices":{"a":{"freeSlotsReserved":"2"}}}"#,
-        #"{"devices":{"a":{"freeSlotsReserved":1.5}}}"#,
-    ])
+    @Test(
+        "a wrong type is CONFIG_INVALID",
+        arguments: [
+            #"{"devices":{"a":{"autoRefresh":"yes"}}}"#,
+            #"{"devices":{"a":{"freeSlotsReserved":"2"}}}"#,
+            #"{"devices":{"a":{"freeSlotsReserved":1.5}}}"#,
+        ])
     func invalid(json: String) {
         do {
             _ = try Config.parse(Data(json.utf8))
@@ -172,9 +206,12 @@ struct SavedDeviceConfigTests {
 
     private static let badReserve = [4, -1, 99]
 
-    @Test("an out-of-range reserve still loads (paid paths and the canary's config reads are unaffected)", arguments: [4, -1, 99])
+    @Test(
+        "an out-of-range reserve still loads (paid paths and the canary's config reads are unaffected)",
+        arguments: [4, -1, 99])
     func outOfRangeLoads(value: Int) async throws {
-        let json = #"{"bundleIdPrefix":"io.github.example","devices":{"iphone":{"udid":"U","coreDeviceId":"C","platform":"ios","freeSlotsReserved":\#(value)}}}"#
+        let json =
+            #"{"bundleIdPrefix":"io.github.example","devices":{"iphone":{"udid":"U","coreDeviceId":"C","platform":"ios","freeSlotsReserved":\#(value)}}}"#
         let cfg = try Config.parse(Data(json.utf8))
         let d = try #require(cfg.devices["iphone"])
         #expect(d.freeSlotsReserved == nil && d.freeSlotsReservedRaw == value)
@@ -185,12 +222,15 @@ struct SavedDeviceConfigTests {
         // The wrapper the canary uses still resolves and runs against this config.
         try await withTestHome(config: cfg) { _, store in
             let runner = FakeRunner()
-            let res = try await DeviceCtl(runner: runner, store: store).run(["device", "info", "apps"], deviceAlias: "iphone")
+            let res = try await DeviceCtl(runner: runner, store: store).run(
+                ["device", "info", "apps"], deviceAlias: "iphone")
             #expect(res.code == 0 && runner.calls.count == 1)
         }
     }
 
-    @Test("an invalid reserve fails the free path closed: autoEligible false, requireFreeSlotsReserved CONFIG_INVALID")
+    @Test(
+        "an invalid reserve fails the free path closed: autoEligible false, requireFreeSlotsReserved CONFIG_INVALID"
+    )
     func invalidReserveFailsClosed() {
         for value in Self.badReserve {
             let d = SavedDevice(udid: "U", autoRefresh: true, freeSlotsReserved: value)
@@ -231,7 +271,8 @@ private struct Outcome {
 }
 
 private func invoke(
-    _ options: DeviceOptions, config: Config = configWith(savedPhone()), devices: JSONValue = phoneList(transport: "localNetwork"),
+    _ options: DeviceOptions, config: Config = configWith(savedPhone()),
+    devices: JSONValue = phoneList(transport: "localNetwork"),
     _ check: (Outcome) throws -> Void
 ) async throws {
     try await withTestHome(config: config) { paths, store in
@@ -240,7 +281,8 @@ private func invoke(
         let (text, json) = try envelope.printed()
         try check(
             Outcome(
-                envelope: envelope, text: text, json: json, runner: runner, saved: try store.load().devices["iphone"]))
+                envelope: envelope, text: text, json: json, runner: runner,
+                saved: try store.load().devices["iphone"]))
     }
 }
 
@@ -267,13 +309,17 @@ struct DeviceConfigCommandTests {
         }
     }
 
-    @Test("auto-refresh --on --yes then --off --yes writes the flag, prints one object, touches no device")
+    @Test(
+        "auto-refresh --on --yes then --off --yes writes the flag, prints one object, touches no device"
+    )
     func autoRefreshToggles() async throws {
         try await withTestHome(config: configWith(savedPhone())) { paths, store in
             let (services, runner) = fakeServices(paths)
             for on in [true, false] {
                 let env = await DeviceCommand.run(
-                    services, DeviceOptions(sub: "auto-refresh", alias: "iphone", on: on, off: !on, yes: true))
+                    services,
+                    DeviceOptions(sub: "auto-refresh", alias: "iphone", on: on, off: !on, yes: true)
+                )
                 let (text, json) = try env.printed()
                 #expect(env.ok && json["command"] == "device auto-refresh")
                 #expect(json["device"]?["autoRefresh"] == .bool(on))
@@ -285,9 +331,16 @@ struct DeviceConfigCommandTests {
         }
     }
 
-    @Test("auto-refresh: unknown alias is DEVICE_NOT_SAVED (even with --yes), and usage errors are USAGE")
+    @Test(
+        "auto-refresh: unknown alias is DEVICE_NOT_SAVED (even with --yes), and usage errors are USAGE"
+    )
     func autoRefreshErrors() async throws {
-        try await invoke(autoRefresh { $0.alias = "nope"; $0.yes = true }) { out in
+        try await invoke(
+            autoRefresh {
+                $0.alias = "nope"
+                $0.yes = true
+            }
+        ) { out in
             #expect(out.code == "DEVICE_NOT_SAVED")
             #expect(out.saved?.autoRefresh == false)
         }
@@ -296,7 +349,12 @@ struct DeviceConfigCommandTests {
             { (o: inout DeviceOptions) in o.off = true },  // both
             { (o: inout DeviceOptions) in o.alias = nil },
         ] {
-            try await invoke(autoRefresh { tweak(&$0); $0.yes = true }) { out in
+            try await invoke(
+                autoRefresh {
+                    tweak(&$0)
+                    $0.yes = true
+                }
+            ) { out in
                 #expect(out.code == "USAGE")
             }
         }
@@ -308,14 +366,26 @@ struct DeviceConfigCommandTests {
             #expect(out.code == "CONFIRM_REQUIRED")
             #expect(out.saved?.freeSlotsReserved == 0)
         }
-        try await invoke(slots { $0.alias = "nope"; $0.yes = true }) { out in
+        try await invoke(
+            slots {
+                $0.alias = "nope"
+                $0.yes = true
+            }
+        ) { out in
             #expect(out.code == "DEVICE_NOT_SAVED")
         }
     }
 
-    @Test("slots --reserved 0..3 --yes writes the reserve; anything else is USAGE", arguments: ["0", "1", "2", "3"])
+    @Test(
+        "slots --reserved 0..3 --yes writes the reserve; anything else is USAGE",
+        arguments: ["0", "1", "2", "3"])
     func slotsWrites(value: String) async throws {
-        try await invoke(slots { $0.reserved = value; $0.yes = true }) { out in
+        try await invoke(
+            slots {
+                $0.reserved = value
+                $0.yes = true
+            }
+        ) { out in
             #expect(out.envelope.ok && out.json["command"] == "device slots")
             #expect(out.saved?.freeSlotsReserved == Int(value))
             #expect(out.json["device"]?["freeSlotsReserved"] == .number(Double(value)!))
@@ -323,24 +393,43 @@ struct DeviceConfigCommandTests {
         }
     }
 
-    @Test("slots rejects out-of-range and non-numeric reserves, and a missing one", arguments: ["4", "-1", "x", "1.5", ""])
+    @Test(
+        "slots rejects out-of-range and non-numeric reserves, and a missing one",
+        arguments: ["4", "-1", "x", "1.5", ""])
     func slotsRejects(value: String) async throws {
-        try await invoke(slots { $0.reserved = value; $0.yes = true }) { out in
+        try await invoke(
+            slots {
+                $0.reserved = value
+                $0.yes = true
+            }
+        ) { out in
             #expect(out.code == "USAGE")
             #expect(out.saved?.freeSlotsReserved == 0)
         }
     }
 
-    @Test("auto-refresh rejects --reserved and slots rejects --on/--off with USAGE, writing nothing")
+    @Test(
+        "auto-refresh rejects --reserved and slots rejects --on/--off with USAGE, writing nothing")
     func foreignOptions() async throws {
-        try await invoke(autoRefresh { $0.reserved = "1"; $0.yes = true }) { out in
+        try await invoke(
+            autoRefresh {
+                $0.reserved = "1"
+                $0.yes = true
+            }
+        ) { out in
             #expect(out.code == "USAGE")
             #expect(out.saved?.autoRefresh == false && out.saved?.freeSlotsReserved == 0)
         }
         for tweak in [
-            { (o: inout DeviceOptions) in o.on = true }, { (o: inout DeviceOptions) in o.off = true },
+            { (o: inout DeviceOptions) in o.on = true },
+            { (o: inout DeviceOptions) in o.off = true },
         ] {
-            try await invoke(slots { tweak(&$0); $0.yes = true }) { out in
+            try await invoke(
+                slots {
+                    tweak(&$0)
+                    $0.yes = true
+                }
+            ) { out in
                 #expect(out.code == "USAGE")
                 #expect(out.saved?.freeSlotsReserved == 0 && out.saved?.autoRefresh == false)
             }
@@ -348,7 +437,10 @@ struct DeviceConfigCommandTests {
     }
 
     private func badReserveConfig() -> Config {
-        configWith(SavedDevice(udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios", freeSlotsReserved: 7))
+        configWith(
+            SavedDevice(
+                udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios",
+                freeSlotsReserved: 7))
     }
 
     @Test("device list warns about an invalid reserve, shows null and is never eligible")
@@ -359,21 +451,37 @@ struct DeviceConfigCommandTests {
             let d = try #require(out.json["devices"]?.array?.first)
             #expect(d["freeSlotsReserved"] == .null && d["autoEligible"] == false)
             let w = try #require(out.json["warnings"]?.array?.first)
-            #expect(w["code"] == "CONFIG_INVALID" && w["message"]?.string?.contains("iphone") == true)
+            #expect(
+                w["code"] == "CONFIG_INVALID" && w["message"]?.string?.contains("iphone") == true)
             #expect(out.envelope.ok)
         }
     }
 
-    @Test("with an invalid reserve, auto-refresh --on is CONFIG_INVALID naming the alias; --off and slots still work")
+    @Test(
+        "with an invalid reserve, auto-refresh --on is CONFIG_INVALID naming the alias; --off and slots still work"
+    )
     func invalidReserveOperations() async throws {
         try await invoke(autoRefresh { $0.yes = true }, config: badReserveConfig()) { out in
-            #expect(out.code == "CONFIG_INVALID" && out.envelope.errors.first?.message.contains("iphone") == true)
+            #expect(
+                out.code == "CONFIG_INVALID"
+                    && out.envelope.errors.first?.message.contains("iphone") == true)
             #expect(out.saved?.autoRefresh == false)
         }
-        try await invoke(autoRefresh { $0.on = false; $0.off = true; $0.yes = true }, config: badReserveConfig()) { out in
+        try await invoke(
+            autoRefresh {
+                $0.on = false
+                $0.off = true
+                $0.yes = true
+            }, config: badReserveConfig()
+        ) { out in
             #expect(out.envelope.ok)
         }
-        try await invoke(slots { $0.reserved = "2"; $0.yes = true }, config: badReserveConfig()) { out in
+        try await invoke(
+            slots {
+                $0.reserved = "2"
+                $0.yes = true
+            }, config: badReserveConfig()
+        ) { out in
             #expect(out.envelope.ok && out.saved?.freeSlotsReserved == 2)
         }
     }
@@ -384,7 +492,8 @@ struct DeviceConfigCommandTests {
             let (services, _) = fakeServices(paths)
             let (_, json) = try await run(argv: ["help"], services: services).printed()
             let usage = json["usage"]?.array?.compactMap(\.string) ?? []
-            #expect(usage.contains { $0.hasPrefix("device auto-refresh") && $0.contains("--on|--off") })
+            #expect(
+                usage.contains { $0.hasPrefix("device auto-refresh") && $0.contains("--on|--off") })
             #expect(usage.contains { $0.hasPrefix("device slots") && $0.contains("--reserved") })
         }
     }
@@ -396,7 +505,8 @@ struct DeviceConfigCommandTests {
             { (o: inout DeviceOptions) in o.off = true },
             { (o: inout DeviceOptions) in o.reserved = "1" },
         ] {
-            var save = DeviceOptions(sub: "save", alias: "other", match: "Test iPhone", platform: "ios", yes: true)
+            var save = DeviceOptions(
+                sub: "save", alias: "other", match: "Test iPhone", platform: "ios", yes: true)
             tweak(&save)
             try await invoke(save) { out in
                 #expect(out.code == "USAGE")
@@ -408,16 +518,20 @@ struct DeviceConfigCommandTests {
     @Test("re-saving a device keeps autoRefresh and the reserve")
     func saveKeepsSettings() async throws {
         let config = configWith(savedPhone(autoRefresh: true, reserved: 1))
-        let save = DeviceOptions(sub: "save", alias: "iphone", match: "Test iPhone", platform: "ios", yes: true)
+        let save = DeviceOptions(
+            sub: "save", alias: "iphone", match: "Test iPhone", platform: "ios", yes: true)
         try await invoke(save, config: config) { out in
             #expect(out.envelope.ok)
             #expect(out.saved?.autoRefresh == true && out.saved?.freeSlotsReserved == 1)
         }
     }
 
-    @Test("a new device is saved with auto-renew on (owner decision 2026-11-01), and the envelope says so")
+    @Test(
+        "a new device is saved with auto-renew on (owner decision 2026-11-01), and the envelope says so"
+    )
     func saveNewDeviceIsOn() async throws {
-        let save = DeviceOptions(sub: "save", alias: "iphone", match: "Test iPhone", platform: "ios", yes: true)
+        let save = DeviceOptions(
+            sub: "save", alias: "iphone", match: "Test iPhone", platform: "ios", yes: true)
         try await invoke(save, config: Config(devices: [:])) { out in
             #expect(out.envelope.ok)
             #expect(out.saved?.autoRefresh == true && out.saved?.freeSlotsReserved == 0)
@@ -425,13 +539,19 @@ struct DeviceConfigCommandTests {
         }
     }
 
-    @Test("re-saving keeps auto-renew exactly: off stays off, on stays on, and a missing key stays off")
+    @Test(
+        "re-saving keeps auto-renew exactly: off stays off, on stays on, and a missing key stays off"
+    )
     func saveKeepsAutoRenew() async throws {
-        let save = DeviceOptions(sub: "save", alias: "iphone", match: "Test iPhone", platform: "ios", yes: true)
+        let save = DeviceOptions(
+            sub: "save", alias: "iphone", match: "Test iPhone", platform: "ios", yes: true)
         let missingKey = try Config.parse(
-            Data(#"{"devices":{"iphone":{"udid":"\#(savedUdid("1"))","coreDeviceId":"\#(savedCoreId("1"))","platform":"ios"}}}"#.utf8))
+            Data(
+                #"{"devices":{"iphone":{"udid":"\#(savedUdid("1"))","coreDeviceId":"\#(savedCoreId("1"))","platform":"ios"}}}"#
+                    .utf8))
         let cases: [(Config, Bool)] = [
-            (configWith(savedPhone(autoRefresh: false)), false), (configWith(savedPhone(autoRefresh: true)), true),
+            (configWith(savedPhone(autoRefresh: false)), false),
+            (configWith(savedPhone(autoRefresh: true)), true),
             (missingKey, false),
         ]
         for (config, expected) in cases {
@@ -443,12 +563,17 @@ struct DeviceConfigCommandTests {
         }
     }
 
-    @Test("device list shows transport, the settings and eligibility", arguments: [
-        ("localNetwork", "network", true), ("wired", "wired", true), ("bluetooth", "unknown", false),
-    ])
+    @Test(
+        "device list shows transport, the settings and eligibility",
+        arguments: [
+            ("localNetwork", "network", true), ("wired", "wired", true),
+            ("bluetooth", "unknown", false),
+        ])
     func listShowsTransport(raw: String, shown: String, eligible: Bool) async throws {
         let config = configWith(savedPhone(autoRefresh: true, reserved: 2))
-        try await invoke(DeviceOptions(sub: "list"), config: config, devices: phoneList(transport: raw)) { out in
+        try await invoke(
+            DeviceOptions(sub: "list"), config: config, devices: phoneList(transport: raw)
+        ) { out in
             let d = try #require(out.json["devices"]?.array?.first)
             #expect(d["transport"] == .string(shown))
             #expect(d["autoRefresh"] == true && d["freeSlotsReserved"] == 2)
@@ -457,16 +582,20 @@ struct DeviceConfigCommandTests {
         }
     }
 
-    @Test("device list: transport is unknown when the device is absent or devicectl failed, and never eligible")
+    @Test(
+        "device list: transport is unknown when the device is absent or devicectl failed, and never eligible"
+    )
     func listUnknown() async throws {
         let config = configWith(savedPhone(autoRefresh: true))
-        try await invoke(DeviceOptions(sub: "list"), config: config, devices: deviceListJSON()) { out in
+        try await invoke(DeviceOptions(sub: "list"), config: config, devices: deviceListJSON()) {
+            out in
             let d = out.json["devices"]?.array?.first
             #expect(d?["transport"] == "unknown" && d?["autoEligible"] == false)
         }
         try await withTestHome(config: config) { paths, _ in
             let (services, _) = fakeServices(paths, route: Route(devices: nil, devicectlCode: 1))
-            let (_, json) = try await DeviceCommand.run(services, DeviceOptions(sub: "list")).printed()
+            let (_, json) = try await DeviceCommand.run(services, DeviceOptions(sub: "list"))
+                .printed()
             let d = json["devices"]?.array?.first
             #expect(d?["transport"] == "unknown" && d?["autoEligible"] == false)
         }
@@ -485,7 +614,8 @@ struct DeviceCtlScopeTests {
             let runner = FakeRunner()
             let ctl = DeviceCtl(runner: runner, store: store)
             do {
-                _ = try await ctl.run(args, deviceAlias: "iphone", positional: positional, scope: scope)
+                _ = try await ctl.run(
+                    args, deviceAlias: "iphone", positional: positional, scope: scope)
                 return (nil, runner.calls.count)
             } catch {
                 return (errorCode(of: error), runner.calls.count)
@@ -493,11 +623,17 @@ struct DeviceCtlScopeTests {
         }
     }
 
-    @Test("free scope: a non-allowlisted bundle ID is BUNDLE_ID_NOT_ALLOWED before the subprocess", arguments: [
-        ["device", "uninstall", "app"], ["device", "process", "launch"], ["device", "install", "app"],
-    ])
+    @Test(
+        "free scope: a non-allowlisted bundle ID is BUNDLE_ID_NOT_ALLOWED before the subprocess",
+        arguments: [
+            ["device", "uninstall", "app"], ["device", "process", "launch"],
+            ["device", "install", "app"],
+        ])
     func freeBlocks(args: [String]) async throws {
-        let bad = ["com.apple.mobilesafari", "io.github.example.sideload.canary", "io.github.example.free.", "io.github.example.free.*"]
+        let bad = [
+            "com.apple.mobilesafari", "io.github.example.sideload.canary",
+            "io.github.example.free.", "io.github.example.free.*",
+        ]
         for id in bad {
             let r = try await attempt(args, positional: [id], scope: .free(bundleId: id))
             #expect(r.code == "BUNDLE_ID_NOT_ALLOWED" && r.calls == 0)
@@ -507,7 +643,8 @@ struct DeviceCtlScopeTests {
     @Test("free scope: the argv ID must equal the declared ID")
     func freeMismatch() async throws {
         let r = try await attempt(
-            ["device", "uninstall", "app"], positional: ["com.apple.mobilesafari"], scope: .free(bundleId: free))
+            ["device", "uninstall", "app"], positional: ["com.apple.mobilesafari"],
+            scope: .free(bundleId: free))
         #expect(r.code == "BUNDLE_ID_NOT_ALLOWED" && r.calls == 0)
         let none = try await attempt(["device", "uninstall", "app"], scope: .free(bundleId: free))
         #expect(none.code == "BUNDLE_ID_NOT_ALLOWED" && none.calls == 0)
@@ -515,13 +652,15 @@ struct DeviceCtlScopeTests {
 
     @Test("free scope: an allowlisted ID runs; a leading flag cannot hide the subcommand")
     func freeAllows() async throws {
-        let ok = try await attempt(["device", "uninstall", "app"], positional: [free], scope: .free(bundleId: free))
+        let ok = try await attempt(
+            ["device", "uninstall", "app"], positional: [free], scope: .free(bundleId: free))
         #expect(ok.code == nil && ok.calls == 1)
         let install = try await attempt(
             ["device", "install", "app"], positional: ["/x/App.app"], scope: .free(bundleId: free))
         #expect(install.code == nil && install.calls == 1)
         let hidden = try await attempt(
-            ["--verbose", "x", "device", "uninstall", "app"], positional: ["com.apple.mobilesafari"],
+            ["--verbose", "x", "device", "uninstall", "app"],
+            positional: ["com.apple.mobilesafari"],
             scope: .free(bundleId: "com.apple.mobilesafari"))
         #expect(hidden.code == "BUNDLE_ID_NOT_ALLOWED" && hidden.calls == 0)
     }
@@ -538,7 +677,8 @@ struct DeviceCtlScopeTests {
     func paidUnchanged() async throws {
         let canary = prefix + ".sideload.canary"
         let calls: [([String], [String])] = [
-            (["device", "uninstall", "app"], [canary]), (["device", "process", "launch"], [canary]),
+            (["device", "uninstall", "app"], [canary]),
+            (["device", "process", "launch"], [canary]),
             (["device", "install", "app"], ["/x/Canary.app"]), (["device", "info", "apps"], []),
             (["list", "devices"], []),
         ]
@@ -563,19 +703,27 @@ struct DeviceCtlScopeTests {
         }
     }
 
-    @Test("--device / -d / --device= interleaved in the subcommand cannot skip the check, in either scope", arguments: [
-        ["device", "--device", "ID", "uninstall", "app"], ["device", "-d", "ID", "uninstall", "app"],
-        ["device", "--device=ID", "uninstall", "app"], ["device", "uninstall", "--device", "ID", "app"],
-        ["--device", "ID", "device", "uninstall", "app"], ["device", "process", "-d=ID", "launch"],
-    ])
+    @Test(
+        "--device / -d / --device= interleaved in the subcommand cannot skip the check, in either scope",
+        arguments: [
+            ["device", "--device", "ID", "uninstall", "app"],
+            ["device", "-d", "ID", "uninstall", "app"],
+            ["device", "--device=ID", "uninstall", "app"],
+            ["device", "uninstall", "--device", "ID", "app"],
+            ["--device", "ID", "device", "uninstall", "app"],
+            ["device", "process", "-d=ID", "launch"],
+        ])
     func interleavedDevice(template: [String]) async throws {
         let id = savedCoreId("1")
-        let args = template.map { $0 == "ID" ? id : $0.replacingOccurrences(of: "=ID", with: "=" + id) }
+        let args = template.map {
+            $0 == "ID" ? id : $0.replacingOccurrences(of: "=ID", with: "=" + id)
+        }
         let wda = "com.facebook.WebDriverAgentRunner.xctrunner"
         // Free scope with a foreign ID, and with a mismatching argv ID.
         let foreign = try await attemptLiteral(args, positional: [wda], scope: .free(bundleId: wda))
         #expect(foreign.code == "BUNDLE_ID_NOT_ALLOWED" && foreign.calls == 0)
-        let mismatch = try await attemptLiteral(args, positional: [wda], scope: .free(bundleId: free))
+        let mismatch = try await attemptLiteral(
+            args, positional: [wda], scope: .free(bundleId: free))
         #expect(mismatch.code == "BUNDLE_ID_NOT_ALLOWED" && mismatch.calls == 0)
         // Paid scope with a free ID.
         let paid = try await attemptLiteral(args, positional: [free], scope: .paid)
@@ -592,25 +740,33 @@ struct DeviceCtlScopeTests {
         #expect(noPositional.code == "BUNDLE_ID_NOT_ALLOWED" && noPositional.calls == 0)
         // Free, args carry another ID next to the allowed positional.
         let extra = try await attempt(
-            ["device", "uninstall", "app", "com.other"], positional: [free], scope: .free(bundleId: free))
+            ["device", "uninstall", "app", "com.other"], positional: [free],
+            scope: .free(bundleId: free))
         #expect(extra.code == "BUNDLE_ID_NOT_ALLOWED" && extra.calls == 0)
         // More than one positional, or none.
-        let two = try await attempt(["device", "uninstall", "app"], positional: [free, "com.other"], scope: .free(bundleId: free))
+        let two = try await attempt(
+            ["device", "uninstall", "app"], positional: [free, "com.other"],
+            scope: .free(bundleId: free))
         #expect(two.code == "BUNDLE_ID_NOT_ALLOWED" && two.calls == 0)
         let none = try await attempt(["device", "process", "launch"], scope: .paid)
         #expect(none.code == "BUNDLE_ID_NOT_ALLOWED" && none.calls == 0)
         // Unknown shapes with an app verb fail closed, even in the paid scope.
-        for args in [["device", "install", "app", "app"], ["device", "uninstall"], ["x", "launch", "device", "process"]] {
+        for args in [
+            ["device", "install", "app", "app"], ["device", "uninstall"],
+            ["x", "launch", "device", "process"],
+        ] {
             let r = try await attempt(args, positional: [free], scope: .paid)
             #expect(r.code == "BUNDLE_ID_NOT_ALLOWED" && r.calls == 0)
         }
     }
 
-    @Test("a subcommand word in the positionals cannot complete a split subcommand, in either scope")
+    @Test(
+        "a subcommand word in the positionals cannot complete a split subcommand, in either scope")
     func positionalSubcommandWords() async throws {
         for scope in [DeviceCtl.Scope.paid, .free(bundleId: free)] {
             for positional in [
-                ["uninstall", "app", free], ["Uninstall", "App", free], ["PROCESS", "LAUNCH", free], ["install"], ["app"],
+                ["uninstall", "app", free], ["Uninstall", "App", free],
+                ["PROCESS", "LAUNCH", free], ["install"], ["app"],
                 [free, "launch"],
             ] {
                 let r = try await attempt(["device"], positional: positional, scope: scope)
@@ -618,14 +774,18 @@ struct DeviceCtlScopeTests {
             }
         }
         // A leading "-" is refused as INVALID_ARGUMENT before the hook.
-        let dash = try await attempt(["device", "uninstall", "app"], positional: ["-x"], scope: .paid)
+        let dash = try await attempt(
+            ["device", "uninstall", "app"], positional: ["-x"], scope: .paid)
         #expect(dash.code == "INVALID_ARGUMENT" && dash.calls == 0)
     }
 
-    @Test("subcommand words are classified case-insensitively", arguments: [
-        ["device", "Uninstall", "app"], ["DEVICE", "UNINSTALL", "APP"], ["device", "Process", "Launch"],
-        ["device", "INSTALL", "app"],
-    ])
+    @Test(
+        "subcommand words are classified case-insensitively",
+        arguments: [
+            ["device", "Uninstall", "app"], ["DEVICE", "UNINSTALL", "APP"],
+            ["device", "Process", "Launch"],
+            ["device", "INSTALL", "app"],
+        ])
     func caseInsensitive(args: [String]) async throws {
         let paid = try await attempt(args, positional: [free], scope: .paid)
         let isInstall = args[1].lowercased() == "install"
@@ -633,7 +793,8 @@ struct DeviceCtlScopeTests {
         #expect(isInstall ? paid.code == nil : paid.code == "BUNDLE_ID_NOT_ALLOWED")
         let wrong = try await attempt(args, positional: ["com.other"], scope: .free(bundleId: free))
         #expect(wrong.code == (isInstall ? nil : "BUNDLE_ID_NOT_ALLOWED"))
-        let extra = try await attempt(args + ["com.other"], positional: [free], scope: .free(bundleId: free))
+        let extra = try await attempt(
+            args + ["com.other"], positional: [free], scope: .free(bundleId: free))
         #expect(extra.code == "BUNDLE_ID_NOT_ALLOWED" && extra.calls == 0)
         let ok = try await attempt(args, positional: [free], scope: .free(bundleId: free))
         #expect(ok.code == nil && ok.calls == 1)
@@ -673,7 +834,9 @@ struct DeviceConfigCLITests {
         #expect(slots.json["ok"] == true && slots.config?.devices["iphone"]?.freeSlotsReserved == 2)
         let bare = try await cli(["device", "auto-refresh", "--alias", "iphone", "--on"])
         #expect(bare.json["errors"]?.array?.first?["code"] == "CONFIRM_REQUIRED")
-        let both = try await cli(["device", "auto-refresh", "--alias", "iphone", "--on", "--off", "--yes"])
+        let both = try await cli([
+            "device", "auto-refresh", "--alias", "iphone", "--on", "--off", "--yes",
+        ])
         #expect(both.json["errors"]?.array?.first?["code"] == "USAGE")
     }
 }

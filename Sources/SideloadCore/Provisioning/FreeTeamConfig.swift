@@ -36,9 +36,14 @@ extension Config {
 
     /// `freeTeam.reservedAppIds` (0 to 10, default 4): owner-set.
     public func freeTeamReservedAppIds() throws -> Int {
-        guard let value = try freeTeamObject()["reservedAppIds"] else { return Self.defaultReservedAppIds }
-        guard case .number(let n) = value, n == n.rounded(), (0...Double(FreeAppIdBudget.limit)).contains(n) else {
-            throw invalidFreeTeam("reservedAppIds", "a whole number from 0 to \(FreeAppIdBudget.limit)")
+        guard let value = try freeTeamObject()["reservedAppIds"] else {
+            return Self.defaultReservedAppIds
+        }
+        guard case .number(let n) = value, n == n.rounded(),
+            (0...Double(FreeAppIdBudget.limit)).contains(n)
+        else {
+            throw invalidFreeTeam(
+                "reservedAppIds", "a whole number from 0 to \(FreeAppIdBudget.limit)")
         }
         return Int(n)
     }
@@ -46,7 +51,8 @@ extension Config {
     /// Pins the free identity. A different pin already in place is an error (only the owner re-pins); the same
     /// one is a no-op.
     public mutating func pinFreeTeamCert(fp8: String) throws {
-        precondition(fp8.wholeMatch(of: /[0-9a-f]{8}/) != nil, "fp8 must be 8 lower-case hex digits")
+        precondition(
+            fp8.wholeMatch(of: /[0-9a-f]{8}/) != nil, "fp8 must be 8 lower-case hex digits")
         if let existing = try freeTeamCertFp8() {
             guard existing == fp8 else {
                 throw SideloadError(
@@ -86,7 +92,8 @@ public enum FreeAppIdBudget {
     ) -> Decision {
         let live = live(entries, now: now)
         let isNew = !live.contains { $0.bundleId == bundleId }
-        return Decision(isNew: isNew, recent: live.count, allowed: !isNew || live.count + reserved + 1 <= limit)
+        return Decision(
+            isNew: isNew, recent: live.count, allowed: !isNew || live.count + reserved + 1 <= limit)
     }
 
     /// Records a run whose build succeeded for `bundleId`: with no live epoch it starts a fresh one at `now`

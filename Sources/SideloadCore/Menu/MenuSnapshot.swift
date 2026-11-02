@@ -54,7 +54,9 @@ public struct MenuIcon: Sendable, Equatable {
     /// by `make`, from the assessed level; never inferred from `remaining`.
     public var ringIsDue: Bool
 
-    public init(state: State, fraction: Double, remaining: TimeInterval? = nil, ringIsDue: Bool = false) {
+    public init(
+        state: State, fraction: Double, remaining: TimeInterval? = nil, ringIsDue: Bool = false
+    ) {
         self.state = state
         self.fraction = min(max(fraction, 0), 1)
         self.remaining = remaining
@@ -116,7 +118,9 @@ public struct MenuIcon: Sendable, Equatable {
         switch state {
         case .certChanged: return "sideload: certificate changed, renewal suspended"
         case .expired: return "sideload: expired"
-        case .critical: return left.map { "sideload: \($0) left, critical" } ?? "sideload: a paid item is expiring or expired"
+        case .critical:
+            return left.map { "sideload: \($0) left, critical" }
+                ?? "sideload: a paid item is expiring or expired"
         case .renewFailed: return "sideload: renewal failed" + (left.map { ", \($0) left" } ?? "")
         case .due: return left.map { "sideload: \($0) left, due" } ?? "sideload: a paid item is due"
         case .renewing: return "sideload: renewing" + (left.map { ", \($0) left" } ?? "")
@@ -268,7 +272,8 @@ public struct MenuAppRow: Sendable, Equatable, Identifiable {
     /// nil when there is no newer version to offer.
     public var updateLine: String? {
         guard offersUpdate, let installedVersion, let update else { return nil }
-        return "Update available · \(MenuFormat.version(installedVersion)) → \(MenuFormat.version(update.version))"
+        return
+            "Update available · \(MenuFormat.version(installedVersion)) → \(MenuFormat.version(update.version))"
     }
 
     /// The row offers "Update to …": a newer listed version for a recorded install that is, or may be, on the device.

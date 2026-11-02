@@ -27,26 +27,35 @@ enum RefreshPolicy {
     static let policySkipCodes: Set<String> = [notDue, notPresent, notInstalled, notSigned]
 
     /// A skip that is the plan's ("not due", "not on the device"), not a stop.
-    static func isPolicySkip(_ code: String?) -> Bool { code.map(policySkipCodes.contains) ?? false }
+    static func isPolicySkip(_ code: String?) -> Bool {
+        code.map(policySkipCodes.contains) ?? false
+    }
 
     /// A failure with one of these codes will not fix itself, so the install is marked `suspended` (the future auto-refresh
     /// leaves it alone until a manual success clears it).
     static let permanentCodes: Set<String> = [
-        "PROFILE_NOT_RENEWED", "PROFILE_INVALID", "FREE_CERT_CHANGED", "IDENTITY_CHECK_FAILED", "UNTRUSTED_DEVELOPER",
-        "UNEXPECTED_APP_DELTA", "WRONG_TEAM", "GUARD_FAILED", "BUNDLE_ID_NOT_ALLOWED", "PLATFORM_MISMATCH",
+        "PROFILE_NOT_RENEWED", "PROFILE_INVALID", "FREE_CERT_CHANGED", "IDENTITY_CHECK_FAILED",
+        "UNTRUSTED_DEVELOPER",
+        "UNEXPECTED_APP_DELTA", "WRONG_TEAM", "GUARD_FAILED", "BUNDLE_ID_NOT_ALLOWED",
+        "PLATFORM_MISMATCH",
         "ACCOUNT_NOT_SIGNED_IN", "FREE_APP_LIMIT", "FREE_APP_ID_LIMIT",
     ]
 
     /// A failure with one of these codes stops the run: the rest of the apps are skipped with the same code. Anything else
     /// is that app's own failure and the run goes on.
     static let fatalCodes: Set<String> = [
-        "FREE_CERT_CHANGED", "IDENTITY_CHECK_FAILED", "KEYCHAIN_LOCKED", "ACCOUNT_NOT_SIGNED_IN", "UNEXPECTED_APP_DELTA",
-        "SLOT_PENDING", "RENEW_CROSS_VOLUME", "PROFILE_MOVE_FAILED", "PROFILES_UNREADABLE", "DERIVED_DATA_NOT_CLEARED",
-        "LEDGER_WRITE_FAILED", "LEDGER_INVALID", "WRONG_TEAM", "GUARD_FAILED", interrupted, "CONFIG_INVALID", "CONFIG_MISSING",
+        "FREE_CERT_CHANGED", "IDENTITY_CHECK_FAILED", "KEYCHAIN_LOCKED", "ACCOUNT_NOT_SIGNED_IN",
+        "UNEXPECTED_APP_DELTA",
+        "SLOT_PENDING", "RENEW_CROSS_VOLUME", "PROFILE_MOVE_FAILED", "PROFILES_UNREADABLE",
+        "DERIVED_DATA_NOT_CLEARED",
+        "LEDGER_WRITE_FAILED", "LEDGER_INVALID", "WRONG_TEAM", "GUARD_FAILED", interrupted,
+        "CONFIG_INVALID", "CONFIG_MISSING",
     ]
 
     /// Provision and sign do not need the device, so they still run; the install is skipped for the rest of the run.
-    static let deviceUnavailableCodes: Set<String> = ["DEVICE_LOCKED", "DEVICE_NOT_CONNECTED", "DEVICE_NOT_PAIRED"]
+    static let deviceUnavailableCodes: Set<String> = [
+        "DEVICE_LOCKED", "DEVICE_NOT_CONNECTED", "DEVICE_NOT_PAIRED",
+    ]
 
     /// Whether a step's failure can be the cancellation's own doing: the killed child surfaces as some ordinary step code, or
     /// as `INTERRUPTED`. A code that names a definite verdict on the app or the run (a permanent or a fatal one) is not: it
@@ -55,16 +64,20 @@ enum RefreshPolicy {
         code == interrupted || !(permanentCodes.contains(code) || isFatal(code))
     }
 
-    static func isFatal(_ code: String) -> Bool { fatalCodes.contains(code) || code.hasPrefix("FREE_IDENTITY_") }
+    static func isFatal(_ code: String) -> Bool {
+        fatalCodes.contains(code) || code.hasPrefix("FREE_IDENTITY_")
+    }
 
     // MARK: options
 
     /// `--within`: whole days, 1 to 6; `--force` is 6 and excludes `--within`.
     static func within(_ raw: String?, force: Bool) throws -> Int {
-        let fix = "sideload refresh --device iphone [--app <app>] [--within 1-\(maxWithin) | --force] --yes"
+        let fix =
+            "sideload refresh --device iphone [--app <app>] [--within 1-\(maxWithin) | --force] --yes"
         if force {
             guard raw == nil else {
-                throw SideloadError("USAGE", "--force is --within \(maxWithin); give one of them.", fix: fix)
+                throw SideloadError(
+                    "USAGE", "--force is --within \(maxWithin); give one of them.", fix: fix)
             }
             return maxWithin
         }
@@ -72,7 +85,9 @@ enum RefreshPolicy {
         guard let days = Int(raw), (1...maxWithin).contains(days) else {
             throw SideloadError(
                 "USAGE", "--within takes a whole number of days from 1 to \(maxWithin).",
-                fix: "A renewal must move the expiry by more than 24 hours, so more than \(maxWithin) days left cannot be renewed. \(fix)")
+                fix:
+                    "A renewal must move the expiry by more than 24 hours, so more than \(maxWithin) days left cannot be renewed. \(fix)"
+            )
         }
         return days
     }
@@ -146,15 +161,21 @@ enum RefreshPolicy {
             guard isDue(expires: signed.profileExpires, now: now, within: within) else {
                 return .skip(code: notDue, expires: signed.profileExpires)
             }
-            return .renew(Target(expires: signed.profileExpires, lent: true, recorded: subject.install != nil))
+            return .renew(
+                Target(expires: signed.profileExpires, lent: true, recorded: subject.install != nil)
+            )
         }
         if let install = subject.install {
-            guard install.present else { return .skip(code: notPresent, expires: install.profileExpires) }
+            guard install.present else {
+                return .skip(code: notPresent, expires: install.profileExpires)
+            }
             guard isDue(expires: install.profileExpires, now: now, within: within) else {
                 return .skip(code: notDue, expires: install.profileExpires)
             }
             // Refresh never installs a new app: one the device does not show is skipped, not put back.
-            if presence == .absent { return .skip(code: notPresent, expires: install.profileExpires) }
+            if presence == .absent {
+                return .skip(code: notPresent, expires: install.profileExpires)
+            }
             return .renew(Target(expires: install.profileExpires, lent: false, recorded: true))
         }
         // No install record: only an own app that is signed and that the device shows (installed by hand) is a candidate.
@@ -166,7 +187,8 @@ enum RefreshPolicy {
         let stale = isDue(expires: signed.profileExpires, now: now, within: within)
         // With no word from the device the install cannot run and the device copy's expiry is unknown, so this is never a
         // passing skip: the caller fails the app with the device's code, after provision and sign if the signed copy is due.
-        return .renew(Target(expires: signed.profileExpires, lent: false, recorded: false, stale: stale))
+        return .renew(
+            Target(expires: signed.profileExpires, lent: false, recorded: false, stale: stale))
     }
 
     // MARK: steps
@@ -185,10 +207,12 @@ enum RefreshPolicy {
         if !target.stale { return StepPlan(provision: false, sign: false, install: true) }
         let profile = subject.profile
         let signed = subject.signed
-        let provision = !(profile.map { $0.expires > target.expires.addingTimeInterval(margin) } ?? false)
+        let provision =
+            !(profile.map { $0.expires > target.expires.addingTimeInterval(margin) } ?? false)
         // A new profile makes the signed copy stale; a fresh one still needs signing if `sign` has not seen it. The filler is
         // signed by `provision` itself and `sign` refuses it.
-        let signedWithProfile = signed != nil && profile != nil && signed?.profileUuid == profile?.profileUuid
+        let signedWithProfile =
+            signed != nil && profile != nil && signed?.profileUuid == profile?.profileUuid
         let sign = !subject.app.signedByProvision && (provision || !signedWithProfile)
         // With both steps done or skipped the signed copy is the fresh one, so it is what goes on the device. A lent app has
         // no device to put it on.
@@ -199,14 +223,19 @@ enum RefreshPolicy {
 
     /// Attempts today across the device's installs.
     static func deviceAttempts(_ installs: [LedgerInstall], device: String, today: String) -> Int {
-        installs.filter { $0.device == device }.reduce(0) { $0 + ($1.refresh.attemptsByDay[today] ?? 0) }
+        installs.filter { $0.device == device }.reduce(0) {
+            $0 + ($1.refresh.attemptsByDay[today] ?? 0)
+        }
     }
 
     /// The day counters after one more attempt, with days past the window dropped.
-    static func counting(_ refresh: LedgerInstallRefresh, now: Date, timeZone: TimeZone) -> LedgerInstallRefresh {
+    static func counting(_ refresh: LedgerInstallRefresh, now: Date, timeZone: TimeZone)
+        -> LedgerInstallRefresh
+    {
         var next = refresh
         let today = dayKey(now, timeZone: timeZone)
-        let cutoff = dayKey(now.addingTimeInterval(-Double(counterDays) * 86_400), timeZone: timeZone)
+        let cutoff = dayKey(
+            now.addingTimeInterval(-Double(counterDays) * 86_400), timeZone: timeZone)
         next.attemptsByDay = next.attemptsByDay.filter { $0.key >= cutoff }
         next.attemptsByDay[today, default: 0] += 1
         next.lastAttempt = now
@@ -246,7 +275,11 @@ enum RefreshPolicy {
         case .busy, .cancelled:
             let today = dayKey(now, timeZone: timeZone)
             if let count = next.attemptsByDay[today] {
-                if count <= 1 { next.attemptsByDay[today] = nil } else { next.attemptsByDay[today] = count - 1 }
+                if count <= 1 {
+                    next.attemptsByDay[today] = nil
+                } else {
+                    next.attemptsByDay[today] = count - 1
+                }
             }
             next.lastResult = "skipped"
             next.lastCode = result == .busy ? OperationLock.busyCode : interrupted

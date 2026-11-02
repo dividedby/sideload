@@ -60,7 +60,9 @@ enum StatusNotify {
             // `item.name` is `cert <fp8>`, `profile …<tail4>` or `<app> @ <alias>`.
             let name = item.kind == .install ? printableName(item.name) : item.name
             let key = item.kind == .install ? "install " + name : name
-            let text = threshold == 0 ? Notifier.expired(name) : Notifier.expiring(name, daysLeft: item.daysLeft)
+            let text =
+                threshold == 0
+                ? Notifier.expired(name) : Notifier.expiring(name, daysLeft: item.daysLeft)
             out.append(Current(key: key, threshold: threshold, text: text, notAfter: item.notAfter))
         }
         for entry in pending {
@@ -85,10 +87,15 @@ enum StatusNotify {
     /// installs. One item per (app, version), key `update <app> <version>`, threshold 0, so it is announced once per version.
     /// A version that is equal, older or not understood says nothing, and neither does an app without a cached version.
     /// Ordered by key; the caller puts these after the expiry items, so the message cap drops them first.
-    static func updates(installs: [LedgerInstall], approved: Set<String>, upstream: [String: String]) -> [Current] {
+    static func updates(
+        installs: [LedgerInstall], approved: Set<String>, upstream: [String: String]
+    ) -> [Current] {
         var out: [Current] = []
         for (app, version) in upstream where approved.contains(app) {
-            let newer = installs.contains { $0.app == app && VersionOrder.compare(installed: $0.version, upstream: version) == .newer }
+            let newer = installs.contains {
+                $0.app == app
+                    && VersionOrder.compare(installed: $0.version, upstream: version) == .newer
+            }
             guard newer else { continue }
             out.append(
                 Current(
@@ -122,16 +129,20 @@ enum StatusNotify {
     ///   version newer again is announced once more.
     @discardableResult
     static func apply(
-        to stored: inout [String: Int], announced: [Current], current: [Current], prune: Bool, pruneUpdates: Bool
+        to stored: inout [String: Int], announced: [Current], current: [Current], prune: Bool,
+        pruneUpdates: Bool
     ) -> Bool {
         let before = stored
         for item in announced { stored[item.key] = min(stored[item.key] ?? .max, item.threshold) }
         for item in current {
-            if let value = stored[item.key], value < item.threshold { stored[item.key] = item.threshold }
+            if let value = stored[item.key], value < item.threshold {
+                stored[item.key] = item.threshold
+            }
         }
         if prune {
             let live = Set(current.map(\.key))
-            for key in stored.keys where owns(key) && !live.contains(key) && (pruneUpdates || !isUpdate(key)) {
+            for key in stored.keys
+            where owns(key) && !live.contains(key) && (pruneUpdates || !isUpdate(key)) {
                 stored[key] = nil
             }
         }
@@ -154,7 +165,8 @@ extension StatusCommand {
     /// Adds `notified` (`[{item: <key>, threshold: N}]`, the items this run's notification covered and recorded),
     /// `delivered` (true only when a notification was posted) and `updateCheck` (`{ran, checked, replayed, failed}`: whether
     /// the check was asked for, the sources asked this run, the ones answered from `updates.json` and the ones that failed).
-    public static func runNotify(_ services: Services, checkUpdates: Bool = false) async -> Envelope {
+    public static func runNotify(_ services: Services, checkUpdates: Bool = false) async -> Envelope
+    {
         let check = checkUpdates ? await updateCheck(services) : UpdateCheckOutcome()
 
         var snapshot = gather(services)
@@ -163,33 +175,44 @@ extension StatusCommand {
         var delivered = false
 
         func warn(_ code: String, _ message: String, _ fix: String) {
-            warnings.append(["code": .string(code), "message": .string(message), "fix": .string(fix)])
+            warnings.append([
+                "code": .string(code), "message": .string(message), "fix": .string(fix),
+            ])
         }
 
         if let config = snapshot.config {
             let updates = updateItems(services, snapshot: snapshot, config: config)
-            let current = StatusNotify.current(items: snapshot.items, pending: snapshot.pending) + (updates ?? [])
+            let current =
+                StatusNotify.current(items: snapshot.items, pending: snapshot.pending)
+                + (updates ?? [])
             let due = StatusNotify.due(current, stored: config.lastNotified)
             if !due.isEmpty {
-                let posted = await Notifier(runner: services.runner).notify(Notifier.combined(StatusNotify.texts(due)))
+                let posted = await Notifier(runner: services.runner).notify(
+                    Notifier.combined(StatusNotify.texts(due)))
                 if posted {
                     delivered = true
                     announced = due
                 } else {
                     warn(
-                        "NOTIFY_FAILED", "The notification could not be posted, so nothing was recorded as announced.",
-                        "Allow notifications for the process that runs sideload (System Settings > Notifications, Script Editor) and run it in the logged-in GUI session; `sideload status` and the menu bar app show the same items.")
+                        "NOTIFY_FAILED",
+                        "The notification could not be posted, so nothing was recorded as announced.",
+                        "Allow notifications for the process that runs sideload (System Settings > Notifications, Script Editor) and run it in the logged-in GUI session; `sideload status` and the menu bar app show the same items."
+                    )
                 }
             }
             let prune = snapshot.complete
             // `update` keys are pruned only when updates.json listed a version (see `updateItems`).
             let pruneUpdates = updates != nil
             var preview = config.lastNotified
-            if StatusNotify.apply(to: &preview, announced: announced, current: current, prune: prune, pruneUpdates: pruneUpdates) {
+            if StatusNotify.apply(
+                to: &preview, announced: announced, current: current, prune: prune,
+                pruneUpdates: pruneUpdates)
+            {
                 do {
                     try await services.store.update { config in
                         StatusNotify.apply(
-                            to: &config.lastNotified, announced: announced, current: current, prune: prune,
+                            to: &config.lastNotified, announced: announced, current: current,
+                            prune: prune,
                             pruneUpdates: pruneUpdates)
                     }
                 } catch {
@@ -197,13 +220,16 @@ extension StatusCommand {
                     warn(
                         "NOTIFY_STATE_NOT_SAVED",
                         "config.json could not be updated\(why), so the thresholds announced are not recorded and will be announced again at the next run.",
-                        "Check that $SIDELOAD_HOME is writable and no other sideload command holds the config lock, then run `sideload status --notify` again.")
+                        "Check that $SIDELOAD_HOME is writable and no other sideload command holds the config lock, then run `sideload status --notify` again."
+                    )
                 }
             }
         } else {
             warn(
-                "NOTIFY_SKIPPED", "config.json could not be read, so what was announced before is unknown and nothing was posted.",
-                "Fix config.json (see the warning above), then run `sideload status --notify` again.")
+                "NOTIFY_SKIPPED",
+                "config.json could not be read, so what was announced before is unknown and nothing was posted.",
+                "Fix config.json (see the warning above), then run `sideload status --notify` again."
+            )
         }
 
         snapshot.data["notified"] = .array(
@@ -242,7 +268,8 @@ extension StatusCommand {
             if !codes.isEmpty {
                 outcome.warnings = [
                     updateCheckWarning(
-                        "The update check failed for \(outcome.failed) source(s) (\(codes.sorted().joined(separator: ", ")))."),
+                        "The update check failed for \(outcome.failed) source(s) (\(codes.sorted().joined(separator: ", ")))."
+                    )
                 ]
             }
         } catch {
@@ -260,17 +287,20 @@ extension StatusCommand {
         _ services: Services, snapshot: Snapshot, config: Config
     ) -> [StatusNotify.Current]? {
         guard snapshot.complete,
-            let listed = try? UpdateCacheStore(paths: services.home).listings(now: services.clock.now()), !listed.isEmpty
+            let listed = try? UpdateCacheStore(paths: services.home).listings(
+                now: services.clock.now()), !listed.isEmpty
         else { return nil }
         let approved = Set(FetchCatalog.approvedSources(config).map(\.app))
         let upstream = listed.compactMapValues { $0.upstream?.version }
-        return StatusNotify.updates(installs: snapshot.installs, approved: approved, upstream: upstream)
+        return StatusNotify.updates(
+            installs: snapshot.installs, approved: approved, upstream: upstream)
     }
 
     private static func updateCheckWarning(_ message: String) -> JSONValue {
         [
             "code": "UPDATE_CHECK_FAILED", "message": .string(message),
-            "fix": "Run `sideload updates` to see the failure; the next daily run asks again once the cadence allows.",
+            "fix":
+                "Run `sideload updates` to see the failure; the next daily run asks again once the cadence allows.",
         ]
     }
 }

@@ -47,7 +47,9 @@ enum ArgParser {
                     if let inline {
                         out.values[name] = inline
                     } else {
-                        guard i < args.count else { throw usage("Option '--\(name) <value>' argument missing.") }
+                        guard i < args.count else {
+                            throw usage("Option '--\(name) <value>' argument missing.")
+                        }
                         let value = args[i]
                         guard !value.hasPrefix("-") else {
                             throw usage(

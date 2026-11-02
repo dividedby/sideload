@@ -26,7 +26,9 @@ enum AppDataBackup {
     static let copyTimeoutSec = 30
     /// What one call can last past its `--timeout`, from the real constants: `DeviceCtl.runnerMarginSec` (the Runner's own timeout
     /// is the `--timeout` plus it) and `PosixSpawnRunner.worstCaseOverrunSec` (the Runner's time to stop a child after that).
-    static var runnerGraceSec: Int { DeviceCtl.runnerMarginSec + PosixSpawnRunner.worstCaseOverrunSec }
+    static var runnerGraceSec: Int {
+        DeviceCtl.runnerMarginSec + PosixSpawnRunner.worstCaseOverrunSec
+    }
     /// No call is started with a `--timeout` below this.
     static let minCallSec = 5
     static let maxFiles = 200
@@ -112,12 +114,18 @@ enum AppDataBackup {
         /// `dataFailures`: the non-zero counts by reason; nil when nothing failed.
         var json: JSONValue? {
             guard total > 0 else { return nil }
-            return .object(Dictionary(uniqueKeysWithValues: nonZero.map { ($0.reason.rawValue, JSONValue.number(Double($0.count))) }))
+            return .object(
+                Dictionary(
+                    uniqueKeysWithValues: nonZero.map {
+                        ($0.reason.rawValue, JSONValue.number(Double($0.count)))
+                    }))
         }
 
         /// ` (copyTimeout 2, notRegularFile 1)` for a progress line; empty when nothing failed. Fixed words and counts only.
         var summary: String {
-            total > 0 ? " (" + nonZero.map { "\($0.reason.rawValue) \($0.count)" }.joined(separator: ", ") + ")" : ""
+            total > 0
+                ? " (" + nonZero.map { "\($0.reason.rawValue) \($0.count)" }.joined(separator: ", ")
+                    + ")" : ""
         }
     }
 
@@ -134,7 +142,9 @@ enum AppDataBackup {
 
     /// `apps.<app>.backupData`: default true; anything but an explicit `false` backs up.
     static func isEnabled(_ config: Config, app: ProvisionApp) -> Bool {
-        guard case .object(let entry)? = config.apps[app.rawValue], case .bool(let flag)? = entry["backupData"] else { return true }
+        guard case .object(let entry)? = config.apps[app.rawValue],
+            case .bool(let flag)? = entry["backupData"]
+        else { return true }
         return flag
     }
 
@@ -185,9 +195,13 @@ enum AppDataBackup {
     /// listing callers run this before `parseListing`, so such a listing is refused too. No document, or one with neither
     /// `error` nor `info.outcome`, is a success: the callers check the file left, or relist.
     private static func callSucceeded(_ out: FreeDeviceCalls.Outcome) -> Bool {
-        guard out.code == 0, !out.timedOut, !out.overflow, out.spawnError == nil else { return false }
+        guard out.code == 0, !out.timedOut, !out.overflow, out.spawnError == nil else {
+            return false
+        }
         guard let json = out.json else { return true }
-        guard case .object(let top) = json, top["error"] == nil || top["error"] == .null else { return false }
+        guard case .object(let top) = json, top["error"] == nil || top["error"] == .null else {
+            return false
+        }
         guard let info = top["info"] else { return true }
         guard case .object(let fields) = info else { return false }
         return fields["outcome"].map { $0 == .string("success") } ?? true
@@ -196,7 +210,9 @@ enum AppDataBackup {
     /// Why a copy call failed, as a fixed class and no text from the call. Best effort: the classifier's locked and
     /// not-connected patterns are loose and read stderr, so those two can be mislabelled. An exit 0 that reported a failure has
     /// no classifier code and is `copyOther`.
-    private static func copyClass(_ out: FreeDeviceCalls.Outcome, calls: FreeDeviceCalls) -> FailReason {
+    private static func copyClass(_ out: FreeDeviceCalls.Outcome, calls: FreeDeviceCalls)
+        -> FailReason
+    {
         if out.spawnError != nil { return .copyNotRun }
         if out.timedOut { return .copyTimeout }
         switch calls.classify(.snapshot, out)?.code {
@@ -221,22 +237,33 @@ enum AppDataBackup {
     /// as `size` or `fileSize`, when it carries one. Nil unless the whole document is a listing, so a bad read can never look
     /// like an empty container.
     static func parseListing(_ json: JSONValue?) -> [DeviceFile]? {
-        guard case .object(let top)? = json, case .object(let result)? = top["result"], case .array(let items)? = result["files"]
+        guard case .object(let top)? = json, case .object(let result)? = top["result"],
+            case .array(let items)? = result["files"]
         else { return nil }
-        if case .object(let info)? = top["info"], let outcome = info["outcome"], outcome != .string("success") { return nil }
+        if case .object(let info)? = top["info"], let outcome = info["outcome"],
+            outcome != .string("success")
+        {
+            return nil
+        }
         var files: [DeviceFile] = []
         for item in items {
-            guard case .object(let fields) = item, case .string(let path)? = fields["relativePath"], !path.isEmpty else { return nil }
+            guard case .object(let fields) = item, case .string(let path)? = fields["relativePath"],
+                !path.isEmpty
+            else { return nil }
             var size: Int?
             if case .object(let metadata)? = fields["metadata"] {
                 for key in ["size", "fileSize"] {
-                    if case .number(let value)? = metadata[key], value >= 0, value < 1e15 { size = Int(value) }
+                    if case .number(let value)? = metadata[key], value >= 0, value < 1e15 {
+                        size = Int(value)
+                    }
                 }
             }
             var isDirectory = false
             if case .object(let metadata)? = fields["metadata"] {
                 if metadata["isDirectory"] == .bool(true) { isDirectory = true }
-                if case .string(let kind)? = metadata["type"], kind.lowercased() == "directory" { isDirectory = true }
+                if case .string(let kind)? = metadata["type"], kind.lowercased() == "directory" {
+                    isDirectory = true
+                }
             }
             files.append(DeviceFile(path: path, size: size, isDirectory: isDirectory))
         }
@@ -246,7 +273,8 @@ enum AppDataBackup {
     /// The comparison key of a path: the filesystems behind `backups/` are case-insensitive and Unicode-normalising (APFS), so two
     /// paths with the same key are the same local name.
     private static func fold(_ path: String) -> String {
-        path.decomposedStringWithCanonicalMapping.folding(options: .caseInsensitive, locale: nil).decomposedStringWithCanonicalMapping
+        path.decomposedStringWithCanonicalMapping.folding(options: .caseInsensitive, locale: nil)
+            .decomposedStringWithCanonicalMapping
     }
 
     private static func isSkipped(_ path: String) -> Bool {
@@ -295,8 +323,10 @@ enum AppDataBackup {
             if file.path.hasPrefix("Library/Preferences/") { return 0 }
             return file.size == nil ? 2 : 1
         }
-        let ordered = safe.filter { !$0.isDirectory && !directories.contains($0.path) && !isSkipped($0.path) }
-            .sorted { (rank($0), $0.path) < (rank($1), $1.path) }
+        let ordered = safe.filter {
+            !$0.isDirectory && !directories.contains($0.path) && !isSkipped($0.path)
+        }
+        .sorted { (rank($0), $0.path) < (rank($1), $1.path) }
         var seen = Set<String>()
         var kept: [DeviceFile] = []
         var collisions = 0
@@ -314,7 +344,8 @@ enum AppDataBackup {
     /// `<base>/data/<rel>`, only when `rel` is a safe entry path and the result stays under `$SIDELOAD_HOME/backups/`.
     private static func localPath(_ base: String, _ rel: String, services: Services) -> String? {
         let path = base + "/data/" + rel
-        guard isSafeEntryPath(rel), DeviceCtl.isSafeBackupPath(path, backups: services.home.backups) else { return nil }
+        guard isSafeEntryPath(rel), DeviceCtl.isSafeBackupPath(path, backups: services.home.backups)
+        else { return nil }
         return path
     }
 
@@ -325,7 +356,9 @@ enum AppDataBackup {
     /// anything but a folder of ours, and chmodded through a descriptor opened with `O_NOFOLLOW`. So a link planted in the tree
     /// (or made by a case-insensitive name clash) can never redirect a folder creation or a chmod outside `root`.
     static func secureDirectory(_ path: String, root: String) throws {
-        guard path == root || DeviceCtl.isSafeBackupPath(path, backups: root) else { throw ioError("path", EINVAL) }
+        guard path == root || DeviceCtl.isSafeBackupPath(path, backups: root) else {
+            throw ioError("path", EINVAL)
+        }
         try makeDirectories(parentPath(root), mode: 0o700)
         var current = root
         try secureOne(current)
@@ -342,7 +375,9 @@ enum AppDataBackup {
             if mkdir(directory, 0o700) != 0 && errno != EEXIST { throw ioError("mkdir") }
             guard lstat(directory, &st) == 0 else { throw ioError("stat") }
         }
-        guard st.st_mode & S_IFMT == S_IFDIR, st.st_uid == geteuid() else { throw ioError("folder check", EINVAL) }
+        guard st.st_mode & S_IFMT == S_IFDIR, st.st_uid == geteuid() else {
+            throw ioError("folder check", EINVAL)
+        }
         let fd = open(directory, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { throw ioError("open") }
         defer { close(fd) }
@@ -353,7 +388,9 @@ enum AppDataBackup {
     /// `regularFile`, the last part a regular file. Nothing is followed.
     static func isPlain(_ path: String, root: String, regularFile: Bool) -> Bool {
         guard path == root || path.hasPrefix(root + "/") else { return false }
-        let parts = path.dropFirst(root.count).split(separator: "/", omittingEmptySubsequences: false).dropFirst()
+        let parts = path.dropFirst(root.count).split(
+            separator: "/", omittingEmptySubsequences: false
+        ).dropFirst()
         var st = stat()
         func check(_ item: String, last: Bool) -> Bool {
             guard lstat(item, &st) == 0 else { return false }
@@ -420,7 +457,8 @@ enum AppDataBackup {
     }
 
     private static func writeManifest(_ manifest: Manifest, in directory: String) throws {
-        try AtomicFile.write(try encoder().encode(manifest), to: directory + "/manifest.json", mode: 0o600)
+        try AtomicFile.write(
+            try encoder().encode(manifest), to: directory + "/manifest.json", mode: 0o600)
     }
 
     static func readManifest(in directory: String) -> Manifest? {
@@ -476,9 +514,12 @@ enum AppDataBackup {
 
     /// One file out of the device. A size that differs from the listing is retried once; anything else is failed.
     private static func copyOne(
-        _ file: DeviceFile, to partial: String, calls: FreeDeviceCalls, budget: Budget, services: Services
+        _ file: DeviceFile, to partial: String, calls: FreeDeviceCalls, budget: Budget,
+        services: Services
     ) async throws -> Copy {
-        guard let destination = localPath(partial, file.path, services: services) else { return .failed(.unsafePath) }
+        guard let destination = localPath(partial, file.path, services: services) else {
+            return .failed(.unsafePath)
+        }
         guard budget.timeout(cap: copyTimeoutSec) != nil else { return .failed(.timeLimit) }
         try secureDirectory(parentPath(destination), root: services.home.backups)
         var existing = stat()
@@ -486,8 +527,11 @@ enum AppDataBackup {
         var attempt = 0
         while true {  // every pass returns, or retries a short copy once
             attempt += 1
-            guard let timeout = budget.timeout(cap: copyTimeoutSec) else { return .failed(.timeLimit) }
-            let out = await calls.copyFrom(source: file.path, destination: destination, timeoutSec: timeout)
+            guard let timeout = budget.timeout(cap: copyTimeoutSec) else {
+                return .failed(.timeLimit)
+            }
+            let out = await calls.copyFrom(
+                source: file.path, destination: destination, timeoutSec: timeout)
             guard callSucceeded(out) else {
                 discard(destination)
                 return .failed(copyClass(out, calls: calls))
@@ -495,7 +539,9 @@ enum AppDataBackup {
             // What devicectl left is looked at without following it: only a regular file stays. A symlink (or a folder, or
             // anything else) is removed and counted failed; nothing here ever opens, chmods or writes through it.
             var st = stat()
-            guard lstat(destination, &st) == 0 else { return .failed(errno == ENOENT ? .copyNoResult : .localError) }
+            guard lstat(destination, &st) == 0 else {
+                return .failed(errno == ENOENT ? .copyNoResult : .localError)
+            }
             guard st.st_mode & S_IFMT == S_IFREG else {
                 discard(destination)
                 return .failed(.notRegularFile)
@@ -520,10 +566,12 @@ enum AppDataBackup {
 
     /// Backs up the app's data container. Never throws and never blocks the lend: a failure is `done == false` plus a warning.
     static func backup(
-        _ services: Services, target: FreeTarget, calls: FreeDeviceCalls, version: String, lendSince: Date
+        _ services: Services, target: FreeTarget, calls: FreeDeviceCalls, version: String,
+        lendSince: Date
     ) async -> Result {
         var result = Result()
-        let partial = appDirectory(services, target) + "/" + stamp(services.clock.now()) + ".partial"
+        let partial =
+            appDirectory(services, target) + "/" + stamp(services.clock.now()) + ".partial"
         do {
             try await perform(&result, services, target, calls, version, lendSince, partial)
         } catch {
@@ -531,16 +579,21 @@ enum AppDataBackup {
             result = Result()
             result.warnings = [
                 CanaryCommand.warning(
-                    "DATA_BACKUP_FAILED", "The app's data could not be saved on this Mac, so the lend goes ahead without a backup.",
-                    "Check the free space and permissions of $SIDELOAD_HOME/backups; the app signs in again after the return.")
+                    "DATA_BACKUP_FAILED",
+                    "The app's data could not be saved on this Mac, so the lend goes ahead without a backup.",
+                    "Check the free space and permissions of $SIDELOAD_HOME/backups; the app signs in again after the return."
+                )
             ]
         }
-        services.log("app data backup: \(result.files) file(s) saved, \(result.failed) failed\(result.failures.summary)")
+        services.log(
+            "app data backup: \(result.files) file(s) saved, \(result.failed) failed\(result.failures.summary)"
+        )
         return result
     }
 
     private static func perform(
-        _ result: inout Result, _ services: Services, _ target: FreeTarget, _ calls: FreeDeviceCalls, _ version: String,
+        _ result: inout Result, _ services: Services, _ target: FreeTarget,
+        _ calls: FreeDeviceCalls, _ version: String,
         _ lendSince: Date, _ partial: String
     ) async throws {
         let budget = Budget(services.clock)
@@ -578,7 +631,8 @@ enum AppDataBackup {
             // One odd entry (a name over the length limit, say) costs only itself: it is counted failed and the rest goes on.
             let copied: Copy
             do {
-                copied = try await copyOne(file, to: partial, calls: calls, budget: budget, services: services)
+                copied = try await copyOne(
+                    file, to: partial, calls: calls, budget: budget, services: services)
             } catch {
                 copied = .failed(.localError)
             }
@@ -607,7 +661,8 @@ enum AppDataBackup {
             return
         }
         let manifest = Manifest(
-            bundleId: target.bundleId, version: version, lendSince: lendSince, createdAt: wholeSeconds(services.clock.now()),
+            bundleId: target.bundleId, version: version, lendSince: lendSince,
+            createdAt: wholeSeconds(services.clock.now()),
             complete: failed == 0, files: entries, restoredAt: nil)
         try writeManifest(manifest, in: partial)
         let final = String(partial.dropLast(".partial".count))
@@ -630,13 +685,18 @@ enum AppDataBackup {
 
     /// The manifest of `directory` (a finished backup folder), only when the folder and the file are real, not links, and the
     /// manifest reads and is for this app's bundle ID. Nothing is followed.
-    private static func trustedManifest(in directory: String, _ services: Services, _ target: FreeTarget) -> Manifest? {
+    private static func trustedManifest(
+        in directory: String, _ services: Services, _ target: FreeTarget
+    ) -> Manifest? {
         trustedManifest(in: directory, services, bundleId: target.bundleId)
     }
 
-    private static func trustedManifest(in directory: String, _ services: Services, bundleId: String) -> Manifest? {
+    private static func trustedManifest(
+        in directory: String, _ services: Services, bundleId: String
+    ) -> Manifest? {
         let root = services.home.backups
-        guard isPlain(directory, root: root, regularFile: false), isPlain(directory + "/manifest.json", root: root, regularFile: true),
+        guard isPlain(directory, root: root, regularFile: false),
+            isPlain(directory + "/manifest.json", root: root, regularFile: true),
             let manifest = readManifest(in: directory), manifest.bundleId == bundleId
         else { return nil }
         return manifest
@@ -645,7 +705,9 @@ enum AppDataBackup {
     /// Every finished backup of this app that passes the link-safe scan (a plain app folder, then per folder a plain folder and
     /// manifest that reads for this bundle ID), newest first. A folder that fails any check is left out; callers add their own
     /// predicate and write.
-    private static func manifests(_ services: Services, _ target: FreeTarget) -> [(directory: String, manifest: Manifest)] {
+    private static func manifests(_ services: Services, _ target: FreeTarget) -> [(
+        directory: String, manifest: Manifest
+    )] {
         let base = appDirectory(services, target)
         guard isPlain(base, root: services.home.backups, regularFile: false) else { return [] }
         return finished(base).compactMap { name in
@@ -655,15 +717,23 @@ enum AppDataBackup {
     }
 
     /// The newest backup made for this lend and not yet restored.
-    private static func candidate(_ services: Services, _ target: FreeTarget, since: Date) -> (directory: String, manifest: Manifest)? {
-        manifests(services, target).first { abs($0.manifest.lendSince.timeIntervalSince(since)) < 1 && $0.manifest.restoredAt == nil }
+    private static func candidate(_ services: Services, _ target: FreeTarget, since: Date) -> (
+        directory: String, manifest: Manifest
+    )? {
+        manifests(services, target).first {
+            abs($0.manifest.lendSince.timeIntervalSince(since)) < 1 && $0.manifest.restoredAt == nil
+        }
     }
 
     /// Restores the backup of this lend into the reinstalled app (`push`). Never throws and never fails the return. No backup
     /// for this lend is simply `done == false` with no warning.
-    static func restore(_ services: Services, target: FreeTarget, calls: FreeDeviceCalls, since: Date?) async -> Result {
+    static func restore(
+        _ services: Services, target: FreeTarget, calls: FreeDeviceCalls, since: Date?
+    ) async -> Result {
         // The return marked the backup at T4, before its install, so a failed push can be retried by `slot restore`.
-        guard let since, let found = candidate(services, target, since: since) else { return Result() }
+        guard let since, let found = candidate(services, target, since: since) else {
+            return Result()
+        }
         return await push(services, target: target, calls: calls, found: found)
     }
 
@@ -673,9 +743,12 @@ enum AppDataBackup {
         case none(restored: Bool, superseded: Bool, unreadable: Bool, notUninstalled: Bool)
 
         static func nothing(
-            restored: Bool = false, superseded: Bool = false, unreadable: Bool = false, notUninstalled: Bool = false
+            restored: Bool = false, superseded: Bool = false, unreadable: Bool = false,
+            notUninstalled: Bool = false
         ) -> PendingBackup {
-            .none(restored: restored, superseded: superseded, unreadable: unreadable, notUninstalled: notUninstalled)
+            .none(
+                restored: restored, superseded: superseded, unreadable: unreadable,
+                notUninstalled: notUninstalled)
         }
     }
 
@@ -692,7 +765,9 @@ enum AppDataBackup {
 
     /// The same check from the parts a backup is bound to (alias, app folder, bundle ID), for a caller with no saved device to
     /// resolve (`device remove` of an alias that is only in the ledger).
-    static func pending(_ services: Services, alias: String, app: String, bundleId: String) -> PendingBackup {
+    static func pending(_ services: Services, alias: String, app: String, bundleId: String)
+        -> PendingBackup
+    {
         let base = appDirectory(services, alias: alias, app: app)
         let root = services.home.backups
         switch walk(base, root: root) {
@@ -700,19 +775,27 @@ enum AppDataBackup {
         case .unreadable: return .nothing(unreadable: true)
         case .plain: break
         }
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: base) else { return .nothing(unreadable: true) }
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: base) else {
+            return .nothing(unreadable: true)
+        }
         guard let name = finished(names).first else { return .nothing() }
         let directory = base + "/" + name
-        guard let manifest = trustedManifest(in: directory, services, bundleId: bundleId) else { return .nothing(unreadable: true) }
+        guard let manifest = trustedManifest(in: directory, services, bundleId: bundleId) else {
+            return .nothing(unreadable: true)
+        }
         let readable = manifest.files.allSatisfy { entry in
-            guard let local = localPath(directory, entry.path, services: services) else { return false }
+            guard let local = localPath(directory, entry.path, services: services) else {
+                return false
+            }
             return isPlain(local, root: root, regularFile: true) && canOpen(local)
         }
         let restored = manifest.restoredAt != nil
         let superseded = manifest.supersededAt != nil
         let notUninstalled = manifest.uninstalledAt == nil  // its lend never took the app off the device (or predates the mark)
         guard readable, !restored, !superseded, !notUninstalled else {
-            return .nothing(restored: restored, superseded: superseded, unreadable: !readable, notUninstalled: notUninstalled)
+            return .nothing(
+                restored: restored, superseded: superseded, unreadable: !readable,
+                notUninstalled: notUninstalled)
         }
         return .found(directory: directory, manifest: manifest)
     }
@@ -724,7 +807,9 @@ enum AppDataBackup {
     /// else, a link or a non-folder at any level or an `lstat` failure other than ENOENT (`unreadable`).
     private static func walk(_ path: String, root: String) -> Walk {
         guard path == root || path.hasPrefix(root + "/") else { return .unreadable }
-        let parts = path.dropFirst(root.count).split(separator: "/", omittingEmptySubsequences: false).dropFirst()
+        let parts = path.dropFirst(root.count).split(
+            separator: "/", omittingEmptySubsequences: false
+        ).dropFirst()
         func check(_ item: String) -> Walk {
             var st = stat()
             guard lstat(item, &st) == 0 else { return errno == ENOENT ? .missing : .unreadable }
@@ -764,7 +849,9 @@ enum AppDataBackup {
     /// unwritable one is left as it is. The manifest is rewritten atomically, mode 0600, and no link is followed.
     static func supersedeOlder(_ services: Services, _ target: FreeTarget, than lendSince: Date) {
         for (directory, found) in manifests(services, target)
-        where found.restoredAt == nil && found.supersededAt == nil && found.lendSince.timeIntervalSince(lendSince) <= -1 {
+        where found.restoredAt == nil && found.supersededAt == nil
+            && found.lendSince.timeIntervalSince(lendSince) <= -1
+        {
             var manifest = found
             manifest.supersededAt = wholeSeconds(services.clock.now())
             try? writeManifest(manifest, in: directory)
@@ -775,7 +862,8 @@ enum AppDataBackup {
     /// every file was pushed and the relisting matched, and only then is the manifest marked and the old backups pruned. The
     /// whole step shares one `Budget`. Safe to repeat: a push overwrites.
     static func push(
-        _ services: Services, target: FreeTarget, calls: FreeDeviceCalls, found: (directory: String, manifest: Manifest)
+        _ services: Services, target: FreeTarget, calls: FreeDeviceCalls,
+        found: (directory: String, manifest: Manifest)
     ) async -> Result {
         var result = Result()
         let budget = Budget(services.clock)
@@ -793,7 +881,8 @@ enum AppDataBackup {
             if spent {
                 refusal = .timeLimit
             } else if let path = localPath(found.directory, entry.path, services: services) {
-                if !isPlain(path, root: services.home.backups, regularFile: true) || regularFileSize(path) != entry.size
+                if !isPlain(path, root: services.home.backups, regularFile: true)
+                    || regularFileSize(path) != entry.size
                     || sha256(path) != entry.sha256
                 {
                     refusal = .localError
@@ -811,7 +900,8 @@ enum AppDataBackup {
                 if budget.left <= 0 { spent = true }
                 continue
             }
-            let out = await calls.copyTo(source: local, destination: entry.path, timeoutSec: timeout)
+            let out = await calls.copyTo(
+                source: local, destination: entry.path, timeoutSec: timeout)
             if callSucceeded(out) {
                 pushed.append(entry)
             } else {
@@ -828,7 +918,8 @@ enum AppDataBackup {
             if let timeout = budget.timeout(cap: listTimeoutSec) {
                 let out = await calls.listFiles(timeoutSec: timeout)
                 if callSucceeded(out), let listing = parseListing(out.json) {
-                    let there = Dictionary(listing.map { ($0.path, $0.size) }, uniquingKeysWith: { first, _ in first })
+                    let there = Dictionary(
+                        listing.map { ($0.path, $0.size) }, uniquingKeysWith: { first, _ in first })
                     let missing = pushed.filter { entry in
                         guard let size = there[entry.path] else { return true }
                         return size != nil && size != entry.size
@@ -843,7 +934,8 @@ enum AppDataBackup {
                     CanaryCommand.warning(
                         "DATA_RESTORE_UNVERIFIED",
                         "The app's data was copied back, but the device's file list could not be read to confirm it.",
-                        "Open the app and check it is signed in; the backup is kept. The owner can retry: sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes."))
+                        "Open the app and check it is signed in; the backup is kept. The owner can retry: sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes."
+                    ))
             }
         }
         if result.failed > 0 {
@@ -851,7 +943,8 @@ enum AppDataBackup {
                 CanaryCommand.warning(
                     "DATA_RESTORE_INCOMPLETE",
                     "\(result.failed) of \(manifest.files.count) data files were not restored (or did not verify).",
-                    "The backup is kept; the app may ask to sign in again. The owner can retry: sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes (it refuses a backup that holds a link or an unreadable file, and then the app needs signing in again)."))
+                    "The backup is kept; the app may ask to sign in again. The owner can retry: sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes (it refuses a backup that holds a link or an unreadable file, and then the app needs signing in again)."
+                ))
         }
         if verified {
             result.done = true
@@ -861,11 +954,14 @@ enum AppDataBackup {
             if !manifest.complete {
                 result.warnings.append(
                     CanaryCommand.warning(
-                        "DATA_RESTORE_PARTIAL_BACKUP", "The backup was incomplete, so some of the app's data was not restored.",
+                        "DATA_RESTORE_PARTIAL_BACKUP",
+                        "The backup was incomplete, so some of the app's data was not restored.",
                         "The app may ask to sign in again."))
             }
         }
-        services.log("app data restore: \(result.files) file(s) restored, \(result.failed) failed\(result.failures.summary)")
+        services.log(
+            "app data restore: \(result.files) file(s) restored, \(result.failed) failed\(result.failures.summary)"
+        )
         return result
     }
 }

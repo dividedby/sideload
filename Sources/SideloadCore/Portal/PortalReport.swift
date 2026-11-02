@@ -59,22 +59,33 @@ enum PortalReport {
         mutating func increment(_ group: String, label: String?) {
             guard case .object(var counts) = summary[group] ?? .object([:]) else { return }
             let name = label ?? "unknown"
-            if case .number(let n)? = counts[name] { counts[name] = .number(n + 1) } else { counts[name] = .number(1) }
+            if case .number(let n)? = counts[name] {
+                counts[name] = .number(n + 1)
+            } else {
+                counts[name] = .number(1)
+            }
             summary[group] = .object(counts)
         }
 
         mutating func warn(_ code: String, _ message: String, _ fix: String) {
-            warnings.append(["code": .string(code), "message": .string(message), "fix": .string(fix)])
+            warnings.append([
+                "code": .string(code), "message": .string(message), "fix": .string(fix),
+            ])
         }
     }
 
     static func build(_ input: PortalReportInput) -> Envelope {
-        let listings: [PortalResource: PortalListing] = input.results.compactMapValues { try? $0.get() }
+        let listings: [PortalResource: PortalListing] = input.results.compactMapValues {
+            try? $0.get()
+        }
         let context = Context(input, listings: listings)
 
         let base: [String: JSONValue] = [
             "team": .string(Team.id),
-            "key": ["role": input.role.map(JSONValue.string) ?? .null, "idTail": .string(input.keyIdTail)],
+            "key": [
+                "role": input.role.map(JSONValue.string) ?? .null,
+                "idTail": .string(input.keyIdTail),
+            ],
         ]
 
         // Guard: the data itself must belong to the locked team before any of it is listed.
@@ -82,13 +93,17 @@ enum PortalReport {
         if let failure = teamGuard(reads, context.bundleIds) {
             var counts: [String: JSONValue] = [:]
             for resource in input.requested {
-                if let listing = listings[resource] { counts[resource.rawValue] = jsonNumber(listing.items.count) }
+                if let listing = listings[resource] {
+                    counts[resource.rawValue] = jsonNumber(listing.items.count)
+                }
             }
             var data = base
             data["counts"] = .object(counts)
             return Envelope(
                 ok: false, command: command, data: data,
-                errors: [Envelope.Entry(code: failure.code, message: failure.message, fix: failure.fix)])
+                errors: [
+                    Envelope.Entry(code: failure.code, message: failure.message, fix: failure.fix)
+                ])
         }
 
         var accumulator = Accumulator()
@@ -97,27 +112,33 @@ enum PortalReport {
             accumulator.warn(
                 "TEAM_UNVERIFIED",
                 "No certificate or App ID was available to confirm this data belongs to team \(Team.id).",
-                "List certificates and App IDs too (`sideload portal` with no argument) with a key that can read them.")
+                "List certificates and App IDs too (`sideload portal` with no argument) with a key that can read them."
+            )
         }
 
         var sections: [String: JSONValue] = [:]
         var errors: [Envelope.Entry] = []
         for resource in PortalResource.allCases {
             guard input.requested.contains(resource), let result = input.results[resource] else {
-                sections[resource.rawValue] = ["status": "skipped", "count": 0, "truncated": false, "items": []]
+                sections[resource.rawValue] = [
+                    "status": "skipped", "count": 0, "truncated": false, "items": [],
+                ]
                 continue
             }
             switch result {
             case .failure(let error):
                 sections[resource.rawValue] = [
-                    "status": "error", "count": 0, "truncated": false, "items": [], "code": .string(error.code),
+                    "status": "error", "count": 0, "truncated": false, "items": [],
+                    "code": .string(error.code),
                 ]
-                errors.append(Envelope.Entry(code: error.code, message: error.message, fix: error.fix))
+                errors.append(
+                    Envelope.Entry(code: error.code, message: error.message, fix: error.fix))
             case .success(let listing):
                 let rows = resource.rows(context, &accumulator)
                     .sorted { ($0.sortKey, $0.id) < ($1.sortKey, $1.id) }
                 var section: [String: JSONValue] = [
-                    "status": "ok", "count": jsonNumber(rows.count), "truncated": false, "items": .array(rows.map(\.item)),
+                    "status": "ok", "count": jsonNumber(rows.count), "truncated": false,
+                    "items": .array(rows.map(\.item)),
                 ]
                 if listing.truncated {
                     section["status"] = "error"
@@ -126,7 +147,8 @@ enum PortalReport {
                     errors.append(
                         Envelope.Entry(
                             code: "PORTAL_TRUNCATED",
-                            message: "Listing \(resource.label) stopped at \(PortalClient.maxPages) pages; the list is incomplete.",
+                            message:
+                                "Listing \(resource.label) stopped at \(PortalClient.maxPages) pages; the list is incomplete.",
                             fix: "Report this: a team this large needs a paging change."))
                 }
                 sections[resource.rawValue] = .object(section)
@@ -143,16 +165,24 @@ enum PortalReport {
     // MARK: Guard
 
     /// Nil when every certificate and App ID that could be read belongs to the locked team.
-    static func teamGuard(_ certificates: [KeychainCertificate], _ bundleIds: [PortalBundleId]) -> SideloadError? {
+    static func teamGuard(_ certificates: [KeychainCertificate], _ bundleIds: [PortalBundleId])
+        -> SideloadError?
+    {
         let seeds = bundleIds.compactMap(\.seedId)
-        if certificates.contains(where: { $0.info.carriesDeniedOU }) || seeds.contains(where: Team.denied.contains) {
+        if certificates.contains(where: { $0.info.carriesDeniedOU })
+            || seeds.contains(where: Team.denied.contains)
+        {
             return SideloadError(
-                "FREE_TEAM_SELECTED", "The portal data belongs to the deny-listed free team; the listing was withheld.",
+                "FREE_TEAM_SELECTED",
+                "The portal data belongs to the deny-listed free team; the listing was withheld.",
                 fix: "Use the App Store Connect API key of the paid team \(Team.id).")
         }
-        if certificates.contains(where: { $0.info.teamOU != Team.id }) || seeds.contains(where: { $0 != Team.id }) {
+        if certificates.contains(where: { $0.info.teamOU != Team.id })
+            || seeds.contains(where: { $0 != Team.id })
+        {
             return SideloadError(
-                "TEAM_MISMATCH", "The portal data does not belong to team \(Team.id); the listing was withheld.",
+                "TEAM_MISMATCH",
+                "The portal data does not belong to team \(Team.id); the listing was withheld.",
                 fix: "Use the App Store Connect API key of the paid team \(Team.id).")
         }
         return nil
@@ -162,12 +192,16 @@ enum PortalReport {
 
     fileprivate static func jsonNumber(_ n: Int) -> JSONValue { .number(Double(n)) }
 
-    fileprivate static func stringOrNull(_ s: String?) -> JSONValue { s.map(JSONValue.string) ?? .null }
+    fileprivate static func stringOrNull(_ s: String?) -> JSONValue {
+        s.map(JSONValue.string) ?? .null
+    }
 
     /// Apple's timestamps (`2027-10-16T22:39:42.000+0000`), tolerant of a missing fraction, of `+00:00` and of `Z`.
-    private static let timestampStyles: [Date.ISO8601FormatStyle] = [true, false].flatMap { fraction in
+    private static let timestampStyles: [Date.ISO8601FormatStyle] = [true, false].flatMap {
+        fraction in
         [Date.ISO8601FormatStyle.TimeZoneSeparator.omitted, .colon].map { separator in
-            Date.ISO8601FormatStyle(timeZoneSeparator: separator, includingFractionalSeconds: fraction, timeZone: .gmt)
+            Date.ISO8601FormatStyle(
+                timeZoneSeparator: separator, includingFractionalSeconds: fraction, timeZone: .gmt)
         }
     }
 
@@ -198,7 +232,9 @@ enum PortalReport {
 
     static func utcDay(of date: Date) -> String { date.formatted(dayStyle) }
 
-    private static func utcDayValue(_ date: Date?) -> JSONValue { date.map { .string(utcDay(of: $0)) } ?? .null }
+    private static func utcDayValue(_ date: Date?) -> JSONValue {
+        date.map { .string(utcDay(of: $0)) } ?? .null
+    }
 
     // MARK: Projections
 
@@ -229,28 +265,34 @@ enum PortalReport {
                 Row(
                     sortKey: expires ?? "", id: cert.id,
                     item: [
-                        "id": .string(cert.id), "type": stringOrNull(cert.type), "platform": stringOrNull(cert.platform),
+                        "id": .string(cert.id), "type": stringOrNull(cert.type),
+                        "platform": stringOrNull(cert.platform),
                         "activated": cert.activated.map(JSONValue.bool) ?? .null,
-                        "expires": stringOrNull(expires), "issued": utcDayValue(read?.info.notBefore),
-                        "certFp": read.map { .string(EvidenceBuilder.certFp($0.reference)) } ?? .null,
+                        "expires": stringOrNull(expires),
+                        "issued": utcDayValue(read?.info.notBefore),
+                        "certFp": read.map { .string(EvidenceBuilder.certFp($0.reference)) }
+                            ?? .null,
                         "inKeychain": inKeychain,
                     ]))
         }
         acc.summary["certificatesNotInKeychain"] = jsonNumber(notInKeychain)
         if askedKeychain && references == nil {
             acc.warn(
-                "KEYCHAIN_UNREADABLE", "The login keychain could not be read, so inKeychain is unknown.",
+                "KEYCHAIN_UNREADABLE",
+                "The login keychain could not be read, so inKeychain is unknown.",
                 "Run `sideload doctor` and check the keychain.")
         }
         if notInKeychain > 0 {
             acc.warn(
                 "CERT_NOT_IN_KEYCHAIN",
                 "\(notInKeychain) development certificate(s) on the team have no signing identity on this Mac.",
-                "Another tool or Mac may have created them; revoke any you do not recognise in the developer portal.")
+                "Another tool or Mac may have created them; revoke any you do not recognise in the developer portal."
+            )
         }
         if unreadable > 0 {
             acc.warn(
-                "CERT_UNREADABLE", "\(unreadable) certificate(s) had content sideload could not parse.",
+                "CERT_UNREADABLE",
+                "\(unreadable) certificate(s) had content sideload could not parse.",
                 "Compare their ids with the developer portal.")
         }
         return rows
@@ -268,7 +310,9 @@ enum PortalReport {
             }
             if underPrefix != true { other += 1 }
             let shown = input.showIdentifiers || underPrefix == true || identifier == "*"
-            let components = identifier.map { $0.split(separator: ".", omittingEmptySubsequences: false).count }
+            let components = identifier.map {
+                $0.split(separator: ".", omittingEmptySubsequences: false).count
+            }
             // Sorted by id alone: a hidden identifier must not leak through the order.
             rows.append(
                 Row(
@@ -283,7 +327,8 @@ enum PortalReport {
         acc.summary["otherPrefixBundleIds"] = jsonNumber(other)
         if input.bundleIdPrefix == nil && !ctx.bundleIds.isEmpty {
             acc.warn(
-                "BUNDLE_ID_PREFIX_UNSET", "config.json has no bundleIdPrefix, so App ID identifiers are hidden.",
+                "BUNDLE_ID_PREFIX_UNSET",
+                "config.json has no bundleIdPrefix, so App ID identifiers are hidden.",
                 "Set bundleIdPrefix in $SIDELOAD_HOME/config.json, or pass --show-identifiers.")
         }
         return rows
@@ -302,7 +347,8 @@ enum PortalReport {
                 sortKey: added ?? "", id: device.id,
                 item: [
                     "udid": device.udid.map { .string(Redactor.tail4($0)) } ?? .null,
-                    "platform": stringOrNull(device.platform), "deviceClass": stringOrNull(device.deviceClass),
+                    "platform": stringOrNull(device.platform),
+                    "deviceClass": stringOrNull(device.deviceClass),
                     "model": stringOrNull(device.model), "status": stringOrNull(device.status),
                     "added": stringOrNull(added), "savedLocally": savedLocally,
                 ])
@@ -316,13 +362,15 @@ enum PortalReport {
         let rows = ctx.profiles.map { profile in
             acc.increment("profilesByType", label: profile.type)
             acc.increment("profilesByState", label: profile.state)
-            let expired: JSONValue = date(profile.expires).map { .bool($0 < ctx.input.now) } ?? .null
+            let expired: JSONValue =
+                date(profile.expires).map { .bool($0 < ctx.input.now) } ?? .null
             if expired == .bool(true) { expiredCount += 1 }
             let created = utcDay(profile.created)
             return Row(
                 sortKey: created ?? "", id: profile.id,
                 item: [
-                    "id": .string(profile.id), "type": stringOrNull(profile.type), "state": stringOrNull(profile.state),
+                    "id": .string(profile.id), "type": stringOrNull(profile.type),
+                    "state": stringOrNull(profile.state),
                     "platform": stringOrNull(profile.platform), "created": stringOrNull(created),
                     "expires": stringOrNull(utcDay(profile.expires)), "expired": expired,
                 ])
@@ -334,7 +382,9 @@ enum PortalReport {
 
 extension PortalResource {
     /// The projection of this list's items: the one place that knows which fields it shows.
-    fileprivate func rows(_ context: PortalReport.Context, _ accumulator: inout PortalReport.Accumulator)
+    fileprivate func rows(
+        _ context: PortalReport.Context, _ accumulator: inout PortalReport.Accumulator
+    )
         -> [PortalReport.Row]
     {
         switch self {

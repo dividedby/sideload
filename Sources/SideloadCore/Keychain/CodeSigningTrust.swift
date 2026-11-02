@@ -7,9 +7,13 @@ import Security
 /// and can lag `find-identity -v` (design section 6).
 public enum CodeSigningTrust {
     public static func isValid(_ certificate: SecCertificate, at date: Date = Date()) -> Bool {
-        guard let policy = SecPolicyCreateWithProperties(kSecPolicyAppleCodeSigning, nil) else { return false }
+        guard let policy = SecPolicyCreateWithProperties(kSecPolicyAppleCodeSigning, nil) else {
+            return false
+        }
         var trust: SecTrust?
-        guard SecTrustCreateWithCertificates(certificate, policy, &trust) == errSecSuccess, let trust else {
+        guard SecTrustCreateWithCertificates(certificate, policy, &trust) == errSecSuccess,
+            let trust
+        else {
             return false
         }
         // Fail closed: never evaluate with the network possibly enabled.
@@ -19,7 +23,9 @@ public enum CodeSigningTrust {
     }
 
     public static func isValid(der: Data, at date: Date = Date()) -> Bool {
-        guard let certificate = SecCertificateCreateWithData(nil, der as CFData) else { return false }
+        guard let certificate = SecCertificateCreateWithData(nil, der as CFData) else {
+            return false
+        }
         return isValid(certificate, at: date)
     }
 }

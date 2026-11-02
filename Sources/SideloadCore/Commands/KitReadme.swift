@@ -8,7 +8,8 @@ enum KitReadme {
     static let readmeName = "README.txt"
 
     static func text(
-        certFp8: String, certNotAfter: Date, profileExpires: Date, legacyEncryption: Bool, wildcard: Bool
+        certFp8: String, certNotAfter: Date, profileExpires: Date, legacyEncryption: Bool,
+        wildcard: Bool
     ) -> String {
         var lines = [
             "sideload: Feather kit",

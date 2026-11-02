@@ -18,7 +18,9 @@ func goldenText(_ out: Envelope, home: String) throws -> String {
 
 @Suite("provision: golden envelopes without --renew")
 struct ProvisionGoldenTests {
-    @Test("every fault renders exactly the recorded envelope", arguments: Fault.allCases.filter { !$0.renewOnly })
+    @Test(
+        "every fault renders exactly the recorded envelope",
+        arguments: Fault.allCases.filter { !$0.renewOnly })
     func matches(fault: Fault) async throws {
         try await withFaultWorld(fault) { w, scenario in
             let out = await runFault(w, scenario)
@@ -32,7 +34,8 @@ struct ProvisionGoldenTests {
             let path = goldenPath(fault.rawValue)
             if recording {
                 try FileManager.default.createDirectory(
-                    atPath: (path as NSString).deletingLastPathComponent, withIntermediateDirectories: true)
+                    atPath: (path as NSString).deletingLastPathComponent,
+                    withIntermediateDirectories: true)
                 try Data(text.utf8).write(to: URL(fileURLWithPath: path))
                 return
             }

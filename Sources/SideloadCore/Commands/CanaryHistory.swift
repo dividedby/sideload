@@ -7,7 +7,9 @@ public enum CanaryHistory {
     static let command = "canary history"
     static let recentCount = 10
     /// The fields compared between the last `working` run and the first `blocked` run after it.
-    static let comparedFields = ["xcodeVersion", "macosVersion", "iosVersion", "certFp", "certNotAfter"]
+    static let comparedFields = [
+        "xcodeVersion", "macosVersion", "iosVersion", "certFp", "certNotAfter",
+    ]
     /// Fields shown for a run. `device` stays out: the history prints versions and dates, not identifiers.
     private static let shownFields = ["ts", "status", "code"] + comparedFields
 
@@ -27,7 +29,9 @@ public enum CanaryHistory {
     static func read(_ path: String) throws -> Parsed {
         guard let data = try readFile(path) else { return Parsed() }
         var parsed = Parsed()
-        for line in String(decoding: data, as: UTF8.self).split(separator: "\n", omittingEmptySubsequences: true) {
+        for line in String(decoding: data, as: UTF8.self).split(
+            separator: "\n", omittingEmptySubsequences: true)
+        {
             if line.allSatisfy(\.isWhitespace) { continue }
             if let value = try? JSONDecoder().decode(JSONValue.self, from: Data(line.utf8)),
                 case .object(let fields) = value, case .string? = fields["status"]
@@ -40,7 +44,9 @@ public enum CanaryHistory {
         return parsed
     }
 
-    private static func status(_ record: [String: JSONValue]) -> String? { record["status"]?.stringValue }
+    private static func status(_ record: [String: JSONValue]) -> String? {
+        record["status"]?.stringValue
+    }
 
     private static func compact(_ record: [String: JSONValue]?) -> JSONValue {
         guard let record else { return .null }
@@ -54,7 +60,11 @@ public enum CanaryHistory {
         var counts: [String: JSONValue] = [:]
         for record in records {
             let s = status(record) ?? ""
-            if case .number(let n)? = counts[s] { counts[s] = .number(n + 1) } else { counts[s] = .number(1) }
+            if case .number(let n)? = counts[s] {
+                counts[s] = .number(n + 1)
+            } else {
+                counts[s] = .number(1)
+            }
         }
 
         let lastWorkingIndex = records.lastIndex { status($0) == "working" }
@@ -71,11 +81,16 @@ public enum CanaryHistory {
             var changed: [JSONValue] = []
             var missing: [JSONValue] = []
             for field in comparedFields {
-                guard let from = before[field]?.stringValue, let to = after[field]?.stringValue else {
+                guard let from = before[field]?.stringValue, let to = after[field]?.stringValue
+                else {
                     missing.append(.string(field))
                     continue
                 }
-                if from != to { changed.append(["field": .string(field), "from": .string(from), "to": .string(to)]) }
+                if from != to {
+                    changed.append([
+                        "field": .string(field), "from": .string(from), "to": .string(to),
+                    ])
+                }
             }
             changes = .array(changed)
             incomparable = .array(missing)
@@ -83,7 +98,8 @@ public enum CanaryHistory {
 
         return [
             "runs": .number(Double(records.count)), "skipped": .number(Double(parsed.skipped)),
-            "statusCounts": .object(counts), "first": compact(records.first), "last": compact(records.last),
+            "statusCounts": .object(counts), "first": compact(records.first),
+            "last": compact(records.last),
             "lastWorking": compact(lastWorkingIndex.map { records[$0] }),
             "firstBlocked": compact(firstBlocked),
             "firstBlockedAfterWorking": compact(firstBlockedAfterWorking),

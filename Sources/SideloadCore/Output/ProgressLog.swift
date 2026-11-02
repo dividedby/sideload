@@ -15,10 +15,12 @@ public enum ProgressLog {
     }
 
     /// The redacted line goes to `logs/commands.log` only.
-    public static func makeFileOnly(home: Paths, clock: any WallClock) -> @Sendable (String) -> Void {
+    public static func makeFileOnly(home: Paths, clock: any WallClock) -> @Sendable (String) -> Void
+    {
         { message in
             try? AppendFile.appendLine(
-                "\(isoTimestamp(clock.now())) \(Redactor.redactPatterns(message))", to: home.commandsLog)
+                "\(isoTimestamp(clock.now())) \(Redactor.redactPatterns(message))",
+                to: home.commandsLog)
         }
     }
 

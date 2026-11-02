@@ -17,13 +17,17 @@ func certDER(_ base64: String) throws -> Data {
 func profileXML(
     uuid: String = UUID().uuidString, team: String = Team.id, applicationIdentifier: String? = nil,
     getTaskAllow: Any = true, devices: [String] = [savedUdid("1")], certs: [Data] = [],
-    platform: [String] = ["iOS"], created: Date? = nil, expires: Date? = nil, extra: [String: Any] = [:]
+    platform: [String] = ["iOS"], created: Date? = nil, expires: Date? = nil,
+    extra: [String: Any] = [:]
 ) throws -> String {
     var dict: [String: Any] = [
         "UUID": uuid, "TeamIdentifier": [team], "Platform": platform,
         "CreationDate": created ?? daysFromNow(-30), "ExpirationDate": expires ?? daysFromNow(335),
         "ProvisionedDevices": devices, "DeveloperCertificates": certs,
-        "Entitlements": ["application-identifier": applicationIdentifier ?? team + ".*", "get-task-allow": getTaskAllow],
+        "Entitlements": [
+            "application-identifier": applicationIdentifier ?? team + ".*",
+            "get-task-allow": getTaskAllow,
+        ],
     ]
     for (key, value) in extra { dict[key] = value }
     let data = try PropertyListSerialization.data(fromPropertyList: dict, format: .xml, options: 0)
@@ -31,11 +35,13 @@ func profileXML(
 }
 
 func paidProfile(
-    uuid: String = UUID().uuidString, applicationIdentifier: String? = nil, devices: [String] = [savedUdid("1")],
+    uuid: String = UUID().uuidString, applicationIdentifier: String? = nil,
+    devices: [String] = [savedUdid("1")],
     certs: [String] = [], expires: Date? = nil
 ) -> ProvisioningProfile {
     ProvisioningProfile(
-        uuid: uuid, team: Team.id, applicationIdentifier: applicationIdentifier ?? Team.id + ".*", getTaskAllow: true,
+        uuid: uuid, team: Team.id, applicationIdentifier: applicationIdentifier ?? Team.id + ".*",
+        getTaskAllow: true,
         platforms: ["iOS"], created: daysFromNow(-30), expires: expires ?? daysFromNow(335),
         devices: devices.map { $0.lowercased() }, certFingerprints: certs)
 }

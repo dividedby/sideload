@@ -79,12 +79,12 @@ private func spin(timeout: TimeInterval = 10, until condition: () -> Bool) -> Bo
     return true
 }
 
-private extension Interrupt.Outcome {
-    var exitCode: Int32? {
+extension Interrupt.Outcome {
+    fileprivate var exitCode: Int32? {
         if case .exit(let code) = self { return code }
         return nil
     }
-    var isYield: Bool {
+    fileprivate var isYield: Bool {
         if case .yield = self { return true }
         return false
     }
@@ -98,7 +98,9 @@ struct InterruptTests {
         let h = Harness()
         let capture = Capture()
         let interrupt = Interrupt(writer: capture.writer, children: h.children)
-        let task = Task { await h.runner.run(CommandSpec(executable: fixture("sleep.sh"), timeout: .seconds(60))) }
+        let task = Task {
+            await h.runner.run(CommandSpec(executable: fixture("sleep.sh"), timeout: .seconds(60)))
+        }
         #expect(await eventually { h.children.count == 1 })
 
         #expect(interrupt.handle(signal: SIGTERM) == 143)
@@ -122,29 +124,44 @@ struct InterruptTests {
         for (cleared, word) in cases {
             let capture = Capture()
             let interrupt = Interrupt(writer: capture.writer, children: LiveChildren())
-            #expect(interrupt.handle(signal: SIGINT, kit: "exports/feather-1", clipboardCleared: cleared) == 130)
+            #expect(
+                interrupt.handle(
+                    signal: SIGINT, kit: "exports/feather-1", clipboardCleared: cleared) == 130)
             let obj = try decode(try #require(capture.writes.first))
-            guard case .object(let o) = obj, case .array(let errors)? = o["errors"], case .object(let e)? = errors.first,
+            guard case .object(let o) = obj, case .array(let errors)? = o["errors"],
+                case .object(let e)? = errors.first,
                 case .string(let message)? = e["message"], case .string(let fix)? = e["fix"]
             else {
                 Issue.record("shape")
                 return
             }
             #expect(o["ok"] == .bool(false) && errorCode(obj) == "INTERRUPTED")
-            #expect(message.contains("exports/feather-1") && message.contains("ledger.json") && message.contains(word))
+            #expect(
+                message.contains("exports/feather-1") && message.contains("ledger.json")
+                    && message.contains(word))
             #expect(o["kit"] == .string("exports/feather-1") && o["ledgerRecorded"] == .bool(true))
             #expect(o["clipboardCleared"] == cleared.map(JSONValue.bool) ?? .null)
-            for text in [message, fix] { #expect(!text.lowercased().contains("re-run") && !text.lowercased().contains("run again")) }
+            for text in [message, fix] {
+                #expect(
+                    !text.lowercased().contains("re-run")
+                        && !text.lowercased().contains("run again"))
+            }
         }
     }
 
-    @Test("a second signal after the kit exists but before main prints: exactly one object reaches stdout, either order")
+    @Test(
+        "a second signal after the kit exists but before main prints: exactly one object reaches stdout, either order"
+    )
     func oneObjectEvenWithAKit() throws {
         // The handler wins: one INTERRUPTED object that names the kit; main yields and writes nothing.
         let first = Capture()
         let handlerFirst = Interrupt(writer: first.writer, children: LiveChildren())
-        #expect(handlerFirst.handle(signal: SIGINT, kit: "exports/feather-1", clipboardCleared: true) == 130)
-        #expect(handlerFirst.finishMain(.result("export-cert", ["kit": .string("exports/feather-1")])).isYield)
+        #expect(
+            handlerFirst.handle(signal: SIGINT, kit: "exports/feather-1", clipboardCleared: true)
+                == 130)
+        #expect(
+            handlerFirst.finishMain(.result("export-cert", ["kit": .string("exports/feather-1")]))
+                .isYield)
         #expect(first.writes.count == 1)
         let obj = try decode(try #require(first.writes.first))
         #expect(errorCode(obj) == "INTERRUPTED" && first.writes[0].contains("exports/feather-1"))
@@ -152,17 +169,28 @@ struct InterruptTests {
         // Main wins: the success object is the only one; the late signal parks and writes nothing.
         let second = Capture()
         let mainFirst = Interrupt(writer: second.writer, children: LiveChildren())
-        #expect(mainFirst.finishMain(.result("export-cert", ["kit": .string("exports/feather-1")])).exitCode == 0)
-        #expect(mainFirst.handle(signal: SIGINT, kit: "exports/feather-1", clipboardCleared: true) == nil)
+        #expect(
+            mainFirst.finishMain(.result("export-cert", ["kit": .string("exports/feather-1")]))
+                .exitCode == 0)
+        #expect(
+            mainFirst.handle(signal: SIGINT, kit: "exports/feather-1", clipboardCleared: true)
+                == nil)
         #expect(second.writes.count == 1 && !second.writes[0].contains("INTERRUPTED"))
     }
 
-    @Test("the cleanup hook runs once, after the kill and before the object is written; a second signal skips it")
+    @Test(
+        "the cleanup hook runs once, after the kill and before the object is written; a second signal skips it"
+    )
     func cleanupOrdering() {
         let events = Mutex<[String]>([])
-        let interrupt = Interrupt(writer: { _ in events.withLock { $0.append("write") } }, children: LiveChildren())
-        #expect(interrupt.handle(signal: SIGINT, cleanup: { events.withLock { $0.append("cleanup") } }) == 130)
-        #expect(interrupt.handle(signal: SIGINT, cleanup: { events.withLock { $0.append("again") } }) == nil)
+        let interrupt = Interrupt(
+            writer: { _ in events.withLock { $0.append("write") } }, children: LiveChildren())
+        #expect(
+            interrupt.handle(signal: SIGINT, cleanup: { events.withLock { $0.append("cleanup") } })
+                == 130)
+        #expect(
+            interrupt.handle(signal: SIGINT, cleanup: { events.withLock { $0.append("again") } })
+                == nil)
         #expect(events.withLock { $0 } == ["cleanup", "write"])
     }
 
@@ -177,7 +205,8 @@ struct InterruptTests {
     @Test("round 3: a signal recorded before main writes makes finishMain yield without writing")
     func handlerWinsOrdering() throws {
         let w = GatedWriter(gate: isInterruptedObject)
-        let interrupt = Interrupt(writer: w.writer, children: LiveChildren(), emitTimeout: .seconds(10))
+        let interrupt = Interrupt(
+            writer: w.writer, children: LiveChildren(), emitTimeout: .seconds(10))
         let handler = Background { interrupt.handle(signal: SIGTERM) }
         #expect(w.entered.wait(timeout: .now() + 10) == .success)  // the handler's write is in flight
 
@@ -193,7 +222,8 @@ struct InterruptTests {
     @Test("a signal during main's write: main yields, the handler exits 143, one ok:true object")
     func signalDuringMainWrite() throws {
         let w = GatedWriter(gate: isAnyObject)
-        let interrupt = Interrupt(writer: w.writer, children: LiveChildren(), emitTimeout: .seconds(10))
+        let interrupt = Interrupt(
+            writer: w.writer, children: LiveChildren(), emitTimeout: .seconds(10))
         let main = Background { interrupt.finishMain(.result("x")) }
         #expect(w.entered.wait(timeout: .now() + 10) == .success)  // main is inside its write
 
@@ -225,7 +255,10 @@ struct InterruptTests {
     @Test("a failing envelope exits 1; a failing write reports writeFailed")
     func mainExitAndFailure() {
         let capture = Capture()
-        #expect(Interrupt(writer: capture.writer, children: LiveChildren()).finishMain(.fail("x", code: "E", message: "m")).exitCode == 1)
+        #expect(
+            Interrupt(writer: capture.writer, children: LiveChildren()).finishMain(
+                .fail("x", code: "E", message: "m")
+            ).exitCode == 1)
 
         struct Boom: Error {}
         let failing = Interrupt(writer: { _ in throw Boom() }, children: LiveChildren())
@@ -236,7 +269,9 @@ struct InterruptTests {
         #expect(error is Boom)
     }
 
-    @Test("a render failure: writeFailed and exiting without a signal; yield when a signal came first")
+    @Test(
+        "a render failure: writeFailed and exiting without a signal; yield when a signal came first"
+    )
     func renderFailure() {
         let unrenderable = Envelope.result("x", ["n": .number(.nan)])
         #expect((try? Output.render(unrenderable)) == nil, "fixture must fail to render")
@@ -262,7 +297,8 @@ struct InterruptTests {
         defer { stuck.signal() }
         let clock = ContinuousClock()
         let start = clock.now
-        #expect(!Interrupt.bounded(timeout: .milliseconds(50)) { _ = stuck.wait(timeout: .now() + 20) })
+        #expect(
+            !Interrupt.bounded(timeout: .milliseconds(50)) { _ = stuck.wait(timeout: .now() + 20) })
         #expect(clock.now - start < .seconds(1))
         #expect(Interrupt.bounded(timeout: .seconds(5)) {})
     }
@@ -283,7 +319,8 @@ struct InterruptTests {
         // The handler's own write never returns.
         let own = GatedWriter(gate: isInterruptedObject)
         defer { own.release.signal() }
-        let i1 = Interrupt(writer: own.writer, children: LiveChildren(), emitTimeout: .milliseconds(50))
+        let i1 = Interrupt(
+            writer: own.writer, children: LiveChildren(), emitTimeout: .milliseconds(50))
         var start = clock.now
         #expect(i1.handle(signal: SIGTERM) == 143)
         #expect(clock.now - start < .seconds(1))
@@ -291,7 +328,8 @@ struct InterruptTests {
         // Main's write never returns.
         let mainBlocked = GatedWriter(gate: isAnyObject)
         defer { mainBlocked.release.signal() }
-        let i2 = Interrupt(writer: mainBlocked.writer, children: LiveChildren(), emitTimeout: .milliseconds(50))
+        let i2 = Interrupt(
+            writer: mainBlocked.writer, children: LiveChildren(), emitTimeout: .milliseconds(50))
         _ = Background { i2.finishMain(.result("x")) }
         #expect(mainBlocked.entered.wait(timeout: .now() + 10) == .success)
         start = clock.now
@@ -308,8 +346,14 @@ struct InterruptTests {
             let capture = Capture()
             let interrupt = Interrupt(writer: capture.writer, children: LiveChildren())
             let barrier = DispatchSemaphore(value: 0)
-            let main = Background { barrier.wait(); return interrupt.finishMain(.result("x")) }
-            let handler = Background { barrier.wait(); return interrupt.handle(signal: SIGTERM) }
+            let main = Background {
+                barrier.wait()
+                return interrupt.finishMain(.result("x"))
+            }
+            let handler = Background {
+                barrier.wait()
+                return interrupt.handle(signal: SIGTERM)
+            }
             barrier.signal()
             barrier.signal()
             guard let outcome = main.wait(), let handlerResult = handler.wait() else {
@@ -320,8 +364,12 @@ struct InterruptTests {
             let owners = (outcome.exitCode != nil ? 1 : 0) + (handlerCode != nil ? 1 : 0)
             if capture.writes.count != 1 { failures.append("\(i): \(capture.writes.count) writes") }
             if owners != 1 { failures.append("\(i): \(owners) exit owners") }
-            if outcome.exitCode != nil && handlerCode != nil { failures.append("\(i): main exit and handler code") }
-            if outcome.isYield && handlerCode != 143 { failures.append("\(i): yield without a handler exit") }
+            if outcome.exitCode != nil && handlerCode != nil {
+                failures.append("\(i): main exit and handler code")
+            }
+            if outcome.isYield && handlerCode != 143 {
+                failures.append("\(i): yield without a handler exit")
+            }
         }
         #expect(failures.isEmpty, "\(failures.prefix(5))")
         // Each Background.wait already fails an iteration that hangs (10 s). This bound only catches an emit that
@@ -331,14 +379,19 @@ struct InterruptTests {
 
     @Test("all stdout goes through the gate: no print( in Sources/sideload")
     func noPrintInCLITarget() throws {
-        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/sideload")
-        let files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "swift" }
+        let files = try FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil
+        )
+        .filter { $0.pathExtension == "swift" }
         #expect(!files.isEmpty)
         for file in files {
             let text = try String(contentsOf: file, encoding: .utf8)
-            #expect(!text.contains("print("), "\(file.lastPathComponent) calls print(; write through Interrupt")
+            #expect(
+                !text.contains("print("),
+                "\(file.lastPathComponent) calls print(; write through Interrupt")
         }
     }
 }
@@ -350,9 +403,11 @@ struct BinarySignalTests {
         var candidates: [URL] = []
         // The test bundle sits next to the executable in the products directory.
         for bundle in Bundle.allBundles where bundle.bundleURL.pathExtension == "xctest" {
-            candidates.append(bundle.bundleURL.deletingLastPathComponent().appendingPathComponent("sideload"))
+            candidates.append(
+                bundle.bundleURL.deletingLastPathComponent().appendingPathComponent("sideload"))
         }
-        let root = URL(fileURLWithPath: file).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let root = URL(fileURLWithPath: file).deletingLastPathComponent()
+            .deletingLastPathComponent().deletingLastPathComponent()
         candidates.append(root.appendingPathComponent(".build/debug/sideload"))
         return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
@@ -366,7 +421,10 @@ struct BinarySignalTests {
         let chunk = [UInt8](repeating: 0x20, count: 4096)
         while write(fds[1], chunk, chunk.count) > 0 {}
         _ = fcntl(fds[1], F_SETFL, flags)
-        return (FileHandle(fileDescriptor: fds[0], closeOnDealloc: true), FileHandle(fileDescriptor: fds[1], closeOnDealloc: true))
+        return (
+            FileHandle(fileDescriptor: fds[0], closeOnDealloc: true),
+            FileHandle(fileDescriptor: fds[1], closeOnDealloc: true)
+        )
     }
 
     /// True once the readiness marker holds its full line.
@@ -377,12 +435,16 @@ struct BinarySignalTests {
     /// For expectation messages: how the process ended (only meaningful once it has exited).
     private static func termination(_ process: Process) -> String {
         guard !process.isRunning else { return " (still running)" }
-        return " (terminationReason \(process.terminationReason == .exit ? "exit" : "uncaughtSignal"), terminationStatus \(process.terminationStatus))"
+        return
+            " (terminationReason \(process.terminationReason == .exit ? "exit" : "uncaughtSignal"), terminationStatus \(process.terminationStatus))"
     }
 
-    @Test("SIGTERM ends the process even when stdout is a full pipe nobody reads (main blocked in its write)")
+    @Test(
+        "SIGTERM ends the process even when stdout is a full pipe nobody reads (main blocked in its write)"
+    )
     func blockedStdoutMainWrite() async throws {
-        let binary = try #require(Self.binaryURL(), "build the sideload executable first (swift build)")
+        let binary = try #require(
+            Self.binaryURL(), "build the sideload executable first (swift build)")
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let ready = dir.appendingPathComponent("ready").path
@@ -399,7 +461,8 @@ struct BinarySignalTests {
         try process.run()
         guard await eventually(timeout: .seconds(10), { Self.isReady(ready) }) else {
             process.terminate()
-            Issue.record("sideload never reported its signal handlers installed\(Self.termination(process))")
+            Issue.record(
+                "sideload never reported its signal handlers installed\(Self.termination(process))")
             return
         }
         try await Task.sleep(for: .milliseconds(200))  // main reaches its blocked result write right after the marker
@@ -416,9 +479,12 @@ struct BinarySignalTests {
         withExtendedLifetime(pipe.reader) {}
     }
 
-    @Test("SIGTERM kills the child tree and ends the process when the handler's own write would block")
+    @Test(
+        "SIGTERM kills the child tree and ends the process when the handler's own write would block"
+    )
     func blockedStdoutHandlerWrite() async throws {
-        let binary = try #require(Self.binaryURL(), "build the sideload executable first (swift build)")
+        let binary = try #require(
+            Self.binaryURL(), "build the sideload executable first (swift build)")
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let marker = dir.appendingPathComponent("pids").path
@@ -455,10 +521,12 @@ struct BinarySignalTests {
         withExtendedLifetime(pipe.reader) {}
     }
 
-    @Test("SIGINT/SIGTERM/SIGHUP: one INTERRUPTED object, exit 128+signo, child tree dead",
+    @Test(
+        "SIGINT/SIGTERM/SIGHUP: one INTERRUPTED object, exit 128+signo, child tree dead",
         arguments: signalCases)
     func interrupted(signal sig: Int32, expectedExit: Int32) async throws {
-        let binary = try #require(Self.binaryURL(), "build the sideload executable first (swift build)")
+        let binary = try #require(
+            Self.binaryURL(), "build the sideload executable first (swift build)")
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let marker = dir.appendingPathComponent("pids").path
@@ -480,7 +548,9 @@ struct BinarySignalTests {
         func pids() -> [Int32] {
             let text = (try? String(contentsOfFile: marker, encoding: .utf8)) ?? ""
             guard text.hasSuffix("\n") else { return [] }
-            return text.split(separator: " ").compactMap { Int32($0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+            return text.split(separator: " ").compactMap {
+                Int32($0.trimmingCharacters(in: .whitespacesAndNewlines))
+            }
         }
         guard await eventually(timeout: .seconds(15), { pids().count == 2 }) else {
             process.terminate()
@@ -499,20 +569,26 @@ struct BinarySignalTests {
 
         #expect(process.terminationReason == .exit, "\(Self.termination(process))")
         #expect(process.terminationStatus == expectedExit, "\(Self.termination(process))")
-        let output = String(decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let output = String(
+            decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         let lines = output.split(separator: "\n")
         #expect(lines.count == 1)
         #expect(output.hasSuffix("\n"))
         let obj = try decode(String(try #require(lines.first)))
         #expect(errorCode(obj) == "INTERRUPTED")
         for pid in tree {
-            #expect(await eventually(timeout: .seconds(5)) { !isAlive(pid) }, "pid \(pid) survived \(sig)")
+            #expect(
+                await eventually(timeout: .seconds(5)) { !isAlive(pid) },
+                "pid \(pid) survived \(sig)")
         }
     }
 
-    @Test("SIGINT while a renewal report is registered: the real handler prints it in the one INTERRUPTED object")
+    @Test(
+        "SIGINT while a renewal report is registered: the real handler prints it in the one INTERRUPTED object"
+    )
     func renewReportOnSignal() async throws {
-        let binary = try #require(Self.binaryURL(), "build the sideload executable first (swift build)")
+        let binary = try #require(
+            Self.binaryURL(), "build the sideload executable first (swift build)")
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let marker = dir.appendingPathComponent("pids").path
@@ -528,7 +604,11 @@ struct BinarySignalTests {
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
         try process.run()
-        guard await eventually(timeout: .seconds(15), { ((try? String(contentsOfFile: marker, encoding: .utf8)) ?? "").hasSuffix("\n") }) else {
+        guard
+            await eventually(
+                timeout: .seconds(15),
+                { ((try? String(contentsOfFile: marker, encoding: .utf8)) ?? "").hasSuffix("\n") })
+        else {
             process.terminate()
             Issue.record("child tree never started")
             return
@@ -540,37 +620,54 @@ struct BinarySignalTests {
             return
         }
         #expect(process.terminationStatus == 130, "\(Self.termination(process))")
-        let output = String(decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let output = String(
+            decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         #expect(output.split(separator: "\n").count == 1)
         let obj = try decode(output)
-        guard case .object(let o) = obj, case .array(let errors)? = o["errors"], case .object(let e)? = errors.first,
+        guard case .object(let o) = obj, case .array(let errors)? = o["errors"],
+            case .object(let e)? = errors.first,
             case .string(let message)? = e["message"]
         else {
             Issue.record("shape")
             return
         }
         #expect(errorCode(obj) == "INTERRUPTED")
-        #expect(message == "Interrupted by SIGINT after provision --renew moved 2 cached profiles into tmp/.")
+        #expect(
+            message
+                == "Interrupted by SIGINT after provision --renew moved 2 cached profiles into tmp/."
+        )
         #expect(o["cachedProfilesMoved"] == .number(2))
         #expect(o["app"] == .string("stremio-ios"))
-        for key in ["cachedProfilesSkipped", "cachedProfilesMovedTo", "cachedProfilesStrayInTmp", "renewScanTruncated"] {
+        for key in [
+            "cachedProfilesSkipped", "cachedProfilesMovedTo", "cachedProfilesStrayInTmp",
+            "renewScanTruncated",
+        ] {
             #expect(o[key] != nil, "\(key)")
         }
-        if let tree = (try? String(contentsOfFile: marker, encoding: .utf8))?.split(whereSeparator: \.isWhitespace).compactMap({ Int32($0) }) {
-            for pid in tree { #expect(await eventually(timeout: .seconds(5)) { !isAlive(pid) }, "pid \(pid) survived") }
+        if let tree = (try? String(contentsOfFile: marker, encoding: .utf8))?.split(
+            whereSeparator: \.isWhitespace
+        ).compactMap({ Int32($0) }) {
+            for pid in tree {
+                #expect(
+                    await eventually(timeout: .seconds(5)) { !isAlive(pid) }, "pid \(pid) survived")
+            }
         }
     }
 
-    @Test("SIGINT during a provision run without --renew: provision's own registration puts the ledger's leftovers in the object")
+    @Test(
+        "SIGINT during a provision run without --renew: provision's own registration puts the ledger's leftovers in the object"
+    )
     func provisionLeftoversOnSignal() async throws {
-        let binary = try #require(Self.binaryURL(), "build the sideload executable first (swift build)")
+        let binary = try #require(
+            Self.binaryURL(), "build the sideload executable first (swift build)")
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let home = dir.appendingPathComponent("home").path
         try FileManager.default.createDirectory(atPath: home, withIntermediateDirectories: true)
         let ledger = Ledger(freeRenewMoves: [
             LedgerFreeRenewMove(
-                from: "old.mobileprovision", to: "tmp/renewed-profile-0123456789ab.mobileprovision", at: testNow, state: .done,
+                from: "old.mobileprovision", to: "tmp/renewed-profile-0123456789ab.mobileprovision",
+                at: testNow, state: .done,
                 folder: "mobiledevice")
         ])
         try LedgerStore.encode(ledger).write(to: URL(fileURLWithPath: home + "/ledger.json"))
@@ -588,7 +685,11 @@ struct BinarySignalTests {
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
         try process.run()
-        guard await eventually(timeout: .seconds(15), { ((try? String(contentsOfFile: marker, encoding: .utf8)) ?? "").hasSuffix("\n") }) else {
+        guard
+            await eventually(
+                timeout: .seconds(15),
+                { ((try? String(contentsOfFile: marker, encoding: .utf8)) ?? "").hasSuffix("\n") })
+        else {
             process.terminate()
             Issue.record("child tree never started")
             return
@@ -600,9 +701,12 @@ struct BinarySignalTests {
             return
         }
         #expect(process.terminationStatus == 130, "\(Self.termination(process))")
-        let output = String(decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        let output = String(
+            decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
         let obj = try decode(output)
-        guard case .object(let o) = obj, case .array(let listed)? = o["cachedProfilesFromEarlierRun"] else {
+        guard case .object(let o) = obj,
+            case .array(let listed)? = o["cachedProfilesFromEarlierRun"]
+        else {
             Issue.record("no cachedProfilesFromEarlierRun in \(output)")
             return
         }
@@ -614,10 +718,12 @@ struct BinarySignalTests {
         #expect(!output.contains(home))
     }
 
-    @Test("a signal removes a registered inspect scratch folder (unreadable directories included) before the process exits",
+    @Test(
+        "a signal removes a registered inspect scratch folder (unreadable directories included) before the process exits",
         arguments: signalCases)
     func scratchRemovedOnSignal(signal sig: Int32, expectedExit: Int32) async throws {
-        let binary = try #require(Self.binaryURL(), "build the sideload executable first (swift build)")
+        let binary = try #require(
+            Self.binaryURL(), "build the sideload executable first (swift build)")
         let dir = try makeTempDir()
         defer { _ = ScratchDirectory.removeTree(dir.path) }
         let marker = dir.appendingPathComponent("pids").path
@@ -633,7 +739,11 @@ struct BinarySignalTests {
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
         try process.run()
-        guard await eventually(timeout: .seconds(15), { ((try? String(contentsOfFile: marker, encoding: .utf8)) ?? "").hasSuffix("\n") }) else {
+        guard
+            await eventually(
+                timeout: .seconds(15),
+                { ((try? String(contentsOfFile: marker, encoding: .utf8)) ?? "").hasSuffix("\n") })
+        else {
             process.terminate()
             Issue.record("child tree never started")
             return
@@ -641,15 +751,20 @@ struct BinarySignalTests {
         // The hook made the folder itself (with an unreadable directory inside) and wrote its path here.
         let scratch = try String(contentsOfFile: marker + ".scratch", encoding: .utf8)
         defer { _ = ScratchDirectory.removeTree(scratch) }
-        #expect(scratch.contains("/sideload-hook-") && FileManager.default.fileExists(atPath: scratch))
+        #expect(
+            scratch.contains("/sideload-hook-") && FileManager.default.fileExists(atPath: scratch))
         kill(process.processIdentifier, sig)
         let exited = await eventually(timeout: .seconds(10)) { !process.isRunning }
         if !exited { kill(process.processIdentifier, SIGKILL) }
         #expect(exited, "sideload did not exit after the signal\(Self.termination(process))")
         #expect(process.terminationReason == .exit, "\(Self.termination(process))")
         #expect(process.terminationStatus == expectedExit, "\(Self.termination(process))")
-        #expect(!FileManager.default.fileExists(atPath: scratch), "the scratch folder must be gone when the process has exited")
-        let lines = String(decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self).split(separator: "\n")
+        #expect(
+            !FileManager.default.fileExists(atPath: scratch),
+            "the scratch folder must be gone when the process has exited")
+        let lines = String(
+            decoding: stdout.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self
+        ).split(separator: "\n")
         #expect(lines.count == 1)
         #expect(errorCode(try decode(String(try #require(lines.first)))) == "INTERRUPTED")
     }

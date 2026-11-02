@@ -10,9 +10,12 @@ private func signed(
     _ device: String, _ app: String, days: Double, uuid: String = "UUID-1"
 ) -> LedgerFreeSigned {
     LedgerFreeSigned(
-        id: "\(device)/\(app)", device: device, app: app, bundleId: "io.github.dividedby.free.\(app)", version: "1.0",
-        sha256Prefix: "0a1b2c3d", profileUuid: uuid, profileExpires: daysFromNow(days), certFp8: "12345678",
-        signedAt: testNow, path: "builds/signed/\(app)/\(device)/X.app", strippedExtensions: [], droppedEntitlements: [])
+        id: "\(device)/\(app)", device: device, app: app,
+        bundleId: "io.github.dividedby.free.\(app)", version: "1.0",
+        sha256Prefix: "0a1b2c3d", profileUuid: uuid, profileExpires: daysFromNow(days),
+        certFp8: "12345678",
+        signedAt: testNow, path: "builds/signed/\(app)/\(device)/X.app", strippedExtensions: [],
+        droppedEntitlements: [])
 }
 
 private func config(
@@ -22,23 +25,28 @@ private func config(
 }
 
 private func listed(
-    _ seed: String = "1", link: String = "disconnected", transport: DeviceTransport = .network, paired: Bool = true,
+    _ seed: String = "1", link: String = "disconnected", transport: DeviceTransport = .network,
+    paired: Bool = true,
     lastSeen: Date? = nil
 ) -> ListedDevice {
     menuListed(seed, link: link, transport: transport, paired: paired, lastSeen: lastSeen)
 }
 
 private func build(
-    config: Config = config(), ledger: Ledger = Ledger(), canary: String? = nil, probe: DeviceProbe = .listed([listed()]),
+    config: Config = config(), ledger: Ledger = Ledger(), canary: String? = nil,
+    probe: DeviceProbe = .listed([listed()]),
     autoRefreshAvailable: Bool = false, ledgerReadable: Bool = true
 ) -> MenuSnapshot {
     menuBuild(
-        config: config, ledger: ledger, canary: canary, probe: probe, autoRefreshAvailable: autoRefreshAvailable,
+        config: config, ledger: ledger, canary: canary, probe: probe,
+        autoRefreshAvailable: autoRefreshAvailable,
         ledgerReadable: ledgerReadable)
 }
 
 /// The ledger after `install` put these apps on devices (an `installs[]` record and a present slot each).
-private func installed(_ apps: (device: String, app: String, days: Double)...) -> Ledger { menuLedger(apps) }
+private func installed(_ apps: (device: String, app: String, days: Double)...) -> Ledger {
+    menuLedger(apps)
+}
 
 @Suite("menu: free install expiry")
 struct FreeInstallExpiryTests {
@@ -62,9 +70,13 @@ struct FreeInstallExpiryTests {
         #expect(level(-2) == .expired)
     }
 
-    @Test("bar fraction is time left over 7 days, clamped; green when good, orange when due, red when expired")
+    @Test(
+        "bar fraction is time left over 7 days, clamped; green when good, orange when due, red when expired"
+    )
     func barAndColour() {
-        let f = { (days: Double) in FreeInstallExpiry.barFraction(expires: daysFromNow(days), now: testNow) }
+        let f = { (days: Double) in
+            FreeInstallExpiry.barFraction(expires: daysFromNow(days), now: testNow)
+        }
         #expect(abs(f(6) - 6.0 / 7.0) < 1e-9)
         #expect(f(7) == 1)
         #expect(f(30) == 1)
@@ -80,7 +92,9 @@ struct FreeInstallExpiryTests {
 
     @Test("labels: days rounded up, due marker at 3 d or fewer, hours at a day or less, expired")
     func labels() {
-        let label = { (days: Double) in FreeInstallExpiry.label(expires: daysFromNow(days), now: testNow) }
+        let label = { (days: Double) in
+            FreeInstallExpiry.label(expires: daysFromNow(days), now: testNow)
+        }
         #expect(label(7) == "7 d")
         #expect(label(6.2) == "7 d")  // rounded up: fresh profiles read 7 d until they are renewable
         #expect(label(6.0) == "6 d")
@@ -100,7 +114,8 @@ struct FreeInstallExpiryTests {
 struct MenuSnapshotTests {
     @Test("an app is on the card when installs[] has it; rows carry days, bar and tone")
     func installShows() {
-        let snapshot = build(ledger: installed(("iphone", "apollo", 6.5), ("iphone", "stremio-ios", 2.2)))
+        let snapshot = build(
+            ledger: installed(("iphone", "apollo", 6.5), ("iphone", "stremio-ios", 2.2)))
         let card = snapshot.devices[0]
         #expect(snapshot.showsApps)
         #expect(card.apps.map(\.name) == ["Apollo", "Stremio"])
@@ -109,7 +124,9 @@ struct MenuSnapshotTests {
         #expect(card.apps[1].daysLabel == "3 d · due")
         #expect(card.apps[1].barTone == .due)
         #expect(card.apps[1].textTone == .due)
-        #expect(card.apps.allSatisfy { $0.presence == .unconfirmed && $0.showsBar && $0.failure == nil })
+        #expect(
+            card.apps.allSatisfy { $0.presence == .unconfirmed && $0.showsBar && $0.failure == nil }
+        )
     }
 
     @Test("a signed app alone is not an install: without a live read it has no row")
@@ -120,7 +137,9 @@ struct MenuSnapshotTests {
         #expect(snapshot.strip.freeInUse)
     }
 
-    @Test("the Apps section is hidden until a device is saved: a saved device with no apps needs its Add app… menu")
+    @Test(
+        "the Apps section is hidden until a device is saved: a saved device with no apps needs its Add app… menu"
+    )
     func hiddenWhenEmpty() {
         let snapshot = build()
         #expect(snapshot.showsApps && snapshot.devices[0].apps.isEmpty)
@@ -128,22 +147,32 @@ struct MenuSnapshotTests {
         #expect(!menuBuild(config: Config(devices: [:])).showsApps)
     }
 
-    @Test("a hand-installed app: a stored profile with the same UUID is used; a newer one that is not installed does not move the date")
+    @Test(
+        "a hand-installed app: a stored profile with the same UUID is used; a newer one that is not installed does not move the date"
+    )
     func profileRecordMatching() {
         let entry = signed("iphone", "apollo", days: 2, uuid: "A")
         func profile(_ uuid: String, days: Double) -> LedgerFreeProfile {
             LedgerFreeProfile(
-                id: "iphone/apollo", device: "iphone", deviceTail: "…0001", app: "apollo", bundleId: entry.bundleId,
-                profileUuid: uuid, created: nil, expires: daysFromNow(days), certFp8: "12345678", file: "x")
+                id: "iphone/apollo", device: "iphone", deviceTail: "…0001", app: "apollo",
+                bundleId: entry.bundleId,
+                profileUuid: uuid, created: nil, expires: daysFromNow(days), certFp8: "12345678",
+                file: "x")
         }
-        let apps = ["iphone": DeviceAppsProbe.read(menuSnapshot([entry.bundleId]), takenAt: testNow)]
-        let newer = menuBuild(ledger: Ledger(freeProfiles: [profile("B", days: 7)], freeSigned: [entry]), apps: apps)
+        let apps = [
+            "iphone": DeviceAppsProbe.read(menuSnapshot([entry.bundleId]), takenAt: testNow)
+        ]
+        let newer = menuBuild(
+            ledger: Ledger(freeProfiles: [profile("B", days: 7)], freeSigned: [entry]), apps: apps)
         #expect(newer.devices[0].apps[0].daysLeft == 2)
-        let same = menuBuild(ledger: Ledger(freeProfiles: [profile("A", days: 3)], freeSigned: [entry]), apps: apps)
+        let same = menuBuild(
+            ledger: Ledger(freeProfiles: [profile("A", days: 3)], freeSigned: [entry]), apps: apps)
         #expect(same.devices[0].apps[0].daysLeft == 3)
     }
 
-    @Test("an installs[] record's date is not moved by a newer freeSigned build that is not installed")
+    @Test(
+        "an installs[] record's date is not moved by a newer freeSigned build that is not installed"
+    )
     func installsDateWins() {
         var ledger = installed(("iphone", "apollo", 2))
         ledger.freeSigned = [signed("iphone", "apollo", days: 7)]
@@ -152,15 +181,20 @@ struct MenuSnapshotTests {
         #expect(abs(snapshot.icon.fraction - 2.0 / 7.0) < 1e-9)
     }
 
-    @Test("slot counting: 3 minus installed apps minus reserved, never below zero; labels read N free slot(s)")
+    @Test(
+        "slot counting: 3 minus installed apps minus reserved, never below zero; labels read N free slot(s)"
+    )
     func slots() {
-        let two = Ledger(freeSigned: [signed("iphone", "apollo", days: 5), signed("iphone", "stremio-ios", days: 5)])
+        let two = Ledger(freeSigned: [
+            signed("iphone", "apollo", days: 5), signed("iphone", "stremio-ios", days: 5),
+        ])
         #expect(build(ledger: two).devices[0].freeSlots == 1)
         #expect(build(ledger: two).devices[0].slotsLabel == "1 free slot")
         let reserved = build(config: config(reserved: ["iphone": 1]), ledger: two).devices[0]
         #expect(reserved.freeSlots == 0)
         #expect(reserved.slotsLabel == "no free slots")
-        #expect(build(config: config(reserved: ["iphone": 1])).devices[0].slotsLabel == "2 free slots")
+        #expect(
+            build(config: config(reserved: ["iphone": 1])).devices[0].slotsLabel == "2 free slots")
         #expect(build().devices[0].freeSlots == 3)
         // An unreadable ledger shows no slot free.
         let unread = build(ledgerReadable: false).devices[0]
@@ -173,7 +207,9 @@ struct MenuSnapshotTests {
         }
     }
 
-    @Test("a pending or lent slot is used, never free, whatever freeSigned says (the menu reads the slot records)")
+    @Test(
+        "a pending or lent slot is used, never free, whatever freeSigned says (the menu reads the slot records)"
+    )
     func pendingAndLentSlotsAreUsed() {
         func op(_ kind: LedgerSlotKind, by: LedgerSlotBy) -> LedgerSlotOp {
             LedgerSlotOp(kind: kind, by: by, startedAt: testNow, window: SlotRule.window(kind))
@@ -185,30 +221,47 @@ struct MenuSnapshotTests {
         }
         // apollo is signed and not yet recorded as a slot: 2 free. The lent app was uninstalled, so freeSigned still lists
         // nothing for it; the record alone makes it used.
-        let lent = LedgerSlot(device: "iphone", app: "stremio-ios", presence: .absent, lentTo: "lab", since: testNow)
+        let lent = LedgerSlot(
+            device: "iphone", app: "stremio-ios", presence: .absent, lentTo: "lab", since: testNow)
         #expect(build(ledger: ledger([lent])).devices[0].freeSlots == 1, "lent counts as used")
         let returning = LedgerSlot(
-            device: "iphone", app: "stremio-ios", presence: .absent, lentTo: "lab", since: testNow, op: op(.install, by: .giveBack))
-        #expect(build(ledger: ledger([returning])).devices[0].freeSlots == 1, "pending counts as used")
-        let installing = LedgerSlot(device: "iphone", app: "stremio-ios", presence: .absent, op: op(.install, by: .install))
-        #expect(build(ledger: ledger([installing])).devices[0].freeSlots == 1, "a pending plain install counts as used")
+            device: "iphone", app: "stremio-ios", presence: .absent, lentTo: "lab", since: testNow,
+            op: op(.install, by: .giveBack))
+        #expect(
+            build(ledger: ledger([returning])).devices[0].freeSlots == 1, "pending counts as used")
+        let installing = LedgerSlot(
+            device: "iphone", app: "stremio-ios", presence: .absent, op: op(.install, by: .install))
+        #expect(
+            build(ledger: ledger([installing])).devices[0].freeSlots == 1,
+            "a pending plain install counts as used")
         // The same app in freeSigned and in a slot is counted by the stricter of the two, not twice.
-        let both = Ledger(freeSigned: [signed("iphone", "apollo", days: 5)], slots: [
-            LedgerSlot(device: "iphone", app: "apollo", presence: .present)
-        ])
+        let both = Ledger(
+            freeSigned: [signed("iphone", "apollo", days: 5)],
+            slots: [
+                LedgerSlot(device: "iphone", app: "apollo", presence: .present)
+            ])
         #expect(build(ledger: both).devices[0].freeSlots == 2)
         // An unused record is not a slot.
-        #expect(build(ledger: ledger([LedgerSlot(device: "iphone", app: "stremio-ios", presence: .absent)])).devices[0].freeSlots == 2)
+        #expect(
+            build(
+                ledger: ledger([LedgerSlot(device: "iphone", app: "stremio-ios", presence: .absent)]
+                )
+            ).devices[0].freeSlots == 2)
         // The legacy shape (no slots key yet) is migrated in memory, so an older ledger reads the same.
         let legacy = Ledger(
             freeSigned: [signed("iphone", "apollo", days: 5)],
-            lent: [LedgerLent(app: "stremio-ios", device: "iphone", to: "lab", since: testNow, state: "lending", opAt: testNow)])
+            lent: [
+                LedgerLent(
+                    app: "stremio-ios", device: "iphone", to: "lab", since: testNow,
+                    state: "lending", opAt: testNow)
+            ])
         #expect(build(ledger: legacy).devices[0].freeSlots == 1)
     }
 
     @Test("reserved slots are grey rows, never in the Renew menu")
     func reservedRows() {
-        let one = build(config: config(reserved: ["iphone": 1]), ledger: installed(("iphone", "apollo", 5)))
+        let one = build(
+            config: config(reserved: ["iphone": 1]), ledger: installed(("iphone", "apollo", 5)))
         #expect(one.devices[0].reservedSlots == ["Reserved slot"])
         #expect(one.devices[0].renew.items.map(\.title) == ["All apps", "Apollo"])
         let two = build(config: config(reserved: ["iphone": 2]))
@@ -217,13 +270,18 @@ struct MenuSnapshotTests {
 
     @Test("the Renew items carry the app key; All apps shows the count and has none")
     func renewItems() {
-        let card = build(ledger: installed(("iphone", "apollo", 5), ("iphone", "stremio-ios", 1))).devices[0]
-        #expect(card.renew.items.first == MenuRenewMenu.Item(title: "All apps", detail: "(2)", due: false, app: nil))
+        let card = build(ledger: installed(("iphone", "apollo", 5), ("iphone", "stremio-ios", 1)))
+            .devices[0]
+        #expect(
+            card.renew.items.first
+                == MenuRenewMenu.Item(title: "All apps", detail: "(2)", due: false, app: nil))
         #expect(card.renew.items.map(\.app) == [nil, "apollo", "stremio-ios"])
         #expect(card.renew.items.last?.due == true)
     }
 
-    @Test("a visible device shows its transport and a filled dot; with auto-renew not available there is no auto-renew text at all")
+    @Test(
+        "a visible device shows its transport and a filled dot; with auto-renew not available there is no auto-renew text at all"
+    )
     func visibleDevice() {
         let ledger = installed(("iphone", "apollo", 5))
         let wifi = build(ledger: ledger, probe: .listed([listed(transport: .network)])).devices[0]
@@ -235,15 +293,20 @@ struct MenuSnapshotTests {
         #expect(usb.connectionLabel == "USB")
     }
 
-    @Test("with refresh available, Auto-renew off is the only per-row exception, for a device not opted in")
+    @Test(
+        "with refresh available, Auto-renew off is the only per-row exception, for a device not opted in"
+    )
     func autoRenewException() {
         let ledger = installed(("iphone", "apollo", 5))
         let off = build(ledger: ledger, autoRefreshAvailable: true).devices[0]
         #expect(off.apps[0].exception == "Auto-renew off")
-        let on = build(config: config(auto: ["iphone"]), ledger: ledger, autoRefreshAvailable: true).devices[0]
+        let on = build(config: config(auto: ["iphone"]), ledger: ledger, autoRefreshAvailable: true)
+            .devices[0]
         #expect(on.apps[0].exception == nil)
         // The flag off hides it whatever the device setting.
-        #expect(build(config: config(auto: []), ledger: ledger, autoRefreshAvailable: false).devices[0].apps[0].exception == nil)
+        #expect(
+            build(config: config(auto: []), ledger: ledger, autoRefreshAvailable: false).devices[0]
+                .apps[0].exception == nil)
     }
 
     @Test("an offline device shows one line and no per-row text; the dot is hollow")
@@ -268,8 +331,13 @@ struct MenuSnapshotTests {
     @Test("with refresh available, the offline line says whether it renews when back")
     func offlineLineWithRefresh() {
         let ledger = installed(("iphone", "apollo", 4))
-        let probe = DeviceProbe.listed([listed(link: "unavailable", lastSeen: testNow.addingTimeInterval(-3 * 3_600))])
-        let opted = build(config: config(auto: ["iphone"]), ledger: ledger, probe: probe, autoRefreshAvailable: true).devices[0]
+        let probe = DeviceProbe.listed([
+            listed(link: "unavailable", lastSeen: testNow.addingTimeInterval(-3 * 3_600))
+        ])
+        let opted = build(
+            config: config(auto: ["iphone"]), ledger: ledger, probe: probe,
+            autoRefreshAvailable: true
+        ).devices[0]
         #expect(opted.offlineNote == "Seen 3 h ago · renews when back on Wi-Fi or USB")
         let notOpted = build(ledger: ledger, probe: probe, autoRefreshAvailable: true).devices[0]
         #expect(notOpted.offlineNote == "Seen 3 h ago · auto-renew off")
@@ -292,8 +360,11 @@ struct MenuSnapshotTests {
     @Test("ago formatting")
     func ago() {
         #expect(MenuFormat.ago(from: testNow.addingTimeInterval(-20), now: testNow) == "just now")
-        #expect(MenuFormat.ago(from: testNow.addingTimeInterval(-720), now: testNow) == "12 min ago")
-        #expect(MenuFormat.ago(from: testNow.addingTimeInterval(-3 * 86_400), now: testNow) == "3 d ago")
+        #expect(
+            MenuFormat.ago(from: testNow.addingTimeInterval(-720), now: testNow) == "12 min ago")
+        #expect(
+            MenuFormat.ago(from: testNow.addingTimeInterval(-3 * 86_400), now: testNow) == "3 d ago"
+        )
         #expect(MenuFormat.ago(from: testNow.addingTimeInterval(500), now: testNow) == "just now")
     }
 
@@ -363,7 +434,8 @@ struct MenuIconTests {
         if let days { ledger = menuLedger([("iphone", "apollo", days)], base: ledger) }
         return MenuSnapshotBuilder.build(
             MenuInputs(
-                now: testNow, canaryStatus: canary, config: config(), ledger: ledger, probe: .listed([listed()]),
+                now: testNow, canaryStatus: canary, config: config(), ledger: ledger,
+                probe: .listed([listed()]),
                 renewing: renewing, renewFailed: renewFailed)
         ).icon
     }
@@ -371,7 +443,8 @@ struct MenuIconTests {
     @Test("state and fraction for each band, with the boundaries from the exact remaining time")
     func bands() {
         let cases: [(Double, MenuIcon.State)] = [
-            (7, .ok), (6.5, .ok), (3.9, .ok), (3.01, .ok), (3.0, .due), (2.0, .due), (1.01, .due), (1.0, .critical),
+            (7, .ok), (6.5, .ok), (3.9, .ok), (3.01, .ok), (3.0, .due), (2.0, .due), (1.01, .due),
+            (1.0, .critical),
             (0.5, .critical), (0.001, .critical), (0, .expired), (-2, .expired),
         ]
         for (days, state) in cases {
@@ -385,10 +458,12 @@ struct MenuIconTests {
 
     @Test("the ring is the soonest app across every device")
     func soonestAcrossDevices() {
-        let ledger = installed(("iphone", "apollo", 6), ("appletv", "stremio-tvos", 2), ("iphone", "stremio-ios", 4))
+        let ledger = installed(
+            ("iphone", "apollo", 6), ("appletv", "stremio-tvos", 2), ("iphone", "stremio-ios", 4))
         let made = MenuSnapshotBuilder.build(
             MenuInputs(
-                now: testNow, canaryStatus: "blocked", config: config(devices: ["iphone", "appletv"]), ledger: ledger,
+                now: testNow, canaryStatus: "blocked",
+                config: config(devices: ["iphone", "appletv"]), ledger: ledger,
                 probe: .listed([]))
         ).icon
         #expect(made.state == .due)
@@ -409,7 +484,9 @@ struct MenuIconTests {
         #expect(icon(2, canary: "working").state == .due)
     }
 
-    @Test("with no free installs: the paid state falls back to ok or unknown; no data at all is unknown")
+    @Test(
+        "with no free installs: the paid state falls back to ok or unknown; no data at all is unknown"
+    )
     func fallbackWithoutInstalls() {
         let working = icon(nil, canary: "working")
         #expect(working.state == .ok)
@@ -422,7 +499,9 @@ struct MenuIconTests {
         #expect(none == .unknown)
     }
 
-    @Test("the ring colour under renew failed comes from the assessed level, never from the remaining time alone")
+    @Test(
+        "the ring colour under renew failed comes from the assessed level, never from the remaining time alone"
+    )
     func ringColourFromLevel() {
         // The boundary is the assessed level: 3 days is due, 3.01 is ok.
         #expect(icon(3.0, renewFailed: true).ringIsDue)
@@ -436,10 +515,14 @@ struct MenuIconTests {
         #expect(MenuIcon(state: .renewFailed, fraction: 0.3, ringIsDue: true).ringIsDue)
     }
 
-    @Test("with no free installs the paid state maps to a full ring: warn is due, critical is critical")
+    @Test(
+        "with no free installs the paid state maps to a full ring: warn is due, critical is critical"
+    )
     func paidFallbackLevels() {
         func make(_ paid: StatusState, renewFailed: Bool = false) -> MenuIcon {
-            MenuIcon.make(soonest: nil, now: testNow, paid: paid, certChanged: false, renewFailed: renewFailed)
+            MenuIcon.make(
+                soonest: nil, now: testNow, paid: paid, certChanged: false, renewFailed: renewFailed
+            )
         }
         #expect(make(.ok) == MenuIcon(state: .ok, fraction: 1))
         #expect(make(.warn) == MenuIcon(state: .due, fraction: 1, ringIsDue: true))
@@ -447,20 +530,25 @@ struct MenuIconTests {
         #expect(make(.blocked) == .unknown)
         #expect(make(.unknown) == .unknown)
         // Free installs still win over any paid state.
-        let free = MenuIcon.make(soonest: daysFromNow(6), now: testNow, paid: .critical, certChanged: false)
+        let free = MenuIcon.make(
+            soonest: daysFromNow(6), now: testNow, paid: .critical, certChanged: false)
         #expect(free.state == .ok)
         // The due colour survives a failed renewal; critical outranks it.
         #expect(make(.warn, renewFailed: true).state == .renewFailed)
         #expect(make(.warn, renewFailed: true).ringIsDue)
         #expect(make(.critical, renewFailed: true).state == .critical)
         #expect(make(.warn).accessibilityLabel == "sideload: a paid item is due")
-        #expect(make(.critical).accessibilityLabel == "sideload: a paid item is expiring or expired")
+        #expect(
+            make(.critical).accessibilityLabel == "sideload: a paid item is expiring or expired")
     }
 
-    @Test("a suspended free identity (FREE_CERT_CHANGED) is the worst state, with or without installs")
+    @Test(
+        "a suspended free identity (FREE_CERT_CHANGED) is the worst state, with or without installs"
+    )
     func certChanged() {
         let suspended = Ledger(
-            freeSuspended: LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow, addedFp8: ["aaaaaaaa"]))
+            freeSuspended: LedgerFreeSuspension(
+                code: "FREE_CERT_CHANGED", at: testNow, addedFp8: ["aaaaaaaa"]))
         #expect(icon(6, ledger: suspended).state == .certChanged)
         #expect(icon(-1, ledger: suspended).state == .certChanged)
         #expect(icon(0.5, ledger: suspended, renewFailed: true).state == .certChanged)
@@ -470,9 +558,14 @@ struct MenuIconTests {
         #expect(icon(6).state == .ok)
     }
 
-    @Test("precedence: cert changed > expired > critical > renew failed > due > renewing > ok > unknown")
+    @Test(
+        "precedence: cert changed > expired > critical > renew failed > due > renewing > ok > unknown"
+    )
     func precedence() {
-        #expect(MenuIcon.State.allCases == [.certChanged, .expired, .critical, .renewFailed, .due, .renewing, .ok, .unknown])
+        #expect(
+            MenuIcon.State.allCases == [
+                .certChanged, .expired, .critical, .renewFailed, .due, .renewing, .ok, .unknown,
+            ])
         // Flags never outrank expired or critical.
         #expect(icon(-1, renewing: true, renewFailed: true).state == .expired)
         #expect(icon(0.5, renewing: true, renewFailed: true).state == .critical)
@@ -492,7 +585,8 @@ struct MenuIconTests {
 
     @Test("renewing and renew failed are never set by the snapshot inputs by default")
     func flagsDefaultOff() {
-        let inputs = MenuInputs(now: testNow, canaryStatus: nil, config: config(), ledger: Ledger(), probe: .checking)
+        let inputs = MenuInputs(
+            now: testNow, canaryStatus: nil, config: config(), ledger: Ledger(), probe: .checking)
         #expect(!inputs.renewing)
         #expect(!inputs.renewFailed)
     }
@@ -509,10 +603,15 @@ struct MenuIconTests {
         #expect(icon(-1).accessibilityLabel == "sideload: expired")
         #expect(icon(nil).accessibilityLabel == "sideload: status unknown")
         #expect(icon(nil, canary: "working").accessibilityLabel == "sideload: all good")
-        #expect(icon(2.5, renewFailed: true).accessibilityLabel == "sideload: renewal failed, 3 days left")
+        #expect(
+            icon(2.5, renewFailed: true).accessibilityLabel
+                == "sideload: renewal failed, 3 days left")
         #expect(icon(6.5, renewing: true).accessibilityLabel == "sideload: renewing, 7 days left")
-        let suspended = Ledger(freeSuspended: LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow))
-        #expect(icon(6, ledger: suspended).accessibilityLabel == "sideload: certificate changed, renewal suspended")
+        let suspended = Ledger(
+            freeSuspended: LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow))
+        #expect(
+            icon(6, ledger: suspended).accessibilityLabel
+                == "sideload: certificate changed, renewal suspended")
     }
 }
 
@@ -521,7 +620,9 @@ struct MenuRedactionTests {
     @Test("a snapshot carries no UDID, CoreDevice ID, device name or identity name")
     func nothingIdentifying() {
         let ledger = installed(("iphone", "apollo", 2))
-        let off = build(config: config(), ledger: ledger, probe: .listed([listed(link: "unavailable", lastSeen: testNow)]))
+        let off = build(
+            config: config(), ledger: ledger,
+            probe: .listed([listed(link: "unavailable", lastSeen: testNow)]))
         let on = build(config: config(), ledger: ledger, probe: .listed([listed()]))
         for snapshot in [off, on] {
             let text = String(describing: snapshot)
@@ -574,11 +675,16 @@ struct MenuLoaderTests {
         }
     }
 
-    @Test("local load reads the config, the ledger and the last canary status; an unreadable ledger is a notice")
+    @Test(
+        "local load reads the config, the ledger and the last canary status; an unreadable ledger is a notice"
+    )
     func localLoad() async throws {
         try await withTestHome(config: iphoneConfig()) { paths, _ in
-            try Data(#"{"ts":"2026-10-19T10:00:00Z","status":"blocked"}"#.utf8 + [10]).write(to: URL(fileURLWithPath: paths.canaryLog))
-            try await LedgerStore(paths: paths).update { $0.freeSigned = [signed("iphone", "apollo", days: 5)] }
+            try Data(#"{"ts":"2026-10-19T10:00:00Z","status":"blocked"}"#.utf8 + [10]).write(
+                to: URL(fileURLWithPath: paths.canaryLog))
+            try await LedgerStore(paths: paths).update {
+                $0.freeSigned = [signed("iphone", "apollo", days: 5)]
+            }
             let (services, runner) = fakeServices(paths)
             guard case .ready(let inputs) = MenuLoader.loadLocal(services) else {
                 Issue.record("expected ready")
@@ -599,14 +705,20 @@ struct MenuLoaderTests {
         }
     }
 
-    @Test("the local load turns auto-renew wording on: Auto-renew off under an opted-out visible device's rows, and the offline line variants")
+    @Test(
+        "the local load turns auto-renew wording on: Auto-renew off under an opted-out visible device's rows, and the offline line variants"
+    )
     func autoRenewWording() async throws {
-        let apps: [(device: String, app: String, days: Double)] = [("iphone", "apollo", 5), ("iphone", "stremio-ios", 2)]
+        let apps: [(device: String, app: String, days: Double)] = [
+            ("iphone", "apollo", 5), ("iphone", "stremio-ios", 2),
+        ]
         func loaded(auto: Set<String>) async throws -> MenuInputs {
             try await withTestHome(config: config(auto: auto)) { paths, _ in
                 try await LedgerStore(paths: paths).update { $0 = menuLedger(apps) }
                 let (services, runner) = fakeServices(paths)
-                guard case .ready(let inputs) = MenuLoader.loadLocal(services) else { throw SideloadError("TEST", "expected a ready load") }
+                guard case .ready(let inputs) = MenuLoader.loadLocal(services) else {
+                    throw SideloadError("TEST", "expected a ready load")
+                }
                 #expect(runner.calls.isEmpty)
                 return inputs
             }
@@ -621,22 +733,31 @@ struct MenuLoaderTests {
         let optedOut = try await loaded(auto: [])
         #expect(optedOut.autoRefreshAvailable)
         let visible = card(optedOut, .listed([listed(link: "connected")]))
-        #expect(visible.apps.count == 2 && visible.apps.allSatisfy { $0.exception == "Auto-renew off" })
+        #expect(
+            visible.apps.count == 2 && visible.apps.allSatisfy { $0.exception == "Auto-renew off" })
         #expect(visible.offlineNote == nil)
-        #expect(card(optedOut, .listed([listed(link: "unavailable", lastSeen: seen)])).offlineNote == "Seen 3 h ago · auto-renew off")
+        #expect(
+            card(optedOut, .listed([listed(link: "unavailable", lastSeen: seen)])).offlineNote
+                == "Seen 3 h ago · auto-renew off")
         #expect(card(optedOut, .listed([])).offlineNote == "Offline · auto-renew off")
 
         let optedIn = try await loaded(auto: ["iphone"])
-        #expect(card(optedIn, .listed([listed(link: "connected")])).apps.allSatisfy { $0.exception == nil })
+        #expect(
+            card(optedIn, .listed([listed(link: "connected")])).apps.allSatisfy {
+                $0.exception == nil
+            })
         #expect(
             card(optedIn, .listed([listed(link: "unavailable", lastSeen: seen)])).offlineNote
                 == "Seen 3 h ago · renews when back on Wi-Fi or USB")
-        #expect(card(optedIn, .listed([])).offlineNote == "Offline · renews when back on Wi-Fi or USB")
+        #expect(
+            card(optedIn, .listed([])).offlineNote == "Offline · renews when back on Wi-Fi or USB")
         // An offline device says it once on the card, not under its rows.
         #expect(card(optedOut, .listed([])).apps.allSatisfy { $0.exception == nil })
     }
 
-    @Test("probing lists devices through devicectl once; no saved device means no call; a failure is .failed")
+    @Test(
+        "probing lists devices through devicectl once; no saved device means no call; a failure is .failed"
+    )
     func probe() async throws {
         try await withTestHome(config: iphoneConfig()) { paths, _ in
             var route = Route()
@@ -664,8 +785,12 @@ struct MenuLoaderTests {
 
     @Test("lastConnectionDate is parsed from devicectl output, with or without fractional seconds")
     func lastConnection() {
-        #expect(DeviceList.parseDate("2026-10-19T09:00:00.000Z") == Date(timeIntervalSince1970: 1_792_400_400))
-        #expect(DeviceList.parseDate("2026-10-19T09:00:00Z") == Date(timeIntervalSince1970: 1_792_400_400))
+        #expect(
+            DeviceList.parseDate("2026-10-19T09:00:00.000Z")
+                == Date(timeIntervalSince1970: 1_792_400_400))
+        #expect(
+            DeviceList.parseDate("2026-10-19T09:00:00Z")
+                == Date(timeIntervalSince1970: 1_792_400_400))
         #expect(DeviceList.parseDate("yesterday") == nil)
     }
 
@@ -682,7 +807,8 @@ struct MenuLoaderTests {
             #expect(summary.rows.allSatisfy { !$0.message.contains(savedUdid("1")) })
         }
         let row: [String: JSONValue] = [
-            "id": .string("device"), "severity": .string("fail"), "message": .string("\(savedUdid("1")) gone"),
+            "id": .string("device"), "severity": .string("fail"),
+            "message": .string("\(savedUdid("1")) gone"),
             "fix": .string("Plug it in"),
         ]
         let envelope = Envelope(

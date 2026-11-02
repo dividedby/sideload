@@ -10,7 +10,7 @@ signal(SIGPIPE, SIG_IGN)
 let interrupt = Interrupt()
 let interruptSources = installInterruptHandlers(interrupt)
 #if DEBUG
-writeTestReadyMarker()
+    writeTestReadyMarker()
 #endif
 
 /// A signal won the race for stdout and the exit. Falling off the end of main.swift would `exit(0)`.
@@ -20,10 +20,10 @@ func park() -> Never {
 
 let argv = Array(CommandLine.arguments.dropFirst())
 #if DEBUG
-let hooked = await runTestSleepChild()
-let envelope = if let hooked { hooked } else { await run(argv: argv) }
+    let hooked = await runTestSleepChild()
+    let envelope = if let hooked { hooked } else { await run(argv: argv) }
 #else
-let envelope = await run(argv: argv)
+    let envelope = await run(argv: argv)
 #endif
 switch interrupt.finishMain(envelope) {
 case .exit(let code):
@@ -35,7 +35,9 @@ case .writeFailed(let error):
     // Writing the one object failed; stdout is unusable, so report on stderr. Signals park from here on,
     // so a stderr write that blocks (full pipe) must not hold the process: bound it, then _exit (exit
     // could block on the stdio lock the abandoned write holds). No O_NONBLOCK: fd 2 may be shared.
-    _ = Interrupt.bounded(timeout: .seconds(1)) { fputs("sideload: failed to write output: \(error)\n", stderr) }
+    _ = Interrupt.bounded(timeout: .seconds(1)) {
+        fputs("sideload: failed to write output: \(error)\n", stderr)
+    }
     _exit(70)
 case .yield:
     park()

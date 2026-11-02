@@ -12,7 +12,8 @@ public struct CertInfo: Sendable, Equatable {
     public var isAppleDevelopment: Bool
 
     public init(
-        ous: [String] = [], notAfter: Date? = nil, isAppleDevelopment: Bool = true, notBefore: Date? = nil
+        ous: [String] = [], notAfter: Date? = nil, isAppleDevelopment: Bool = true,
+        notBefore: Date? = nil
     ) {
         self.ous = ous
         self.notAfter = notAfter
@@ -22,7 +23,6 @@ public struct CertInfo: Sendable, Equatable {
 
     /// The first OU. Team matching and other-team labels use only this.
     public var teamOU: String? { ous.first }
-
 
     /// A deny-listed OU anywhere in the subject: a safety rule beyond the first-OU match.
     public var carriesDeniedOU: Bool { ous.contains { Team.denied.contains($0) } }
@@ -79,7 +79,8 @@ public struct FreeIdentitySnapshot: Sendable, Equatable {
 
     public func diff(to after: FreeIdentitySnapshot) -> Diff {
         Diff(
-            added: after.sha1s.subtracting(sha1s).sorted(), removed: sha1s.subtracting(after.sha1s).sorted(),
+            added: after.sha1s.subtracting(sha1s).sorted(),
+            removed: sha1s.subtracting(after.sha1s).sorted(),
             unchanged: sha1s.intersection(after.sha1s).sorted())
     }
 }
@@ -97,7 +98,8 @@ public struct KeychainCertificate: Sendable, Equatable, CustomReflectable {
     public var commonName: String?
 
     public init(
-        reference: String, info: CertInfo, isValidForCodeSigning: Bool = false, commonName: String? = nil
+        reference: String, info: CertInfo, isValidForCodeSigning: Bool = false,
+        commonName: String? = nil
     ) {
         self.reference = reference
         self.info = info
@@ -108,12 +110,17 @@ public struct KeychainCertificate: Sendable, Equatable, CustomReflectable {
     /// Dumps (`String(describing:)`, `dump`) show everything but the common name.
     public var customMirror: Mirror {
         Mirror(
-            self, children: ["reference": reference, "info": info, "isValidForCodeSigning": isValidForCodeSigning],
+            self,
+            children: [
+                "reference": reference, "info": info,
+                "isValidForCodeSigning": isValidForCodeSigning,
+            ],
             displayStyle: .struct)
     }
 
     public static func == (a: KeychainCertificate, b: KeychainCertificate) -> Bool {
-        a.reference == b.reference && a.info == b.info && a.isValidForCodeSigning == b.isValidForCodeSigning
+        a.reference == b.reference && a.info == b.info
+            && a.isValidForCodeSigning == b.isValidForCodeSigning
     }
 }
 

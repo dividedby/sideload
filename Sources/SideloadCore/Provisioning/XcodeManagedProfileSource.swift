@@ -29,22 +29,30 @@ public struct XcodeManagedProfileSource: ProfileSource {
             let names: [String]
             do {
                 names = try FileManager.default.contentsOfDirectory(atPath: dir)
-            } catch let error as NSError where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError {
+            } catch let error as NSError
+                where error.domain == NSCocoaErrorDomain && error.code == NSFileReadNoSuchFileError
+            {
                 continue
             } catch {
                 throw SideloadError(
                     "PROFILES_UNREADABLE", "A provisioning profile folder could not be listed.",
                     fix: "Check that the folder exists and is readable.")
             }
-            files += names.filter { $0.hasSuffix(".mobileprovision") }.sorted().map { dir + "/" + $0 }
+            files += names.filter { $0.hasSuffix(".mobileprovision") }.sorted().map {
+                dir + "/" + $0
+            }
         }
 
         var skipped = max(0, files.count - Self.maxFiles)
         var byUUID: [String: ProvisioningProfile] = [:]
         for path in files.prefix(Self.maxFiles) {
             let result = await runner.run(
-                CommandSpec(executable: "/usr/bin/security", args: ["cms", "-D", "-i", path], timeout: Self.toolTimeout))
-            guard result.code == 0, let profile = ProvisioningProfile.parse(result.stdout, file: path) else {
+                CommandSpec(
+                    executable: "/usr/bin/security", args: ["cms", "-D", "-i", path],
+                    timeout: Self.toolTimeout))
+            guard result.code == 0,
+                let profile = ProvisioningProfile.parse(result.stdout, file: path)
+            else {
                 skipped += 1
                 continue
             }

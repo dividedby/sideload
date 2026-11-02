@@ -37,7 +37,8 @@ public enum KeychainFailure: Error, Sendable, Equatable {
                 fix: "Run it again and choose Allow (not Always Allow) in the keychain dialog.")
         case .promptTimeout:
             return Report(
-                code: "KEYCHAIN_PROMPT_TIMEOUT", message: "The keychain dialog was not answered in time.",
+                code: "KEYCHAIN_PROMPT_TIMEOUT",
+                message: "The keychain dialog was not answered in time.",
                 fix: "Run it again and answer the keychain dialog within two minutes.")
         case .notFound:
             return Report(
@@ -45,19 +46,23 @@ public enum KeychainFailure: Error, Sendable, Equatable {
                 fix: "Check that the Apple Development identity is in the login keychain.")
         case .notPaidTeam:
             return Report(
-                code: "IDENTITY_NOT_PAID_TEAM", message: "The identity does not belong to the paid team.",
+                code: "IDENTITY_NOT_PAID_TEAM",
+                message: "The identity does not belong to the paid team.",
                 fix: "Only the paid team's identity can be exported.")
         case .wrongPassword:
             return Report(
-                code: "P12_VERIFY_FAILED", message: "The exported file did not open with the stored password.",
+                code: "P12_VERIFY_FAILED",
+                message: "The exported file did not open with the stored password.",
                 fix: "Do not use that file; run the export again.")
         case .passwordStoreFailed(let status):
             return Report(
-                code: "PASSWORD_STORE_FAILED", message: "The .p12 password could not be saved (OSStatus \(status)).",
+                code: "PASSWORD_STORE_FAILED",
+                message: "The .p12 password could not be saved (OSStatus \(status)).",
                 fix: "Check that the login keychain is unlocked; nothing was exported.")
         case .passwordUnreadable(let status):
             return Report(
-                code: "PASSWORD_UNREADABLE", message: "The saved .p12 password could not be read (OSStatus \(status)).",
+                code: "PASSWORD_UNREADABLE",
+                message: "The saved .p12 password could not be read (OSStatus \(status)).",
                 fix: "Check that the login keychain is unlocked and allow the access.")
         case .unavailable:
             return Report(
@@ -65,7 +70,8 @@ public enum KeychainFailure: Error, Sendable, Equatable {
                 fix: "Inject one (Services.live wires the Security.framework implementation).")
         case .status(let status):
             return Report(
-                code: "KEYCHAIN_READ_FAILED", message: "The keychain call failed (OSStatus \(status)).",
+                code: "KEYCHAIN_READ_FAILED",
+                message: "The keychain call failed (OSStatus \(status)).",
                 fix: "Check that the login keychain is unlocked.")
         }
     }

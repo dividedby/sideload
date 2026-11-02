@@ -40,23 +40,30 @@ let fillerId = "io.github.dividedby.free.filler"
 func freeKeychainCert() throws -> KeychainCertificate { try keychainCert(TestCerts.free) }
 
 /// A second valid free-team identity with an unrelated SHA-1.
-func otherFreeCert(_ seed: String = "AB", fp8: String? = nil, notAfter: Date? = nil) -> KeychainCertificate {
+func otherFreeCert(_ seed: String = "AB", fp8: String? = nil, notAfter: Date? = nil)
+    -> KeychainCertificate
+{
     let reference = (fp8?.uppercased() ?? "") + String(repeating: seed, count: 20)
     return KeychainCertificate(
         reference: String(reference.prefix(40)),
-        info: CertInfo(ous: [Team.free], notAfter: notAfter ?? daysFromNow(300)), isValidForCodeSigning: true,
+        info: CertInfo(ous: [Team.free], notAfter: notAfter ?? daysFromNow(300)),
+        isValidForCodeSigning: true,
         commonName: "Apple Development: Second Person (\(seed)SECOND00)")
 }
 
 /// A profile as Xcode would embed it for `bundleId`, valid unless a parameter says otherwise.
 func freeProfileXML(
-    bundleId: String = stremioId, uuid: String = "0F0F0F0F-1111-2222-3333-444444444444", team: String = Team.free,
-    applicationIdentifier: String? = nil, getTaskAllow: Any = true, devices: [String]? = nil, certs: [Data]? = nil,
+    bundleId: String = stremioId, uuid: String = "0F0F0F0F-1111-2222-3333-444444444444",
+    team: String = Team.free,
+    applicationIdentifier: String? = nil, getTaskAllow: Any = true, devices: [String]? = nil,
+    certs: [Data]? = nil,
     platform: [String] = ["iOS"], created: Date? = nil, expires: Date? = nil
 ) throws -> String {
     try profileXML(
-        uuid: uuid, team: team, applicationIdentifier: applicationIdentifier ?? Team.free + "." + bundleId,
-        getTaskAllow: getTaskAllow, devices: devices ?? [savedUdid("1")], certs: certs ?? [try certDER(TestCerts.free)],
+        uuid: uuid, team: team,
+        applicationIdentifier: applicationIdentifier ?? Team.free + "." + bundleId,
+        getTaskAllow: getTaskAllow, devices: devices ?? [savedUdid("1")],
+        certs: certs ?? [try certDER(TestCerts.free)],
         platform: platform, created: created ?? daysFromNow(0), expires: expires ?? daysFromNow(7))
 }
 
@@ -74,14 +81,18 @@ final class CacheAtBuild: Sendable {
     }
 
     func recordLedger(_ path: String) {
-        ledgerText.withLock { if $0 == nil { $0 = try? String(contentsOfFile: path, encoding: .utf8) } }
+        ledgerText.withLock {
+            if $0 == nil { $0 = try? String(contentsOfFile: path, encoding: .utf8) }
+        }
     }
 
     func record(_ dirs: [String]) {
         seen.withLock { seen in
             if seen == nil {
                 seen = dirs.flatMap { dir in
-                    ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []).map { dir + "/" + $0 }
+                    ((try? FileManager.default.contentsOfDirectory(atPath: dir)) ?? []).map {
+                        dir + "/" + $0
+                    }
                 }.sorted()
             }
         }
@@ -100,20 +111,27 @@ struct ProvisionWorld {
     let cacheAtBuild: CacheAtBuild
 
     var builds: [CommandSpec] { runner.calls.filter { $0.executable == "xcodebuild" } }
-    var securityCalls: [CommandSpec] { runner.calls.filter { $0.executable == "/usr/bin/security" } }
+    var securityCalls: [CommandSpec] {
+        runner.calls.filter { $0.executable == "/usr/bin/security" }
+    }
 
     func ledger() throws -> Ledger { try services.ledgerStore.load() }
 
     func config() throws -> Config { try store.load() }
 
-    func run(_ options: ProvisionOptions) async -> Envelope { await ProvisionCommand.run(services, options) }
+    func run(_ options: ProvisionOptions) async -> Envelope {
+        await ProvisionCommand.run(services, options)
+    }
 
     /// `--app stremio-ios --device iphone --yes`.
     func run(
-        app: String = "stremio-ios", device: String = "iphone", register: Bool = false, renew: Bool = false,
+        app: String = "stremio-ios", device: String = "iphone", register: Bool = false,
+        renew: Bool = false,
         yes: Bool = true
     ) async -> Envelope {
-        await run(ProvisionOptions(app: app, device: device, registerDevice: register, renew: renew, yes: yes))
+        await run(
+            ProvisionOptions(
+                app: app, device: device, registerDevice: register, renew: renew, yes: yes))
     }
 }
 
@@ -140,8 +158,11 @@ struct BuildScript: Sendable {
 }
 
 let twoDevices: [String: SavedDevice] = [
-    "iphone": SavedDevice(udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios", name: "Test iPhone"),
-    "appletv": SavedDevice(udid: savedUdid("2"), coreDeviceId: savedCoreId("2"), platform: "tvos", name: "Test Apple TV"),
+    "iphone": SavedDevice(
+        udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios", name: "Test iPhone"),
+    "appletv": SavedDevice(
+        udid: savedUdid("2"), coreDeviceId: savedCoreId("2"), platform: "tvos",
+        name: "Test Apple TV"),
 ]
 
 func provisionConfig(prefix: String? = carrierPrefix, extra: [String: JSONValue] = [:]) -> Config {
@@ -151,7 +172,8 @@ func provisionConfig(prefix: String? = carrierPrefix, extra: [String: JSONValue]
 /// Runs `body` against a fresh temp home with fake services. `reads` are the successive keychain reads (the
 /// first is the preflight and "before" snapshot, the second the "after" snapshot).
 func withProvisionWorld(
-    config: Config = provisionConfig(), reads: [[KeychainCertificate]?]? = nil, build: BuildScript? = nil,
+    config: Config = provisionConfig(), reads: [[KeychainCertificate]?]? = nil,
+    build: BuildScript? = nil,
     cache: [String: String] = [:], _ body: (ProvisionWorld) async throws -> Void
 ) async throws {
     let free = try freeKeychainCert()
@@ -159,9 +181,14 @@ func withProvisionWorld(
     let leaf = try script.leaf ?? certDER(TestCerts.free)
     try await withTestHome(config: config) { paths, store in
         let cacheDirs = [paths.home + "/xcode-cache-1", paths.home + "/xcode-cache-2"]
-        for dir in cacheDirs { try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true) }
+        for dir in cacheDirs {
+            try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        }
         for (relative, content) in cache {
-            try Data(content.utf8).write(to: URL(fileURLWithPath: relative.hasPrefix("/") ? relative : paths.home + "/" + relative))
+            try Data(content.utf8).write(
+                to: URL(
+                    fileURLWithPath: relative.hasPrefix("/")
+                        ? relative : paths.home + "/" + relative))
         }
         let cacheAtBuild = CacheAtBuild()
         let runner = FakeRunner { spec in
@@ -174,37 +201,61 @@ func withProvisionWorld(
                     let dd = spec.args.firstIndex(of: "-derivedDataPath").map({ spec.args[$0 + 1] })
                 else { return script.result }
                 let app = "\(dd)/Build/Products/Debug-\(script.sdk)/Carrier.app"
-                try? FileManager.default.createDirectory(atPath: app, withIntermediateDirectories: true)
+                try? FileManager.default.createDirectory(
+                    atPath: app, withIntermediateDirectories: true)
                 let embedded = app + "/embedded.mobileprovision"
-                let identifier = spec.args.first { $0.hasPrefix("PRODUCT_BUNDLE_IDENTIFIER=") }.map { String($0.dropFirst(26)) } ?? ""
-                let info: [String: Any] = ["CFBundleIdentifier": identifier, "CFBundleExecutable": "Carrier"]
-                try? PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
-                    .write(to: URL(fileURLWithPath: app + "/Info.plist"))
-                if !script.omitExecutable { try? Data("carrier executable".utf8).write(to: URL(fileURLWithPath: app + "/Carrier")) }
+                let identifier =
+                    spec.args.first { $0.hasPrefix("PRODUCT_BUNDLE_IDENTIFIER=") }.map {
+                        String($0.dropFirst(26))
+                    } ?? ""
+                let info: [String: Any] = [
+                    "CFBundleIdentifier": identifier, "CFBundleExecutable": "Carrier",
+                ]
+                try? PropertyListSerialization.data(
+                    fromPropertyList: info, format: .xml, options: 0
+                )
+                .write(to: URL(fileURLWithPath: app + "/Info.plist"))
+                if !script.omitExecutable {
+                    try? Data("carrier executable".utf8).write(
+                        to: URL(fileURLWithPath: app + "/Carrier"))
+                }
                 if let target = script.embedAsSymlinkTo {
-                    try? FileManager.default.createSymbolicLink(atPath: embedded, withDestinationPath: target)
+                    try? FileManager.default.createSymbolicLink(
+                        atPath: embedded, withDestinationPath: target)
                 } else if script.embedAsDirectory {
-                    try? FileManager.default.createDirectory(atPath: embedded, withIntermediateDirectories: true)
+                    try? FileManager.default.createDirectory(
+                        atPath: embedded, withIntermediateDirectories: true)
                 } else if let profile = script.profile {
-                    try? Data(profile.utf8).write(to: URL(fileURLWithPath: app + "/embedded.mobileprovision"))
+                    try? Data(profile.utf8).write(
+                        to: URL(fileURLWithPath: app + "/embedded.mobileprovision"))
                 }
                 return script.result
             case "/usr/bin/ditto":
-                guard script.dittoCode == 0, spec.args.count == 2 else { return RunResult(code: script.dittoCode) }
-                do { try FileManager.default.copyItem(atPath: spec.args[0], toPath: spec.args[1]) } catch { return RunResult(code: 1) }
+                guard script.dittoCode == 0, spec.args.count == 2 else {
+                    return RunResult(code: script.dittoCode)
+                }
+                do {
+                    try FileManager.default.copyItem(atPath: spec.args[0], toPath: spec.args[1])
+                } catch { return RunResult(code: 1) }
                 return RunResult()
             case "/usr/bin/codesign":
                 if spec.args.first == "-dvv" {
                     let path = (spec.args.last ?? "") + "/Info.plist"
                     let plist = (try? Data(contentsOf: URL(fileURLWithPath: path))).flatMap {
-                        try? PropertyListSerialization.propertyList(from: $0, options: [], format: nil) as? [String: Any]
+                        try? PropertyListSerialization.propertyList(
+                            from: $0, options: [], format: nil) as? [String: Any]
                     }
-                    let team = script.signedTeam.map { "TeamIdentifier=\($0)" } ?? "TeamIdentifier=not set"
-                    return RunResult(stderr: "Identifier=\(plist?["CFBundleIdentifier"] as? String ?? "")\n\(team)\n")
+                    let team =
+                        script.signedTeam.map { "TeamIdentifier=\($0)" } ?? "TeamIdentifier=not set"
+                    return RunResult(
+                        stderr:
+                            "Identifier=\(plist?["CFBundleIdentifier"] as? String ?? "")\n\(team)\n"
+                    )
                 }
                 if let flag = spec.args.first(where: { $0.hasPrefix("--extract-certificates=") }) {
                     FileManager.default.createFile(
-                        atPath: String(flag.dropFirst("--extract-certificates=".count)) + "0", contents: leaf)
+                        atPath: String(flag.dropFirst("--extract-certificates=".count)) + "0",
+                        contents: leaf)
                     return RunResult()
                 }
                 return RunResult(code: 1)  // `-d --entitlements`: unreadable, which the guard skips
@@ -214,7 +265,9 @@ func withProvisionWorld(
                 if spec.args == ["cms", "-D"], let stdin = spec.stdin {
                     return RunResult(stdout: String(decoding: stdin, as: UTF8.self))
                 }
-                guard spec.args.count == 4, let text = try? String(contentsOfFile: spec.args[3], encoding: .utf8) else {
+                guard spec.args.count == 4,
+                    let text = try? String(contentsOfFile: spec.args[3], encoding: .utf8)
+                else {
                     return RunResult(code: 1)
                 }
                 return RunResult(stdout: text)
@@ -223,7 +276,8 @@ func withProvisionWorld(
         }
         let keychain = SequencedKeychain(reads ?? [[free], [free]])
         var services = Services(
-            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow), keychain: keychain, home: paths)
+            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow),
+            keychain: keychain, home: paths)
         services.xcodeProfileDirectories = cacheDirs
         try await body(
             ProvisionWorld(

@@ -17,7 +17,10 @@ final class FakeIdentityExporter: IdentityExporter {
     /// Runs inside the call, so a test can check ordering against other fakes.
     private let onCall: (@Sendable () -> Void)?
 
-    init(_ outcome: Result<Data, KeychainFailure> = .success(Data("fake-p12".utf8)), onCall: (@Sendable () -> Void)? = nil) {
+    init(
+        _ outcome: Result<Data, KeychainFailure> = .success(Data("fake-p12".utf8)),
+        onCall: (@Sendable () -> Void)? = nil
+    ) {
         self.outcome = outcome
         self.onCall = onCall
     }
@@ -81,7 +84,9 @@ final class FakeP12Verifier: P12Verifier {
 
     func identityReferences(p12: Data, password: String) throws -> [CertReference] {
         recorded.withLock { $0 += 1 }
-        if let expectedPassword, expectedPassword != password { throw KeychainFailure.wrongPassword }
+        if let expectedPassword, expectedPassword != password {
+            throw KeychainFailure.wrongPassword
+        }
         return references
     }
 }

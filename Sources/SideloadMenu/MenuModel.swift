@@ -77,7 +77,11 @@ final class MenuModel {
             if force { pendingForce = true }
             return
         }
-        if !force, let last = lastLoadFinished, services.clock.now().timeIntervalSince(last) < Self.openDebounce { return }
+        if !force, let last = lastLoadFinished,
+            services.clock.now().timeIntervalSince(last) < Self.openDebounce
+        {
+            return
+        }
         let generation = loadGeneration
         loadTask = Task { [services] in
             let local = await Task.detached { MenuLoader.loadLocal(services) }.value
@@ -92,14 +96,19 @@ final class MenuModel {
                 apps.retain(visible)
                 // Every device still to be read says so at once, not when its turn comes; one with an earlier answer keeps
                 // showing it while it is read again.
-                let due = visible.filter { apps.needsRead($0, force: force, now: services.clock.now()) }
+                let due = visible.filter {
+                    apps.needsRead($0, force: force, now: services.clock.now())
+                }
                 for alias in due where apps.entries[alias] == nil { apps.set(alias, .checking) }
-                panel = MenuLoader.panel(lastLocal ?? local, probe: probe, apps: apps.entries, checked: checked)
+                panel = MenuLoader.panel(
+                    lastLocal ?? local, probe: probe, apps: apps.entries, checked: checked)
                 for alias in due {
-                    let read = await MenuLoader.readApps(services, alias: alias, prefix: inputs.config.bundleIdPrefix)
+                    let read = await MenuLoader.readApps(
+                        services, alias: alias, prefix: inputs.config.bundleIdPrefix)
                     guard generation == loadGeneration else { return }
                     apps.set(alias, read)
-                    panel = MenuLoader.panel(lastLocal ?? local, probe: probe, apps: apps.entries, checked: checked)
+                    panel = MenuLoader.panel(
+                        lastLocal ?? local, probe: probe, apps: apps.entries, checked: checked)
                 }
                 // A lend or return by the lab can land while the reads run: draw once more from the ledger as it is now.
                 let fresh = await Task.detached { MenuLoader.loadLocal(services) }.value
@@ -153,21 +162,25 @@ final class MenuModel {
     /// available in the current panel.
     func request(_ action: MenuAction) {
         guard actionTask == nil, let snapshot = actionSnapshot else { return }
-        guard let prompt = MenuActions.prompt(for: action, in: snapshot, now: services.clock.now()) else { return }
+        guard let prompt = MenuActions.prompt(for: action, in: snapshot, now: services.clock.now())
+        else { return }
         closePicker()
         actionState = .confirming(action, prompt)
     }
 
     /// The owner's click on the confirm button. The action is checked again against the panel as it is now.
     func confirm() {
-        guard actionTask == nil, case .confirming(let action, let shown) = actionState else { return }
+        guard actionTask == nil, case .confirming(let action, let shown) = actionState else {
+            return
+        }
         guard let snapshot = actionSnapshot else {
             actionState = .finished(.notRun("The panel is not loaded."))
             return
         }
         // Only what the owner saw may run: the confirm is worked out again from the panel as it is now.
         let prompt: MenuPrompt
-        switch MenuActions.reconfirm(action, shown: shown, in: snapshot, now: services.clock.now()) {
+        switch MenuActions.reconfirm(action, shown: shown, in: snapshot, now: services.clock.now())
+        {
         case .run(let same): prompt = same
         case .show(let changed):
             actionState = .confirming(action, changed)
@@ -192,10 +205,14 @@ final class MenuModel {
             updateTask?.cancel()
             updateTask = nil
         }
-        actionState = .running(label: prompt.runningLabel, cancellable: MenuActions.cancellable(action), cancelling: false)
+        actionState = .running(
+            label: prompt.runningLabel, cancellable: MenuActions.cancellable(action),
+            cancelling: false)
         if case .renew = action { repaint(renewing: true) }
         actionTask = Task { [services, steps] in
-            await MenuActionRunner.perform(action, renewApps: prompt.apps, services: services, steps: steps) { outcome in
+            await MenuActionRunner.perform(
+                action, renewApps: prompt.apps, services: services, steps: steps
+            ) { outcome in
                 await self.deliver(outcome)
             }
             finishAction(action)
@@ -256,7 +273,9 @@ final class MenuModel {
         request(action)
         if case .confirming = actionState { return }
         // The panel moved on while the fetch ran (a device went away, a slot was taken): say why, and read the device again.
-        actionState = .finished(.notRun(MenuActions.blockedReason(action, in: panelSnapshot, now: services.clock.now())))
+        actionState = .finished(
+            .notRun(MenuActions.blockedReason(action, in: panelSnapshot, now: services.clock.now()))
+        )
         invalidateAndReload(action)
     }
 
@@ -318,7 +337,9 @@ final class MenuModel {
     }
 
     func cancelAction() {
-        guard case .running(let label, let cancellable, false) = actionState, cancellable else { return }
+        guard case .running(let label, let cancellable, false) = actionState, cancellable else {
+            return
+        }
         actionState = .running(label: label, cancellable: cancellable, cancelling: true)
         actionTask?.cancel()
     }
@@ -363,8 +384,11 @@ final class MenuModel {
         return availability(action, in: snapshot)
     }
 
-    func offers(for row: MenuAppRow, on card: MenuDeviceCard, in snapshot: MenuSnapshot) -> [MenuOffer] {
-        MenuActions.rowOffers(row, card: card, snapshot: snapshot, now: services.clock.now()).map { offer in
+    func offers(for row: MenuAppRow, on card: MenuDeviceCard, in snapshot: MenuSnapshot)
+        -> [MenuOffer]
+    {
+        MenuActions.rowOffers(row, card: card, snapshot: snapshot, now: services.clock.now()).map {
+            offer in
             var offer = offer
             if !controlsEnabled { offer.availability = .disabled(MenuActions.controlsBusy) }
             return offer
@@ -374,7 +398,8 @@ final class MenuModel {
     private func repaint(renewing: Bool) {
         guard let local = lastLocal else { return }
         panel = MenuLoader.panel(
-            local, probe: apps.lastProbe ?? .checking, apps: apps.entries, renewing: renewing, checked: checked)
+            local, probe: apps.lastProbe ?? .checking, apps: apps.entries, renewing: renewing,
+            checked: checked)
     }
 
     func runDoctor() {

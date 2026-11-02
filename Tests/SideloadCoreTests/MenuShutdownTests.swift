@@ -21,7 +21,9 @@ struct MenuShutdownTests {
         #expect(busy == 0)
     }
 
-    @Test("an action that does not wind down is not waited on past the grace; the children are killed anyway")
+    @Test(
+        "an action that does not wind down is not waited on past the grace; the children are killed anyway"
+    )
     func graceExpires() async {
         var events: [String] = []
         await MenuShutdown.cancelWaitKill(
@@ -30,7 +32,9 @@ struct MenuShutdownTests {
         #expect(events == ["cancel", "kill"])
     }
 
-    @Test("the graces: a quit gets longer than a signal, which a service manager follows with SIGKILL")
+    @Test(
+        "the graces: a quit gets longer than a signal, which a service manager follows with SIGKILL"
+    )
     func graces() {
         #expect(MenuShutdown.quitGrace == .seconds(3) && MenuShutdown.signalGrace == .seconds(1))
     }
@@ -38,7 +42,8 @@ struct MenuShutdownTests {
     @Test("with nothing running it kills at once")
     func idle() async {
         var killed = false
-        await MenuShutdown.cancelWaitKill(grace: .seconds(5), cancel: {}, isBusy: { false }, killChildren: { killed = true })
+        await MenuShutdown.cancelWaitKill(
+            grace: .seconds(5), cancel: {}, isBusy: { false }, killChildren: { killed = true })
         #expect(killed)
     }
 

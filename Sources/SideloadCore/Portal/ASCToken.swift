@@ -17,11 +17,15 @@ public enum ASCToken {
     public static func make(_ credentials: ASCCredentials, now: Date) throws -> ASCSecret {
         let key: P256.Signing.PrivateKey
         do {
-            key = try credentials.privateKey.reveal { try P256.Signing.PrivateKey(pemRepresentation: $0) }
+            key = try credentials.privateKey.reveal {
+                try P256.Signing.PrivateKey(pemRepresentation: $0)
+            }
         } catch {
             throw SideloadError(
                 "ASC_KEY_INVALID", "The API key file is not a P-256 private key in PEM form.",
-                fix: "Download the key again from App Store Connect and replace the file in $SIDELOAD_HOME/asc/.")
+                fix:
+                    "Download the key again from App Store Connect and replace the file in $SIDELOAD_HOME/asc/."
+            )
         }
         let iat = Int(now.timeIntervalSince1970)
         let encoder = JSONEncoder()
@@ -40,14 +44,18 @@ public enum ASCToken {
         do {
             let header = base64url(try encoder.encode(Header(kid: credentials.keyId)))
             let claims = base64url(
-                try encoder.encode(Claims(iss: credentials.issuerId, iat: iat, exp: iat + lifetime, aud: audience)))
+                try encoder.encode(
+                    Claims(iss: credentials.issuerId, iat: iat, exp: iat + lifetime, aud: audience))
+            )
             let input = header + "." + claims
             let signature = try key.signature(for: Data(input.utf8))
             return ASCSecret(input + "." + base64url(signature.rawRepresentation))
         } catch {
             throw SideloadError(
                 "ASC_KEY_INVALID", "Signing the API token failed.",
-                fix: "Download the key again from App Store Connect and replace the file in $SIDELOAD_HOME/asc/.")
+                fix:
+                    "Download the key again from App Store Connect and replace the file in $SIDELOAD_HOME/asc/."
+            )
         }
     }
 }

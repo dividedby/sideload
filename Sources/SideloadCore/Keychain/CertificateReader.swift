@@ -16,8 +16,14 @@ public enum CertificateReader {
 
     public static func read(certificate: SecCertificate) -> KeychainCertificate? {
         let der = SecCertificateCopyData(certificate) as Data
-        let keys = [kSecOIDX509V1SubjectName, kSecOIDX509V1ValidityNotAfter, kSecOIDX509V1ValidityNotBefore] as CFArray
-        guard let values = SecCertificateCopyValues(certificate, keys, nil) as? [String: Any] else { return nil }
+        let keys =
+            [
+                kSecOIDX509V1SubjectName, kSecOIDX509V1ValidityNotAfter,
+                kSecOIDX509V1ValidityNotBefore,
+            ] as CFArray
+        guard let values = SecCertificateCopyValues(certificate, keys, nil) as? [String: Any] else {
+            return nil
+        }
 
         var ous: [String] = []
         var commonName: String?
@@ -41,7 +47,8 @@ public enum CertificateReader {
             switch validity[kSecPropertyKeyValue as String] {
             case let date as Date: return date
             // CFAbsoluteTime: seconds since 2001-01-01 UTC.
-            case let seconds as NSNumber: return Date(timeIntervalSinceReferenceDate: seconds.doubleValue)
+            case let seconds as NSNumber:
+                return Date(timeIntervalSinceReferenceDate: seconds.doubleValue)
             default: return nil
             }
         }
@@ -49,7 +56,8 @@ public enum CertificateReader {
         let notBefore = date(kSecOIDX509V1ValidityNotBefore)
 
         let info = CertInfo(
-            ous: ous, notAfter: notAfter, isAppleDevelopment: commonName?.hasPrefix("Apple Development") ?? false,
+            ous: ous, notAfter: notAfter,
+            isAppleDevelopment: commonName?.hasPrefix("Apple Development") ?? false,
             notBefore: notBefore)
         return KeychainCertificate(reference: sha1Hex(der), info: info, commonName: commonName)
     }

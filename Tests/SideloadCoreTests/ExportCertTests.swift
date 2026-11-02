@@ -13,7 +13,9 @@ import Testing
 private let pkcsArc: [UInt8] = [0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01]
 
 private func p12Bytes(legacy: Bool) -> Data {
-    func oid(_ tail: [UInt8]) -> [UInt8] { [0x06, UInt8(pkcsArc.count + tail.count)] + pkcsArc + tail }
+    func oid(_ tail: [UInt8]) -> [UInt8] {
+        [0x06, UInt8(pkcsArc.count + tail.count)] + pkcsArc + tail
+    }
     let body = legacy ? oid([0x0C, 0x01, 0x03]) + oid([0x0C, 0x01, 0x06]) : oid([0x05, 0x0D])
     return Data([0x30, 0x82, 0x01, 0x00] + body + [0x04, 0x01, 0x00])
 }
@@ -24,7 +26,9 @@ private let altBytes = Data("another profile".utf8)
 /// A secret store that has nothing but cannot add (the read succeeds with "no item").
 private final class AddFailingSecretStore: SecretStore {
     func readPassword() throws -> String? { nil }
-    func addPassword(_ password: String) throws { throw KeychainFailure.passwordStoreFailed(errSecInteractionNotAllowed) }
+    func addPassword(_ password: String) throws {
+        throw KeychainFailure.passwordStoreFailed(errSecInteractionNotAllowed)
+    }
 }
 
 /// A thread that calls `trip()` in a tight loop, started at most once.
@@ -37,10 +41,12 @@ private final class Racer: Sendable {
     init(_ signal: HoldSignal) { self.signal = signal }
 
     func start(firstSync: Bool, jitter: UInt32 = 0) {
-        guard started.withLock({ s in
-            defer { s = true }
-            return !s
-        }) else { return }
+        guard
+            started.withLock({ s in
+                defer { s = true }
+                return !s
+            })
+        else { return }
         if firstSync { _ = signal.trip() }
         Thread { [self] in
             usleep(jitter)
@@ -86,7 +92,9 @@ private struct Snapshot {
     func children(of dir: String) -> [String] {
         let prefix = dir.isEmpty ? "" : dir + "/"
         let all = Set(files.keys).union(directories)
-        return all.filter { $0.hasPrefix(prefix) && !$0.dropFirst(prefix.count).contains("/") && $0 != dir }.sorted()
+        return all.filter {
+            $0.hasPrefix(prefix) && !$0.dropFirst(prefix.count).contains("/") && $0 != dir
+        }.sorted()
     }
 
     var allText: [String: String] { files.mapValues { String(decoding: $0, as: UTF8.self) } }
@@ -129,8 +137,12 @@ private struct World {
     var code: String? { envelope.errors.first?.code }
     var password: String? { exporter.calls.first?.password }
 
-    func warningCodes() -> [String] { json["warnings"]?.array?.compactMap { $0["code"]?.string } ?? [] }
-    var kitDirs: [String] { snap.children(of: "exports").filter { $0.hasPrefix("exports/feather-") } }
+    func warningCodes() -> [String] {
+        json["warnings"]?.array?.compactMap { $0["code"]?.string } ?? []
+    }
+    var kitDirs: [String] {
+        snap.children(of: "exports").filter { $0.hasPrefix("exports/feather-") }
+    }
     var strayTemps: [String] { snap.children(of: "exports").filter { $0.contains(".tmp") } }
     var p12Masters: [String] { snap.children(of: "secrets/p12") }
 }
@@ -157,20 +169,25 @@ private struct Setup {
 }
 
 private func invoke(
-    _ options: ExportCertOptions = ExportCertOptions(device: "iphone", yes: true), setup: Setup = Setup()
+    _ options: ExportCertOptions = ExportCertOptions(device: "iphone", yes: true),
+    setup: Setup = Setup()
 ) async throws -> World {
     try await withTestHome(config: iphoneConfig()) { paths, _ in
         try await execute(paths, options, setup)
     }
 }
 
-private func execute(_ paths: Paths, _ options: ExportCertOptions, _ setup: Setup) async throws -> World {
+private func execute(_ paths: Paths, _ options: ExportCertOptions, _ setup: Setup) async throws
+    -> World
+{
     do {  // one scope for the scratch folder
         let scratch = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: scratch) }
         let paid = try keychainCert(TestCerts.paid)
         let recorder = Recorder()
-        if let seed = setup.seedLedger { try Data(seed.utf8).write(to: URL(fileURLWithPath: paths.ledger)) }
+        if let seed = setup.seedLedger {
+            try Data(seed.utf8).write(to: URL(fileURLWithPath: paths.ledger))
+        }
         try setup.preflight?(paths)
 
         var profiles = [paidProfile(certs: [paid.reference])]
@@ -184,14 +201,17 @@ private func execute(_ paths: Paths, _ options: ExportCertOptions, _ setup: Setu
             return p
         }
 
-        let keychain = FakeKeychain(try setup.certs.map { try keychainCert($0) }, failure: setup.keychainFailure)
+        let keychain = FakeKeychain(
+            try setup.certs.map { try keychainCert($0) }, failure: setup.keychainFailure)
         let source = FakeProfileSource(profiles)
         var onCall: (@Sendable () -> Void)?
         if let hook = setup.exporterOnCall { onCall = { hook(recorder) } }
         let exporter = FakeIdentityExporter(setup.exporterOutcome, onCall: onCall)
-        let secrets: any SecretStore = setup.secrets ?? FakeSecretStore(password: setup.existingPassword)
+        let secrets: any SecretStore =
+            setup.secrets ?? FakeSecretStore(password: setup.existingPassword)
         let verifier = FakeP12Verifier(
-            references: setup.verifierReferences ?? [CertReference(paid.reference)!], expectedPassword: setup.verifierPassword)
+            references: setup.verifierReferences ?? [CertReference(paid.reference)!],
+            expectedPassword: setup.verifierPassword)
         let backend = FakePasteboardBackend()
         var (services, runner) = fakeServices(paths, keychain: keychain)
         services.profiles = source
@@ -217,14 +237,18 @@ private func execute(_ paths: Paths, _ options: ExportCertOptions, _ setup: Setu
         let envelope = await ExportCertCommand.run(services, options, ledgerStore: ledgerStore)
         let (text, json) = try envelope.printed()
         return World(
-            envelope: envelope, text: text, json: json, snap: snapshot(paths.home), paths: paths, recorder: recorder,
-            exporter: exporter, secrets: secrets, verifier: verifier, backend: backend, keychain: keychain, source: source,
+            envelope: envelope, text: text, json: json, snap: snapshot(paths.home), paths: paths,
+            recorder: recorder,
+            exporter: exporter, secrets: secrets, verifier: verifier, backend: backend,
+            keychain: keychain, source: source,
             runner: runner, ledger: try? LedgerStore(paths: paths).load(),
             ledgerText: try? String(contentsOfFile: paths.ledger, encoding: .utf8))
     }
 }
 
-private func fp8(_ cert: String) throws -> String { LedgerSync.fp8(try keychainCert(cert).reference) }
+private func fp8(_ cert: String) throws -> String {
+    LedgerSync.fp8(try keychainCert(cert).reference)
+}
 
 @Suite("export-cert")
 struct ExportCertTests {
@@ -242,7 +266,8 @@ struct ExportCertTests {
         #expect(w.backend.snapshot.contents == nil && w.backend.snapshot.reads == 0)
         #expect((w.secrets as? FakeSecretStore)?.events == [])
         #expect(w.recorder.sleepsRequested.isEmpty && w.recorder.logged.isEmpty)
-        #expect(w.ledgerText == nil && w.p12Masters.isEmpty && w.snap.children(of: "exports").isEmpty)
+        #expect(
+            w.ledgerText == nil && w.p12Masters.isEmpty && w.snap.children(of: "exports").isEmpty)
         #expect(w.runner.calls.isEmpty)
     }
 
@@ -289,16 +314,24 @@ struct ExportCertTests {
         #expect(w.json["kit"]?["path"] == .string(kit))
 
         // exactly the three files, 0600; folders 0700
-        #expect(w.snap.children(of: kit) == ["\(kit)/README.txt", "\(kit)/sideload-dev.mobileprovision", "\(kit)/sideload-dev.p12"])
+        #expect(
+            w.snap.children(of: kit) == [
+                "\(kit)/README.txt", "\(kit)/sideload-dev.mobileprovision",
+                "\(kit)/sideload-dev.p12",
+            ])
         for file in w.snap.children(of: kit) { #expect(w.snap.modes[file] == 0o600, "\(file)") }
-        for dir in [kit, "exports", "secrets/p12", "secrets"] { #expect(w.snap.modes[dir] == 0o700, "\(dir)") }
+        for dir in [kit, "exports", "secrets/p12", "secrets"] {
+            #expect(w.snap.modes[dir] == 0o700, "\(dir)")
+        }
         #expect(w.strayTemps.isEmpty)
 
         // the original signed profile bytes, the verified p12, and the master copy
         #expect(w.snap.files["\(kit)/sideload-dev.mobileprovision"] == profileBytes)
         #expect(w.snap.files["\(kit)/sideload-dev.p12"] == p12Bytes(legacy: true))
         let master = "secrets/p12/\(id)-20261019-120000.p12"
-        #expect(w.p12Masters == [master] && w.snap.files[master] == p12Bytes(legacy: true) && w.snap.modes[master] == 0o600)
+        #expect(
+            w.p12Masters == [master] && w.snap.files[master] == p12Bytes(legacy: true)
+                && w.snap.modes[master] == 0o600)
 
         // the exporter saw only the paid reference and the stored password
         let paid = try keychainCert(TestCerts.paid)
@@ -313,25 +346,37 @@ struct ExportCertTests {
         #expect(w.json["certificate"]?["team"] == "7AGMPUPP64")
         #expect(w.json["certificate"]?["notAfter"] == "2027-10-16T22:39:42Z")
         #expect(w.json["certificate"]?["daysLeft"] == 362)
-        #expect(w.json["profile"]?["wildcard"] == true && w.json["profile"]?["deviceIncluded"] == true)
+        #expect(
+            w.json["profile"]?["wildcard"] == true && w.json["profile"]?["deviceIncluded"] == true)
         #expect(w.json["profile"]?["deviceCount"] == 1 && w.json["profile"]?["daysLeft"] == 335)
         #expect(w.json["p12"]?["encryption"] == "pkcs12-3des+pkcs12-rc2-40")
         #expect(w.json["p12"]?["file"] == .string(master))
         #expect(w.json["p12"]?["sha256Prefix"]?.string?.count == 8)
-        #expect(w.json["passwordItem"] == ["service": "io.github.dividedby.sideload", "account": "p12", "reused": false])
+        #expect(
+            w.json["passwordItem"] == [
+                "service": "io.github.dividedby.sideload", "account": "p12", "reused": false,
+            ])
         #expect(w.json["passwordCopied"] == false && w.json["clipboardCleared"] == nil)
         #expect(w.warningCodes() == ["P12_LEGACY_ENCRYPTION"])
-        #expect(w.runner.calls.isEmpty, "profiles and the keychain come from the fakes; no subprocess")
-        #expect(w.backend.snapshot.reads == 0 && w.backend.snapshot.contents == nil, "the pasteboard is untouched")
+        #expect(
+            w.runner.calls.isEmpty, "profiles and the keychain come from the fakes; no subprocess")
+        #expect(
+            w.backend.snapshot.reads == 0 && w.backend.snapshot.contents == nil,
+            "the pasteboard is untouched")
         #expect(w.recorder.sleepsRequested.isEmpty)
 
         // ledger
         let ledger = try #require(w.ledger)
         #expect(ledger.exports.count == 1)
         let export = ledger.exports[0]
-        #expect(export.id == "export-20261019-120000" && export.certFp8 == id && export.profileUuid == w.ledger?.profiles.first?.uuid)
-        #expect(export.p12File == master && export.p12Sha256Prefix == w.json["p12"]?["sha256Prefix"]?.string)
-        #expect(export.encryption == "pkcs12-3des+pkcs12-rc2-40" && export.passwordItem == "keychain")
+        #expect(
+            export.id == "export-20261019-120000" && export.certFp8 == id
+                && export.profileUuid == w.ledger?.profiles.first?.uuid)
+        #expect(
+            export.p12File == master
+                && export.p12Sha256Prefix == w.json["p12"]?["sha256Prefix"]?.string)
+        #expect(
+            export.encryption == "pkcs12-3des+pkcs12-rc2-40" && export.passwordItem == "keychain")
         #expect(export.kitPath == kit && export.verified)
         #expect(ledger.certificates.map(\.fp8) == [id] && ledger.certificates[0].present)
         #expect(ledger.profiles.count == 1 && ledger.profiles[0].present)
@@ -381,8 +426,10 @@ struct ExportCertTests {
         let kit = try #require(w.kitDirs.first)
         let readme = try #require(w.snap.allText["\(kit)/README.txt"])
         for must in [
-            "Feather", "Certificates", "sideload-dev.p12", "sideload-dev.mobileprovision", "--copy-password",
-            "io.github.dividedby.sideload", "\"p12\"", "Keychain Access", "90 seconds", "Legacy encryption", "3DES and RC2-40",
+            "Feather", "Certificates", "sideload-dev.p12", "sideload-dev.mobileprovision",
+            "--copy-password",
+            "io.github.dividedby.sideload", "\"p12\"", "Keychain Access", "90 seconds",
+            "Legacy encryption", "3DES and RC2-40",
             "expires 2027-10-16", try fp8(TestCerts.paid),
         ] {
             #expect(readme.contains(must), "README lacks \(must)")
@@ -390,7 +437,9 @@ struct ExportCertTests {
         let profileExpiry = CertCheck.isoDate(daysFromNow(335))
         #expect(readme.contains("Profile expires \(profileExpiry)"))
         let password = try #require(w.password)
-        #expect(!readme.contains(password) && !readme.contains("/Users") && !readme.contains(savedUdid("1")))
+        #expect(
+            !readme.contains(password) && !readme.contains("/Users")
+                && !readme.contains(savedUdid("1")))
         #expect(!readme.contains("Test 00000") && !readme.contains(w.paths.home))
     }
 
@@ -398,10 +447,14 @@ struct ExportCertTests {
     func explicitProfile() async throws {
         var setup = Setup()
         setup.profiles = { _, paid in
-            [paidProfile(applicationIdentifier: Team.id + ".io.example.app", certs: [paid.reference])]
+            [
+                paidProfile(
+                    applicationIdentifier: Team.id + ".io.example.app", certs: [paid.reference])
+            ]
         }
         let w = try await invoke(setup: setup)
-        #expect(w.envelope.ok && w.warningCodes() == ["P12_LEGACY_ENCRYPTION", "PROFILE_NOT_WILDCARD"])
+        #expect(
+            w.envelope.ok && w.warningCodes() == ["P12_LEGACY_ENCRYPTION", "PROFILE_NOT_WILDCARD"])
         #expect(w.json["profile"]?["wildcard"] == false)
         #expect(w.snap.allText["\(w.kitDirs[0])/README.txt"]?.contains("not a wildcard") == true)
     }
@@ -411,9 +464,15 @@ struct ExportCertTests {
         let target = "AAAAAAAA-0000-0000-0000-000000000009"
         var setup = Setup()
         setup.profiles = { existing, paid in
-            existing + [paidProfile(uuid: target, applicationIdentifier: Team.id + ".io.example.app", certs: [paid.reference])]
+            existing + [
+                paidProfile(
+                    uuid: target, applicationIdentifier: Team.id + ".io.example.app",
+                    certs: [paid.reference])
+            ]
         }
-        let w = try await invoke(ExportCertOptions(device: "iphone", profile: target.lowercased(), yes: true), setup: setup)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", profile: target.lowercased(), yes: true),
+            setup: setup)
         #expect(w.envelope.ok)
         #expect(w.snap.files["\(w.kitDirs[0])/sideload-dev.mobileprovision"] == altBytes)
         #expect(w.ledger?.exports.first?.profileUuid == target)
@@ -430,7 +489,10 @@ struct ExportCertTests {
         #expect(a.envelope.ok && a.kitDirs.isEmpty)
         #expect(a.json["kit"]?["path"]?.string == resolvePath(absent))
         #expect(a.ledger?.exports.first?.kitPath == resolvePath(absent))
-        #expect(listing(absent).sorted() == ["README.txt", "sideload-dev.mobileprovision", "sideload-dev.p12"])
+        #expect(
+            listing(absent).sorted() == [
+                "README.txt", "sideload-dev.mobileprovision", "sideload-dev.p12",
+            ])
         #expect(modeOf(absent) == 0o700 && modeOf(absent + "/sideload-dev.p12") == 0o600)
         #expect(listing(base.path) == ["kit-a"], "no temp folder left beside it")
 
@@ -461,8 +523,10 @@ struct ExportCertTests {
     func outInGit() async throws {
         let base = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: base) }
-        try FileManager.default.createDirectory(atPath: base.path + "/.git", withIntermediateDirectories: false)
-        let w = try await invoke(ExportCertOptions(device: "iphone", out: base.path + "/deep/kit", yes: true))
+        try FileManager.default.createDirectory(
+            atPath: base.path + "/.git", withIntermediateDirectories: false)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", out: base.path + "/deep/kit", yes: true))
         #expect(w.code == "OUT_IN_GIT_WORKTREE")
         #expect(w.exporter.calls.isEmpty && (w.secrets as? FakeSecretStore)?.events == [])
         #expect(listing(base.path) == [".git"])
@@ -473,13 +537,17 @@ struct ExportCertTests {
     @Test("selection failures stop before the keychain is asked for anything")
     func selectionErrors() async throws {
         let paid = try keychainCert(TestCerts.paid)
-        func fails(_ code: String, _ setup: Setup, _ options: ExportCertOptions = ExportCertOptions(device: "iphone", yes: true))
+        func fails(
+            _ code: String, _ setup: Setup,
+            _ options: ExportCertOptions = ExportCertOptions(device: "iphone", yes: true)
+        )
             async throws
         {
             let w = try await invoke(options, setup: setup)
             #expect(w.code == code, "\(code): \(w.text)")
             #expect(w.exporter.calls.isEmpty && w.verifier.callCount == 0)
-            #expect((w.secrets as? FakeSecretStore)?.events == [], "\(code): password item untouched")
+            #expect(
+                (w.secrets as? FakeSecretStore)?.events == [], "\(code): password item untouched")
             #expect(w.kitDirs.isEmpty && w.p12Masters.isEmpty && w.ledgerText == nil)
         }
         var noCert = Setup()
@@ -489,7 +557,9 @@ struct ExportCertTests {
         noProfile.profiles = { _, _ in [] }
         try await fails("PROFILE_NOT_FOUND", noProfile)
         var noDevice = Setup()
-        noDevice.profiles = { _, paid in [paidProfile(devices: [savedUdid("2")], certs: [paid.reference])] }
+        noDevice.profiles = { _, paid in
+            [paidProfile(devices: [savedUdid("2")], certs: [paid.reference])]
+        }
         try await fails("DEVICE_NOT_IN_PROFILE", noDevice)
         var mismatch = Setup()
         mismatch.profiles = { _, _ in [paidProfile(certs: [String(repeating: "A", count: 40)])] }
@@ -498,7 +568,8 @@ struct ExportCertTests {
         unknown.profiles = nil
         try await fails(
             "PROFILE_NOT_FOUND", unknown,
-            ExportCertOptions(device: "iphone", profile: "BBBBBBBB-0000-0000-0000-000000000001", yes: true))
+            ExportCertOptions(
+                device: "iphone", profile: "BBBBBBBB-0000-0000-0000-000000000001", yes: true))
         _ = paid
     }
 
@@ -510,13 +581,16 @@ struct ExportCertTests {
         #expect(w.code == "CERT_NOT_FOUND" && w.exporter.calls.isEmpty)
     }
 
-    @Test("the exporter is only ever called with the paid reference, even when the free cert is listed first")
+    @Test(
+        "the exporter is only ever called with the paid reference, even when the free cert is listed first"
+    )
     func exporterGetsPaidReference() async throws {
         var setup = Setup()
         setup.certs = [TestCerts.free, TestCerts.paid]
         let w = try await invoke(setup: setup)
         #expect(w.envelope.ok)
-        #expect(w.exporter.calls.map(\.reference.hex) == [try keychainCert(TestCerts.paid).reference])
+        #expect(
+            w.exporter.calls.map(\.reference.hex) == [try keychainCert(TestCerts.paid).reference])
     }
 
     @Test("an unreadable keychain is KEYCHAIN_READ_FAILED")
@@ -553,8 +627,12 @@ struct ExportCertTests {
             let w = try await invoke(setup: setup)
             #expect(w.code == code, "\(failure)")
             #expect(w.exporter.calls.count == 1)
-            #expect(w.kitDirs.isEmpty && w.strayTemps.isEmpty && w.p12Masters.isEmpty, "\(code): no partial output")
-            #expect(w.ledger?.exports.isEmpty == true && w.ledgerText == nil, "\(code): ledger not written")
+            #expect(
+                w.kitDirs.isEmpty && w.strayTemps.isEmpty && w.p12Masters.isEmpty,
+                "\(code): no partial output")
+            #expect(
+                w.ledger?.exports.isEmpty == true && w.ledgerText == nil,
+                "\(code): ledger not written")
             #expect(w.backend.snapshot.reads == 0)
         }
     }
@@ -573,7 +651,9 @@ struct ExportCertTests {
         var cannotAdd = Setup()
         cannotAdd.secrets = AddFailingSecretStore()
         let a = try await invoke(setup: cannotAdd)
-        #expect(a.code == "PASSWORD_STORE_FAILED" && a.exporter.calls.isEmpty && a.p12Masters.isEmpty && a.kitDirs.isEmpty)
+        #expect(
+            a.code == "PASSWORD_STORE_FAILED" && a.exporter.calls.isEmpty && a.p12Masters.isEmpty
+                && a.kitDirs.isEmpty)
         #expect(a.envelope.errors[0].message.contains("OSStatus"))
 
         var emptyStored = Setup()
@@ -582,7 +662,9 @@ struct ExportCertTests {
         #expect(e.code == "PASSWORD_UNREADABLE" && e.exporter.calls.isEmpty)
     }
 
-    @Test("verification: a wrong password or a different identity is P12_VERIFY_FAILED and nothing is kept")
+    @Test(
+        "verification: a wrong password or a different identity is P12_VERIFY_FAILED and nothing is kept"
+    )
     func verifyFailures() async throws {
         var wrongPassword = Setup()
         wrongPassword.verifierPassword = "NOT-THE-GENERATED-ONE"
@@ -593,7 +675,9 @@ struct ExportCertTests {
         var otherIdentity = Setup()
         otherIdentity.verifierReferences = [CertReference(String(repeating: "B", count: 40))!]
         let o = try await invoke(setup: otherIdentity)
-        #expect(o.code == "P12_VERIFY_FAILED" && o.kitDirs.isEmpty && o.p12Masters.isEmpty && o.ledgerText == nil)
+        #expect(
+            o.code == "P12_VERIFY_FAILED" && o.kitDirs.isEmpty && o.p12Masters.isEmpty
+                && o.ledgerText == nil)
 
         var empty = Setup()
         empty.verifierReferences = []
@@ -606,7 +690,8 @@ struct ExportCertTests {
         let name = try fp8(TestCerts.paid)
         setup.preflight = { paths in
             try makeDirectories(paths.p12Dir, mode: 0o700)
-            try Data("old".utf8).write(to: URL(fileURLWithPath: "\(paths.p12Dir)/\(name)-20261019-120000.p12"))
+            try Data("old".utf8).write(
+                to: URL(fileURLWithPath: "\(paths.p12Dir)/\(name)-20261019-120000.p12"))
         }
         let w = try await invoke(setup: setup)
         #expect(w.code == "EXPORT_EXISTS" && w.exporter.calls.isEmpty)
@@ -624,7 +709,9 @@ struct ExportCertTests {
         let w = try await invoke(setup: setup)
         #expect(w.code == "LEDGER_WRITE_FAILED")
         #expect(w.exporter.calls.count == 1)
-        #expect(w.kitDirs.isEmpty && w.strayTemps.isEmpty && w.p12Masters.isEmpty && w.ledgerText == nil)
+        #expect(
+            w.kitDirs.isEmpty && w.strayTemps.isEmpty && w.p12Masters.isEmpty && w.ledgerText == nil
+        )
     }
 
     @Test("a busy ledger lock is BUSY and rolls back")
@@ -633,14 +720,18 @@ struct ExportCertTests {
         var held: FileLock?
         setup.ledgerStore = { paths in
             held = try? FileLock.tryAcquire(path: paths.ledgerLock)
-            return LedgerStore(paths: paths, lockTimeout: .milliseconds(60), retryInterval: .milliseconds(10))
+            return LedgerStore(
+                paths: paths, lockTimeout: .milliseconds(60), retryInterval: .milliseconds(10))
         }
         let w = try await invoke(setup: setup)
         withExtendedLifetime(held) {}
-        #expect(w.code == "BUSY" && w.kitDirs.isEmpty && w.strayTemps.isEmpty && w.p12Masters.isEmpty)
+        #expect(
+            w.code == "BUSY" && w.kitDirs.isEmpty && w.strayTemps.isEmpty && w.p12Masters.isEmpty)
     }
 
-    @Test("a kit folder that cannot be moved into place is removed from the ledger and the disk again")
+    @Test(
+        "a kit folder that cannot be moved into place is removed from the ledger and the disk again"
+    )
     func commitFailure() async throws {
         let base = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: base) }
@@ -650,10 +741,12 @@ struct ExportCertTests {
         setup.ledgerStore = { paths in
             LedgerStore(paths: paths) { data, path in
                 try AtomicFile.write(data, to: path)
-                try? FileManager.default.createDirectory(atPath: dest + "/sub", withIntermediateDirectories: true)
+                try? FileManager.default.createDirectory(
+                    atPath: dest + "/sub", withIntermediateDirectories: true)
             }
         }
-        let w = try await invoke(ExportCertOptions(device: "iphone", out: dest, yes: true), setup: setup)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", out: dest, yes: true), setup: setup)
         #expect(!w.envelope.ok)
         #expect(w.p12Masters.isEmpty)
         #expect(w.ledger?.exports.isEmpty == true, "the export entry was taken back out")
@@ -677,15 +770,21 @@ struct ExportCertTests {
                 }
                 if n > 1 { throw SideloadError("LEDGER_WRITE_FAILED", "disk full") }
                 try AtomicFile.write(data, to: path)
-                try? FileManager.default.createDirectory(atPath: dest + "/sub", withIntermediateDirectories: true)
+                try? FileManager.default.createDirectory(
+                    atPath: dest + "/sub", withIntermediateDirectories: true)
             }
         }
-        let w = try await invoke(ExportCertOptions(device: "iphone", out: dest, yes: true), setup: setup)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", out: dest, yes: true), setup: setup)
         #expect(!w.envelope.ok && w.code == "LEDGER_ROLLBACK_FAILED")
         let error = try #require(w.envelope.errors.first)
-        #expect(error.message.contains("export-20261019-120000") && error.message.contains("could not be written"))
+        #expect(
+            error.message.contains("export-20261019-120000")
+                && error.message.contains("could not be written"))
         #expect(error.fix?.contains("ledger") == true && !(error.fix ?? "").isEmpty)
-        #expect(w.ledger?.exports.map(\.id) == ["export-20261019-120000"], "the dangling entry is real, and now reported")
+        #expect(
+            w.ledger?.exports.map(\.id) == ["export-20261019-120000"],
+            "the dangling entry is real, and now reported")
         #expect(w.p12Masters.isEmpty, "the rest was still rolled back")
         #expect(listing(base.path) == ["kit"], "no staged temp folder")
     }
@@ -700,17 +799,27 @@ struct ExportCertTests {
             let s = backend.snapshot
             seen.withLock { $0 = (s.contents, s.markers) }
         }
-        let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
         #expect(w.envelope.ok)
         let password = try #require(w.password)
-        #expect(seen.withLock { $0.contents } == password, "the password was on the clipboard while the command waited")
-        #expect(seen.withLock { $0.markers }.sorted() == ["org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType"])
+        #expect(
+            seen.withLock { $0.contents } == password,
+            "the password was on the clipboard while the command waited")
+        #expect(
+            seen.withLock { $0.markers }.sorted() == [
+                "org.nspasteboard.ConcealedType", "org.nspasteboard.TransientType",
+            ])
         #expect(w.recorder.sleepsRequested == [.seconds(90)])
-        #expect(w.backend.snapshot.contents == nil && w.backend.snapshot.clears == 1, "cleared afterwards")
+        #expect(
+            w.backend.snapshot.contents == nil && w.backend.snapshot.clears == 1,
+            "cleared afterwards")
         #expect(w.json["passwordCopied"] == true && w.json["clipboardCleared"] == true)
         #expect(w.json["clipboardHoldSeconds"] == 90)
         let progress = w.recorder.logged.joined(separator: "\n")
-        #expect(progress.contains("clipboard") && progress.contains("Paste it into Feather now") && progress.contains("90 s"))
+        #expect(
+            progress.contains("clipboard") && progress.contains("Paste it into Feather now")
+                && progress.contains("90 s"))
         #expect(progress.contains("Allow, not Always Allow"))
     }
 
@@ -718,31 +827,42 @@ struct ExportCertTests {
     func clipboardChanged() async throws {
         var setup = Setup()
         setup.hold = { _, backend in backend.userCopies("my own text") }
-        let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
-        #expect(w.envelope.ok && w.json["clipboardCleared"] == false && w.json["passwordCopied"] == true)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
+        #expect(
+            w.envelope.ok && w.json["clipboardCleared"] == false && w.json["passwordCopied"] == true
+        )
         #expect(w.backend.snapshot.contents == "my own text" && w.backend.snapshot.clears == 0)
     }
 
     // MARK: signals (design section 16): the handler only calls trip(); the main flow does all cleanup
 
-    @Test("a signal while idle (before any file) marks the export dead: beginWriting refuses, nothing is written")
+    @Test(
+        "a signal while idle (before any file) marks the export dead: beginWriting refuses, nothing is written"
+    )
     func signalWhileIdle() async throws {
         let signal = HoldSignal()
         let results = Trips()
         var setup = Setup()
         setup.holdSignal = signal
         setup.exporterOnCall = { _ in results.fire(signal, 1) }
-        let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
         #expect(results.all == [.notAbsorbed(kit: nil)])
         #expect(!w.envelope.ok && w.code == "INTERRUPTED" && signal.phase == .dead)
-        #expect(w.p12Masters.isEmpty && w.kitDirs.isEmpty && w.strayTemps.isEmpty && w.ledgerText == nil)
+        #expect(
+            w.p12Masters.isEmpty && w.kitDirs.isEmpty && w.strayTemps.isEmpty && w.ledgerText == nil
+        )
         #expect(w.backend.snapshot.contents == nil && w.backend.snapshot.reads == 0)
     }
 
-    @Test("two signals at any point before the ledger write: main removes the .p12, its temp files and the staging folder")
+    @Test(
+        "two signals at any point before the ledger write: main removes the .p12, its temp files and the staging folder"
+    )
     func signalsBeforeLedgerWrite() async throws {
         let markers = [
-            "writing the .p12", "wrote the .p12", "staged sideload-dev.p12", "staged sideload-dev.mobileprovision",
+            "writing the .p12", "wrote the .p12", "staged sideload-dev.p12",
+            "staged sideload-dev.mobileprovision",
             "staged the kit",
         ]
         for marker in markers {
@@ -757,21 +877,28 @@ struct ExportCertTests {
                 setup.onLog = { line in if line.contains(marker) { results.fire(signal, 2) } }
                 let out = beside ? base.appendingPathComponent("kit").path : nil
                 let w = try await invoke(
-                    ExportCertOptions(device: "iphone", out: out, yes: true, copyPassword: true), setup: setup)
+                    ExportCertOptions(device: "iphone", out: out, yes: true, copyPassword: true),
+                    setup: setup)
                 let context = "\(marker), beside: \(beside)"
                 #expect(results.all == [.absorbed, .absorbed], "\(context)")
-                #expect(impatient.withLock { $0 } == 1, "the second signal tells the owner once: \(context)")
+                #expect(
+                    impatient.withLock { $0 } == 1,
+                    "the second signal tells the owner once: \(context)")
                 #expect(!w.envelope.ok && w.code == "INTERRUPTED", "\(context): \(w.text)")
-                #expect(w.p12Masters.isEmpty && w.kitDirs.isEmpty && w.strayTemps.isEmpty, "\(context)")
+                #expect(
+                    w.p12Masters.isEmpty && w.kitDirs.isEmpty && w.strayTemps.isEmpty, "\(context)")
                 #expect(w.ledgerText == nil, "\(context)")
                 #expect(listing(base.path).isEmpty, "nothing beside --out: \(context)")
-                #expect(w.backend.snapshot.contents == nil && w.backend.snapshot.reads == 0, "\(context)")
+                #expect(
+                    w.backend.snapshot.contents == nil && w.backend.snapshot.reads == 0,
+                    "\(context)")
                 #expect(signal.phase == .done(nil), "\(context)")
             }
         }
     }
 
-    @Test("signals during the ledger write are absorbed: the kit lands, the entry stays, the hold is skipped",
+    @Test(
+        "signals during the ledger write are absorbed: the kit lands, the entry stays, the hold is skipped",
         arguments: [true, false])
     func signalsDuringLedgerWrite(copyPassword: Bool) async throws {
         let signal = HoldSignal()
@@ -784,17 +911,30 @@ struct ExportCertTests {
                 results.fire(signal, 2)
             }
         }
-        let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: copyPassword), setup: setup)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", yes: true, copyPassword: copyPassword), setup: setup
+        )
         #expect(results.all == [.absorbed, .absorbed])
         #expect(w.envelope.ok && w.envelope.errors.isEmpty, "\(w.text)")
         let kit = try #require(w.kitDirs.first)
-        #expect(w.snap.children(of: kit).count == 3 && w.ledger?.exports.first?.kitPath == kit && w.p12Masters.count == 1)
+        #expect(
+            w.snap.children(of: kit).count == 3 && w.ledger?.exports.first?.kitPath == kit
+                && w.p12Masters.count == 1)
         #expect(w.json["passwordCopied"] == false)
-        #expect(copyPassword ? w.json["clipboardHoldInterrupted"] == true : w.json["clipboardHoldInterrupted"] == nil)
-        #expect(copyPassword ? w.json["clipboardCleared"] == true : w.json["clipboardCleared"] == nil, "never copied: not on the clipboard")
-        #expect(w.backend.snapshot.contents == nil && w.backend.snapshot.reads == 0 && w.recorder.sleepsRequested.isEmpty)
+        #expect(
+            copyPassword
+                ? w.json["clipboardHoldInterrupted"] == true
+                : w.json["clipboardHoldInterrupted"] == nil)
+        #expect(
+            copyPassword ? w.json["clipboardCleared"] == true : w.json["clipboardCleared"] == nil,
+            "never copied: not on the clipboard")
+        #expect(
+            w.backend.snapshot.contents == nil && w.backend.snapshot.reads == 0
+                && w.recorder.sleepsRequested.isEmpty)
         for surface in [w.text] + w.recorder.logged {
-            #expect(!surface.lowercased().contains("re-run") && !surface.contains("INTERRUPTED"), "\(surface)")
+            #expect(
+                !surface.lowercased().contains("re-run") && !surface.contains("INTERRUPTED"),
+                "\(surface)")
         }
         #expect(signal.phase == .done(kit))
     }
@@ -818,34 +958,47 @@ struct ExportCertTests {
                 }
                 guard n == 1 else { return }  // the rollback write goes through
                 results.fire(signal, 2)
-                try? FileManager.default.createDirectory(atPath: dest + "/sub", withIntermediateDirectories: true)
+                try? FileManager.default.createDirectory(
+                    atPath: dest + "/sub", withIntermediateDirectories: true)
             }
         }
-        let w = try await invoke(ExportCertOptions(device: "iphone", out: dest, yes: true), setup: setup)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", out: dest, yes: true), setup: setup)
         #expect(results.all == [.absorbed, .absorbed])
         #expect(!w.envelope.ok && w.code != "LEDGER_ROLLBACK_FAILED")
         #expect(w.p12Masters.isEmpty && w.ledger?.exports.isEmpty == true)
-        #expect(listing(base.path) == ["kit"] && listing(dest) == ["sub"], "only the intruder, no staging folder")
+        #expect(
+            listing(base.path) == ["kit"] && listing(dest) == ["sub"],
+            "only the intruder, no staging folder")
         #expect(signal.phase == .done(nil))
     }
 
-    @Test("with the kit in place the first signal skips the hold, a second is not absorbed and names the kit")
+    @Test(
+        "with the kit in place the first signal skips the hold, a second is not absorbed and names the kit"
+    )
     func signalAfterCommit() async throws {
         let signal = HoldSignal()
         let results = Trips()
         var setup = Setup()
         setup.holdSignal = signal
-        setup.onLog = { line in if line.hasPrefix("export-cert: kit at") { results.fire(signal, 2) } }
-        let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
+        setup.onLog = { line in if line.hasPrefix("export-cert: kit at") { results.fire(signal, 2) }
+        }
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
         let kit = try #require(w.kitDirs.first)
         #expect(results.all == [.absorbed, .notAbsorbed(kit: kit)])
-        #expect(w.envelope.ok && w.json["passwordCopied"] == false && w.json["clipboardHoldInterrupted"] == true)
-        #expect(w.json["clipboardCleared"] == true, "always present with --copy-password; true: the password is not on it")
+        #expect(
+            w.envelope.ok && w.json["passwordCopied"] == false
+                && w.json["clipboardHoldInterrupted"] == true)
+        #expect(
+            w.json["clipboardCleared"] == true,
+            "always present with --copy-password; true: the password is not on it")
         #expect(w.backend.snapshot.contents == nil && w.backend.snapshot.reads == 0)
         #expect(w.kitDirs.count == 1 && w.p12Masters.count == 1 && w.ledger?.exports.count == 1)
     }
 
-    @Test("two signals while the password is being copied are absorbed: the hold ends at once and the clipboard is clear at exit",
+    @Test(
+        "two signals while the password is being copied are absorbed: the hold ends at once and the clipboard is clear at exit",
         .timeLimit(.minutes(1)))
     func signalsDuringCopy() async throws {
         let signal = HoldSignal()
@@ -860,15 +1013,20 @@ struct ExportCertTests {
             }
         }
         setup.hold = { _, _ in try await Task.sleep(for: .seconds(600)) }  // only the signal can end this
-        let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
         #expect(results.all == [.absorbed, .absorbed], "no signal reaches the handler path")
         #expect(w.envelope.ok, "\(w.text)")
         #expect(w.json["passwordCopied"] == true && w.json["clipboardCleared"] == true)
         #expect(w.json["clipboardHoldInterrupted"] == true)
-        #expect(w.backend.snapshot.contents == nil && w.backend.snapshot.clears == 1, "main cleared after the copy")
+        #expect(
+            w.backend.snapshot.contents == nil && w.backend.snapshot.clears == 1,
+            "main cleared after the copy")
     }
 
-    @Test("a signal during the hold ends it early: clipboard cleared, normal success envelope, no re-run advice")
+    @Test(
+        "a signal during the hold ends it early: clipboard cleared, normal success envelope, no re-run advice"
+    )
     func interruptedHold() async throws {
         let signal = HoldSignal()
         let results = Trips()
@@ -880,7 +1038,8 @@ struct ExportCertTests {
             results.fire(signal, 2)
             try await Task.sleep(for: .seconds(60))  // would be the 90 s wait; the signal must end it
         }
-        let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
         let kit = try #require(w.kitDirs.first)
         #expect(results.all == [.absorbed, .notAbsorbed(kit: kit)])
         #expect(w.envelope.ok && w.envelope.exitCode == 0 && w.envelope.errors.isEmpty, "\(w.text)")
@@ -894,14 +1053,19 @@ struct ExportCertTests {
         // Before the hold, stderr says the kit exists and is recorded; nothing anywhere says to re-run.
         let progress = w.recorder.logged
         let heldAt = try #require(progress.firstIndex { $0.contains("Paste it into Feather now") })
-        #expect(progress[..<heldAt].contains { $0.contains(kit) && $0.contains("recorded in ledger") })
+        #expect(
+            progress[..<heldAt].contains { $0.contains(kit) && $0.contains("recorded in ledger") })
         for surface in [w.text] + progress {
-            #expect(!surface.lowercased().contains("re-run") && !surface.lowercased().contains("rerun"), "\(surface)")
+            #expect(
+                !surface.lowercased().contains("re-run") && !surface.lowercased().contains("rerun"),
+                "\(surface)")
             #expect(!surface.contains("INTERRUPTED"))
         }
     }
 
-    @Test("after the command finished a signal is not absorbed; INTERRUPTED reports the kit and never says to re-run")
+    @Test(
+        "after the command finished a signal is not absorbed; INTERRUPTED reports the kit and never says to re-run"
+    )
     func signalAfterFinish() async throws {
         let signal = HoldSignal()
         var setup = Setup()
@@ -913,8 +1077,12 @@ struct ExportCertTests {
         guard case .notAbsorbed(let reported) = disposition else { return }
         let object = Interrupt.interrupted(name: "SIGINT", kit: reported, clipboardCleared: true)
         let entry = try #require(object.errors.first)
-        #expect(entry.code == "INTERRUPTED" && entry.message.contains(kit) && entry.message.contains("ledger.json"))
-        for text in [entry.message, entry.fix ?? ""] { #expect(!text.lowercased().contains("re-run")) }
+        #expect(
+            entry.code == "INTERRUPTED" && entry.message.contains(kit)
+                && entry.message.contains("ledger.json"))
+        for text in [entry.message, entry.fix ?? ""] {
+            #expect(!text.lowercased().contains("re-run"))
+        }
 
         // A failed export has no kit: the generic object (which does say to re-run) is right there.
         let failing = HoldSignal()
@@ -941,7 +1109,9 @@ struct ExportCertTests {
         try writing.beginWriting()
         #expect(writing.phase == .writing && !writing.interrupted)
         #expect(writing.trip() == .absorbed && calls.withLock { $0 } == 0)
-        #expect(writing.trip() == .absorbed && writing.trip() == .absorbed && calls.withLock { $0 } == 1)
+        #expect(
+            writing.trip() == .absorbed && writing.trip() == .absorbed && calls.withLock { $0 } == 1
+        )
         #expect(writing.interrupted && !writing.beginCommit() && writing.phase == .writing)
         writing.finish()
         #expect(writing.phase == .done(nil) && writing.trip() == .notAbsorbed(kit: nil))
@@ -953,7 +1123,9 @@ struct ExportCertTests {
         #expect(committing.trip() == .absorbed && committing.trip() == .absorbed)
         committing.markCommitted(kit: "k")
         #expect(committing.phase == .committed("k") && !committing.beginCopy())
-        #expect(committing.trip() == .notAbsorbed(kit: "k"), "a signal that was already absorbed is not a first signal")
+        #expect(
+            committing.trip() == .notAbsorbed(kit: "k"),
+            "a signal that was already absorbed is not a first signal")
 
         // committed: the first signal is absorbed, a later one is not
         let committed = HoldSignal()
@@ -969,7 +1141,9 @@ struct ExportCertTests {
         #expect(copying.beginCommit())
         copying.markCommitted(kit: "k")
         #expect(copying.beginCopy() && copying.phase == .copying("k") && !copying.interrupted)
-        #expect(copying.trip() == .absorbed && copying.trip() == .absorbed && copying.trip() == .absorbed)
+        #expect(
+            copying.trip() == .absorbed && copying.trip() == .absorbed
+                && copying.trip() == .absorbed)
         copying.copyFinished()
         #expect(copying.phase == .holding("k"))
         try await copying.wait()  // the signals absorbed while copying end the hold at once
@@ -998,12 +1172,16 @@ struct ExportCertTests {
         await #expect(throws: CancellationError.self) { try await waiter.value }
     }
 
-    @Test("stress: 500 runs against a racing trip() loop end with a full export or with nothing at all, in every outcome class",
+    @Test(
+        "stress: 500 runs against a racing trip() loop end with a full export or with nothing at all, in every outcome class",
         .timeLimit(.minutes(5)))
     func stress() async throws {
-        enum Outcome: Hashable { case diedBeforeWriting, cutOffAfterWriting, finishedWithCopy, finishedWithoutCopy }
+        enum Outcome: Hashable {
+            case diedBeforeWriting, cutOffAfterWriting, finishedWithCopy, finishedWithoutCopy
+        }
         let writingMarkers = [
-            "writing the .p12", "wrote the .p12", "staged sideload-dev.p12", "staged sideload-dev.mobileprovision",
+            "writing the .p12", "wrote the .p12", "staged sideload-dev.p12",
+            "staged sideload-dev.mobileprovision",
             "staged the kit",
         ]
         var counts: [Outcome: Int] = [:]
@@ -1020,7 +1198,10 @@ struct ExportCertTests {
             case 1:
                 let marker = writingMarkers[(i / 6) % writingMarkers.count]
                 setup.onLog = { if $0.contains(marker) { racer.start(firstSync: true) } }
-            case 2: setup.onLog = { if $0.hasPrefix("export-cert: kit at") { racer.start(firstSync: true) } }
+            case 2:
+                setup.onLog = {
+                    if $0.hasPrefix("export-cert: kit at") { racer.start(firstSync: true) }
+                }
             case 3:
                 setup.hold = { _, _ in
                     racer.start(firstSync: false)
@@ -1029,20 +1210,25 @@ struct ExportCertTests {
             case 4: racer.start(firstSync: false, jitter: UInt32.random(in: 0...4000))
             default: break
             }
-            let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
+            let w = try await invoke(
+                ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
             await racer.join()
             let context = "run \(i) (kind \(kind)): \(w.text)"
             #expect(w.strayTemps.isEmpty, "\(context)")
-            #expect(w.backend.snapshot.contents == nil, "the password is never left on the clipboard: \(context)")
+            #expect(
+                w.backend.snapshot.contents == nil,
+                "the password is never left on the clipboard: \(context)")
             let outcome: Outcome
             if w.envelope.ok {
                 let kit = try #require(w.kitDirs.first, "\(context)")
                 #expect(w.kitDirs.count == 1 && w.snap.children(of: kit).count == 3, "\(context)")
                 #expect(w.ledger?.exports.count == 1 && w.p12Masters.count == 1, "\(context)")
-                outcome = w.json["passwordCopied"] == true ? .finishedWithCopy : .finishedWithoutCopy
+                outcome =
+                    w.json["passwordCopied"] == true ? .finishedWithCopy : .finishedWithoutCopy
             } else {
                 #expect(w.code == "INTERRUPTED", "\(context)")
-                #expect(w.kitDirs.isEmpty && w.p12Masters.isEmpty && w.ledgerText == nil, "\(context)")
+                #expect(
+                    w.kitDirs.isEmpty && w.p12Masters.isEmpty && w.ledgerText == nil, "\(context)")
                 outcome = signal.phase == .dead ? .diedBeforeWriting : .cutOffAfterWriting
             }
             switch signal.phase {
@@ -1058,14 +1244,19 @@ struct ExportCertTests {
             default: break
             }
         }
-        for outcome: Outcome in [.diedBeforeWriting, .cutOffAfterWriting, .finishedWithCopy, .finishedWithoutCopy] {
-            #expect(counts[outcome, default: 0] >= 50, "\(outcome) happened \(counts[outcome, default: 0]) times")
+        for outcome: Outcome in [
+            .diedBeforeWriting, .cutOffAfterWriting, .finishedWithCopy, .finishedWithoutCopy,
+        ] {
+            #expect(
+                counts[outcome, default: 0] >= 50,
+                "\(outcome) happened \(counts[outcome, default: 0]) times")
         }
     }
 
     @Test("the signal handler never touches a file")
     func handlerTouchesNoFiles() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Sources/sideload/Interrupts.swift")
         let text = try String(contentsOf: root, encoding: .utf8)
         #expect(text.contains("trip()"), "the scan must see the handler")
@@ -1074,11 +1265,14 @@ struct ExportCertTests {
         }
     }
 
-    @Test("a failed copy attempts the clear and reports its real outcome, and reports an interruption", arguments: [true, false])
+    @Test(
+        "a failed copy attempts the clear and reports its real outcome, and reports an interruption",
+        arguments: [true, false])
     func failedCopyClearsAndReports(sideloadError: Bool) async throws {
         let signal = HoldSignal()
         let stub = StubPasteboard(
-            copyError: sideloadError ? SideloadError("PASTEBOARD_FAILED", "fake") : ThrowingPasteboard.Boom(),
+            copyError: sideloadError
+                ? SideloadError("PASTEBOARD_FAILED", "fake") : ThrowingPasteboard.Boom(),
             clearResult: true)
         var setup = Setup()
         setup.holdSignal = signal
@@ -1086,10 +1280,14 @@ struct ExportCertTests {
             stub.onCopy = { _ = signal.trip() }
             return stub
         }
-        let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
         #expect(w.envelope.ok && w.json["passwordCopied"] == false)
-        #expect(stub.clears == 1 && w.json["clipboardCleared"] == true, "the clear was attempted and its result reported")
-        #expect(w.json["clipboardHoldInterrupted"] == true, "a signal arrived during the failed copy")
+        #expect(
+            stub.clears == 1 && w.json["clipboardCleared"] == true,
+            "the clear was attempted and its result reported")
+        #expect(
+            w.json["clipboardHoldInterrupted"] == true, "a signal arrived during the failed copy")
         #expect(w.warningCodes().contains("PASTEBOARD_FAILED"))
     }
 
@@ -1109,16 +1307,26 @@ struct ExportCertTests {
             services.p12Verifier = FakeP12Verifier(references: [CertReference(paid.reference)!])
             services.pasteboard = ThrowingPasteboard()
             services.sleep = { _ in }
-            return await ExportCertCommand.run(services, ExportCertOptions(device: "iphone", yes: true, copyPassword: true))
+            return await ExportCertCommand.run(
+                services, ExportCertOptions(device: "iphone", yes: true, copyPassword: true))
         }
         #expect(w.ok && w.exitCode == 0, "\(w.errors)")
         #expect(w.data["passwordCopied"] == false && w.data["clipboardCleared"] == false)
-        #expect(w.data["warnings"]?.array?.contains { $0["code"]?.string == "PASTEBOARD_FAILED" } == true)
+        #expect(
+            w.data["warnings"]?.array?.contains { $0["code"]?.string == "PASTEBOARD_FAILED" }
+                == true)
         let fixes = w.data["warnings"]?.array?.compactMap { $0["fix"]?.string } ?? []
-        #expect(!fixes.isEmpty && fixes.allSatisfy { !$0.lowercased().contains("run the export again") && !$0.lowercased().contains("re-run") })
+        #expect(
+            !fixes.isEmpty
+                && fixes.allSatisfy {
+                    !$0.lowercased().contains("run the export again")
+                        && !$0.lowercased().contains("re-run")
+                })
     }
 
-    @Test("a signal during the hold reports clipboardCleared false when the owner copied something else")
+    @Test(
+        "a signal during the hold reports clipboardCleared false when the owner copied something else"
+    )
     func interruptedHoldClipboardChanged() async throws {
         let signal = HoldSignal()
         var setup = Setup()
@@ -1128,8 +1336,11 @@ struct ExportCertTests {
             _ = signal.trip()
             try await Task.sleep(for: .seconds(60))
         }
-        let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
-        #expect(w.envelope.ok && w.json["clipboardCleared"] == false && w.json["clipboardHoldInterrupted"] == true)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
+        #expect(
+            w.envelope.ok && w.json["clipboardCleared"] == false
+                && w.json["clipboardHoldInterrupted"] == true)
         #expect(w.backend.snapshot.contents == "my own text" && w.backend.snapshot.clears == 0)
     }
 
@@ -1137,19 +1348,26 @@ struct ExportCertTests {
     func uninterruptedHold() async throws {
         var setup = Setup()
         setup.hold = { _, _ in }
-        let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
-        #expect(w.envelope.ok && w.json["clipboardHoldInterrupted"] == false && w.json["clipboardCleared"] == true)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
+        #expect(
+            w.envelope.ok && w.json["clipboardHoldInterrupted"] == false
+                && w.json["clipboardCleared"] == true)
     }
 
     @Test("a cancelled hold still clears the clipboard")
     func cancelledHold() async throws {
         var setup = Setup()
         setup.hold = { _, _ in throw CancellationError() }
-        let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
-        #expect(w.envelope.ok && w.backend.snapshot.contents == nil && w.backend.snapshot.clears == 1)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
+        #expect(
+            w.envelope.ok && w.backend.snapshot.contents == nil && w.backend.snapshot.clears == 1)
     }
 
-    @Test("the operation lock is released before the hold, so the next command is not blocked for 90 s")
+    @Test(
+        "the operation lock is released before the hold, so the next command is not blocked for 90 s"
+    )
     func lockReleasedBeforeHold() async throws {
         var setup = Setup()
         let probe = Mutex<Paths?>(nil)
@@ -1164,15 +1382,20 @@ struct ExportCertTests {
                 state.withLock { $0 = "held" }
             }
         }
-        let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
         #expect(w.envelope.ok)
         #expect(state.withLock { $0 } == "free")
     }
 
-    @Test("a pasteboard that cannot be written is a warning: the kit stands, nothing is on the clipboard")
+    @Test(
+        "a pasteboard that cannot be written is a warning: the kit stands, nothing is on the clipboard"
+    )
     func copyFailure() async throws {
         let w = try await invokeWithBrokenPasteboard()
-        #expect(w.envelope.ok && w.json["passwordCopied"] == false && w.json["clipboardCleared"] == false)
+        #expect(
+            w.envelope.ok && w.json["passwordCopied"] == false
+                && w.json["clipboardCleared"] == false)
         #expect(w.warningCodes().contains("PASTEBOARD_FAILED"))
         #expect(w.recorder.sleepsRequested.isEmpty && w.backend.snapshot.contents == nil)
         #expect(w.kitDirs.count == 1)
@@ -1182,9 +1405,12 @@ struct ExportCertTests {
     func noCopyOnFailure() async throws {
         var setup = Setup()
         setup.exporterOutcome = .failure(.denied)
-        let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
         #expect(w.code == "KEYCHAIN_DENIED")
-        #expect(w.backend.snapshot.reads == 0 && w.backend.snapshot.contents == nil && w.recorder.sleepsRequested.isEmpty)
+        #expect(
+            w.backend.snapshot.reads == 0 && w.backend.snapshot.contents == nil
+                && w.recorder.sleepsRequested.isEmpty)
     }
 
     @Test("without the inert-default override a CLI run cannot reach a real pasteboard")
@@ -1202,10 +1428,13 @@ struct ExportCertTests {
             services.secrets = FakeSecretStore()
             services.p12Verifier = FakeP12Verifier(references: [CertReference(paid.reference)!])
             services.sleep = { _ in }
-            return await ExportCertCommand.run(services, ExportCertOptions(device: "iphone", yes: true, copyPassword: true))
+            return await ExportCertCommand.run(
+                services, ExportCertOptions(device: "iphone", yes: true, copyPassword: true))
         }
         #expect(w.ok && w.data["passwordCopied"] == false)
-        #expect(w.data["warnings"]?.array?.contains { $0["code"]?.string == "PASTEBOARD_UNAVAILABLE" } == true)
+        #expect(
+            w.data["warnings"]?.array?.contains { $0["code"]?.string == "PASTEBOARD_UNAVAILABLE" }
+                == true)
     }
 
     // MARK: secret hygiene
@@ -1215,17 +1444,23 @@ struct ExportCertTests {
         for copy in [false, true] {
             var setup = Setup()
             setup.hold = { _, _ in }
-            let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: copy), setup: setup)
+            let w = try await invoke(
+                ExportCertOptions(device: "iphone", yes: true, copyPassword: copy), setup: setup)
             #expect(w.envelope.ok)
             let password = try #require(w.password)
             let paid = try keychainCert(TestCerts.paid)
             let secrets = [
-                ("password", password), ("password without hyphens", password.replacingOccurrences(of: "-", with: "")),
+                ("password", password),
+                ("password without hyphens", password.replacingOccurrences(of: "-", with: "")),
                 ("sha1", paid.reference), ("sha1 lower", paid.reference.lowercased()),
-                ("udid", savedUdid("1")), ("udid lower", savedUdid("1").lowercased()), ("udid bare", savedUdid("1").replacingOccurrences(of: "-", with: "")),
-                ("core id", savedCoreId("1")), ("identity name", "Test 000001"), ("identity name 2", "Apple Development: Test"),
+                ("udid", savedUdid("1")), ("udid lower", savedUdid("1").lowercased()),
+                ("udid bare", savedUdid("1").replacingOccurrences(of: "-", with: "")),
+                ("core id", savedCoreId("1")), ("identity name", "Test 000001"),
+                ("identity name 2", "Apple Development: Test"),
             ]
-            var surfaces: [(String, String)] = [("envelope", w.text), ("progress", w.recorder.logged.joined(separator: "\n"))]
+            var surfaces: [(String, String)] = [
+                ("envelope", w.text), ("progress", w.recorder.logged.joined(separator: "\n")),
+            ]
             // Every file under the home except the owner's config.json (it holds the saved device IDs by design);
             // the .p12 and profile are opaque blobs here, but must still not contain the password.
             for (path, data) in w.snap.files where path != "config.json" {
@@ -1233,18 +1468,22 @@ struct ExportCertTests {
             }
             for (surface, text) in surfaces {
                 for (label, secret) in secrets {
-                    #expect(!text.contains(secret), "\(label) leaked into \(surface) (copy: \(copy))")
+                    #expect(
+                        !text.contains(secret), "\(label) leaked into \(surface) (copy: \(copy))")
                 }
             }
             #expect(w.ledgerText?.contains("deviceTails") == true)
         }
     }
 
-    @Test("the password reaches nothing but the keychain store, the exporter, the verifier and the pasteboard")
+    @Test(
+        "the password reaches nothing but the keychain store, the exporter, the verifier and the pasteboard"
+    )
     func passwordSinks() async throws {
         var setup = Setup()
         setup.hold = { _, _ in }
-        let w = try await invoke(ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
+        let w = try await invoke(
+            ExportCertOptions(device: "iphone", yes: true, copyPassword: true), setup: setup)
         let password = try #require(w.password)
         #expect((w.secrets as? FakeSecretStore)?.events == [.read, .add(password)])
         #expect(w.runner.calls.allSatisfy { !$0.args.joined().contains(password) })
@@ -1329,8 +1568,10 @@ private func invokeWithBrokenPasteboard() async throws -> World {
             services, ExportCertOptions(device: "iphone", yes: true, copyPassword: true))
         let (text, json) = try envelope.printed()
         return World(
-            envelope: envelope, text: text, json: json, snap: snapshot(paths.home), paths: paths, recorder: recorder,
-            exporter: exporter, secrets: secrets, verifier: verifier, backend: backend, keychain: keychain, source: source,
+            envelope: envelope, text: text, json: json, snap: snapshot(paths.home), paths: paths,
+            recorder: recorder,
+            exporter: exporter, secrets: secrets, verifier: verifier, backend: backend,
+            keychain: keychain, source: source,
             runner: runner, ledger: try? LedgerStore(paths: paths).load(),
             ledgerText: try? String(contentsOfFile: paths.ledger, encoding: .utf8))
     }
@@ -1353,19 +1594,27 @@ struct ExportCertCLITests {
             #expect(out.json["built"]?.array?.contains("export-cert") == true)
             let usage = out.json["usage"]?.array?.compactMap(\.string) ?? []
             let line = try #require(usage.first { $0.hasPrefix("export-cert") })
-            #expect(line.contains("--copy-password") && line.contains("--yes") && !line.contains("show-password"))
+            #expect(
+                line.contains("--copy-password") && line.contains("--yes")
+                    && !line.contains("show-password"))
         }
     }
 
     @Test("flags and values parse; unknown options and positionals are USAGE")
     func parsing() async throws {
         let confirm = try await invokeCLI(["export-cert", "--device", "iphone", "--copy-password"])
-        #expect(confirm.envelope.errorCodes == ["CONFIRM_REQUIRED"] && confirm.json["copyPassword"] == true)
-        let eq = try await invokeCLI(["export-cert", "--device=iphone", "--profile=\(UUID().uuidString)", "--out=/tmp/x"])
+        #expect(
+            confirm.envelope.errorCodes == ["CONFIRM_REQUIRED"]
+                && confirm.json["copyPassword"] == true)
+        let eq = try await invokeCLI([
+            "export-cert", "--device=iphone", "--profile=\(UUID().uuidString)", "--out=/tmp/x",
+        ])
         #expect(eq.envelope.errorCodes == ["CONFIRM_REQUIRED"])
         for argv in [
-            ["export-cert", "--device", "iphone", "--show-password", "--yes"], ["export-cert", "extra"],
-            ["export-cert", "--device"], ["export-cert", "--copy-password=1"], ["export-cert", "--bogus"],
+            ["export-cert", "--device", "iphone", "--show-password", "--yes"],
+            ["export-cert", "extra"],
+            ["export-cert", "--device"], ["export-cert", "--copy-password=1"],
+            ["export-cert", "--bogus"],
         ] {
             #expect(try await invokeCLI(argv).envelope.errorCodes == ["USAGE"], "\(argv)")
         }
@@ -1374,9 +1623,15 @@ struct ExportCertCLITests {
 
     @Test("a CLI run over fakes without a pasteboard reaches nothing real")
     func fakesOnly() async throws {
-        let out = try await invokeCLI(["export-cert", "--device", "iphone", "--yes", "--copy-password"])
+        let out = try await invokeCLI([
+            "export-cert", "--device", "iphone", "--yes", "--copy-password",
+        ])
         // The fake services have inert exporter/profile defaults: it fails on the first unavailable piece.
         #expect(!out.envelope.ok)
-        #expect(["KEYCHAIN_READ_FAILED", "CERT_NOT_FOUND", "PROFILES_UNAVAILABLE", "KEYCHAIN_UNAVAILABLE"].contains(out.envelope.errorCodes.first ?? ""))
+        #expect(
+            [
+                "KEYCHAIN_READ_FAILED", "CERT_NOT_FOUND", "PROFILES_UNAVAILABLE",
+                "KEYCHAIN_UNAVAILABLE",
+            ].contains(out.envelope.errorCodes.first ?? ""))
     }
 }

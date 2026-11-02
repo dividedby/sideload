@@ -45,7 +45,8 @@ public enum JSONValue: Codable, Sendable, Equatable {
     }
 }
 
-extension JSONValue: ExpressibleByNilLiteral, ExpressibleByBooleanLiteral, ExpressibleByIntegerLiteral,
+extension JSONValue: ExpressibleByNilLiteral, ExpressibleByBooleanLiteral,
+    ExpressibleByIntegerLiteral,
     ExpressibleByFloatLiteral, ExpressibleByStringLiteral, ExpressibleByArrayLiteral,
     ExpressibleByDictionaryLiteral
 {

@@ -67,7 +67,9 @@ struct OutputTests {
         }
         #expect(throws: Never.self) { try Emitter(write: closedPipeWriter()).emit(.result("x")) }
         #expect(try Emitter(write: closedPipeWriter()).emit(.result("x")) == 0)
-        #expect(try Emitter(write: closedPipeWriter()).emit(.fail("x", code: "E", message: "m", fix: "f")) == 1)
+        #expect(
+            try Emitter(write: closedPipeWriter()).emit(
+                .fail("x", code: "E", message: "m", fix: "f")) == 1)
         let badFd = Output.fileDescriptorWriter(-1)
         #expect(throws: POSIXError.self) { try Emitter(write: badFd).emit(.result("x")) }
     }
@@ -77,7 +79,9 @@ struct OutputTests {
         let ok = Capture()
         #expect(try Emitter(write: ok.writer).emit(.result("x")) == 0)
         let bad = Capture()
-        #expect(try Emitter(write: bad.writer).emit(.fail("x", code: "BOOM", message: "it broke", fix: "fix it")) == 1)
+        #expect(
+            try Emitter(write: bad.writer).emit(
+                .fail("x", code: "BOOM", message: "it broke", fix: "fix it")) == 1)
         let text = try #require(bad.writes.first)
         let errors = try #require(decode(text).objectValue?["errors"])
         #expect(errors == [["code": "BOOM", "message": "it broke", "fix": "fix it"]])
@@ -87,7 +91,8 @@ struct OutputTests {
     func redactsIds() throws {
         let udid = fakeUdid("7")
         let core = fakeCoreId("7")
-        let envelope = Envelope.result("x", ["nested": ["list": [.string("id=\(udid)"), .string(core)]], .init(udid): 1])
+        let envelope = Envelope.result(
+            "x", ["nested": ["list": [.string("id=\(udid)"), .string(core)]], .init(udid): 1])
         let out = try Output.render(envelope)
         #expect(!out.contains(udid))
         #expect(!out.contains(core))
@@ -107,7 +112,12 @@ struct OutputTests {
     func identityAndEmail() throws {
         let name = "Apple Development: someone@example.invalid (ABCDE12345)"
         let out = try Output.render(
-            .result("x", ["message": .string("No signing certificate \"\(name)\" found"), "other": "mail me at a.b@example.invalid"]))
+            .result(
+                "x",
+                [
+                    "message": .string("No signing certificate \"\(name)\" found"),
+                    "other": "mail me at a.b@example.invalid",
+                ]))
         #expect(!out.contains("someone"))
         #expect(!out.contains("example.invalid"))
         #expect(out.contains("identity hidden"))
@@ -142,7 +152,10 @@ struct OutputTests {
 
     @Test(
         "identity name kinds are masked",
-        arguments: ["Apple Development", "Apple Distribution", "iPhone Developer", "iPhone Distribution", "Developer ID Application"])
+        arguments: [
+            "Apple Development", "Apple Distribution", "iPhone Developer", "iPhone Distribution",
+            "Developer ID Application",
+        ])
     func identityKinds(kind: String) {
         #expect(redactor.redact("\(kind): Someone (ABCDE12345)") == "\(kind) (identity hidden)")
     }
@@ -157,14 +170,17 @@ struct OutputTests {
     func logLinesMaskCredentials() throws {
         let key = P256.Signing.PrivateKey()
         let jwt = try ASCToken.make(
-            ASCCredentials(keyId: "ABCDE12345", issuerId: "11111111-2222-3333-4444-555555555555", role: nil, privateKey: ASCSecret(key.pemRepresentation)),
+            ASCCredentials(
+                keyId: "ABCDE12345", issuerId: "11111111-2222-3333-4444-555555555555", role: nil,
+                privateKey: ASCSecret(key.pemRepresentation)),
             now: testNow
         ).reveal { $0 }
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let paths = Paths(home: dir.path)
         try paths.ensureHome()
-        ProgressLog.makeFileOnly(home: paths, clock: FixedClock(testNow))("auth \(jwt) key \(key.pemRepresentation)")
+        ProgressLog.makeFileOnly(home: paths, clock: FixedClock(testNow))(
+            "auth \(jwt) key \(key.pemRepresentation)")
         let logged = try String(contentsOfFile: paths.commandsLog, encoding: .utf8)
         #expect(logged.contains("<jwt>") && logged.contains("<private key>"))
         #expect(!logged.contains(jwt) && !logged.contains("BEGIN"))
@@ -172,7 +188,10 @@ struct OutputTests {
 
     @Test("object keys are redacted too")
     func keys() {
-        #expect(redactor.redact(JSONValue.object(["/Users/someone/x": "a@b.invalid"])) == ["/Users/<user>/x": "<email>"])
+        #expect(
+            redactor.redact(JSONValue.object(["/Users/someone/x": "a@b.invalid"])) == [
+                "/Users/<user>/x": "<email>"
+            ])
     }
 
     @Test("unknown errors become INTERNAL_ERROR, SideloadError keeps its code")
@@ -181,16 +200,23 @@ struct OutputTests {
         let internalError = Envelope.from(Boom(), command: "x")
         #expect(!internalError.ok)
         #expect(internalError.errors.first?.code == "INTERNAL_ERROR")
-        #expect(internalError.errors.first?.fix == "This is a bug in sideload; re-run and report the code.")
-        let known = Envelope.from(SideloadError("USAGE", "bad", fix: "help", data: ["k": 1]), command: "y")
+        #expect(
+            internalError.errors.first?.fix
+                == "This is a bug in sideload; re-run and report the code.")
+        let known = Envelope.from(
+            SideloadError("USAGE", "bad", fix: "help", data: ["k": 1]), command: "y")
         #expect(known.errors == [.init(code: "USAGE", message: "bad", fix: "help")])
         #expect(known.data == ["k": 1])
     }
 
     @Test("keys are sorted, slashes unescaped, missing fix encodes as null")
     func encoding() throws {
-        let out = try Output.render(Envelope.fail("z", code: "C", message: "m", data: ["b": "a/b", "a": 1]))
-        #expect(out == #"{"a":1,"b":"a/b","command":"z","errors":[{"code":"C","fix":null,"message":"m"}],"ok":false}"# + "\n")
+        let out = try Output.render(
+            Envelope.fail("z", code: "C", message: "m", data: ["b": "a/b", "a": 1]))
+        #expect(
+            out
+                == #"{"a":1,"b":"a/b","command":"z","errors":[{"code":"C","fix":null,"message":"m"}],"ok":false}"#
+                + "\n")
     }
 
     @Test("envelope fields win over same-named data keys")
@@ -201,12 +227,18 @@ struct OutputTests {
 
     @Test("JSONValue round-trips and converts Encodable values")
     func jsonValue() throws {
-        struct Typed: Encodable { let name: String; let count: Int; let tags: [String]; let none: String? }
+        struct Typed: Encodable {
+            let name: String
+            let count: Int
+            let tags: [String]
+            let none: String?
+        }
         let v = try JSONValue(encoding: Typed(name: "n", count: 2, tags: ["a"], none: nil))
         #expect(v == ["name": "n", "count": 2, "tags": ["a"]])
         let text = #"{"a":[1,2.5,true,null,"s",{"b":{}}]}"#
         let decoded = try decode(text)
-        #expect(try decode(String(decoding: JSONEncoder().encode(decoded), as: UTF8.self)) == decoded)
+        #expect(
+            try decode(String(decoding: JSONEncoder().encode(decoded), as: UTF8.self)) == decoded)
     }
 }
 

@@ -5,7 +5,9 @@ import Testing
 
 // The profile-carrier project (design section 18, build step 5): generated at run time under builds/carrier/.
 
-private func readText(_ path: String) throws -> String { try String(contentsOfFile: path, encoding: .utf8) }
+private func readText(_ path: String) throws -> String {
+    try String(contentsOfFile: path, encoding: .utf8)
+}
 
 private func mtime(_ path: String) -> Date? {
     try? FileManager.default.attributesOfItem(atPath: path)[.modificationDate] as? Date
@@ -27,7 +29,9 @@ private func snapshot(_ root: String) throws -> [String: Data] {
 
 @Suite("carrier project")
 struct CarrierProjectTests {
-    @Test("writes the project, the source file and the Info.plist under the directory, and returns the xcodeproj")
+    @Test(
+        "writes the project, the source file and the Info.plist under the directory, and returns the xcodeproj"
+    )
     func contents() async throws {
         try await withTestHome { paths, _ in
             let project = try CarrierProject.write(to: paths.carrierProject)
@@ -35,7 +39,8 @@ struct CarrierProjectTests {
             #expect(paths.carrierProject == paths.builds + "/carrier")
             #expect(
                 try snapshot(paths.carrierProject).keys.sorted() == [
-                    "Carrier.xcodeproj/project.pbxproj", "Carrier.xcodeproj/xcshareddata/xcschemes/Carrier.xcscheme",
+                    "Carrier.xcodeproj/project.pbxproj",
+                    "Carrier.xcodeproj/xcshareddata/xcschemes/Carrier.xcscheme",
                     "Carrier/App.swift", "Carrier/Info.plist",
                 ])
             let source = try readText(paths.carrierProject + "/Carrier/App.swift")
@@ -56,18 +61,23 @@ struct CarrierProjectTests {
             #expect(pbx.contains("CODE_SIGN_STYLE = Automatic;"))
             #expect(pbx.contains("defaultConfigurationName = Debug;"))
             for forbidden in [
-                "CODE_SIGN_ENTITLEMENTS", "PRODUCT_BUNDLE_IDENTIFIER", "DEVELOPMENT_TEAM", "CODE_SIGN_IDENTITY",
-                "SystemCapabilities", ".entitlements", "PBXCopyFilesBuildPhase", "PBXTargetDependency",
+                "CODE_SIGN_ENTITLEMENTS", "PRODUCT_BUNDLE_IDENTIFIER", "DEVELOPMENT_TEAM",
+                "CODE_SIGN_IDENTITY",
+                "SystemCapabilities", ".entitlements", "PBXCopyFilesBuildPhase",
+                "PBXTargetDependency",
             ] {
                 #expect(!pbx.contains(forbidden), "\(forbidden)")
             }
             let info = try #require(
                 try PropertyListSerialization.propertyList(
-                    from: Data(contentsOf: URL(fileURLWithPath: paths.carrierProject + "/Carrier/Info.plist")),
+                    from: Data(
+                        contentsOf: URL(
+                            fileURLWithPath: paths.carrierProject + "/Carrier/Info.plist")),
                     options: [], format: nil) as? [String: Any])
             #expect(info["CFBundleIdentifier"] as? String == "$(PRODUCT_BUNDLE_IDENTIFIER)")
             #expect(info.keys.allSatisfy { !$0.lowercased().contains("entitlement") })
-            let scheme = try readText(paths.carrierProject + "/Carrier.xcodeproj/xcshareddata/xcschemes/Carrier.xcscheme")
+            let scheme = try readText(
+                paths.carrierProject + "/Carrier.xcodeproj/xcshareddata/xcschemes/Carrier.xcscheme")
             #expect(scheme.contains(#"BlueprintName = "Carrier""#))
             #expect(scheme.contains(#"BuildableName = "Carrier.app""#))
         }
@@ -76,7 +86,8 @@ struct CarrierProjectTests {
     @Test("the project file is an old-style property list whose ids line up")
     func pbxprojIsAPlist() async throws {
         let plist = try #require(
-            try PropertyListSerialization.propertyList(from: Data(CarrierProject.pbxproj.utf8), options: [], format: nil)
+            try PropertyListSerialization.propertyList(
+                from: Data(CarrierProject.pbxproj.utf8), options: [], format: nil)
                 as? [String: Any])
         let objects = try #require(plist["objects"] as? [String: Any])
         let root = try #require(plist["rootObject"] as? String)
@@ -89,7 +100,9 @@ struct CarrierProjectTests {
         for id in ["buildConfigurationList", "productReference"] {
             #expect(objects[try #require(target[id] as? String)] != nil, "\(id)")
         }
-        for phase in try #require(target["buildPhases"] as? [String]) { #expect(objects[phase] != nil) }
+        for phase in try #require(target["buildPhases"] as? [String]) {
+            #expect(objects[phase] != nil)
+        }
         #expect(CarrierProject.xcscheme.contains(targets[0]), "the scheme points at the target")
     }
 
@@ -99,7 +112,8 @@ struct CarrierProjectTests {
             try CarrierProject.write(to: paths.carrierProject)
             for dir in [
                 paths.carrierProject, paths.carrierProject + "/Carrier.xcodeproj",
-                paths.carrierProject + "/Carrier.xcodeproj/xcshareddata", paths.carrierProject + "/Carrier",
+                paths.carrierProject + "/Carrier.xcodeproj/xcshareddata",
+                paths.carrierProject + "/Carrier",
             ] {
                 #expect(modeOf(dir) == 0o700, "\(dir)")
             }
@@ -117,11 +131,14 @@ struct CarrierProjectTests {
             // Age every file, so a rewrite would show as a newer modification time.
             let old = Date(timeIntervalSince1970: 1_000_000_000)
             for file in first.keys {
-                try FileManager.default.setAttributes([.modificationDate: old], ofItemAtPath: paths.carrierProject + "/" + file)
+                try FileManager.default.setAttributes(
+                    [.modificationDate: old], ofItemAtPath: paths.carrierProject + "/" + file)
             }
             try CarrierProject.write(to: paths.carrierProject)
             #expect(try snapshot(paths.carrierProject) == first)
-            for file in first.keys { #expect(mtime(paths.carrierProject + "/" + file) == old, "\(file)") }
+            for file in first.keys {
+                #expect(mtime(paths.carrierProject + "/" + file) == old, "\(file)")
+            }
         }
     }
 
@@ -155,9 +172,12 @@ struct CarrierProjectTests {
         }
     }
 
-    @Test("it never reads or writes the paid canary project, and writes only inside its own directory")
+    @Test(
+        "it never reads or writes the paid canary project, and writes only inside its own directory"
+    )
     func canaryUntouched() async throws {
-        let canaryDir = URL(fileURLWithPath: CanaryCommand.defaultProject).deletingLastPathComponent().path
+        let canaryDir = URL(fileURLWithPath: CanaryCommand.defaultProject)
+            .deletingLastPathComponent().path
         let before = try snapshot(canaryDir)
         #expect(!before.isEmpty)
         try await withTestHome { paths, _ in

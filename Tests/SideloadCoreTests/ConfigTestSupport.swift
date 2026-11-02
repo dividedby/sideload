@@ -15,7 +15,10 @@ func savedCoreId(_ seed: String = "1") -> String {
 
 func iphoneConfig(bundleIdPrefix: String? = nil) -> Config {
     Config(
-        devices: ["iphone": SavedDevice(udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios")],
+        devices: [
+            "iphone": SavedDevice(
+                udid: savedUdid("1"), coreDeviceId: savedCoreId("1"), platform: "ios")
+        ],
         bundleIdPrefix: bundleIdPrefix)
 }
 

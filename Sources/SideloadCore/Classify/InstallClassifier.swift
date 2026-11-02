@@ -39,8 +39,10 @@ public enum InstallClassifier {
         public var freeTeam: Bool
 
         public init(
-            exitCode: Int32? = nil, json: JSONValue? = nil, stderr: String = "", timedOut: Bool = false,
-            overflow: Bool = false, guardPassed: Bool = false, bundleId: String? = nil, freeTeam: Bool = false
+            exitCode: Int32? = nil, json: JSONValue? = nil, stderr: String = "",
+            timedOut: Bool = false,
+            overflow: Bool = false, guardPassed: Bool = false, bundleId: String? = nil,
+            freeTeam: Bool = false
         ) {
             self.freeTeam = freeTeam
             self.exitCode = exitCode
@@ -78,29 +80,45 @@ public enum InstallClassifier {
         if input.overflow {
             return Classification(
                 status: .error, code: "OUTPUT_LIMIT",
-                reason: "devicectl produced more output than the safety limit; the install outcome is unknown.")
+                reason:
+                    "devicectl produced more output than the safety limit; the install outcome is unknown."
+            )
         }
         let leaves = Leaf.walk(input.json)
-        let all = input.stderr.isEmpty ? leaves : leaves + [Leaf(key: "stderr", value: .string(input.stderr))]
+        let all =
+            input.stderr.isEmpty
+            ? leaves : leaves + [Leaf(key: "stderr", value: .string(input.stderr))]
 
         if input.exitCode == 0, !input.timedOut, outcome(of: input.json) != "failed",
             bundleListed(leaves, input.bundleId)
         {
             return Classification(
-                status: .working, code: "INSTALLED", reason: "Install succeeded; Apple has fixed the install block.")
+                status: .working, code: "INSTALLED",
+                reason: "Install succeeded; Apple has fixed the install block.")
         }
 
-        if has(all, invalidIdentity) || hasText(all, { $0.contains(ignoringCase: "identity used to sign the executable is no longer valid") }) {
+        if has(all, invalidIdentity)
+            || hasText(
+                all,
+                {
+                    $0.contains(
+                        ignoringCase: "identity used to sign the executable is no longer valid")
+                })
+        {
             return Classification(
                 status: .blocked, code: invalidIdentity.hex,
-                reason: "Device rejected the signing identity (known account-side defect; Apple support case open).")
+                reason:
+                    "Device rejected the signing identity (known account-side defect; Apple support case open)."
+            )
         }
 
         // The free team's own limit (design section 18): installd refuses a 4th app signed with a free profile.
         if input.freeTeam, hasText(all, { $0.matches(freeAppLimitPattern) }) {
             return Classification(
                 status: .error, code: "FREE_APP_LIMIT",
-                reason: "The device already has the maximum number of apps signed with a free developer profile.")
+                reason:
+                    "The device already has the maximum number of apps signed with a free developer profile."
+            )
         }
 
         let provisional: [(CodeForms, String)] = [
@@ -113,29 +131,39 @@ public enum InstallClassifier {
                 ? Classification(status: .blocked, code: forms.hex, reason: reason)
                 : Classification(
                     status: .error, code: forms.hex,
-                    reason: "\(reason) The pre-install guard did not pass, so this is not attributed to the account.")
+                    reason:
+                        "\(reason) The pre-install guard did not pass, so this is not attributed to the account."
+                )
         }
 
-        if input.timedOut || input.stderr.matches(timeoutPattern) || hasText(leaves, { $0.matches(timedOutPattern) }) {
+        if input.timedOut || input.stderr.matches(timeoutPattern)
+            || hasText(leaves, { $0.matches(timedOutPattern) })
+        {
             return Classification(status: .error, code: "TIMEOUT", reason: "devicectl timed out.")
         }
         if input.freeTeam, hasText(all, { $0.matches(untrustedPattern) }) {
             return Classification(
-                status: .error, code: "UNTRUSTED_DEVELOPER", reason: "The device has not trusted this developer yet.")
+                status: .error, code: "UNTRUSTED_DEVELOPER",
+                reason: "The device has not trusted this developer yet.")
         }
         if input.freeTeam, hasText(all, { $0.matches(notPairedPattern) }) {
-            return Classification(status: .error, code: "DEVICE_NOT_PAIRED", reason: "The device is not paired with this Mac.")
+            return Classification(
+                status: .error, code: "DEVICE_NOT_PAIRED",
+                reason: "The device is not paired with this Mac.")
         }
         if hasText(all, { $0.matches(lockedPattern) }) {
             return Classification(
-                status: .error, code: "DEVICE_LOCKED", reason: "The device appears to be locked; unlock it and retry.")
+                status: .error, code: "DEVICE_LOCKED",
+                reason: "The device appears to be locked; unlock it and retry.")
         }
         if hasText(all, { $0.matches(notConnectedPattern) }) {
             return Classification(
-                status: .error, code: "DEVICE_NOT_CONNECTED", reason: "The device is not connected or not reachable.")
+                status: .error, code: "DEVICE_NOT_CONNECTED",
+                reason: "The device is not connected or not reachable.")
         }
         if hasText(all, { $0.matches(diskFullPattern) }) {
-            return Classification(status: .error, code: "DISK_FULL", reason: "The device is out of storage.")
+            return Classification(
+                status: .error, code: "DISK_FULL", reason: "The device is out of storage.")
         }
 
         let raw = firstRawCode(leaves)
@@ -144,7 +172,8 @@ public enum InstallClassifier {
                 status: .error, code: "INSTALL_UNCONFIRMED",
                 reason: "devicectl exited 0 but did not report the canary as installed.")
         }
-        return Classification(status: .error, code: raw ?? "UNKNOWN", reason: "Unrecognised install failure.")
+        return Classification(
+            status: .error, code: raw ?? "UNKNOWN", reason: "Unrecognised install failure.")
     }
 
     // MARK: - Patterns (all case-insensitive)
@@ -152,9 +181,12 @@ public enum InstallClassifier {
     private static let timeoutPattern = "timed out|timeout"
     private static let timedOutPattern = "timed out"
     /// installd: "...reached the maximum number of installed apps using a free developer profile".
-    private static let freeAppLimitPattern = "maximum number of (installed )?apps (using|with|for) (a )?free (developer |development )?profiles?"
-    private static let untrustedPattern = "untrusted developer|not (been )?(explicitly )?trusted by the user|developer (app )?(is )?not trusted"
-    private static let notPairedPattern = "not paired|no pairing record|pairing (is )?required|trust this computer"
+    private static let freeAppLimitPattern =
+        "maximum number of (installed )?apps (using|with|for) (a )?free (developer |development )?profiles?"
+    private static let untrustedPattern =
+        "untrusted developer|not (been )?(explicitly )?trusted by the user|developer (app )?(is )?not trusted"
+    private static let notPairedPattern =
+        "not paired|no pairing record|pairing (is )?required|trust this computer"
     private static let lockedPattern = "locked|passcode"
     private static let notConnectedPattern =
         "not connected|unavailable|no devices? (found|matched)|could not be found|disconnected"
@@ -203,7 +235,9 @@ public enum InstallClassifier {
     }
 
     private static func hasText(_ leaves: [Leaf], _ test: (String) -> Bool) -> Bool {
-        leaves.contains { if case .string(let s) = $0.value { return test(s) } else { return false } }
+        leaves.contains {
+            if case .string(let s) = $0.value { return test(s) } else { return false }
+        }
     }
 
     private static func bundleListed(_ leaves: [Leaf], _ bundleId: String?) -> Bool {
@@ -217,7 +251,9 @@ public enum InstallClassifier {
             case .number(let n) where leaf.key.contains(ignoringCase: "code"):
                 return numberString(n)
             case .string(let s):
-                if let m = s.firstMatch(of: /0x[0-9a-fA-F]{6,8}/) { return String(m.output).lowercased() }
+                if let m = s.firstMatch(of: /0x[0-9a-fA-F]{6,8}/) {
+                    return String(m.output).lowercased()
+                }
             default:
                 break
             }

@@ -49,7 +49,9 @@ public struct SecurityP12Verifier: P12Verifier {
             }
             let identity = unsafeDowncast(value as AnyObject, to: SecIdentity.self)
             var certificate: SecCertificate?
-            guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess, let certificate else { continue }
+            guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess,
+                let certificate
+            else { continue }
             references.append(CertReference(der: SecCertificateCopyData(certificate) as Data))
         }
         return references

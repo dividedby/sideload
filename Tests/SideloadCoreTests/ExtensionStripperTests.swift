@@ -16,7 +16,8 @@ private struct Tree {
     func remove() { try? FileManager.default.removeItem(atPath: root) }
 
     func dir(_ relative: String) throws {
-        try FileManager.default.createDirectory(atPath: app + "/" + relative, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(
+            atPath: app + "/" + relative, withIntermediateDirectories: true)
     }
 
     func file(_ relative: String, _ text: String = "x") throws {
@@ -25,7 +26,9 @@ private struct Tree {
     }
 
     /// A bundle with an Info.plist.
-    func bundle(_ relative: String, id: String?, point: String? = nil, extra: [String: Any] = [:]) throws {
+    func bundle(_ relative: String, id: String?, point: String? = nil, extra: [String: Any] = [:])
+        throws
+    {
         try dir(relative)
         var plist = extra
         if let id { plist["CFBundleIdentifier"] = id }
@@ -39,11 +42,14 @@ private struct Tree {
 /// `codesign -d --entitlements - --xml <bundle>`: groups for `Widget`, plain entitlements for `Kit`, unsigned otherwise.
 private func entitlementRunner() -> FakeRunner {
     FakeRunner { spec in
-        guard spec.executable == "/usr/bin/codesign", spec.args.prefix(4) == ["-d", "--entitlements", "-", "--xml"],
+        guard spec.executable == "/usr/bin/codesign",
+            spec.args.prefix(4) == ["-d", "--entitlements", "-", "--xml"],
             let path = spec.args.last
         else { return RunResult(code: 1) }
         func xml(_ body: String) -> RunResult {
-            RunResult(stdout: "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict>\(body)</dict></plist>")
+            RunResult(
+                stdout: "<?xml version=\"1.0\"?><plist version=\"1.0\"><dict>\(body)</dict></plist>"
+            )
         }
         if path.hasSuffix("Widget.appex") {
             return xml(
@@ -55,7 +61,9 @@ private func entitlementRunner() -> FakeRunner {
     }
 }
 
-private func stripper(_ runner: FakeRunner = entitlementRunner(), limits: InspectLimits = InspectLimits()) -> ExtensionStripper {
+private func stripper(
+    _ runner: FakeRunner = entitlementRunner(), limits: InspectLimits = InspectLimits()
+) -> ExtensionStripper {
     ExtensionStripper(runner: runner, limits: limits)
 }
 
@@ -65,21 +73,28 @@ struct ExtensionStripperTests {
     func plugins() async throws {
         let t = try Tree()
         defer { t.remove() }
-        try t.bundle("PlugIns/Widget.appex", id: "com.example.widget", point: "com.apple.widgetkit-extension")
+        try t.bundle(
+            "PlugIns/Widget.appex", id: "com.example.widget", point: "com.apple.widgetkit-extension"
+        )
         try t.bundle("PlugIns/Kit.appex", id: "com.example.kit", point: "com.apple.share-services")
         try t.file("Info.plist")
         let outcome = try await stripper().strip(app: t.app)
         #expect(outcome.stripped.map(\.path) == ["PlugIns/Kit.appex", "PlugIns/Widget.appex"])
         let widget = try #require(outcome.stripped.last)
-        #expect(widget.bundleId == "com.example.widget" && widget.extensionPoint == "com.apple.widgetkit-extension")
-        #expect(widget.entitlementKeys == ["aps-environment", "com.apple.security.application-groups"])
+        #expect(
+            widget.bundleId == "com.example.widget"
+                && widget.extensionPoint == "com.apple.widgetkit-extension")
+        #expect(
+            widget.entitlementKeys == ["aps-environment", "com.apple.security.application-groups"])
         #expect(widget.appGroups == ["group.one", "group.two"])
         let kit = try #require(outcome.stripped.first)
         #expect(kit.entitlementKeys == ["get-task-allow"] && kit.appGroups.isEmpty)
         #expect(outcome.warnings.isEmpty)
         #expect(t.names == ["Info.plist"])
         #expect(ExtensionStripper.remaining(in: t.app).isEmpty)
-        #expect(widget.json["bundleId"] == "com.example.widget" && widget.json["appGroups"] == ["group.one", "group.two"])
+        #expect(
+            widget.json["bundleId"] == "com.example.widget"
+                && widget.json["appGroups"] == ["group.one", "group.two"])
     }
 
     @Test("other content in PlugIns/ is kept, with a warning")
@@ -93,20 +108,27 @@ struct ExtensionStripperTests {
         #expect(outcome.warnings.map { $0["code"]?.string } == ["PLUGINS_NOT_EMPTY"])
     }
 
-    @Test("a nested appex, all of Extensions/ and all of Watch/ (with the appex inside it) are removed")
+    @Test(
+        "a nested appex, all of Extensions/ and all of Watch/ (with the appex inside it) are removed"
+    )
     func nestedExtensionsAndWatch() async throws {
         let t = try Tree()
         defer { t.remove() }
         try t.bundle("Frameworks/F.framework/PlugIns/Deep.appex", id: "com.example.deep")
         try t.file("Frameworks/F.framework/F")
-        try t.bundle("Extensions/Kit.appex", id: "com.example.kit", point: "com.apple.extensionkit-service")
+        try t.bundle(
+            "Extensions/Kit.appex", id: "com.example.kit", point: "com.apple.extensionkit-service")
         try t.file("Extensions/notes.txt")
         try t.bundle("Watch/Watch.app", id: "com.example.watch", extra: ["WKWatchKitApp": true])
         try t.bundle("Watch/Watch.app/PlugIns/WatchExt.appex", id: "com.example.watch.ext")
         try t.file("Keep.txt")
         let outcome = try await stripper().strip(app: t.app)
         // Watch/'s own appex goes with it and is not listed on its own.
-        #expect(outcome.stripped.map(\.path) == ["Extensions/Kit.appex", "Frameworks/F.framework/PlugIns/Deep.appex", "Watch/Watch.app"])
+        #expect(
+            outcome.stripped.map(\.path) == [
+                "Extensions/Kit.appex", "Frameworks/F.framework/PlugIns/Deep.appex",
+                "Watch/Watch.app",
+            ])
         #expect(outcome.stripped.last?.bundleId == "com.example.watch")
         #expect(!t.names.contains { $0.hasPrefix("Watch") || $0.hasPrefix("Extensions") })
         #expect(t.names.contains("Frameworks/F.framework/F") && t.names.contains("Keep.txt"))
@@ -135,17 +157,25 @@ struct ExtensionStripperTests {
         let outcome = try await stripper(runner).strip(app: t.app)
         #expect(outcome.stripped.isEmpty && outcome.warnings.isEmpty)
         #expect(runner.calls.isEmpty)
-        #expect(t.names == ["Frameworks", "Frameworks/F.framework", "Frameworks/F.framework/Info.plist", "Info.plist"])
+        #expect(
+            t.names == [
+                "Frameworks", "Frameworks/F.framework", "Frameworks/F.framework/Info.plist",
+                "Info.plist",
+            ])
     }
 
-    @Test("an extension whose Info.plist cannot be read is still removed, with a warning and no bundle ID")
+    @Test(
+        "an extension whose Info.plist cannot be read is still removed, with a warning and no bundle ID"
+    )
     func unreadable() async throws {
         let t = try Tree()
         defer { t.remove() }
         try t.dir("PlugIns/Broken.appex")
         try t.file("PlugIns/Broken.appex/Info.plist", "not a plist")
         let outcome = try await stripper().strip(app: t.app)
-        #expect(outcome.stripped.count == 1 && outcome.stripped[0].bundleId == nil && outcome.stripped[0].extensionPoint == nil)
+        #expect(
+            outcome.stripped.count == 1 && outcome.stripped[0].bundleId == nil
+                && outcome.stripped[0].extensionPoint == nil)
         #expect(outcome.warnings.map { $0["code"]?.string } == ["EXTENSION_UNREADABLE"])
         #expect(t.names.isEmpty)
     }
@@ -174,7 +204,9 @@ struct ExtensionStripperTests {
         #expect(ExtensionStripper.remaining(in: t.app) == ["PlugIns/Widget.appex"])
     }
 
-    @Test("the re-walk finds an appex anywhere, a symlink named *.appex, Extensions/ and Watch/, and a watch app by its plist")
+    @Test(
+        "the re-walk finds an appex anywhere, a symlink named *.appex, Extensions/ and Watch/, and a watch app by its plist"
+    )
     func remaining() async throws {
         let t = try Tree()
         defer { t.remove() }
@@ -182,14 +214,21 @@ struct ExtensionStripperTests {
         try t.bundle("Extensions", id: nil)
         try t.bundle("Watch", id: nil)
         try t.bundle("Frameworks/F.framework/Hidden.app", id: "y", extra: ["WKWatchKitApp": true])
-        try t.bundle("Frameworks/G.framework/Sibling.app", id: "z", extra: ["WKCompanionAppBundleIdentifier": "w"])
+        try t.bundle(
+            "Frameworks/G.framework/Sibling.app", id: "z",
+            extra: ["WKCompanionAppBundleIdentifier": "w"])
         try t.bundle("Frameworks/H.framework/Ordinary.app", id: "ok")
-        try t.bundle("Frameworks/I.framework/Platforms.app", id: "p", extra: ["CFBundleSupportedPlatforms": ["WatchOS"]])
-        try FileManager.default.createSymbolicLink(atPath: t.app + "/link.appex", withDestinationPath: "/tmp")
-        #expect(ExtensionStripper.remaining(in: t.app) == [
-            "A/B/C/Deep.appex", "Extensions", "Frameworks/F.framework/Hidden.app", "Frameworks/G.framework/Sibling.app",
-            "Frameworks/I.framework/Platforms.app", "Watch", "link.appex",
-        ])
+        try t.bundle(
+            "Frameworks/I.framework/Platforms.app", id: "p",
+            extra: ["CFBundleSupportedPlatforms": ["WatchOS"]])
+        try FileManager.default.createSymbolicLink(
+            atPath: t.app + "/link.appex", withDestinationPath: "/tmp")
+        #expect(
+            ExtensionStripper.remaining(in: t.app) == [
+                "A/B/C/Deep.appex", "Extensions", "Frameworks/F.framework/Hidden.app",
+                "Frameworks/G.framework/Sibling.app",
+                "Frameworks/I.framework/Platforms.app", "Watch", "link.appex",
+            ])
     }
 
     @Test("a tree nested past the depth limit is reported as remaining rather than skipped")

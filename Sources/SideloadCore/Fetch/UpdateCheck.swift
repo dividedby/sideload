@@ -55,12 +55,14 @@ enum UpdateCheck {
             rewrite = true
             report.warnings.append(
                 CanaryCommand.warning(
-                    "UPDATES_CACHE_UNREADABLE", "updates.json could not be read, so every source is checked.",
+                    "UPDATES_CACHE_UNREADABLE",
+                    "updates.json could not be read, so every source is checked.",
                     "Check the permissions of $SIDELOAD_HOME; the file is rewritten."))
         }
 
         let installed = installedRecords(ledger, saved: Set(config.devices.keys))
-        let approvedSources = Dictionary(uniqueKeysWithValues: FetchCatalog.approvedSources(config).map { ($0.app, $0) })
+        let approvedSources = Dictionary(
+            uniqueKeysWithValues: FetchCatalog.approvedSources(config).map { ($0.app, $0) })
         var cancelled = false
         sources: for catalog in FetchCatalog.sources where named == nil || catalog.app == named {
             if Task.isCancelled {
@@ -69,11 +71,15 @@ enum UpdateCheck {
             }
             let app = catalog.app
             guard let source = approvedSources[app] else {
-                report.sources.append(skipped(app, skippedNotApproved, "\(app) is not in approvedSources in config.json."))
+                report.sources.append(
+                    skipped(
+                        app, skippedNotApproved, "\(app) is not in approvedSources in config.json.")
+                )
                 continue
             }
             guard installed[app] != nil else {
-                report.sources.append(skipped(app, skippedNotInstalled, "\(app) has no install on a saved device."))
+                report.sources.append(
+                    skipped(app, skippedNotInstalled, "\(app) has no install on a saved device."))
                 continue
             }
             switch UpdateCadence.decide(cache.apps[app], now: now, force: force) {
@@ -87,7 +93,8 @@ enum UpdateCheck {
                     let upstream = UpdateUpstream(asset)
                     cache.apps[app] = entry.succeeded(upstream, at: now)
                     rewrite = true
-                    report.sources.append(SourceReport(app: app, status: .ok, checkedAt: now, upstream: upstream))
+                    report.sources.append(
+                        SourceReport(app: app, status: .ok, checkedAt: now, upstream: upstream))
                 } catch {
                     let failure = SourceMetadata.map(error, command: "updates")
                     if failure.code == "CANCELLED" {
@@ -95,13 +102,16 @@ enum UpdateCheck {
                         break sources
                     }
                     var asked: Int?
-                    if case .number(let seconds)? = failure.data["retryAfter"] { asked = Int(seconds) }
+                    if case .number(let seconds)? = failure.data["retryAfter"] {
+                        asked = Int(seconds)
+                    }
                     let next = entry.failed(code: failure.code, retryAfter: asked, at: now)
                     cache.apps[app] = next
                     rewrite = true
                     report.sources.append(
                         SourceReport(
-                            app: app, status: .error, checkedAt: next.checkedAt, upstream: next.upstream, failure: failure))
+                            app: app, status: .error, checkedAt: next.checkedAt,
+                            upstream: next.upstream, failure: failure))
                 }
             }
         }
@@ -112,16 +122,25 @@ enum UpdateCheck {
             } catch {
                 report.warnings.append(
                     CanaryCommand.warning(
-                        "UPDATES_CACHE_NOT_WRITTEN", "updates.json could not be written, so the next run asks again.",
+                        "UPDATES_CACHE_NOT_WRITTEN",
+                        "updates.json could not be written, so the next run asks again.",
                         "Check the permissions and free space of $SIDELOAD_HOME."))
             }
         }
-        if cancelled { throw SideloadError("CANCELLED", "updates was cancelled.", fix: "Re-run the command.") }
+        if cancelled {
+            throw SideloadError("CANCELLED", "updates was cancelled.", fix: "Re-run the command.")
+        }
 
         for source in report.sources {
             for record in installed[source.app] ?? [] {
-                let state = source.upstream.map { VersionOrder.compare(installed: record.version, upstream: $0.version) } ?? .unknown
-                report.installs.append(InstallReport(device: record.device, app: record.app, installed: record.version, state: state))
+                let state =
+                    source.upstream.map {
+                        VersionOrder.compare(installed: record.version, upstream: $0.version)
+                    } ?? .unknown
+                report.installs.append(
+                    InstallReport(
+                        device: record.device, app: record.app, installed: record.version,
+                        state: state))
             }
         }
         return report
@@ -130,11 +149,14 @@ enum UpdateCheck {
     // MARK: pieces
 
     /// One metadata GET, then the resolver's own checks, so an update is only reported when `fetch` would accept it.
-    private static func resolve(_ services: Services, _ source: FetchSource) async throws -> ResolvedAsset {
+    private static func resolve(_ services: Services, _ source: FetchSource) async throws
+        -> ResolvedAsset
+    {
         let response = try await SourceMetadata.get(services, source, command: "updates")
         guard response.status == 200 else {
             let rateLimited = response.status == 403 || response.status == 429
-            throw SourceMetadata.httpError(response.status, retryAfter: rateLimited ? response.retryAfter : nil)
+            throw SourceMetadata.httpError(
+                response.status, retryAfter: rateLimited ? response.retryAfter : nil)
         }
         // The live transport enforces this cap itself; the check guards a stub transport that does not.
         guard response.body.count <= URLSessionTransport.maxBodyBytes else {
@@ -150,20 +172,27 @@ enum UpdateCheck {
     }
 
     /// A source not asked this run: what the file holds, with the last attempt's failure if it was one.
-    private static func replay(_ app: String, _ entry: UpdateCacheEntry?, until: Date) -> SourceReport {
-        var report = SourceReport(app: app, status: .ok, checkedAt: entry?.checkedAt, fromCache: true, upstream: entry?.upstream)
+    private static func replay(_ app: String, _ entry: UpdateCacheEntry?, until: Date)
+        -> SourceReport
+    {
+        var report = SourceReport(
+            app: app, status: .ok, checkedAt: entry?.checkedAt, fromCache: true,
+            upstream: entry?.upstream)
         if let entry, let code = entry.errorCode, let at = entry.errorAt {
             let stamp = ISO8601DateFormatter().string(from: until)
             report.status = .error
             report.failure = SideloadError(
-                code, "The last check of \(app) failed (\(code)) at \(ISO8601DateFormatter().string(from: at)).",
+                code,
+                "The last check of \(app) failed (\(code)) at \(ISO8601DateFormatter().string(from: at)).",
                 fix: "It is not asked again before \(stamp).")
         }
         return report
     }
 
     /// The installs that count: on a saved device, still there (or lent to the lab), grouped by app.
-    private static func installedRecords(_ ledger: Ledger, saved: Set<String>) -> [String: [LedgerInstall]] {
+    private static func installedRecords(_ ledger: Ledger, saved: Set<String>) -> [String:
+        [LedgerInstall]]
+    {
         var out: [String: [LedgerInstall]] = [:]
         for record in ledger.installs where saved.contains(record.device) {
             let lent = ledger.slots.contains { $0.id == record.id && $0.lentTo != nil }

@@ -5,7 +5,9 @@ import Foundation
 // changes nothing on the device or the portal; registering on the free team is its own confirm (`MenuAction.addRegister`).
 
 /// One listed device that is not saved. The panel sees `title`, never the device's name or a full ID.
-public struct MenuDeviceCandidate: Sendable, Hashable, Identifiable, CustomStringConvertible, CustomDebugStringConvertible {
+public struct MenuDeviceCandidate: Sendable, Hashable, Identifiable, CustomStringConvertible,
+    CustomDebugStringConvertible
+{
     /// Its place in the list.
     public var id: Int
     /// "iPad · USB · …ab12": its type, connection and last four UDID characters.
@@ -40,7 +42,8 @@ public enum MenuAddDevice {
         case "iphone": return ("iPhone", "iphone")
         case "ipad": return ("iPad", "ipad")
         case "appletv": return ("Apple TV", "appletv")
-        default: return device.platform == "tvos" ? ("Apple TV", "appletv") : ("iOS device", "device")
+        default:
+            return device.platform == "tvos" ? ("Apple TV", "appletv") : ("iOS device", "device")
         }
     }
 
@@ -59,7 +62,9 @@ public enum MenuAddDevice {
                 ? "Not paired: pair it in Xcode first (on the Apple TV: Settings > Remotes and Devices)"
                 : "Not paired: pair it in Xcode first (connect it by USB, unlock it, trust this Mac)"
         }
-        if device.udid?.isEmpty != false { return "No UDID yet: connect it, unlock it and check again" }
+        if device.udid?.isEmpty != false {
+            return "No UDID yet: connect it, unlock it and check again"
+        }
         return nil
     }
 
@@ -68,8 +73,14 @@ public enum MenuAddDevice {
         var taken = Set(config.devices.keys.map { $0.lowercased() })
         var found: [MenuDeviceCandidate] = []
         for device in devices where device.physical {
-            guard let kind = kind(device), let match = device.udid.nonEmpty ?? device.coreDeviceId.nonEmpty else { continue }
-            guard !config.devices.values.contains(where: { DeviceList.findSaved([device], matching: $0) != nil }) else { continue }
+            guard let kind = kind(device),
+                let match = device.udid.nonEmpty ?? device.coreDeviceId.nonEmpty
+            else { continue }
+            guard
+                !config.devices.values.contains(where: {
+                    DeviceList.findSaved([device], matching: $0) != nil
+                })
+            else { continue }
             var alias = kind.alias
             var next = 2
             while taken.contains(alias) {
@@ -77,10 +88,12 @@ public enum MenuAddDevice {
                 next += 1
             }
             taken.insert(alias)
-            let title = ([kind.title, connection(device), Redactor.tail4(match)] as [String?]).compactMap { $0 }.joined(separator: " · ")
+            let title = ([kind.title, connection(device), Redactor.tail4(match)] as [String?])
+                .compactMap { $0 }.joined(separator: " · ")
             found.append(
                 MenuDeviceCandidate(
-                    id: 0, title: title, match: match, platform: device.platform, suggestedAlias: alias, blocked: blocked(device)))
+                    id: 0, title: title, match: match, platform: device.platform,
+                    suggestedAlias: alias, blocked: blocked(device)))
         }
         // A sort that keeps `devicectl`'s order among equals.
         let ordered = found.filter { $0.blocked == nil } + found.filter { $0.blocked != nil }
@@ -97,7 +110,9 @@ public enum MenuAddDevice {
             let config = try services.store.load()
             guard let devices = try await services.deviceCtl.listDevices() else {
                 return .failed(
-                    MenuIssue(code: "DEVICECTL_FAILED", message: "devicectl could not list devices.", fix: "Check that Xcode is installed, then retry."))
+                    MenuIssue(
+                        code: "DEVICECTL_FAILED", message: "devicectl could not list devices.",
+                        fix: "Check that Xcode is installed, then retry."))
             }
             return .list(candidates(devices, config: config))
         } catch {
@@ -111,7 +126,9 @@ public enum MenuAddDevice {
         return open.count == 1 ? open[0] : nil
     }
 
-    public static func trimmedAlias(_ alias: String) -> String { alias.trimmingCharacters(in: .whitespacesAndNewlines) }
+    public static func trimmedAlias(_ alias: String) -> String {
+        alias.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     /// Why this alias cannot be used; nil when it can. The rule is `device save`'s, and an alias differing only in case counts as taken.
     public static func aliasProblem(_ alias: String, taken: [String]) -> String? {
@@ -120,11 +137,15 @@ public enum MenuAddDevice {
         guard DeviceCommand.isValidAlias(alias) else {
             return "Use up to 32 letters, digits, \"-\" or \"_\", starting with a letter or digit"
         }
-        if taken.contains(where: { $0.lowercased() == alias.lowercased() }) { return "\(alias) is already saved" }
+        if taken.contains(where: { $0.lowercased() == alias.lowercased() }) {
+            return "\(alias) is already saved"
+        }
         return nil
     }
 
-    static func availability(alias: String, candidate: MenuDeviceCandidate, taken: [String]) -> MenuAvailability {
+    static func availability(alias: String, candidate: MenuDeviceCandidate, taken: [String])
+        -> MenuAvailability
+    {
         if let blocked = candidate.blocked { return .disabled(blocked) }
         if let problem = aliasProblem(alias, taken: taken) { return .disabled(problem) }
         return .enabled
@@ -139,12 +160,15 @@ public enum MenuAddDevice {
                 "Auto-renew will be on: its installs renew while you are logged in and it is reachable; turn it off from its card",
                 "Registering it on the free team is a separate confirm, only if Apple asks when you add its first app",
             ],
-            confirmLabel: "Save device", destructive: false, runningLabel: "Saving \(alias)…", apps: [])
+            confirmLabel: "Save device", destructive: false, runningLabel: "Saving \(alias)…",
+            apps: [])
     }
 
     /// Why the save must not run, from `config.json` as it is on disk: the alias is taken, or this device is already saved
     /// under another one. Nil when it is clear.
-    static func saveStop(alias: String, candidate: MenuDeviceCandidate, services: Services) -> String? {
+    static func saveStop(alias: String, candidate: MenuDeviceCandidate, services: Services)
+        -> String?
+    {
         let config: Config
         do {
             config = try services.store.load()
@@ -153,7 +177,9 @@ public enum MenuAddDevice {
         }
         if let problem = aliasProblem(alias, taken: Array(config.devices.keys)) { return problem }
         for (saved, device) in config.devices.sorted(by: { $0.key < $1.key }) {
-            if [device.udid, device.coreDeviceId].contains(where: { $0?.lowercased() == candidate.match.lowercased() }) {
+            if [device.udid, device.coreDeviceId].contains(where: {
+                $0?.lowercased() == candidate.match.lowercased()
+            }) {
                 return "This device is already saved as \(saved)"
             }
         }
@@ -164,7 +190,10 @@ public enum MenuAddDevice {
 extension MenuSnapshot {
     /// What the actions are checked against before anything is saved: no devices, nothing in the ledger.
     static func firstRun(now: Date) -> MenuSnapshot {
-        MenuSnapshotBuilder.build(MenuInputs(now: now, canaryStatus: nil, config: Config(), ledger: Ledger(), probe: .listed([])))
+        MenuSnapshotBuilder.build(
+            MenuInputs(
+                now: now, canaryStatus: nil, config: Config(), ledger: Ledger(), probe: .listed([]))
+        )
     }
 }
 

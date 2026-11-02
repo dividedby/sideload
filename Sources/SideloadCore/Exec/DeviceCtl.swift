@@ -41,7 +41,9 @@ public struct DeviceCtl: Sendable {
     private let paths: Paths
     private let loadConfig: @Sendable () throws -> Config
 
-    public init(runner: any Runner, paths: Paths, loadConfig: @escaping @Sendable () throws -> Config) {
+    public init(
+        runner: any Runner, paths: Paths, loadConfig: @escaping @Sendable () throws -> Config
+    ) {
         self.runner = runner
         self.paths = paths
         self.loadConfig = loadConfig
@@ -73,12 +75,16 @@ public struct DeviceCtl: Sendable {
     /// word (so no bundle ID or path can ride in `args`) is refused. Nil means the call names no app.
     private static func appMutation(_ normalized: [String]) throws -> AppMutation? {
         let words = normalized.filter { !$0.hasPrefix("-") }.map { $0.lowercased() }
-        guard words.contains(where: { ["install", "uninstall", "launch"].contains($0) }) else { return nil }
+        guard words.contains(where: { ["install", "uninstall", "launch"].contains($0) }) else {
+            return nil
+        }
         switch words {
         case ["device", "install", "app"]: return .install
         case ["device", "uninstall", "app"]: return .uninstall
         case ["device", "process", "launch"]: return .launch
-        default: throw notAllowed("This devicectl command is not a recognised app install, uninstall or launch.")
+        default:
+            throw notAllowed(
+                "This devicectl command is not a recognised app install, uninstall or launch.")
         }
     }
 
@@ -90,11 +96,14 @@ public struct DeviceCtl: Sendable {
     /// Profiles are read, never written: `device profile` may only be exactly `profileListArgs` with no positional;
     /// `install`, `remove`, `validate` and anything else under it, however the words are split between the flags and the
     /// positionals, is refused before a subprocess.
-    private static func requireReadOnlyProfileCall(_ normalized: [String], positional: [String]) throws {
+    private static func requireReadOnlyProfileCall(_ normalized: [String], positional: [String])
+        throws
+    {
         let words = (normalized + positional).filter { !$0.hasPrefix("-") }.map { $0.lowercased() }
         guard words.contains("profile") || words.contains("profiles") else { return }
         guard normalized == profileListArgs, positional.isEmpty else {
-            throw notAllowed("Only the read-only `device profile list --type provisioning` may touch profiles.")
+            throw notAllowed(
+                "Only the read-only `device profile list --type provisioning` may touch profiles.")
         }
     }
 
@@ -110,7 +119,9 @@ public struct DeviceCtl: Sendable {
     /// Non-empty, no NUL, and every `/`-separated part is a name: not empty, `.` or `..`.
     private static func hasPlainParts(_ path: some StringProtocol) -> Bool {
         !path.isEmpty && !path.unicodeScalars.contains("\0")
-            && path.split(separator: "/", omittingEmptySubsequences: false).allSatisfy { $0 != ".." && $0 != "." && !$0.isEmpty }
+            && path.split(separator: "/", omittingEmptySubsequences: false).allSatisfy {
+                $0 != ".." && $0 != "." && !$0.isEmpty
+            }
     }
 
     /// A local path in an app-data call: absolute, plain components, strictly under `$SIDELOAD_HOME/backups/`.
@@ -129,8 +140,10 @@ public struct DeviceCtl: Sendable {
         _ scope: Scope, normalized: [String], positional: [String], config: Config, backups: String
     ) throws {
         let refusal = notAllowed(
-            "Only the exact app-data shapes `device info files` and `device copy from|to` for the scoped free app are allowed.")
-        guard case .free(let bundleId) = scope, Config.isFreeBundleId(bundleId, prefix: config.bundleIdPrefix),
+            "Only the exact app-data shapes `device info files` and `device copy from|to` for the scoped free app are allowed."
+        )
+        guard case .free(let bundleId) = scope,
+            Config.isFreeBundleId(bundleId, prefix: config.bundleIdPrefix),
             positional.isEmpty, normalized.count >= 3, normalized[0] == "device"
         else { throw refusal }
         // Per shape: the flags it must have (each exactly once), and for a copy which side is the device path.
@@ -157,11 +170,14 @@ public struct DeviceCtl: Sendable {
                 i += 1
                 continue
             }
-            guard required.contains(flag), seen[flag] == nil, i + 1 < normalized.count else { throw refusal }
+            guard required.contains(flag), seen[flag] == nil, i + 1 < normalized.count else {
+                throw refusal
+            }
             seen[flag] = normalized[i + 1]
             i += 2
         }
-        guard Set(seen.keys) == required, seen["--domain-type"] == appDataDomain, seen["--domain-identifier"] == bundleId
+        guard Set(seen.keys) == required, seen["--domain-type"] == appDataDomain,
+            seen["--domain-identifier"] == bundleId
         else { throw refusal }
         if let deviceFlag {
             let localFlag = deviceFlag == "--source" ? "--destination" : "--source"
@@ -174,7 +190,9 @@ public struct DeviceCtl: Sendable {
     private static func notAllowed(_ message: String) -> SideloadError {
         SideloadError(
             "BUNDLE_ID_NOT_ALLOWED", message,
-            fix: "The free team only touches <bundleIdPrefix>.free.* apps; the paid path never touches them.")
+            fix:
+                "The free team only touches <bundleIdPrefix>.free.* apps; the paid path never touches them."
+        )
     }
 
     /// The allowlist hook. Runs before any subprocess.
@@ -184,21 +202,27 @@ public struct DeviceCtl: Sendable {
         // A positional is appended after the flags, so one spelling a subcommand word could complete a split
         // subcommand (`["device"]` + `["uninstall","app",id]`). No positional may be one (a leading "-" is
         // already `INVALID_ARGUMENT` in `run`).
-        let reserved: Set<String> = ["install", "uninstall", "launch", "app", "process", "remove", "validate", "profile", "profiles"]
+        let reserved: Set<String> = [
+            "install", "uninstall", "launch", "app", "process", "remove", "validate", "profile",
+            "profiles",
+        ]
         if positional.contains(where: { reserved.contains($0.lowercased()) }) {
             throw notAllowed("A positional argument may not be a devicectl subcommand word.")
         }
         let words = (normalized + positional).filter { !$0.hasPrefix("-") }.map { $0.lowercased() }
         if words.contains("copy") || words.contains("files") {
             // Checked whole, so it is also all that is checked (a device path may legitimately be named `install`).
-            try requireAppDataCall(scope, normalized: normalized, positional: positional, config: config, backups: backups)
+            try requireAppDataCall(
+                scope, normalized: normalized, positional: positional, config: config,
+                backups: backups)
             return
         }
         try requireReadOnlyProfileCall(normalized, positional: positional)
         guard let mutation = try appMutation(normalized) else { return }  // list, info and the like name no app
         // Exactly one positional: the bundle ID (uninstall, launch) or the app path (install).
         guard positional.count == 1 else {
-            throw notAllowed("An app install, uninstall or launch takes exactly one positional argument.")
+            throw notAllowed(
+                "An app install, uninstall or launch takes exactly one positional argument.")
         }
         let argvID = mutation == .install ? nil : positional.first
         switch scope {
@@ -217,14 +241,16 @@ public struct DeviceCtl: Sendable {
     }
 
     public func run(
-        _ args: [String], deviceAlias: String? = nil, timeoutSec: Int = 30, positional: [String] = [],
+        _ args: [String], deviceAlias: String? = nil, timeoutSec: Int = 30,
+        positional: [String] = [],
         scope: Scope = .paid
     ) async throws -> Result {
         guard timeoutSec > 0 else { throw Self.misuse("a positive timeoutSec is required") }
         if positional.contains(where: { $0.hasPrefix("-") }) {
             throw Self.misuse("positional arguments must be strings that do not start with \"-\"")
         }
-        for owned in ["--timeout", "--json-output"] where !Self.values(of: owned, in: args).isEmpty {
+        for owned in ["--timeout", "--json-output"] where !Self.values(of: owned, in: args).isEmpty
+        {
             throw Self.misuse("\(owned) is set by the wrapper")
         }
 
@@ -242,17 +268,22 @@ public struct DeviceCtl: Sendable {
             i += 1
         }
         // Classify what devicectl will receive: `rest`, not the raw args, so `--device X` cannot split the subcommand.
-        try Self.checkScope(scope, normalized: rest, positional: positional, config: config, backups: paths.backups)
+        try Self.checkScope(
+            scope, normalized: rest, positional: positional, config: config, backups: paths.backups)
 
         var deviceID: String?
         if let deviceAlias {
-            if !literal.isEmpty { throw Self.misuse("pass either deviceAlias or --device, not both") }
+            if !literal.isEmpty {
+                throw Self.misuse("pass either deviceAlias or --device, not both")
+            }
             deviceID = try config.requireDevice(deviceAlias).deviceId
         } else if !literal.isEmpty {
             guard literal.count == 1, config.isSavedDeviceID(literal[0]) else {
                 throw SideloadError(
                     "DEVICE_NOT_SAVED", "devicectl --device must be a saved device ID.",
-                    fix: "Use a saved alias; names, serials and DNS names are never passed to devicectl.")
+                    fix:
+                        "Use a saved alias; names, serials and DNS names are never passed to devicectl."
+                )
             }
             deviceID = literal[0]
         }
@@ -267,18 +298,24 @@ public struct DeviceCtl: Sendable {
         argv += ["--timeout", String(timeoutSec), "--json-output", jsonFile] + positional
 
         let res = await runner.run(
-            CommandSpec(executable: "xcrun", args: argv, timeout: .seconds(timeoutSec + Self.runnerMarginSec)))
+            CommandSpec(
+                executable: "xcrun", args: argv,
+                timeout: .seconds(timeoutSec + Self.runnerMarginSec)))
         if res.overflow {
             throw SideloadError(
-                "OUTPUT_LIMIT", "devicectl produced more output than the safety limit; it was stopped.",
+                "OUTPUT_LIMIT",
+                "devicectl produced more output than the safety limit; it was stopped.",
                 fix: "Retry; if it repeats, run the command by hand to see what is flooding.")
         }
         // Missing, empty or unparseable output is nil. Tighten the mode before reading.
         chmod(jsonFile, 0o600)
         var json: JSONValue?
-        if let data = try? readFile(jsonFile) { json = try? JSONDecoder().decode(JSONValue.self, from: data) }
+        if let data = try? readFile(jsonFile) {
+            json = try? JSONDecoder().decode(JSONValue.self, from: data)
+        }
         return Result(
-            code: res.code, timedOut: res.timedOut, json: json, stderr: String(res.stderr.prefix(4000)),
+            code: res.code, timedOut: res.timedOut, json: json,
+            stderr: String(res.stderr.prefix(4000)),
             spawnError: res.spawnError)
     }
 }

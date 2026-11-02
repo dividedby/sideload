@@ -42,7 +42,10 @@ enum StatusIcon {
             context.setLineCap(.round)
             context.setLineJoin(.round)
 
-            func ring(_ colour: CGColor, from start: Double = -90, sweep: Double = 360, dash: [CGFloat] = []) {
+            func ring(
+                _ colour: CGColor, from start: Double = -90, sweep: Double = 360,
+                dash: [CGFloat] = []
+            ) {
                 context.saveGState()
                 context.setStrokeColor(colour)
                 context.setLineWidth(2)
@@ -73,7 +76,9 @@ enum StatusIcon {
                     p.addLine(to: CGPoint(x: 9.8, y: 8.2))
                 }
             }
-            func cross(_ colour: CGColor, _ width: CGFloat, _ x0: CGFloat, _ y0: CGFloat, _ size: CGFloat) {
+            func cross(
+                _ colour: CGColor, _ width: CGFloat, _ x0: CGFloat, _ y0: CGFloat, _ size: CGFloat
+            ) {
                 stroke(colour, width) { p in
                     p.move(to: CGPoint(x: x0, y: y0))
                     p.addLine(to: CGPoint(x: x0 + size, y: y0 + size))
@@ -121,10 +126,12 @@ enum StatusIcon {
                 // A cut-out the size of the badge's halo, then the badge.
                 context.saveGState()
                 context.setBlendMode(.clear)
-                context.fillEllipse(in: CGRect(x: 12.6 - 3.6, y: 12.6 - 3.6, width: 7.2, height: 7.2))
+                context.fillEllipse(
+                    in: CGRect(x: 12.6 - 3.6, y: 12.6 - 3.6, width: 7.2, height: 7.2))
                 context.restoreGState()
                 context.setFillColor(red)
-                context.fillEllipse(in: CGRect(x: 12.6 - 2.8, y: 12.6 - 2.8, width: 5.6, height: 5.6))
+                context.fillEllipse(
+                    in: CGRect(x: 12.6 - 2.8, y: 12.6 - 2.8, width: 5.6, height: 5.6))
                 cross(NSColor.white.cgColor, 0.9, 11.6, 11.6, 2)
             case .certChanged:
                 ring(red)
@@ -139,10 +146,12 @@ enum StatusIcon {
                     // "M6.4 6.4a1.6 1.6 0 1 1 2.3 1.4c-.5.3-.7.6-.7 1.1": the hook is a 245 degree arc about (8, 6.36).
                     let centre = CGPoint(x: 8, y: 6.362)
                     p.addArc(
-                        center: centre, radius: 1.6, startAngle: 178.6 * .pi / 180, endAngle: 424 * .pi / 180,
+                        center: centre, radius: 1.6, startAngle: 178.6 * .pi / 180,
+                        endAngle: 424 * .pi / 180,
                         clockwise: false)
                     p.addCurve(
-                        to: CGPoint(x: 8, y: 8.9), control1: CGPoint(x: 8.2, y: 8.1), control2: CGPoint(x: 8, y: 8.4))
+                        to: CGPoint(x: 8, y: 8.9), control1: CGPoint(x: 8.2, y: 8.1),
+                        control2: CGPoint(x: 8, y: 8.4))
                 }
                 dot(grey, 1.5, 8, 11)
             }

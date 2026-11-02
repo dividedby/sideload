@@ -31,7 +31,9 @@ public struct AppSnapshot: Sendable, Equatable {
         else { return nil }
         var apps: [String: Bool] = [:]
         for item in items {
-            guard case .object(let fields) = item, case .string(let id)? = fields["bundleIdentifier"], !id.isEmpty else {
+            guard case .object(let fields) = item,
+                case .string(let id)? = fields["bundleIdentifier"], !id.isEmpty
+            else {
                 return nil
             }
             let developer = fields["builtByDeveloper"] == .bool(true)
@@ -64,7 +66,9 @@ public struct AppSnapshot: Sendable, Equatable {
 
         public var profilesRead: Bool { labApps != nil }
         /// All installed non-managed apps with a free-team profile; nil when the profiles were not read.
-        public var otherFreeTeamApps: Int? { labApps.flatMap { lab in otherNonLab.map { $0 + lab } } }
+        public var otherFreeTeamApps: Int? {
+            labApps.flatMap { lab in otherNonLab.map { $0 + lab } }
+        }
 
         /// The formula, stated once (design section 18). A lent slot and the lab's WebDriverAgent count once; the reserve is
         /// a floor for the unmanaged part, not added to it; without a profile read it is the reserve alone, and installd's
@@ -80,28 +84,37 @@ public struct AppSnapshot: Sendable, Equatable {
 
         /// The `slots` object every command prints (same keys everywhere). `used` and `unmanaged` may be widened by installd's
         /// own list on a `FREE_APP_LIMIT` refusal.
-        func json(used widenedUsed: Int? = nil, unmanaged widenedUnmanaged: Int? = nil) -> JSONValue {
+        func json(used widenedUsed: Int? = nil, unmanaged widenedUnmanaged: Int? = nil) -> JSONValue
+        {
             let used = widenedUsed ?? self.used
             func count(_ value: Int?) -> JSONValue { value.map { .number(Double($0)) } ?? .null }
             return [
                 "limit": .number(Double(FreeSlots.limit)), "used": .number(Double(used)),
-                "free": .number(Double(max(0, FreeSlots.limit - used))), "reserved": count(reserved),
-                "managed": count(managed), "unmanaged": count(widenedUnmanaged ?? unmanaged), "lent": count(lent),
+                "free": .number(Double(max(0, FreeSlots.limit - used))),
+                "reserved": count(reserved),
+                "managed": count(managed), "unmanaged": count(widenedUnmanaged ?? unmanaged),
+                "lent": count(lent),
                 "pending": count(pending), "otherDeveloperApps": count(otherDeveloperApps),
-                "otherFreeTeamApps": count(otherFreeTeamApps), "labApps": count(labApps), "otherNonLab": count(otherNonLab),
+                "otherFreeTeamApps": count(otherFreeTeamApps), "labApps": count(labApps),
+                "otherNonLab": count(otherNonLab),
                 "profilesRead": .bool(profilesRead),
             ]
         }
 
         /// The same keys with every count null, for a device whose stored reserve is out of range (the count is unknown).
         static let unknownJSON: JSONValue = [
-            "limit": .number(Double(FreeSlots.limit)), "used": .null, "free": .null, "reserved": .null, "managed": .null,
-            "unmanaged": .null, "lent": .null, "pending": .null, "otherDeveloperApps": .null, "otherFreeTeamApps": .null,
+            "limit": .number(Double(FreeSlots.limit)), "used": .null, "free": .null,
+            "reserved": .null, "managed": .null,
+            "unmanaged": .null, "lent": .null, "pending": .null, "otherDeveloperApps": .null,
+            "otherFreeTeamApps": .null,
             "labApps": .null, "otherNonLab": .null, "profilesRead": false, "unknown": true,
         ]
     }
 
-    func usage(prefix: String?, reserved: Int, outside: SlotBook.OutsideUse = .init(), profiles: FreeTeamProfiles? = nil)
+    func usage(
+        prefix: String?, reserved: Int, outside: SlotBook.OutsideUse = .init(),
+        profiles: FreeTeamProfiles? = nil
+    )
         -> Usage
     {
         var managed = 0
@@ -114,7 +127,11 @@ public struct AppSnapshot: Sendable, Equatable {
             } else {
                 if developer { other += 1 }
                 if profiles?.bundleIds.contains(id) == true {
-                    if FreeTeamSigner.label(of: id) == .webDriverAgent { lab += 1 } else { rest += 1 }
+                    if FreeTeamSigner.label(of: id) == .webDriverAgent {
+                        lab += 1
+                    } else {
+                        rest += 1
+                    }
                 }
             }
         }
@@ -137,7 +154,9 @@ public struct AppSnapshot: Sendable, Equatable {
     }
 
     public static func delta(from before: AppSnapshot, to after: AppSnapshot) -> Delta {
-        Delta(added: after.ids.subtracting(before.ids).sorted(), removed: before.ids.subtracting(after.ids).sorted())
+        Delta(
+            added: after.ids.subtracting(before.ids).sorted(),
+            removed: before.ids.subtracting(after.ids).sorted())
     }
 }
 
@@ -147,7 +166,9 @@ enum FreeTeamSigner {
 
     /// A label for a bundle ID (the team prefix, if any, already dropped); nil for anything else.
     static func label(of id: String) -> FreeTeamSigner? {
-        if id.contains("WebDriverAgent") || id.contains("-wda-") || id.contains(".msl-wda") { return .webDriverAgent }
+        if id.contains("WebDriverAgent") || id.contains("-wda-") || id.contains(".msl-wda") {
+            return .webDriverAgent
+        }
         if id.hasPrefix("com.SideStore.") { return .sideStore }
         return nil
     }
@@ -170,7 +191,9 @@ public struct InstalldLimitList: Sendable, Equatable {
     static let phrase = "maximum number of installed apps using a free developer profile"
 
     /// Parses the first string leaf of `json` (or `stderr`) that holds the phrase; nil when none does or no ID follows.
-    public static func parse(json: JSONValue?, stderr: String, prefix: String?) -> InstalldLimitList? {
+    public static func parse(json: JSONValue?, stderr: String, prefix: String?)
+        -> InstalldLimitList?
+    {
         var texts = Leaf.walk(json).compactMap { leaf -> String? in
             if case .string(let s) = leaf.value { return s }
             return nil
@@ -194,7 +217,9 @@ public struct InstalldLimitList: Sendable, Equatable {
         for raw in ids {
             // installd lists `<team>.<bundle id>`; drop the team and a trailing `.<team>` some signers append.
             var id = raw
-            if let dot = id.firstIndex(of: "."), id[..<dot].count == 10, id[..<dot].allSatisfy({ $0.isLetter || $0.isNumber }) {
+            if let dot = id.firstIndex(of: "."), id[..<dot].count == 10,
+                id[..<dot].allSatisfy({ $0.isLetter || $0.isNumber })
+            {
                 id = String(id[id.index(after: dot)...])
             }
             if Config.isFreeBundleId(id, prefix: prefix) {
@@ -217,7 +242,8 @@ public struct InstalldLimitList: Sendable, Equatable {
     public var json: JSONValue {
         [
             "total": .number(Double(total)), "ours": .array(ours.map { .string($0) }),
-            "webDriverAgent": .number(Double(webDriverAgent)), "sideStore": .number(Double(sideStore)),
+            "webDriverAgent": .number(Double(webDriverAgent)),
+            "sideStore": .number(Double(sideStore)),
             "other": .number(Double(other)),
         ]
     }

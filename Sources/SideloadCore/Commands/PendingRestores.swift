@@ -28,13 +28,19 @@ enum PendingRestores {
         var found: [Entry] = []
         for alias in config.devices.keys.sorted() {
             // `slot restore`'s own gate, on the same migrated ledger.
-            guard SlotBook(services: services, config: config, alias: alias).pending(migrated, now: now) == nil else { continue }
+            guard
+                SlotBook(services: services, config: config, alias: alias).pending(
+                    migrated, now: now) == nil
+            else { continue }
             for app in ProvisionApp.allCases.sorted(by: { $0.rawValue < $1.rawValue }) {
                 let busy = slots.contains { slot in
                     guard slot.device == alias, slot.app == app.rawValue else { return false }
-                    return slot.lentTo != nil || slot.seenAt.map { abs(now.timeIntervalSince($0)) < settleWindow } == true
+                    return slot.lentTo != nil
+                        || slot.seenAt.map { abs(now.timeIntervalSince($0)) < settleWindow } == true
                 }
-                guard !busy, let target = try? FreeTarget.resolve(app: app, alias: alias, config: config) else { continue }
+                guard !busy,
+                    let target = try? FreeTarget.resolve(app: app, alias: alias, config: config)
+                else { continue }
                 if case .found = AppDataBackup.pending(services, target) {
                     found.append(Entry(device: alias, app: app.rawValue))
                 }
@@ -48,6 +54,8 @@ enum PendingRestores {
         SideloadError(
             "DATA_RESTORE_PENDING",
             "Saved app data of \(entry.app) on device \"\(printableAlias(entry.device))\" is waiting to be restored (a `slot return` did not finish restoring it).",
-            fix: "The owner runs `sideload slot restore --device \(printableAlias(entry.device)) --app \(entry.app) --yes`.")
+            fix:
+                "The owner runs `sideload slot restore --device \(printableAlias(entry.device)) --app \(entry.app) --yes`."
+        )
     }
 }

@@ -18,7 +18,9 @@ struct UpdateUpstream: Sendable, Equatable {
     }
 
     init(_ asset: ResolvedAsset) {
-        self.init(version: asset.version, build: asset.build, minOS: asset.minOS, size: asset.size, sha256: asset.upstreamDigest)
+        self.init(
+            version: asset.version, build: asset.build, minOS: asset.minOS, size: asset.size,
+            sha256: asset.upstreamDigest)
     }
 }
 
@@ -38,14 +40,16 @@ struct UpdateCacheEntry: Codable, Sendable, Equatable {
 
     var upstream: UpdateUpstream? {
         guard let version, let size, let sha256 else { return nil }
-        return UpdateUpstream(version: version, build: build, minOS: minOS, size: size, sha256: sha256)
+        return UpdateUpstream(
+            version: version, build: build, minOS: minOS, size: size, sha256: sha256)
     }
 
     var isEmpty: Bool { checkedAt == nil && errorAt == nil }
 
     func succeeded(_ upstream: UpdateUpstream, at now: Date) -> UpdateCacheEntry {
         UpdateCacheEntry(
-            checkedAt: now, version: upstream.version, build: upstream.build, minOS: upstream.minOS, size: upstream.size,
+            checkedAt: now, version: upstream.version, build: upstream.build, minOS: upstream.minOS,
+            size: upstream.size,
             sha256: upstream.sha256)
     }
 
@@ -86,7 +90,10 @@ enum UpdateCadence {
         var notBefore = Date.distantPast
         if let errorAt = entry.errorAt, errorAt >= (entry.checkedAt ?? .distantPast) {
             notBefore = errorAt.addingTimeInterval(force ? forceFloor : errorInterval)
-            if let asked = entry.retryAfter { notBefore = max(notBefore, errorAt.addingTimeInterval(TimeInterval(min(asked, maxRetryAfter)))) }
+            if let asked = entry.retryAfter {
+                notBefore = max(
+                    notBefore, errorAt.addingTimeInterval(TimeInterval(min(asked, maxRetryAfter))))
+            }
         } else if let checkedAt = entry.checkedAt {
             notBefore = checkedAt.addingTimeInterval(force ? forceFloor : interval)
         }
@@ -123,7 +130,8 @@ struct UpdateCacheStore: Sendable {
     /// not what a clean write would leave, so the caller rewrites it. Only an unreadable file (an I/O error) throws.
     func load(now: Date) throws -> (cache: UpdateCache, repaired: Bool) {
         guard let data = try readFile(paths.updates) else { return (UpdateCache(), false) }
-        guard data.count <= Self.maxBytes, let raw = try? Self.decoder.decode(UpdateCache.self, from: data),
+        guard data.count <= Self.maxBytes,
+            let raw = try? Self.decoder.decode(UpdateCache.self, from: data),
             raw.schema == UpdateCache.schema
         else { return (UpdateCache(), true) }
         var clean = UpdateCache()
@@ -153,7 +161,8 @@ struct UpdateCacheStore: Sendable {
 
     // MARK: validation
 
-    private static let minOSShape = try! NSRegularExpression(pattern: #"^[0-9]{1,3}(\.[0-9]{1,3}){0,2}$"#)
+    private static let minOSShape = try! NSRegularExpression(
+        pattern: #"^[0-9]{1,3}(\.[0-9]{1,3}){0,2}$"#)
     private static let codeShape = try! NSRegularExpression(pattern: #"^[A-Z][A-Z0-9_]{0,47}$"#)
     private static let digestShape = try! NSRegularExpression(pattern: #"^[0-9a-f]{64}$"#)
 
@@ -177,12 +186,15 @@ struct UpdateCacheStore: Sendable {
             out.build = entry.build.flatMap { SourceResolver.isSafeToken($0) ? $0 : nil }
             out.minOS = entry.minOS.flatMap { matches(minOSShape, $0) ? $0 : nil }
         }
-        if let errorAt = entry.errorAt, errorAt <= limit, errorAt >= (out.checkedAt ?? .distantPast),
+        if let errorAt = entry.errorAt, errorAt <= limit,
+            errorAt >= (out.checkedAt ?? .distantPast),
             let code = entry.errorCode, matches(codeShape, code)
         {
             out.errorAt = errorAt
             out.errorCode = code
-            out.retryAfter = entry.retryAfter.flatMap { (0...UpdateCadence.maxRetryAfter).contains($0) ? $0 : nil }
+            out.retryAfter = entry.retryAfter.flatMap {
+                (0...UpdateCadence.maxRetryAfter).contains($0) ? $0 : nil
+            }
         }
         return out
     }

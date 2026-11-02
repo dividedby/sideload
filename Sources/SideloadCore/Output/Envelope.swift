@@ -23,7 +23,8 @@ public struct Envelope: Sendable, Equatable {
     public let keepsUserPaths: Bool
 
     public init(
-        ok: Bool, command: String, data: [String: JSONValue] = [:], errors: [Entry] = [], keepsUserPaths: Bool = false
+        ok: Bool, command: String, data: [String: JSONValue] = [:], errors: [Entry] = [],
+        keepsUserPaths: Bool = false
     ) {
         self.ok = ok
         self.command = command
@@ -37,9 +38,12 @@ public struct Envelope: Sendable, Equatable {
     }
 
     public static func fail(
-        _ command: String, code: String, message: String, fix: String? = nil, data: [String: JSONValue] = [:]
+        _ command: String, code: String, message: String, fix: String? = nil,
+        data: [String: JSONValue] = [:]
     ) -> Envelope {
-        Envelope(ok: false, command: command, data: data, errors: [Entry(code: code, message: message, fix: fix)])
+        Envelope(
+            ok: false, command: command, data: data,
+            errors: [Entry(code: code, message: message, fix: fix)])
     }
 
     /// `SideloadError` keeps its code; anything else becomes `INTERNAL_ERROR`.
@@ -61,7 +65,10 @@ public struct Envelope: Sendable, Equatable {
         object["command"] = .string(command)
         object["errors"] = .array(
             errors.map { e in
-                .object(["code": .string(e.code), "message": .string(e.message), "fix": e.fix.map(JSONValue.string) ?? .null])
+                .object([
+                    "code": .string(e.code), "message": .string(e.message),
+                    "fix": e.fix.map(JSONValue.string) ?? .null,
+                ])
             })
         return .object(object)
     }

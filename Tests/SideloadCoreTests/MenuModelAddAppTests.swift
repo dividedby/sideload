@@ -62,14 +62,16 @@ struct MenuModelAddAppTests {
         var manifest = Manifest()
         manifest.entries = [
             ManifestEntry(
-                app: "apollo", version: "3.9.0", file: "apollo/3.9.0/Apollo.ipa", urlHost: "github.com", sha256: addSha,
+                app: "apollo", version: "3.9.0", file: "apollo/3.9.0/Apollo.ipa",
+                urlHost: "github.com", sha256: addSha,
                 upstreamDigest: addSha, size: 45_200_000, fetchedAt: testNow, approved: false)
         ]
         try ManifestStore(paths: paths).save(manifest)
         let list = deviceListJSON(phoneEntryJSON(seed: "1"))
         let runner = SlowDeviceRunner(menuDeviceScript(devices: list, apps: { _ in .apps([]) }))
         let services = Services(
-            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: MutableClock(testNow), keychain: FakeKeychain(), home: paths)
+            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: MutableClock(testNow),
+            keychain: FakeKeychain(), home: paths)
         let hold = Hold()
         var steps = MenuActionSteps()
         steps.fetch = { _, options in
@@ -79,7 +81,8 @@ struct MenuModelAddAppTests {
             return Envelope(
                 ok: true, command: "fetch",
                 data: [
-                    "version": "3.9.0", "build": "142", "sha256": .string(addSha), "size": 45_200_000, "inspectMinOS": "16.0",
+                    "version": "3.9.0", "build": "142", "sha256": .string(addSha),
+                    "size": 45_200_000, "inspectMinOS": "16.0",
                     "alreadyApproved": false, "inspect": ["extensionCount": 2],
                 ])
         }
@@ -88,8 +91,10 @@ struct MenuModelAddAppTests {
             try? await services.ledgerStore.update {
                 $0.freeProfiles = [
                     LedgerFreeProfile(
-                        id: "iphone/apollo", device: "iphone", deviceTail: "…0001", app: "apollo", bundleId: menuBundleId("apollo"),
-                        profileUuid: "UUID-1", created: nil, expires: daysFromNow(7), certFp8: "12345678", file: "x")
+                        id: "iphone/apollo", device: "iphone", deviceTail: "…0001", app: "apollo",
+                        bundleId: menuBundleId("apollo"),
+                        profileUuid: "UUID-1", created: nil, expires: daysFromNow(7),
+                        certFp8: "12345678", file: "x")
                 ]
             }
             return Envelope(ok: true, command: "provision", data: ["appIdNew": true])
@@ -108,7 +113,9 @@ struct MenuModelAddAppTests {
             hold.record("install")
             return Envelope(ok: true, command: "install")
         }
-        return World(model: MenuModel(services: services, steps: steps), runner: runner, hold: hold, dir: dir)
+        return World(
+            model: MenuModel(services: services, steps: steps), runner: runner, hold: hold, dir: dir
+        )
     }
 
     private func loaded(held: Bool = false, fetchFails: Envelope? = nil) async throws -> World {
@@ -126,7 +133,9 @@ struct MenuModelAddAppTests {
         Issue.record("timed out waiting for a condition")
     }
 
-    @Test("the fetch confirm opens, and a fetched version opens the approval confirm at once: no result card, no re-read of the device")
+    @Test(
+        "the fetch confirm opens, and a fetched version opens the approval confirm at once: no result card, no re-read of the device"
+    )
     func fetchOpensApproval() async throws {
         let w = try await loaded()
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -148,11 +157,15 @@ struct MenuModelAddAppTests {
             return
         }
         #expect(action == .addApprove(device: "iphone", app: "apollo", fetched: addFetched))
-        #expect(approval.title == "Approve and install Apollo 3.9.0 on iphone" && approval.lines.contains("SHA-256 \(addSha)"))
+        #expect(
+            approval.title == "Approve and install Apollo 3.9.0 on iphone"
+                && approval.lines.contains("SHA-256 \(addSha)"))
         // Stage 1 changed nothing: the device was not read again, and the card does not say "Checking apps…".
         await w.model.loadTask?.value
         #expect(w.hold.calls == ["fetch"])
-        #expect(w.runner.lists == listsBefore && w.runner.infoApps.count == readsBefore && w.model.loadTask == nil)
+        #expect(
+            w.runner.lists == listsBefore && w.runner.infoApps.count == readsBefore
+                && w.model.loadTask == nil)
         if case .loaded(let snapshot) = w.model.panel {
             #expect(snapshot.devices[0].liveRead == .read)
         } else {
@@ -160,7 +173,8 @@ struct MenuModelAddAppTests {
         }
     }
 
-    @Test("dismissing the approval leaves the file fetched and nothing approved, signed or installed")
+    @Test(
+        "dismissing the approval leaves the file fetched and nothing approved, signed or installed")
     func dismissApproval() async throws {
         let w = try await loaded()
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -173,7 +187,9 @@ struct MenuModelAddAppTests {
         #expect(w.hold.calls == ["fetch"])
     }
 
-    @Test("the approval confirm runs the chain with the version it showed, then the device is read again")
+    @Test(
+        "the approval confirm runs the chain with the version it showed, then the device is read again"
+    )
     func approvalRuns() async throws {
         let w = try await loaded()
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -200,7 +216,9 @@ struct MenuModelAddAppTests {
 
     @Test("a fetch that fails shows a card with Retry and does not re-read the device")
     func fetchFails() async throws {
-        let w = try await loaded(fetchFails: .fail("fetch", code: "FETCH_HTTP_ERROR", message: "HTTP 503.", fix: "Retry later."))
+        let w = try await loaded(
+            fetchFails: .fail(
+                "fetch", code: "FETCH_HTTP_ERROR", message: "HTTP 503.", fix: "Retry later."))
         defer { try? FileManager.default.removeItem(at: w.dir) }
         let listsBefore = w.runner.lists
         w.model.request(fetch)
@@ -210,7 +228,9 @@ struct MenuModelAddAppTests {
             Issue.record("expected the result, got \(w.model.actionState)")
             return
         }
-        #expect(outcome.kind == .failed && outcome.headline == "Fetch failed" && outcome.lines.first?.retry == fetch)
+        #expect(
+            outcome.kind == .failed && outcome.headline == "Fetch failed"
+                && outcome.lines.first?.retry == fetch)
         await w.model.loadTask?.value
         #expect(w.runner.lists == listsBefore)
         // Retry goes through the confirm again, and the device is still readable, so it opens.
@@ -223,7 +243,9 @@ struct MenuModelAddAppTests {
 
     @Test("Cancel during the download ends it as Cancelled and opens no approval")
     func cancelFetch() async throws {
-        let w = try await loaded(held: true, fetchFails: .fail("fetch", code: "CANCELLED", message: "fetch was interrupted."))
+        let w = try await loaded(
+            held: true,
+            fetchFails: .fail("fetch", code: "CANCELLED", message: "fetch was interrupted."))
         defer { try? FileManager.default.removeItem(at: w.dir) }
         w.model.request(fetch)
         w.model.confirm()
@@ -243,7 +265,9 @@ struct MenuModelAddAppTests {
         #expect(w.hold.calls == ["fetch"])
     }
 
-    @Test("a panel that no longer allows the approval says why, instead of opening it, and the device is read again")
+    @Test(
+        "a panel that no longer allows the approval says why, instead of opening it, and the device is read again"
+    )
     func approvalBlocked() async throws {
         let w = try await loaded(held: true)
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -266,7 +290,9 @@ struct MenuModelAddAppTests {
             Issue.record("expected the Not run card, got \(w.model.actionState)")
             return
         }
-        #expect(outcome.headline == "Not run" && outcome.issues.first?.message == "Not an approved source")
+        #expect(
+            outcome.headline == "Not run"
+                && outcome.issues.first?.message == "Not an approved source")
         #expect(w.hold.calls == ["fetch"])
         await w.model.loadTask?.value
         #expect(w.runner.lists == listsBefore + 1)

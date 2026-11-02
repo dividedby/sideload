@@ -65,6 +65,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private static func stopRunningAction(grace: Duration) async {
         await MenuShutdown.cancelWaitKill(
-            grace: grace, cancel: { model?.cancelForShutdown() }, isBusy: { model?.actionBusy ?? false })
+            grace: grace, cancel: { model?.cancelForShutdown() },
+            isBusy: { model?.actionBusy ?? false })
     }
 }

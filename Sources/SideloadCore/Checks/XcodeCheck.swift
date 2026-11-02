@@ -7,7 +7,9 @@ private let fixInstall =
 
 /// First capture group of `pattern` (multi-line anchors) in `text`.
 func firstMatch(_ pattern: String, in text: String) -> String? {
-    guard let re = try? NSRegularExpression(pattern: pattern, options: .anchorsMatchLines) else { return nil }
+    guard let re = try? NSRegularExpression(pattern: pattern, options: .anchorsMatchLines) else {
+        return nil
+    }
     let range = NSRange(text.startIndex..., in: text)
     guard let m = re.firstMatch(in: text, range: range), m.numberOfRanges > 1,
         let r = Range(m.range(at: 1), in: text)
@@ -33,41 +35,48 @@ public struct XcodeCheck: Check {
         guard let version = firstMatch(#"^Xcode\s+([0-9][0-9.]*)"#, in: text) else { return nil }
         let digits = version.prefix { $0.isASCII && $0.isNumber }
         return Version(
-            version: version, build: firstMatch(#"^Build version\s+(\S+)"#, in: text), major: Int(digits) ?? 0)
+            version: version, build: firstMatch(#"^Build version\s+(\S+)"#, in: text),
+            major: Int(digits) ?? 0)
     }
 
     /// `27.0 (27A266a)`: the label of `xcodebuild -version`, or nil when it cannot be read (the canary log
     /// records it).
     public static func versionLabel(runner: any Runner) async -> String? {
-        let ver = await runner.run(CommandSpec(executable: "xcodebuild", args: ["-version"], timeout: timeout))
+        let ver = await runner.run(
+            CommandSpec(executable: "xcodebuild", args: ["-version"], timeout: timeout))
         guard ver.code == 0 else { return nil }
         return parseVersion(ver.stdout)?.label
     }
 
     public func run(_ services: Services) async throws -> [CheckResult] {
         let runner = services.runner
-        let ver = await runner.run(CommandSpec(executable: "xcodebuild", args: ["-version"], timeout: timeout))
+        let ver = await runner.run(
+            CommandSpec(executable: "xcodebuild", args: ["-version"], timeout: timeout))
         guard ver.code == 0, let parsed = Self.parseVersion(ver.stdout) else {
             return [fail("xcodebuild is not available.")]
         }
-        let sel = await runner.run(CommandSpec(executable: "xcode-select", args: ["-p"], timeout: timeout))
+        let sel = await runner.run(
+            CommandSpec(executable: "xcode-select", args: ["-p"], timeout: timeout))
         if sel.code != 0 || sel.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return [fail("No developer directory selected (xcode-select -p failed).")]
         }
-        let dev = await runner.run(CommandSpec(executable: "xcrun", args: ["--find", "devicectl"], timeout: timeout))
+        let dev = await runner.run(
+            CommandSpec(executable: "xcrun", args: ["--find", "devicectl"], timeout: timeout))
         if dev.code != 0 {
             return [fail("devicectl was not found in the selected Xcode.")]
         }
         if parsed.major < 27 {
             return [
                 CheckResult(
-                    id: id, severity: .warn, message: "Xcode \(parsed.label) found; Xcode 27+ is expected.",
+                    id: id, severity: .warn,
+                    message: "Xcode \(parsed.label) found; Xcode 27+ is expected.",
                     fix: "Update Xcode to 27 or later.")
             ]
         }
         return [
             CheckResult(
-                id: id, severity: .ok, message: "Xcode \(parsed.label), developer directory and devicectl present.")
+                id: id, severity: .ok,
+                message: "Xcode \(parsed.label), developer directory and devicectl present.")
         ]
     }
 
@@ -89,7 +98,8 @@ public struct CLTCheck: Check {
     public func run(_ services: Services) async throws -> [CheckResult] {
         var missing: [String] = []
         for tool in Self.tools {
-            let res = await services.runner.run(CommandSpec(executable: "xcrun", args: ["--find", tool], timeout: timeout))
+            let res = await services.runner.run(
+                CommandSpec(executable: "xcrun", args: ["--find", tool], timeout: timeout))
             if res.code != 0 || res.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 missing.append(tool)
             }
@@ -98,18 +108,23 @@ public struct CLTCheck: Check {
             return [
                 CheckResult(
                     id: id, severity: .fail,
-                    message: "Command-line tools not found via xcrun: \(missing.joined(separator: ", ")).",
+                    message:
+                        "Command-line tools not found via xcrun: \(missing.joined(separator: ", ")).",
                     fix: fixInstall)
             ]
         }
         let pkg = await services.runner.run(
-            CommandSpec(executable: "/usr/sbin/pkgutil", args: ["--pkg-info", Self.package], timeout: timeout))
+            CommandSpec(
+                executable: "/usr/sbin/pkgutil", args: ["--pkg-info", Self.package],
+                timeout: timeout))
         let tools = Self.tools.joined(separator: ", ")
         if pkg.code == 0, firstMatch(#"^version:\s*(\S+)"#, in: pkg.stdout) != nil {
             return [
                 CheckResult(
                     id: id, severity: .ok,
-                    message: "\(tools) resolve via xcrun; standalone Command Line Tools package installed.")
+                    message:
+                        "\(tools) resolve via xcrun; standalone Command Line Tools package installed."
+                )
             ]
         }
         return [

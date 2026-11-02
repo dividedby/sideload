@@ -2,7 +2,9 @@
 import PackageDescription
 
 let releaseSize: [SwiftSetting] = [.unsafeFlags(["-Osize"], .when(configuration: .release))]
-let releaseLink: [LinkerSetting] = [.unsafeFlags(["-Xlinker", "-dead_strip"], .when(configuration: .release))]
+let releaseLink: [LinkerSetting] = [
+    .unsafeFlags(["-Xlinker", "-dead_strip"], .when(configuration: .release))
+]
 
 let package = Package(
     name: "sideload",

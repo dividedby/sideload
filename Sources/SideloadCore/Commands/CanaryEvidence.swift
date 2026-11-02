@@ -88,12 +88,15 @@ enum EvidenceBuilder {
                 ]
             } ?? .null
         return [
-            "depth": count(n.depth), "domain": n.domain.map(JSONValue.string) ?? .null, "code": count(n.code),
-            "codeHex": n.codeHex.map(JSONValue.string) ?? .null, "description": n.description.map(JSONValue.string) ?? .null,
+            "depth": count(n.depth), "domain": n.domain.map(JSONValue.string) ?? .null,
+            "code": count(n.code),
+            "codeHex": n.codeHex.map(JSONValue.string) ?? .null,
+            "description": n.description.map(JSONValue.string) ?? .null,
             "failureReason": n.failureReason.map(JSONValue.string) ?? .null,
             "recoverySuggestion": n.recoverySuggestion.map(JSONValue.string) ?? .null,
             "legacyErrorString": n.legacyErrorString.map(JSONValue.string) ?? .null,
-            "libMISErrorNumber": n.libMISErrorNumber.map(JSONValue.string) ?? .null, "codeSignature": signature,
+            "libMISErrorNumber": n.libMISErrorNumber.map(JSONValue.string) ?? .null,
+            "codeSignature": signature,
         ]
     }
 
@@ -125,7 +128,8 @@ enum EvidenceBuilder {
             "bundleId": shaped("bundleId", i.bundleId),
             "run": [
                 "status": .string(i.status), "code": shaped("run.code", i.code),
-                "reason": i.reason.map(JSONValue.string) ?? .null, "guard": shaped("run.guard", i.guardRecord),
+                "reason": i.reason.map(JSONValue.string) ?? .null,
+                "guard": shaped("run.guard", i.guardRecord),
                 "durationMs": .number(Double(i.durationMs)),
             ],
             "environment": [
@@ -140,14 +144,18 @@ enum EvidenceBuilder {
                 ],
             ],
             "keychainCertificate": [
-                "ou": shaped("keychainCertificate.ou", i.certificate?.teamOU), "notBefore": iso(i.certificate?.notBefore),
-                "notAfter": iso(i.certificate?.notAfter), "certFp": shaped("keychainCertificate.certFp", i.certFp),
+                "ou": shaped("keychainCertificate.ou", i.certificate?.teamOU),
+                "notBefore": iso(i.certificate?.notBefore),
+                "notAfter": iso(i.certificate?.notAfter),
+                "certFp": shaped("keychainCertificate.certFp", i.certFp),
             ],
             "profile": [
-                "team": shaped("profile.team", facts?.profileTeam), "createdAt": iso(facts?.profileCreated),
+                "team": shaped("profile.team", facts?.profileTeam),
+                "createdAt": iso(facts?.profileCreated),
                 "expiresAt": iso(facts?.profileExpires),
                 "deviceCount": facts?.deviceCount.map { .number(Double($0)) } ?? .null,
-                "deviceIncluded": bool(facts?.deviceIncluded), "deviceTail4": shaped("profile.deviceTail4", i.deviceTail4),
+                "deviceIncluded": bool(facts?.deviceIncluded),
+                "deviceTail4": shaped("profile.deviceTail4", i.deviceTail4),
                 "signingCertInProfile": bool(facts?.signingCertInProfile),
             ],
             "codesign": ["teamIdentifier": shaped("codesign.teamIdentifier", facts?.signedTeam)],
@@ -158,7 +166,9 @@ enum EvidenceBuilder {
 
 /// `evidence.txt`: sectioned `key: value` lines from the same tree as `evidence.json`.
 enum EvidenceText {
-    static let sections = ["run", "environment", "keychainCertificate", "profile", "codesign", "install"]
+    static let sections = [
+        "run", "environment", "keychainCertificate", "profile", "codesign", "install",
+    ]
     static let header = """
         sideload canary evidence (schema \(EvidenceBuilder.schema))
         For manual attachment to an open Apple Developer Support case. sideload sends nothing; you decide what to share.
@@ -178,7 +188,11 @@ enum EvidenceText {
         for key in sections {
             guard let value = top[key] else { continue }
             out += "\n[\(key)]\n"
-            if case .object = value { out += lines(path: "", value) } else { out += "unavailable\n" }
+            if case .object = value {
+                out += lines(path: "", value)
+            } else {
+                out += "unavailable\n"
+            }
         }
         return out
     }
@@ -193,7 +207,8 @@ enum EvidenceText {
             }.joined()
         case .array(let items):
             if items.isEmpty { return "\(path): none\n" }
-            return items.enumerated().map { lines(path: "\(path)[\($0.offset)]", $0.element) }.joined()
+            return items.enumerated().map { lines(path: "\(path)[\($0.offset)]", $0.element) }
+                .joined()
         default:
             return "\(path): \(scalar(value))\n"
         }
@@ -203,7 +218,8 @@ enum EvidenceText {
         switch value {
         case .null: return "unavailable"
         case .bool(let b): return b ? "yes" : "no"
-        case .number(let n): return n == n.rounded() && abs(n) < 9_007_199_254_740_992 ? String(Int64(n)) : String(n)
+        case .number(let n):
+            return n == n.rounded() && abs(n) < 9_007_199_254_740_992 ? String(Int64(n)) : String(n)
         case .string(let s): return s
         case .array, .object: return "unavailable"
         }
@@ -212,7 +228,8 @@ enum EvidenceText {
     static func pretty(_ value: JSONValue) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) } ?? "unavailable"
+        return (try? encoder.encode(value)).map { String(decoding: $0, as: UTF8.self) }
+            ?? "unavailable"
     }
 }
 

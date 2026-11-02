@@ -51,8 +51,11 @@ struct FetchScratch {
         let directory = try ScratchDirectory.create(under: tmp, registry: registry, prefix: "fetch")
         do {
             // Unlinked by a sweep between mkdtemp and here (or the lock file already taken): not ours to use.
-            guard let lock = try FileLock.tryAcquire(path: directory.path + "/live.lock"), lock.isLinked else {
-                throw SideloadError("CANCELLED", "fetch was interrupted.", fix: "Re-run the command.")
+            guard let lock = try FileLock.tryAcquire(path: directory.path + "/live.lock"),
+                lock.isLinked
+            else {
+                throw SideloadError(
+                    "CANCELLED", "fetch was interrupted.", fix: "Re-run the command.")
             }
             return FetchScratch(directory: directory, lock: lock)
         } catch {
@@ -78,10 +81,16 @@ enum FetchStaging {
     /// Takes the verified file an earlier run staged when the lock was busy. The rename is atomic, so a sweep or a
     /// second re-run cannot also have it (the loser gets ENOENT and downloads). The bytes are hashed again, without
     /// following a link, because the staged name is only a claim; anything that does not match is deleted.
-    static func claim(asset: ResolvedAsset, into part: String, services: Services) -> (digest: String, count: Int64)? {
+    static func claim(asset: ResolvedAsset, into part: String, services: Services) -> (
+        digest: String, count: Int64
+    )? {
         guard isHex(asset.upstreamDigest, count: 64, lowercaseOnly: true) else { return nil }
-        guard rename(path(digest: asset.upstreamDigest, tmp: services.home.tmp), part) == 0 else { return nil }
-        if let stored = try? FileDigest.sha256(path: part), stored.hex == asset.upstreamDigest, stored.size == asset.size {
+        guard rename(path(digest: asset.upstreamDigest, tmp: services.home.tmp), part) == 0 else {
+            return nil
+        }
+        if let stored = try? FileDigest.sha256(path: part), stored.hex == asset.upstreamDigest,
+            stored.size == asset.size
+        {
             services.log("fetch: using the verified download kept from an earlier run")
             return (stored.hex, stored.size)
         }

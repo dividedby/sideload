@@ -77,62 +77,85 @@ public struct Guard: Sendable, Equatable {
     /// or `<string>` cannot be mistaken for them.
     static func parseProfile(_ xml: String) -> Profile? {
         guard
-            let plist = try? PropertyListSerialization.propertyList(from: Data(xml.utf8), options: [], format: nil),
+            let plist = try? PropertyListSerialization.propertyList(
+                from: Data(xml.utf8), options: [], format: nil),
             let dict = plist as? [String: Any]
         else { return nil }
         let team = (dict["TeamIdentifier"] as? [Any])?.first as? String
-        let devices = (dict["ProvisionedDevices"] as? [Any])?.compactMap { ($0 as? String)?.lowercased() } ?? []
-        let certs = (dict["DeveloperCertificates"] as? [Any])?.compactMap { ($0 as? Data).map(CertificateReader.sha1Hex) } ?? []
+        let devices =
+            (dict["ProvisionedDevices"] as? [Any])?.compactMap { ($0 as? String)?.lowercased() }
+            ?? []
+        let certs =
+            (dict["DeveloperCertificates"] as? [Any])?.compactMap {
+                ($0 as? Data).map(CertificateReader.sha1Hex)
+            } ?? []
         let appId = (dict["Entitlements"] as? [String: Any])?["application-identifier"] as? String
         return Profile(
             team: team, devices: devices, creation: dict["CreationDate"] as? Date,
-            expiration: dict["ExpirationDate"] as? Date, certFingerprints: certs, applicationIdentifier: appId)
+            expiration: dict["ExpirationDate"] as? Date, certFingerprints: certs,
+            applicationIdentifier: appId)
     }
 
     /// `TeamIdentifier=` from `codesign -dvv` output (stderr first, as codesign writes there). `not set`
     /// (an ad-hoc or unsigned build) is no team.
     static func signedTeam(stderr: String, stdout: String) -> String? {
-        guard let team = firstMatch(#"^TeamIdentifier=(\S+)"#, in: "\(stderr)\n\(stdout)") else { return nil }
+        guard let team = firstMatch(#"^TeamIdentifier=(\S+)"#, in: "\(stderr)\n\(stdout)") else {
+            return nil
+        }
         return team == "not" ? nil : team
     }
 
     /// The paid guard: `run(context: .paid, ...)`, unchanged.
-    public static func run(runner: any Runner, app: String, udid: String, signingCert: String? = nil) async -> Guard {
+    public static func run(
+        runner: any Runner, app: String, udid: String, signingCert: String? = nil
+    ) async -> Guard {
         await run(context: .paid, runner: runner, app: app, udid: udid, signingCert: signingCert)
     }
 
     /// Runs the guard for `context`. `signingCert` applies to the paid context only; the free context checks
     /// its own pinned certificate.
     public static func run(
-        context: SigningContext, runner: any Runner, app: String, udid: String, signingCert: String? = nil
+        context: SigningContext, runner: any Runner, app: String, udid: String,
+        signingCert: String? = nil
     ) async -> Guard {
         switch context {
-        case .paid: return await runPaid(runner: runner, app: app, udid: udid, signingCert: signingCert)
+        case .paid:
+            return await runPaid(runner: runner, app: app, udid: udid, signingCert: signingCert)
         case .free(let free): return await runFree(free, runner: runner, app: app, udid: udid)
         }
     }
 
     /// `signingCert` is the keychain certificate's `reference` (SHA-1); when given, the profile's
     /// `DeveloperCertificates` is checked for it and recorded in `facts` (informational, never a failure).
-    private static func runPaid(runner: any Runner, app: String, udid: String, signingCert: String?) async -> Guard {
+    private static func runPaid(runner: any Runner, app: String, udid: String, signingCert: String?)
+        async -> Guard
+    {
         let cs = await runner.run(
             CommandSpec(executable: "/usr/bin/codesign", args: ["-dvv", app], timeout: toolTimeout))
         guard cs.code == 0, let team = signedTeam(stderr: cs.stderr, stdout: cs.stdout) else {
-            return .fail("GUARD_FAILED", "codesign could not read a team identifier from the built app.")
+            return .fail(
+                "GUARD_FAILED", "codesign could not read a team identifier from the built app.")
         }
         var facts = Facts(signedTeam: team)
         if Team.denied.contains(team) {
-            return .fail("FREE_TEAM_SELECTED", "The built app is signed by the deny-listed free team.", facts: facts)
+            return .fail(
+                "FREE_TEAM_SELECTED", "The built app is signed by the deny-listed free team.",
+                facts: facts)
         }
         if team != Team.id {
-            return .fail("WRONG_TEAM", "The built app is signed by a different team than the locked one.", facts: facts)
+            return .fail(
+                "WRONG_TEAM", "The built app is signed by a different team than the locked one.",
+                facts: facts)
         }
         let prof = await runner.run(
             CommandSpec(
-                executable: "/usr/bin/security", args: ["cms", "-D", "-i", app + "/embedded.mobileprovision"],
+                executable: "/usr/bin/security",
+                args: ["cms", "-D", "-i", app + "/embedded.mobileprovision"],
                 timeout: toolTimeout))
         guard prof.code == 0, let profile = parseProfile(prof.stdout) else {
-            return .fail("GUARD_FAILED", "The embedded provisioning profile could not be decoded.", facts: facts)
+            return .fail(
+                "GUARD_FAILED", "The embedded provisioning profile could not be decoded.",
+                facts: facts)
         }
         facts.profileTeam = profile.team
         facts.profileCreated = profile.creation
@@ -144,43 +167,56 @@ public struct Guard: Sendable, Equatable {
         }
         if profile.team != Team.id {
             return .fail(
-                profile.team.map { Team.denied.contains($0) } == true ? "FREE_TEAM_SELECTED" : "WRONG_TEAM",
-                "The embedded profile belongs to a different team than the locked one.", facts: facts)
+                profile.team.map { Team.denied.contains($0) } == true
+                    ? "FREE_TEAM_SELECTED" : "WRONG_TEAM",
+                "The embedded profile belongs to a different team than the locked one.",
+                facts: facts)
         }
         if facts.deviceIncluded != true {
             return .fail(
-                "DEVICE_NOT_IN_PROFILE", "The device is not in the profile ProvisionedDevices list.", facts: facts)
+                "DEVICE_NOT_IN_PROFILE",
+                "The device is not in the profile ProvisionedDevices list.", facts: facts)
         }
         return Guard(passed: true, code: nil, reason: nil, facts: facts)
     }
 
     // MARK: Free context (design section 18)
 
-    private static func runFree(_ free: FreeSigning, runner: any Runner, app: String, udid: String) async -> Guard {
+    private static func runFree(_ free: FreeSigning, runner: any Runner, app: String, udid: String)
+        async -> Guard
+    {
         // Pure checks first: a non-allowlisted ID never reaches a subprocess.
         guard Config.isFreeBundleId(free.bundleId, prefix: free.bundleIdPrefix) else {
             return .fail(
-                "BUNDLE_ID_NOT_ALLOWED", "The free team may only sign IDs under the configured <prefix>.free. namespace.")
+                "BUNDLE_ID_NOT_ALLOWED",
+                "The free team may only sign IDs under the configured <prefix>.free. namespace.")
         }
         let cs = await runner.run(
             CommandSpec(executable: "/usr/bin/codesign", args: ["-dvv", app], timeout: toolTimeout))
         guard cs.code == 0, let team = signedTeam(stderr: cs.stderr, stdout: cs.stdout) else {
-            return .fail("GUARD_FAILED", "codesign could not read a team identifier from the built app.")
+            return .fail(
+                "GUARD_FAILED", "codesign could not read a team identifier from the built app.")
         }
         var facts = Facts(signedTeam: team)
         if team != Team.free {
-            return .fail("WRONG_TEAM", "The built app is not signed by the free team.", facts: facts)
+            return .fail(
+                "WRONG_TEAM", "The built app is not signed by the free team.", facts: facts)
         }
         // The caller's bundle ID is not trusted: the app must say the same thing itself (all `GUARD_FAILED`).
         if signedIdentifier(stderr: cs.stderr, stdout: cs.stdout) != free.bundleId {
-            return .fail("GUARD_FAILED", "The signed identifier of the built app is not this bundle ID.", facts: facts)
+            return .fail(
+                "GUARD_FAILED", "The signed identifier of the built app is not this bundle ID.",
+                facts: facts)
         }
         let prof = await runner.run(
             CommandSpec(
-                executable: "/usr/bin/security", args: ["cms", "-D", "-i", app + "/embedded.mobileprovision"],
+                executable: "/usr/bin/security",
+                args: ["cms", "-D", "-i", app + "/embedded.mobileprovision"],
                 timeout: toolTimeout))
         guard prof.code == 0, let profile = parseProfile(prof.stdout) else {
-            return .fail("GUARD_FAILED", "The embedded provisioning profile could not be decoded.", facts: facts)
+            return .fail(
+                "GUARD_FAILED", "The embedded provisioning profile could not be decoded.",
+                facts: facts)
         }
         facts.profileTeam = profile.team
         facts.profileCreated = profile.creation
@@ -191,30 +227,38 @@ public struct Guard: Sendable, Equatable {
             $0.caseInsensitiveCompare(free.pinnedCertificate.hex) == .orderedSame
         }
         if profile.team != Team.free {
-            return .fail("WRONG_TEAM", "The embedded profile does not belong to the free team.", facts: facts)
+            return .fail(
+                "WRONG_TEAM", "The embedded profile does not belong to the free team.", facts: facts
+            )
         }
         // Fail closed on a missing or past expiry (the clock is the caller's, `FreeSigning.now`).
         guard let expires = profile.expiration, free.now < expires else {
-            return .fail("PROFILE_INVALID", "The embedded profile has expired or has no expiry date.", facts: facts)
+            return .fail(
+                "PROFILE_INVALID", "The embedded profile has expired or has no expiry date.",
+                facts: facts)
         }
         // A free team has no wildcard profile: the exact App ID or nothing.
         if profile.applicationIdentifier != free.applicationIdentifier {
             return .fail(
-                "PROFILE_INVALID", "The embedded profile's application-identifier is not the free team and this bundle ID.",
+                "PROFILE_INVALID",
+                "The embedded profile's application-identifier is not the free team and this bundle ID.",
                 facts: facts)
         }
         if facts.deviceIncluded != true {
             return .fail(
-                "DEVICE_NOT_IN_PROFILE", "The device is not in the profile ProvisionedDevices list.", facts: facts)
+                "DEVICE_NOT_IN_PROFILE",
+                "The device is not in the profile ProvisionedDevices list.", facts: facts)
         }
         if facts.signingCertInProfile != true {
             return .fail(
-                "PROFILE_CERT_MISMATCH", "The pinned free certificate is not in the profile DeveloperCertificates list.",
+                "PROFILE_CERT_MISMATCH",
+                "The pinned free certificate is not in the profile DeveloperCertificates list.",
                 facts: facts)
         }
         if await !signedWithPinnedCertificate(free, runner: runner, app: app) {
             return .fail(
-                "GUARD_FAILED", "The app was not signed with the pinned free certificate, or its signature could not be read.",
+                "GUARD_FAILED",
+                "The app was not signed with the pinned free certificate, or its signature could not be read.",
                 facts: facts)
         }
         if let mismatch = await identityMismatch(free, runner: runner, app: app) {
@@ -222,10 +266,14 @@ public struct Guard: Sendable, Equatable {
         }
         switch scanBundle(app) {
         case .extensionFound:
-            return .fail("EXTENSION_REMAINS", "The app bundle still contains an app extension (.appex).", facts: facts)
+            return .fail(
+                "EXTENSION_REMAINS", "The app bundle still contains an app extension (.appex).",
+                facts: facts)
         case .unsafeLink(let path):
             return .fail(
-                "GUARD_FAILED", "The app bundle has a symlink that is dangling or leaves the bundle: \(path).", facts: facts)
+                "GUARD_FAILED",
+                "The app bundle has a symlink that is dangling or leaves the bundle: \(path).",
+                facts: facts)
         case .unreadable:
             return .fail("GUARD_FAILED", "The app bundle could not be read.", facts: facts)
         case .clean:
@@ -237,18 +285,25 @@ public struct Guard: Sendable, Equatable {
     /// certificate, by SHA-1 of its DER. The listing in the profile is not proof of what signed the app. The
     /// certificate is extracted into a 0700 scratch directory that is removed on every path; its subject is
     /// never read. Any failure, including a scratch directory that cannot be made, is a no.
-    private static func signedWithPinnedCertificate(_ free: FreeSigning, runner: any Runner, app: String) async -> Bool {
-        guard let scratch = try? ScratchDirectory.create(under: free.scratchRoot, registry: .shared) else { return false }
+    private static func signedWithPinnedCertificate(
+        _ free: FreeSigning, runner: any Runner, app: String
+    ) async -> Bool {
+        guard let scratch = try? ScratchDirectory.create(under: free.scratchRoot, registry: .shared)
+        else { return false }
         defer { scratch.remove() }
         let prefix = scratch.path + "/cert"
         let result = await runner.run(
             CommandSpec(
-                executable: "/usr/bin/codesign", args: ["-d", "--extract-certificates=" + prefix, app],
+                executable: "/usr/bin/codesign",
+                args: ["-d", "--extract-certificates=" + prefix, app],
                 timeout: toolTimeout))
-        guard result.code == 0, let der = FileManager.default.contents(atPath: prefix + "0"), !der.isEmpty else {
+        guard result.code == 0, let der = FileManager.default.contents(atPath: prefix + "0"),
+            !der.isEmpty
+        else {
             return false
         }
-        return CertificateReader.sha1Hex(der).caseInsensitiveCompare(free.pinnedCertificate.hex) == .orderedSame
+        return CertificateReader.sha1Hex(der).caseInsensitiveCompare(free.pinnedCertificate.hex)
+            == .orderedSame
     }
 
     /// `Identifier=` from `codesign -dvv` output (the signed bundle identifier); nil when absent.
@@ -260,25 +315,33 @@ public struct Guard: Sendable, Equatable {
     /// `CFBundleIdentifier` must equal it (unreadable fails closed). The signed entitlements' `application-identifier`
     /// must be `6ZU5Z6ZKK7.<id>` when `codesign` can print them; an empty or unparsable print is skipped, since the
     /// profile check has already pinned the same value.
-    private static func identityMismatch(_ free: FreeSigning, runner: any Runner, app: String) async -> String? {
+    private static func identityMismatch(_ free: FreeSigning, runner: any Runner, app: String) async
+        -> String?
+    {
         let infoURL = URL(fileURLWithPath: app).appendingPathComponent("Info.plist")
         guard
             let data = try? Data(contentsOf: infoURL),
-            let info = (try? PropertyListSerialization.propertyList(from: data, options: [], format: nil))
+            let info =
+                (try? PropertyListSerialization.propertyList(from: data, options: [], format: nil))
                 as? [String: Any],
             let bundleId = info["CFBundleIdentifier"] as? String
         else { return "The built app's Info.plist has no readable CFBundleIdentifier." }
-        if bundleId != free.bundleId { return "The built app's CFBundleIdentifier is not this bundle ID." }
+        if bundleId != free.bundleId {
+            return "The built app's CFBundleIdentifier is not this bundle ID."
+        }
         let ent = await runner.run(
             CommandSpec(
-                executable: "/usr/bin/codesign", args: ["-d", "--entitlements", "-", "--xml", app], timeout: toolTimeout))
+                executable: "/usr/bin/codesign", args: ["-d", "--entitlements", "-", "--xml", app],
+                timeout: toolTimeout))
         guard
             ent.code == 0,
-            let plist = try? PropertyListSerialization.propertyList(from: Data(ent.stdout.utf8), options: [], format: nil),
+            let plist = try? PropertyListSerialization.propertyList(
+                from: Data(ent.stdout.utf8), options: [], format: nil),
             let entitlements = plist as? [String: Any]
         else { return nil }
         if entitlements["application-identifier"] as? String != free.applicationIdentifier {
-            return "The signed entitlements' application-identifier is not the free team and this bundle ID."
+            return
+                "The signed entitlements' application-identifier is not the free team and this bundle ID."
         }
         return nil
     }
@@ -300,7 +363,11 @@ public struct Guard: Sendable, Equatable {
         var failed = false
         guard
             let walk = FileManager.default.enumerator(
-                at: url, includingPropertiesForKeys: nil, options: [], errorHandler: { _, _ in failed = true; return true })
+                at: url, includingPropertiesForKeys: nil, options: [],
+                errorHandler: { _, _ in
+                    failed = true
+                    return true
+                })
         else { return .unreadable }
         var badLink: String?
         for case let entry as URL in walk {
@@ -309,7 +376,9 @@ public struct Guard: Sendable, Equatable {
             guard badLink == nil,
                 (try? FileManager.default.destinationOfSymbolicLink(atPath: entry.path)) != nil
             else { continue }
-            if let target = realPath(entry.path), target == root || target.hasPrefix(root + "/") { continue }
+            if let target = realPath(entry.path), target == root || target.hasPrefix(root + "/") {
+                continue
+            }
             badLink = entry.pathComponents.suffix(walk.level).joined(separator: "/")
         }
         if failed { return .unreadable }
@@ -347,7 +416,8 @@ public struct FreeSigning: Sendable, Equatable {
     public let scratchRoot: String
 
     public init(
-        bundleId: String, bundleIdPrefix: String?, pinnedCertificate: CertReference, now: Date, scratchRoot: String
+        bundleId: String, bundleIdPrefix: String?, pinnedCertificate: CertReference, now: Date,
+        scratchRoot: String
     ) {
         self.bundleId = bundleId
         self.bundleIdPrefix = bundleIdPrefix

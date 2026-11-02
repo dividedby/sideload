@@ -15,7 +15,9 @@ public enum PasswordGenerator {
         var out = ""
         for group in 0..<groups {
             if group > 0 { out.append("-") }
-            for _ in 0..<groupLength { out.append(alphabet[Int.random(in: 0..<alphabet.count, using: &rng)]) }
+            for _ in 0..<groupLength {
+                out.append(alphabet[Int.random(in: 0..<alphabet.count, using: &rng)])
+            }
         }
         return out
     }

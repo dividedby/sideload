@@ -220,7 +220,7 @@ seen.
   `install` (the owner's commands: make the folders, write the plist with a quoted here-document, `plutil -lint`,
   `launchctl bootstrap gui/$(id -u)`, `launchctl kickstart -k`) and `stop` (`touch $SIDELOAD_HOME/refresh.disabled`,
   `launchctl bootout`). The plist runs `<binary> refresh --auto` every 1800 s with `RunAtLoad` false, `ProcessType
-  Background`, `LowPriorityIO`, `LimitLoadToSessionType Aqua`, stderr to `$SIDELOAD_HOME/logs/launchd-refresh.err`, stdout
+Background`, `LowPriorityIO`, `LimitLoadToSessionType Aqua`, stderr to `$SIDELOAD_HOME/logs/launchd-refresh.err`, stdout
   to `/dev/null`, `SIDELOAD_HOME` only when it is not the default, and no `KeepAlive`; every string is XML-escaped.
   `--binary` defaults to `~/.local/bin/sideload` and must be absolute; it, and any other refresh option, is `USAGE`
   otherwise. Printing is not installing: agents never run the printed `launchctl` commands. README gains "Turning on
@@ -490,7 +490,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
 #### IPAs: inspect and fetch
 
 - `inspect <path.ipa>` (read-only; no `--yes`, no lock): reports `ipa{path,sizeBytes,sha256}`, `app{bundleId,name,
-  version,build,minOS,platform,deviceFamily,executable,architectures,signed,entitlements,appGroups}`,
+version,build,minOS,platform,deviceFamily,executable,architectures,signed,entitlements,appGroups}`,
   `extensions[...]` for each `PlugIns/*.appex`, the union of app groups, `hasEmbeddedProvision`,
   `otherCode{frameworks,dylibs,watchApps}` (counts) and `warnings`. Architectures come from `lipo`, platform and
   minimum OS from `vtool`, entitlements from `codesign -d --entitlements - --xml`, all through the Runner (absolute
@@ -567,7 +567,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
   is the pure eligibility rule for the later `refresh --auto` (opted in, paired, link exactly `connected`, transport
   network or wired; a `disconnected` link is not eligible). `DeviceCtl.run` takes a `scope` (`.paid` by default,
   `.free(bundleId:)`) and classifies the argv it will actually send (after `--device` is stripped): for `device install
-  app`, `device uninstall app` and `device process launch` it requires exactly one positional and no other non-flag
+app`, `device uninstall app` and `device process launch` it requires exactly one positional and no other non-flag
   word, the free scope requires `Config.isFreeBundleId` (and the positional to match) and the paid scope refuses a
   free-allowlisted ID; an argv with an install, uninstall or launch word in any other shape is refused too. All are
   `BUNDLE_ID_NOT_ALLOWED` before the subprocess. Subcommand words are matched case-insensitively, and a positional
@@ -576,11 +576,11 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
 - `provision --app <apollo|stremio-ios|stremio-tvos> --device <alias> --yes [--register-device] [--renew]` (docs/design.md
   section 18, build step 5). Owner-run: gets a free-team (6ZU5Z6ZKK7) 7-day development profile for one app on one saved
   device through Xcode, using `CarrierProject`, a one-file multiplatform SwiftUI app (`SUPPORTED_PLATFORMS = "iphoneos
-  appletvos"`, `TARGETED_DEVICE_FAMILY = "1,2,3"`, no entitlements or capabilities) written at run time to
+appletvos"`, `TARGETED_DEVICE_FAMILY = "1,2,3"`, no entitlements or capabilities) written at run time to
   `builds/carrier/` (0700; deterministic, a file already identical is not rewritten; the paid `canary/` project is never
   touched). It runs `xcodebuild -project <carrier> -scheme Carrier -destination id=<udid> -derivedDataPath
-  builds/carrier-dd -allowProvisioningUpdates CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=6ZU5Z6ZKK7
-  CODE_SIGN_IDENTITY="Apple Development" PRODUCT_BUNDLE_IDENTIFIER=<prefix>.free.<name> build` through the Runner (10 min,
+builds/carrier-dd -allowProvisioningUpdates CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM=6ZU5Z6ZKK7
+CODE_SIGN_IDENTITY="Apple Development" PRODUCT_BUNDLE_IDENTIFIER=<prefix>.free.<name> build` through the Runner (10 min,
   128 MiB cap), adding `-allowProvisioningDeviceRegistration` only for `--register-device --yes`. `stremio-ios` and
   `stremio-tvos` share `…free.stremio`, `apollo` is `…free.apollo`; the saved device's platform must match
   (`PLATFORM_MISMATCH`). Needs `--yes` (`CONFIRM_REQUIRED`) and takes `.op.lock` (`OPERATION_IN_PROGRESS`). Preflight:
@@ -601,7 +601,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
   owner-approved only if S3 shows Xcode reuses profiles. xcodebuild failures map to `ACCOUNT_NOT_SIGNED_IN`,
   `DEVICE_NOT_REGISTERED`, `FREE_APP_ID_LIMIT`, `DEVICE_LOCKED`, `FREE_IDENTITY_MISSING`, `BUILD_TIMEOUT`, `OUTPUT_LIMIT`;
   anything else is `PROVISION_FAILED` with a redacted `logTail`. Output: `app`, `device`, `bundleId`, `profile{uuid,created,
-  expires,daysLeft}`, `file`, `appIdNew`, `appIdsLast7Days`, `identityChanged`, `pinnedFp8`, `pinnedNow`; never a device ID,
+expires,daysLeft}`, `file`, `appIdNew`, `appIdsLast7Days`, `identityChanged`, `pinnedFp8`, `pinnedNow`; never a device ID,
   device name, identity name or profile content. New: `Services.xcodeProfileDirectories` (empty by default, so a test that
   forgets it cannot reach the real folders), `Paths.freeProfiles`/`carrierProject`/`carrierDerivedData`, `Config` accessors
   for `freeTeam.certFp8` and `freeTeam.reservedAppIds`, `FreeAppIdBudget`, `ProvisionClassifier`, `ProfileCacheRenewal`.
@@ -647,7 +647,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
   only, the paid `sign` is still not built). Turns the newest approved fetched IPA and the stored free profile for that
   device into a signed `.app` at `builds/signed/<app>/<device>/<Name>.app` (0700 folders), recorded in the ledger's new
   optional `freeSigned[{id:"<device>/<app>",device,app,bundleId,version,sha256Prefix,profileUuid,profileExpires,certFp8,
-  signedAt,path,strippedExtensions[{path,bundleId}],droppedEntitlements}]` (written only when non-empty, so a ledger that
+signedAt,path,strippedExtensions[{path,bundleId}],droppedEntitlements}]` (written only when non-empty, so a ledger that
   never signed is byte-identical). Order: usage, config (`CONFIG_MISSING`), the saved device and its platform
   (`DEVICE_NOT_SAVED`, `PLATFORM_MISMATCH`), `--yes` (`CONFIRM_REQUIRED`), `.op.lock` (`OPERATION_IN_PROGRESS`), the keychain
   read (`KEYCHAIN_LOCKED`), `FreeIdentityGuard.settleInFlight` before anything else (`FREE_CERT_CHANGED`), then the pinned
@@ -665,7 +665,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
   listing, hash, `ditto` extraction, `lstat` walk and report, leaving the unpacked tree in the caller's folder.
   `ExtensionStripper` removes every `*.appex` wherever it sits, then `PlugIns/` if empty (other content kept with the warning
   `PLUGINS_NOT_EMPTY`), all of `Extensions/` and all of `Watch/`, and reports `stripped[{path,bundleId,extensionPoint,
-  entitlementKeys,appGroups}]`; an independent re-walk (`ExtensionStripper.remaining`: any `*.appex`, a symlink with that
+entitlementKeys,appGroups}]`; an independent re-walk (`ExtensionStripper.remaining`: any `*.appex`, a symlink with that
   name, a root `Extensions/` or `Watch/`, a nested bundle whose Info.plist says watchOS) that finds anything is
   `EXTENSION_REMAINS`. `BundleRewriter` rewrites `CFBundleIdentifier` with `PropertyListSerialization` in the format the plist
   had, removes `_CodeSignature` and the old `embedded.mobileprovision` and installs the free profile's exact bytes.
@@ -674,8 +674,8 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
   dropped and listed in `droppedEntitlements`. A group only a stripped extension used is reported under
   `appGroups.onlyInStrippedExtensions`; one the main app declares (Apollo's `group.com.christianselig.apollo`) is the warning
   `APP_GROUP_DROPPED`, never a stop. `BundleSigner` signs nested frameworks and dylibs innermost first with `codesign -f -s
-  <SHA-1> --timestamp=none` (the pinned identity's SHA-1, never a name), then the app with `--entitlements <plist>
-  --generate-entitlement-der`, then `codesign --verify --strict --deep` (`CODESIGN_FAILED` with `step`, `KEYCHAIN_LOCKED` for
+<SHA-1> --timestamp=none` (the pinned identity's SHA-1, never a name), then the app with `--entitlements <plist>
+--generate-entitlement-der`, then `codesign --verify --strict --deep` (`CODESIGN_FAILED` with `step`, `KEYCHAIN_LOCKED` for
   a locked key, never the tool's text). `Guard.run(context: .free)` must pass on the result before it is moved into place
   with one `renamex_np` (`RENAME_EXCL`, or `RENAME_SWAP` to replace the previous signed app) and recorded. Output: `app`,
   `device`, `bundleId`, `version`, `build`, `profile{uuid,daysLeft}`, `stripped`, `droppedEntitlements`, `appGroups`,
@@ -765,7 +765,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
   everything in flight has landed (reverting either fix makes it fail on every seed).
 - `filler`, a fourth app key for `provision`, `install`, `app remove`, `slot` and `device lendable` (docs/design.md section 18):
   a tiny app with no IPA, so the install and slot paths can be exercised without a fetch. `provision --app filler --device <d>
-  --yes` builds the carrier as before, copies the Xcode-signed `Carrier.app` with `ditto` into a scratch folder, runs the
+--yes` builds the carrier as before, copies the Xcode-signed `Carrier.app` with `ditto` into a scratch folder, runs the
   free-team guard on the copy, places it at `builds/signed/filler/<d>/Carrier.app` in one rename and records `freeSigned`
   (version `1.0`) in the same ledger write as the profile (a failed write puts the previous app back); a failed guard
   records and places nothing. Output gains `signed`. It uses one App ID of its own and, once installed, one managed slot.
@@ -851,7 +851,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
   `sizeMismatch`, and for the `copy from` call `copyTimeout`, `copyDeviceLocked`, `copyDeviceNotConnected`, `copyNotRun`,
   `copyNoResult`, `copyOther`, and for the restore also `notOnDevice` (pushed, but the relisting did not show it); the restore counts its refusals before the call as `unsafePath`, `localError` and `timeLimit` (the call's class is best effort: the locked and not-connected patterns are loose; `devicectl`'s numeric error codes
   are not reported). The progress line gains the same counts: `app data backup: 10 file(s) saved, 3 failed (copyTimeout 2,
-  notRegularFile 1)` and `app data restore: ... failed (...)`. Additive: `dataBackedUp`, `dataFiles`, `dataFilesFailed` keep their meaning.
+notRegularFile 1)` and `app data restore: ... failed (...)`. Additive: `dataBackedUp`, `dataFiles`, `dataFilesFailed` keep their meaning.
 
 #### status and the menu bar app
 
@@ -894,6 +894,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
   longer implies a working canary; read `canary.last` for that.
 
 ### Changed
+
 - CI uses fewer Actions minutes. A new push to a PR cancels the run still going for its older commit (`concurrency`,
   never on `main`), and the job has `timeout-minutes: 5`, so a hung run can't bill hours.
 - `install` no longer answers `NOT_IMPLEMENTED`; `help` lists `install`, `app` and `slot` as built. The signal test that used
@@ -929,6 +930,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
   SIGTERM. The runner is unchanged.
 
 ### Fixed
+
 - App-data backup and restore treated a `devicectl` call that exits 0 but reports a failure as a success. A call now fails
   when its document is not an object, has a top-level `error`, has an `info` that is not an object, or has an `info.outcome`
   other than `success`. A `copy from` that did so and left no file was taken for a folder (counted nowhere); one that left a
@@ -944,10 +946,10 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
 - The live free-slot count no longer counts TestFlight betas (mobile-safari-lab-archive issue 63): `devicectl device info apps` marks them
   `builtByDeveloper` like free-team apps, so the owner's iPhone read `used: 8` and the filler install and every `slot return`
   would have stopped with `FREE_APP_LIMIT`. Other free-team apps are now found by one read-only `devicectl device profile list
-  --type provisioning` per command (an installed, non-managed app with a `6ZU5Z6ZKK7` profile for its bundle ID; expired
+--type provisioning` per command (an installed, non-managed app with a `6ZU5Z6ZKK7` profile for its bundle ID; expired
   profiles count, stale ones for absent apps do not; strict parse, and no code path ever calls `profile install|remove|validate`,
   with a scan test). The lab's WebDriverAgent counts inside the slot lent to it: `unmanaged = max(freeSlotsReserved, otherNonLab +
-  max(lent, labApps) - lent)`, `used = managed + unmanaged + lent + pending`. If the profile read fails or is malformed the count is
+max(lent, labApps) - lent)`, `used = managed + unmanaged + lent + pending`. If the profile read fails or is malformed the count is
   `managed + freeSlotsReserved + lent + pending`; installd's `FREE_APP_LIMIT` is the backstop. Every `slots` object (`install` and its `FREE_APP_LIMIT` errors, `slot return`, `app remove`) now comes from one builder and has the same keys: `limit`, `used`, `free`, `reserved`, `managed`, `unmanaged`, `lent`, `pending`, `otherDeveloperApps`, `otherFreeTeamApps`, `labApps`, `otherNonLab`, `profilesRead`
   (counts only); `unmanaged` now follows the formula. The preflight message names its basis. No change to the allowlist,
   `.op.lock`, the slot record model, `status` or the menu.
@@ -962,6 +964,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
 0.1.0 predates this repository's public history; its tag is not in this repository.
 
 ### Added
+
 - Issue conventions: `docs/agents/` (issue tracker, label convention, Idea Inbox protocol), the
   `## Issues` section in `AGENTS.md`, and the Idea Inbox issue (#1).
 - Repo scaffolding: `.gitignore`, `package.json` (zero dependencies), CI workflow.
@@ -1040,6 +1043,7 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
   Differences from Node are listed in `docs/design.md` section 14.
 
 ### Changed
+
 - The Swift CLI is the implementation. Node remains only for the secrets hook (`scripts/check-secrets.mjs`) and
   its test; `package.json` is reduced to the hook scripts and `test` runs the check-secrets suite only. The
   `engines` floor is dropped (CI still runs Node 22). Unbuilt commands (`export-cert`, `fetch`, `sign`,
@@ -1053,10 +1057,12 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
   keychain access, Node-to-Swift parity checklist, CI policy; records the owner's resolved decisions.
 
 ### Removed
+
 - The Node CLI (`bin/`, `src/`) and its tests (`test/*.test.mjs` except `check-secrets.test.mjs`, and
   `test/fixtures/`). Parity gate passed first (`docs/design.md` section 14).
 
 ### Fixed
+
 - The CLI no longer crashes with an `EPIPE` stack trace when its stdout reader closes early
   (e.g. `sideload doctor | head`).
 

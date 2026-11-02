@@ -1,0 +1,10 @@
+node_modules
+pnpm-lock.yaml
+dist
+build
+out
+coverage
+.next
+*.min.js
+*.min.css
+**/Fixtures

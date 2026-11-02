@@ -54,7 +54,8 @@ public final class HoldSignal: Sendable {
     /// `onImpatient` runs (on the handler's queue, once) at the second absorbed signal while writing,
     /// committing or copying; the CLI prints "finishing cleanup; kill -9 to force" to stderr, bounded.
     public init(onImpatient: @escaping @Sendable () -> Void = {}) {
-        (events, trigger) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        (events, trigger) = AsyncStream.makeStream(
+            of: Void.self, bufferingPolicy: .bufferingNewest(1))
         self.onImpatient = onImpatient
     }
 

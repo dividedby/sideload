@@ -21,7 +21,8 @@ public enum UpdatesCommand {
 
     public static func run(_ services: Services, _ options: UpdatesOptions) async -> Envelope {
         do {
-            return envelope(try await UpdateCheck.run(services, app: options.app, force: options.force))
+            return envelope(
+                try await UpdateCheck.run(services, app: options.app, force: options.force))
         } catch {
             return .from(error, command: command)
         }
@@ -32,7 +33,8 @@ public enum UpdatesCommand {
         let date: (Date?) -> JSONValue = { $0.map { .string(stamp.string(from: $0)) } ?? .null }
         let sources = report.sources.map { source -> JSONValue in
             var object: [String: JSONValue] = [
-                "app": .string(source.app), "status": .string(source.status.rawValue), "checkedAt": date(source.checkedAt),
+                "app": .string(source.app), "status": .string(source.status.rawValue),
+                "checkedAt": date(source.checkedAt),
                 "fromCache": .bool(source.fromCache), "upstream": upstream(source.upstream),
             ]
             if let code = source.failure?.code { object["code"] = .string(code) }
@@ -40,19 +42,23 @@ public enum UpdatesCommand {
         }
         let installs = report.installs.map { install -> JSONValue in
             .object([
-                "device": .string(install.device), "app": .string(install.app), "installed": .string(install.installed),
+                "device": .string(install.device), "app": .string(install.app),
+                "installed": .string(install.installed),
                 "state": .string(install.state.rawValue),
             ])
         }
         let failed = report.sources.filter { $0.status == .error }
         let data: [String: JSONValue] = [
-            "checkedAt": date(report.checkedAt), "sources": .array(sources), "installs": .array(installs),
+            "checkedAt": date(report.checkedAt), "sources": .array(sources),
+            "installs": .array(installs),
             "warnings": .array(report.warnings),
         ]
         return Envelope(
             ok: failed.isEmpty, command: command, data: data,
             errors: failed.compactMap { source in
-                source.failure.map { .init(code: $0.code, message: "\(source.app): \($0.message)", fix: $0.fix) }
+                source.failure.map {
+                    .init(code: $0.code, message: "\(source.app): \($0.message)", fix: $0.fix)
+                }
             })
     }
 
@@ -60,7 +66,8 @@ public enum UpdatesCommand {
         guard let value else { return .null }
         return .object([
             "version": .string(value.version), "build": value.build.map(JSONValue.string) ?? .null,
-            "minOS": value.minOS.map(JSONValue.string) ?? .null, "size": .number(Double(value.size)),
+            "minOS": value.minOS.map(JSONValue.string) ?? .null,
+            "size": .number(Double(value.size)),
             "sha256": .string(value.sha256),
         ])
     }

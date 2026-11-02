@@ -65,7 +65,10 @@ struct PasswordGeneratorTests {
 struct Pkcs12InspectorTests {
     private func blob(_ oidTail: [UInt8]) -> Data {
         let body: [UInt8] = [0x2A, 0x86, 0x48, 0x86, 0xF7, 0x0D, 0x01] + oidTail
-        return Data([0x30, 0x82, 0x01, 0x00, 0xA0, 0xFF] + [0x06, UInt8(body.count)] + body + [0x04, 0x01, 0x00])
+        return Data(
+            [0x30, 0x82, 0x01, 0x00, 0xA0, 0xFF] + [0x06, UInt8(body.count)] + body + [
+                0x04, 0x01, 0x00,
+            ])
     }
 
     @Test func recognisesEachScheme() {
@@ -89,7 +92,8 @@ struct Pkcs12InspectorTests {
         #expect(mixed.label == "pkcs12-3des+pkcs12-rc2-40")
         #expect(mixed.isLegacy)
 
-        let pbes2AndLegacy = Pkcs12Inspector.inspect(blob([0x05, 0x0D]) + blob([0x0C, 0x01, 0x06]))
+        let pbes2AndLegacy = Pkcs12Inspector.inspect(
+            blob([0x05, 0x0D]) + blob([0x0C, 0x01, 0x06]))
         #expect(pbes2AndLegacy.isLegacy)
 
         let unknown = Pkcs12Inspector.inspect(blob([0x01, 0x01]))
@@ -168,15 +172,18 @@ struct KeychainFailureTests {
 
     @Test func eachFailureHasItsOwnCodeMessageAndFix() {
         let all: [KeychainFailure] = [
-            .denied, .promptTimeout, .notFound, .notPaidTeam, .wrongPassword, .passwordStoreFailed(-1),
+            .denied, .promptTimeout, .notFound, .notPaidTeam, .wrongPassword,
+            .passwordStoreFailed(-1),
             .passwordUnreadable(-1), .unavailable, .status(-1),
         ]
         #expect(Set(all.map { $0.report.code }).count == all.count)
         #expect(all.allSatisfy { !$0.report.message.isEmpty && !$0.report.fix.isEmpty })
         let codes: [(KeychainFailure, String)] = [
-            (.denied, "KEYCHAIN_DENIED"), (.promptTimeout, "KEYCHAIN_PROMPT_TIMEOUT"), (.notFound, "CERT_NOT_FOUND"),
+            (.denied, "KEYCHAIN_DENIED"), (.promptTimeout, "KEYCHAIN_PROMPT_TIMEOUT"),
+            (.notFound, "CERT_NOT_FOUND"),
             (.notPaidTeam, "IDENTITY_NOT_PAID_TEAM"), (.wrongPassword, "P12_VERIFY_FAILED"),
-            (.passwordStoreFailed(-1), "PASSWORD_STORE_FAILED"), (.passwordUnreadable(-1), "PASSWORD_UNREADABLE"),
+            (.passwordStoreFailed(-1), "PASSWORD_STORE_FAILED"),
+            (.passwordUnreadable(-1), "PASSWORD_UNREADABLE"),
             (.unavailable, "KEYCHAIN_UNAVAILABLE"), (.status(-1), "KEYCHAIN_READ_FAILED"),
         ]
         for (failure, code) in codes {
@@ -188,13 +195,21 @@ struct KeychainFailureTests {
 
     @Test func passwordItemFailuresHaveTheirOwnCodes() {
         // Owner refusals stay denials; everything else is the item's own code.
-        #expect(KeychainFailure.fromPasswordAdd(status: errSecDuplicateItem) == .passwordStoreFailed(errSecDuplicateItem))
+        #expect(
+            KeychainFailure.fromPasswordAdd(status: errSecDuplicateItem)
+                == .passwordStoreFailed(errSecDuplicateItem))
         #expect(KeychainFailure.fromPasswordAdd(status: errSecAuthFailed) == .denied)
         #expect(KeychainFailure.fromPasswordAdd(status: errSecUserCanceled) == .denied)
-        #expect(KeychainFailure.fromPasswordRead(status: errSecDecode) == .passwordUnreadable(errSecDecode))
+        #expect(
+            KeychainFailure.fromPasswordRead(status: errSecDecode)
+                == .passwordUnreadable(errSecDecode))
         #expect(KeychainFailure.fromPasswordRead(status: errSecInteractionNotAllowed) == .denied)
-        #expect(KeychainFailure.fromPasswordAdd(status: errSecDuplicateItem).report.code == "PASSWORD_STORE_FAILED")
-        #expect(KeychainFailure.fromPasswordRead(status: errSecDecode).report.code == "PASSWORD_UNREADABLE")
+        #expect(
+            KeychainFailure.fromPasswordAdd(status: errSecDuplicateItem).report.code
+                == "PASSWORD_STORE_FAILED")
+        #expect(
+            KeychainFailure.fromPasswordRead(status: errSecDecode).report.code
+                == "PASSWORD_UNREADABLE")
     }
 
     @Test func statusAppearsInTheMessageButNothingElse() {
@@ -209,10 +224,13 @@ struct KeychainFailureTests {
 
 @Suite("identity selection")
 struct IdentitySelectionTests {
-    private func candidate(_ digit: Character, ous: [String]) -> (certificate: KeychainCertificate, item: String) {
+    private func candidate(_ digit: Character, ous: [String]) -> (
+        certificate: KeychainCertificate, item: String
+    ) {
         let reference = ref(digit).hex
         return (
-            KeychainCertificate(reference: reference, info: CertInfo(ous: ous), isValidForCodeSigning: true),
+            KeychainCertificate(
+                reference: reference, info: CertInfo(ous: ous), isValidForCodeSigning: true),
             "item-" + String(digit)
         )
     }
@@ -223,16 +241,26 @@ struct IdentitySelectionTests {
     }
 
     @Test func neverReturnsTheFreeTeamsKey() {
-        let pool = [candidate("A", ous: ["6ZU5Z6ZKK7"]), candidate("B", ous: ["7AGMPUPP64", "6ZU5Z6ZKK7"])]
-        #expect(throws: KeychainFailure.notPaidTeam) { try IdentitySelection.pick(pool, reference: ref("A")) }
+        let pool = [
+            candidate("A", ous: ["6ZU5Z6ZKK7"]), candidate("B", ous: ["7AGMPUPP64", "6ZU5Z6ZKK7"]),
+        ]
+        #expect(throws: KeychainFailure.notPaidTeam) {
+            try IdentitySelection.pick(pool, reference: ref("A"))
+        }
         // The free OU anywhere in the subject disqualifies, even behind the paid OU.
-        #expect(throws: KeychainFailure.notPaidTeam) { try IdentitySelection.pick(pool, reference: ref("B")) }
+        #expect(throws: KeychainFailure.notPaidTeam) {
+            try IdentitySelection.pick(pool, reference: ref("B"))
+        }
     }
 
     @Test func otherTeamsAndNoOUAreNotPaid() {
         let pool = [candidate("C", ous: ["TESTTEAM01"]), candidate("D", ous: [])]
-        #expect(throws: KeychainFailure.notPaidTeam) { try IdentitySelection.pick(pool, reference: ref("C")) }
-        #expect(throws: KeychainFailure.notPaidTeam) { try IdentitySelection.pick(pool, reference: ref("D")) }
+        #expect(throws: KeychainFailure.notPaidTeam) {
+            try IdentitySelection.pick(pool, reference: ref("C"))
+        }
+        #expect(throws: KeychainFailure.notPaidTeam) {
+            try IdentitySelection.pick(pool, reference: ref("D"))
+        }
     }
 
     @Test func unknownReferenceIsNotFound() {
@@ -248,7 +276,9 @@ struct IdentitySelectionTests {
         let paidRef = try #require(CertReference(paid.reference))
         let freeRef = try #require(CertReference(free.reference))
         #expect(try IdentitySelection.pick(pool, reference: paidRef) == "paid")
-        #expect(throws: KeychainFailure.notPaidTeam) { try IdentitySelection.pick(pool, reference: freeRef) }
+        #expect(throws: KeychainFailure.notPaidTeam) {
+            try IdentitySelection.pick(pool, reference: freeRef)
+        }
     }
 }
 
@@ -270,7 +300,8 @@ struct CertReferenceTests {
     }
 
     @Test func derHashMatchesTheCertificateReader() throws {
-        let der = try #require(Data(base64Encoded: TestCerts.paid, options: .ignoreUnknownCharacters))
+        let der = try #require(
+            Data(base64Encoded: TestCerts.paid, options: .ignoreUnknownCharacters))
         let read = try #require(CertificateReader.read(der: der))
         #expect(CertReference(der: der).hex == read.reference)
     }
@@ -280,23 +311,31 @@ struct CertReferenceTests {
 struct KeychainFakeTests {
     @Test func inertDefaultsThrowKeychainUnavailable() throws {
         let services = Services(
-            runner: FakeRunner(), fs: FakeFileSystem.free(gb: 1), clock: FixedClock(testNow), keychain: FakeKeychain(),
+            runner: FakeRunner(), fs: FakeFileSystem.free(gb: 1), clock: FixedClock(testNow),
+            keychain: FakeKeychain(),
             home: Paths(home: "/nonexistent"))
         func code(_ body: () throws -> Void) -> String? {
-            do { try body() } catch let error as KeychainFailure { return error.report.code } catch { return "other" }
+            do { try body() } catch let error as KeychainFailure { return error.report.code } catch
+            { return "other" }
             return nil
         }
-        #expect(code { _ = try services.identityExporter.exportP12(reference: ref("A"), password: "x") } == "KEYCHAIN_UNAVAILABLE")
+        #expect(
+            code { _ = try services.identityExporter.exportP12(reference: ref("A"), password: "x") }
+                == "KEYCHAIN_UNAVAILABLE")
         #expect(code { _ = try services.secrets.readPassword() } == "KEYCHAIN_UNAVAILABLE")
         #expect(code { try services.secrets.addPassword("x") } == "KEYCHAIN_UNAVAILABLE")
-        #expect(code { _ = try services.p12Verifier.identityReferences(p12: Data(), password: "x") } == "KEYCHAIN_UNAVAILABLE")
+        #expect(
+            code { _ = try services.p12Verifier.identityReferences(p12: Data(), password: "x") }
+                == "KEYCHAIN_UNAVAILABLE")
     }
 
     @Test func secretStoreFakeNeverOverwrites() throws {
         let store = FakeSecretStore()
         #expect(try store.readPassword() == nil)
         try store.addPassword("one")
-        #expect(throws: KeychainFailure.passwordStoreFailed(errSecDuplicateItem)) { try store.addPassword("two") }
+        #expect(throws: KeychainFailure.passwordStoreFailed(errSecDuplicateItem)) {
+            try store.addPassword("two")
+        }
         #expect(try store.readPassword() == "one")
         #expect(store.events == [.read, .add("one"), .add("two"), .read])
     }
@@ -306,13 +345,17 @@ struct KeychainFakeTests {
         _ = try exporter.exportP12(reference: ref("A"), password: "pw")
         #expect(exporter.calls == [.init(reference: ref("A"), password: "pw")])
         let denied = FakeIdentityExporter(.failure(.denied))
-        #expect(throws: KeychainFailure.denied) { _ = try denied.exportP12(reference: ref("A"), password: "pw") }
+        #expect(throws: KeychainFailure.denied) {
+            _ = try denied.exportP12(reference: ref("A"), password: "pw")
+        }
     }
 
     @Test func verifierFakeRejectsAWrongPassword() throws {
         let verifier = FakeP12Verifier(references: [ref("A")], expectedPassword: "right")
         #expect(try verifier.identityReferences(p12: Data(), password: "right") == [ref("A")])
-        #expect(throws: KeychainFailure.wrongPassword) { _ = try verifier.identityReferences(p12: Data(), password: "wrong") }
+        #expect(throws: KeychainFailure.wrongPassword) {
+            _ = try verifier.identityReferences(p12: Data(), password: "wrong")
+        }
     }
 
     @Test func passwordItemIdentity() {
@@ -324,9 +367,11 @@ struct KeychainFakeTests {
 @Suite("keychain source hygiene")
 struct KeychainSourceHygieneTests {
     private func sources(under sub: String = "") throws -> [(path: String, text: String)] {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .deletingLastPathComponent()
             .deletingLastPathComponent().appendingPathComponent("Sources/SideloadCore" + sub)
-        let walker = try #require(FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil))
+        let walker = try #require(
+            FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil))
         var files: [(String, String)] = []
         for case let url as URL in walker where url.pathExtension == "swift" {
             files.append((url.path, try String(contentsOf: url, encoding: .utf8)))
@@ -337,7 +382,10 @@ struct KeychainSourceHygieneTests {
 
     @Test("nothing updates or deletes a keychain item, or exports through the security tool")
     func noMutationAndNoToolExport() throws {
-        let banned = ["SecItemUpdate", "SecItemDelete", "SecKeychainItemDelete", "SecKeychainDelete", "SecKeychainCreate"]
+        let banned = [
+            "SecItemUpdate", "SecItemDelete", "SecKeychainItemDelete", "SecKeychainDelete",
+            "SecKeychainCreate",
+        ]
         for (path, text) in try sources() {
             for word in banned { #expect(!text.contains(word), "\(path) mentions \(word)") }
         }

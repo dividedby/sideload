@@ -18,7 +18,9 @@ private final class SlowSource: HTTPTransport {
     init(version: String) {
         body = releaseJSON(
             tag: "v1.15.11_\(version)",
-            assets: apolloDecoys(version: version) + [ReleaseAsset(name: "Apollo-Reborn-\(version)-GLASS-NOEXTENSIONS.ipa")])
+            assets: apolloDecoys(version: version) + [
+                ReleaseAsset(name: "Apollo-Reborn-\(version)-GLASS-NOEXTENSIONS.ipa")
+            ])
     }
 
     var gets: [String] { state.withLock { $0.gets } }
@@ -56,7 +58,9 @@ struct MenuModelUpdateTests {
 
     /// One reachable iPhone with Apollo 3.9.0 installed (profile fresh, App ID live) and an approved Apollo source that lists
     /// `listed`. The fetch returns `fetchedVersion`; the later commands record themselves, and `install` moves the record on.
-    private func world(listed: String = "3.10.0", fetchedVersion: String = "3.10.0") async throws -> World {
+    private func world(listed: String = "3.10.0", fetchedVersion: String = "3.10.0") async throws
+        -> World
+    {
         let dir = try makeTempDir()
         let paths = Paths(home: dir.path)
         try paths.ensureHome()
@@ -64,24 +68,33 @@ struct MenuModelUpdateTests {
         ledger.installs[0].version = "3.9.0"
         ledger.freeProfiles = [
             LedgerFreeProfile(
-                id: "iphone/apollo", device: "iphone", deviceTail: "…0001", app: "apollo", bundleId: menuBundleId("apollo"),
-                profileUuid: "UUID-1", created: nil, expires: daysFromNow(6.5), certFp8: "12345678", file: "x")
+                id: "iphone/apollo", device: "iphone", deviceTail: "…0001", app: "apollo",
+                bundleId: menuBundleId("apollo"),
+                profileUuid: "UUID-1", created: nil, expires: daysFromNow(6.5), certFp8: "12345678",
+                file: "x")
         ]
-        ledger.freeAppIds = [LedgerFreeAppId(bundleId: menuBundleId("apollo"), epochStart: testNow.addingTimeInterval(-3_600))]
+        ledger.freeAppIds = [
+            LedgerFreeAppId(
+                bundleId: menuBundleId("apollo"), epochStart: testNow.addingTimeInterval(-3_600))
+        ]
         try await seed(paths, config: addConfig(), ledger: ledger)
         var manifest = Manifest()
         manifest.entries = [
             ManifestEntry(
-                app: "apollo", version: fetchedVersion, file: "apollo/\(fetchedVersion)/Apollo.ipa", urlHost: "github.com", sha256: addSha,
+                app: "apollo", version: fetchedVersion, file: "apollo/\(fetchedVersion)/Apollo.ipa",
+                urlHost: "github.com", sha256: addSha,
                 upstreamDigest: addSha, size: 45_200_000, fetchedAt: testNow, approved: false)
         ]
         try ManifestStore(paths: paths).save(manifest)
         let runner = SlowDeviceRunner(
-            menuDeviceScript(devices: deviceListJSON(phoneEntryJSON(seed: "1")), apps: { _ in .apps([menuBundleId("apollo")]) }))
+            menuDeviceScript(
+                devices: deviceListJSON(phoneEntryJSON(seed: "1")),
+                apps: { _ in .apps([menuBundleId("apollo")]) }))
         let clock = MutableClock(testNow)
         let source = SlowSource(version: listed)
         let services = Services(
-            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: clock, keychain: FakeKeychain(), home: paths, http: source)
+            runner: runner, fs: FakeFileSystem.free(gb: 50), clock: clock, keychain: FakeKeychain(),
+            home: paths, http: source)
         let record = Record()
         var steps = MenuActionSteps()
         steps.fetch = { _, options in
@@ -89,8 +102,10 @@ struct MenuModelUpdateTests {
             return Envelope(
                 ok: true, command: "fetch",
                 data: [
-                    "version": .string(fetchedVersion), "build": "143", "sha256": .string(addSha), "size": 45_200_000,
-                    "inspectMinOS": "16.0", "alreadyApproved": false, "inspect": ["extensionCount": 2],
+                    "version": .string(fetchedVersion), "build": "143", "sha256": .string(addSha),
+                    "size": 45_200_000,
+                    "inspectMinOS": "16.0", "alreadyApproved": false,
+                    "inspect": ["extensionCount": 2],
                 ])
         }
         steps.provision = { _, _ in
@@ -113,7 +128,8 @@ struct MenuModelUpdateTests {
             return Envelope(ok: true, command: "install")
         }
         return World(
-            model: MenuModel(services: services, steps: steps), runner: runner, source: source, record: record, clock: clock,
+            model: MenuModel(services: services, steps: steps), runner: runner, source: source,
+            record: record, clock: clock,
             paths: paths, dir: dir)
     }
 
@@ -137,7 +153,9 @@ struct MenuModelUpdateTests {
         Issue.record("timed out waiting for a condition")
     }
 
-    @Test("the check runs after the device reads, as a task of its own, and the panel repaints with the update")
+    @Test(
+        "the check runs after the device reads, as a task of its own, and the panel repaints with the update"
+    )
     func checkAndRepaint() async throws {
         let w = try await world()
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -148,13 +166,17 @@ struct MenuModelUpdateTests {
         #expect(w.runner.infoApps.count == 1, "the devices were read first")
         await w.model.updateTask?.value
         #expect(w.source.gets == [apolloAPI])
-        #expect(row(w)?.updateLine == "Update available · 3.9.0 → 3.10.0" && row(w)?.offersUpdate == true)
+        #expect(
+            row(w)?.updateLine == "Update available · 3.9.0 → 3.10.0"
+                && row(w)?.offersUpdate == true)
         #expect(w.model.updateTask == nil)
         // The file now holds it: a fresh model reading only the local file shows the line at once.
         #expect(MenuUpdates.cached(w.model.services)["apollo"]?.version == "3.10.0")
     }
 
-    @Test("a panel open within 6 hours asks nothing; Check status now keeps the 5-minute floor; later it asks again")
+    @Test(
+        "a panel open within 6 hours asks nothing; Check status now keeps the 5-minute floor; later it asks again"
+    )
     func cadence() async throws {
         let w = try await world()
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -163,14 +185,17 @@ struct MenuModelUpdateTests {
 
         w.clock.advance(3_600)
         await loaded(w, force: false)
-        #expect(w.source.gets.count == 1 && row(w)?.updateLine != nil, "an open within 6 h is answered by the file")
+        #expect(
+            w.source.gets.count == 1 && row(w)?.updateLine != nil,
+            "an open within 6 h is answered by the file")
 
         w.clock.advance(6 * 3_600)
         await loaded(w, force: false)
         #expect(w.source.gets.count == 2, "an open after 6 h asks again")
 
         await loaded(w)
-        #expect(w.source.gets.count == 2, "Check status now right after is inside the 5-minute floor")
+        #expect(
+            w.source.gets.count == 2, "Check status now right after is inside the 5-minute floor")
         w.clock.advance(301)
         await loaded(w)
         #expect(w.source.gets.count == 3)
@@ -191,7 +216,9 @@ struct MenuModelUpdateTests {
             Issue.record("the panel must stay loaded")
             return
         }
-        #expect(snapshot.devices[0].apps.first?.update == nil && snapshot.devices[0].apps.first?.updateLine == nil)
+        #expect(
+            snapshot.devices[0].apps.first?.update == nil
+                && snapshot.devices[0].apps.first?.updateLine == nil)
     }
 
     @Test("one check at a time: a reload while it runs does not start another; quitting cancels it")
@@ -236,7 +263,9 @@ struct MenuModelUpdateTests {
         #expect(row(w)?.updateLine != nil)
     }
 
-    @Test("an action that starts cancels the check in flight; its end checks again, and a forced one is still forced")
+    @Test(
+        "an action that starts cancels the check in flight; its end checks again, and a forced one is still forced"
+    )
     func actionCancelsCheck() async throws {
         let w = try await world()
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -293,7 +322,9 @@ struct MenuModelUpdateTests {
         try await until { !w.model.actionBusy }
     }
 
-    @Test("Update to X…: the fetch opens confirm 2 at once, which runs the chain; the row then has no update")
+    @Test(
+        "Update to X…: the fetch opens confirm 2 at once, which runs the chain; the row then has no update"
+    )
     func updateFlow() async throws {
         let w = try await world()
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -313,12 +344,16 @@ struct MenuModelUpdateTests {
             return
         }
         #expect(approval.title == "Approve and update Apollo 3.9.0 → 3.10.0 on iphone")
-        if case .updateApprove(_, "apollo", "3.9.0", let fetched) = action { #expect(fetched.version == "3.10.0") } else {
+        if case .updateApprove(_, "apollo", "3.9.0", let fetched) = action {
+            #expect(fetched.version == "3.10.0")
+        } else {
             Issue.record("expected the update approval, got \(action)")
         }
         // Stage 1 changed nothing: the device was not read again.
         await w.model.loadTask?.value
-        #expect(w.record.calls == ["fetch"] && w.runner.lists == listsBefore && w.runner.infoApps.count == readsBefore)
+        #expect(
+            w.record.calls == ["fetch"] && w.runner.lists == listsBefore
+                && w.runner.infoApps.count == readsBefore)
 
         w.model.confirm()
         guard case .running(let label, true, false) = w.model.actionState else {
@@ -331,17 +366,22 @@ struct MenuModelUpdateTests {
             Issue.record("expected the result, got \(w.model.actionState)")
             return
         }
-        #expect(outcome.kind == .done && outcome.headline == "Updated Apollo 3.9.0 → 3.10.0 on iphone")
+        #expect(
+            outcome.kind == .done && outcome.headline == "Updated Apollo 3.9.0 → 3.10.0 on iphone")
         // The profile has 6.5 days left: reused, no provision.
         #expect(w.record.calls == ["fetch", "approve 3.10.0", "sign 3.10.0", "install"])
         // The device is read again, and the listing now equals the installed version.
         await w.model.loadTask?.value
         await w.model.updateTask?.value
         #expect(w.runner.lists == listsBefore + 1)
-        #expect(row(w)?.installedVersion == "3.10.0" && row(w)?.updateLine == nil && row(w)?.update?.state == .current)
+        #expect(
+            row(w)?.installedVersion == "3.10.0" && row(w)?.updateLine == nil
+                && row(w)?.update?.state == .current)
     }
 
-    @Test("a fetched version that is not newer is not offered for approval: the card says why and nothing else runs")
+    @Test(
+        "a fetched version that is not newer is not offered for approval: the card says why and nothing else runs"
+    )
     func notNewer() async throws {
         let w = try await world(fetchedVersion: "3.9.0")
         defer { try? FileManager.default.removeItem(at: w.dir) }
@@ -353,7 +393,9 @@ struct MenuModelUpdateTests {
             Issue.record("expected the Not run card, got \(w.model.actionState)")
             return
         }
-        #expect(outcome.headline == "Not run" && outcome.issues.first?.message == "Apollo 3.9.0 is not newer than 3.9.0")
+        #expect(
+            outcome.headline == "Not run"
+                && outcome.issues.first?.message == "Apollo 3.9.0 is not newer than 3.9.0")
         #expect(w.record.calls == ["fetch"])
     }
 

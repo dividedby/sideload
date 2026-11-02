@@ -18,8 +18,11 @@ struct SignEntryTests {
     @Test("a missing --app or --device, or an unknown app, is USAGE and runs nothing")
     func usage() async throws {
         try await withSignWorld { w in
-            for (app, device) in [(nil, "iphone"), ("stremio-ios", nil), ("", "iphone"), ("nonsense", "iphone")] {
-                let out = await SignCommand.run(w.services, SignOptions(app: app, device: device, yes: true))
+            for (app, device) in [
+                (nil, "iphone"), ("stremio-ios", nil), ("", "iphone"), ("nonsense", "iphone"),
+            ] {
+                let out = await SignCommand.run(
+                    w.services, SignOptions(app: app, device: device, yes: true))
                 #expect(code(out) == "USAGE", "\(app ?? "-") \(device ?? "-")")
             }
             #expect(w.runner.calls.isEmpty)
@@ -83,33 +86,49 @@ struct SignEntryTests {
         }
     }
 
-    @Test("a sign-* folder a killed run left in tmp/ is swept under the lock; other folders are left alone")
+    @Test(
+        "a sign-* folder a killed run left in tmp/ is swept under the lock; other folders are left alone"
+    )
     func sweepsStale() async throws {
         try await withSignWorld(manifest: .none) { w in
-            try FileManager.default.createDirectory(atPath: w.paths.tmp + "/sign-stale/x/locked", withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                atPath: w.paths.tmp + "/sign-stale/x/locked", withIntermediateDirectories: true)
             chmod(w.paths.tmp + "/sign-stale/x/locked", 0)
-            try FileManager.default.createDirectory(atPath: w.paths.tmp + "/inspect-other", withIntermediateDirectories: true)
-            try FileManager.default.createDirectory(atPath: w.paths.tmp + "/fetch-other", withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                atPath: w.paths.tmp + "/inspect-other", withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                atPath: w.paths.tmp + "/fetch-other", withIntermediateDirectories: true)
             #expect(code(await w.run()) == "NOT_APPROVED")
             #expect(listing(w.paths.tmp).sorted() == ["fetch-other", "inspect-other"])
         }
     }
 
-    @Test("the sweep comes after the marker is settled: a changed identity set stops the run before any folder is touched")
+    @Test(
+        "the sweep comes after the marker is settled: a changed identity set stops the run before any folder is touched"
+    )
     func sweepAfterSettle() async throws {
         try await withSignWorld(
             manifest: .none,
-            ledger: { $0.freeProvisionInFlight = LedgerFreeInFlight(beforeFp8: ["deadbeef"], startedAt: testNow, app: "x", device: "y") }
+            ledger: {
+                $0.freeProvisionInFlight = LedgerFreeInFlight(
+                    beforeFp8: ["deadbeef"], startedAt: testNow, app: "x", device: "y")
+            }
         ) { w in
-            try FileManager.default.createDirectory(atPath: w.paths.tmp + "/sign-stale", withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                atPath: w.paths.tmp + "/sign-stale", withIntermediateDirectories: true)
             #expect(code(await w.run()) == "FREE_CERT_CHANGED")
             #expect(listing(w.paths.tmp) == ["sign-stale"])
         }
         try await withSignWorld(manifest: .none) { w in
             var services = w.services
             services.keychain = FakeKeychain(failure: KeychainError("locked"))
-            try FileManager.default.createDirectory(atPath: w.paths.tmp + "/sign-stale", withIntermediateDirectories: true)
-            #expect(code(await SignCommand.run(services, SignOptions(app: "stremio-ios", device: "iphone", yes: true))) == "KEYCHAIN_LOCKED")
+            try FileManager.default.createDirectory(
+                atPath: w.paths.tmp + "/sign-stale", withIntermediateDirectories: true)
+            #expect(
+                code(
+                    await SignCommand.run(
+                        services, SignOptions(app: "stremio-ios", device: "iphone", yes: true)))
+                    == "KEYCHAIN_LOCKED")
             #expect(listing(w.paths.tmp) == ["sign-stale"])
         }
     }
@@ -132,7 +151,8 @@ struct SignIdentityTests {
         try await withSignWorld { w in
             var services = w.services
             services.keychain = FakeKeychain(failure: KeychainError("locked"))
-            let out = await SignCommand.run(services, SignOptions(app: "stremio-ios", device: "iphone", yes: true))
+            let out = await SignCommand.run(
+                services, SignOptions(app: "stremio-ios", device: "iphone", yes: true))
             #expect(code(out) == "KEYCHAIN_LOCKED")
             #expect(!extracted(w))
         }
@@ -148,7 +168,9 @@ struct SignIdentityTests {
         }
     }
 
-    @Test("the pinned identity missing, expired, or another free identity in its place -> FREE_IDENTITY_MISSING")
+    @Test(
+        "the pinned identity missing, expired, or another free identity in its place -> FREE_IDENTITY_MISSING"
+    )
     func missing() async throws {
         let free = try freeKeychainCert()
         let pinnedPrefix = LedgerSync.fp8(free.reference)
@@ -177,12 +199,18 @@ struct SignIdentityTests {
         }
     }
 
-    @Test("a marker left by a dead run is settled first: a changed identity set is FREE_CERT_CHANGED, suspended, marker cleared")
+    @Test(
+        "a marker left by a dead run is settled first: a changed identity set is FREE_CERT_CHANGED, suspended, marker cleared"
+    )
     func markerChanged() async throws {
         // No pin and no manifest: if anything but the marker were checked first, a different code would win.
         try await withSignWorld(
             manifest: .none, pin: false,
-            ledger: { $0.freeProvisionInFlight = LedgerFreeInFlight(beforeFp8: ["deadbeef"], startedAt: testNow, app: "stremio-ios", device: "iphone") }
+            ledger: {
+                $0.freeProvisionInFlight = LedgerFreeInFlight(
+                    beforeFp8: ["deadbeef"], startedAt: testNow, app: "stremio-ios",
+                    device: "iphone")
+            }
         ) { w in
             let out = await w.run()
             #expect(code(out) == "FREE_CERT_CHANGED")
@@ -190,7 +218,9 @@ struct SignIdentityTests {
             let ledger = try w.ledger()
             #expect(ledger.freeProvisionInFlight == nil)
             #expect(ledger.freeSuspended?.code == "FREE_CERT_CHANGED")
-            #expect(ledger.freeSuspended?.addedFp8 == [LedgerSync.fp8(try freeKeychainCert().reference)])
+            #expect(
+                ledger.freeSuspended?.addedFp8 == [LedgerSync.fp8(try freeKeychainCert().reference)]
+            )
             #expect(ledger.freeSuspended?.removedFp8 == ["deadbeef"])
             #expect(!extracted(w))
         }
@@ -203,7 +233,8 @@ struct SignIdentityTests {
             manifest: .none,
             ledger: {
                 $0.freeProvisionInFlight = LedgerFreeInFlight(
-                    beforeFp8: [LedgerSync.fp8(free.reference)], startedAt: testNow, app: "stremio-ios", device: "iphone")
+                    beforeFp8: [LedgerSync.fp8(free.reference)], startedAt: testNow,
+                    app: "stremio-ios", device: "iphone")
             }
         ) { w in
             #expect(code(await w.run()) == "NOT_APPROVED", "it got past the marker")
@@ -216,11 +247,15 @@ struct SignIdentityTests {
     @Test("an unreadable keychain leaves the marker in place")
     func markerKept() async throws {
         try await withSignWorld(
-            ledger: { $0.freeProvisionInFlight = LedgerFreeInFlight(beforeFp8: ["deadbeef"], startedAt: testNow, app: "x", device: "y") }
+            ledger: {
+                $0.freeProvisionInFlight = LedgerFreeInFlight(
+                    beforeFp8: ["deadbeef"], startedAt: testNow, app: "x", device: "y")
+            }
         ) { w in
             var services = w.services
             services.keychain = FakeKeychain(failure: KeychainError("locked"))
-            _ = await SignCommand.run(services, SignOptions(app: "stremio-ios", device: "iphone", yes: true))
+            _ = await SignCommand.run(
+                services, SignOptions(app: "stremio-ios", device: "iphone", yes: true))
             let kept = try w.ledger().freeProvisionInFlight
             #expect(kept != nil)
         }
@@ -254,7 +289,8 @@ struct SignManifestTests {
         }
     }
 
-    @Test("a file that no longer hashes to the manifest's sha256 -> DIGEST_MISMATCH, never unpacked")
+    @Test(
+        "a file that no longer hashes to the manifest's sha256 -> DIGEST_MISMATCH, never unpacked")
     func tampered() async throws {
         try await withSignWorld(manifest: .tampered) { w in
             let out = await w.run()
@@ -317,7 +353,9 @@ struct SignDeviceOSTests {
         }
     }
 
-    @Test("the stricter of the declared minimum and the binary's decides: declared higher than inspect's is refused, before unpacking")
+    @Test(
+        "the stricter of the declared minimum and the binary's decides: declared higher than inspect's is refused, before unpacking"
+    )
     func declaredStricter() async throws {
         try await withSignWorld(script: SignScript(deviceOS: "15.5"), declaredMinOS: "16.0") { w in
             let out = await w.run()
@@ -332,15 +370,20 @@ struct SignDeviceOSTests {
         }
     }
 
-    @Test("a declared minimum counts as known; a declared minimum of 15.0 with the device at 15.0 passes the check")
+    @Test(
+        "a declared minimum counts as known; a declared minimum of 15.0 with the device at 15.0 passes the check"
+    )
     func declaredOnly() async throws {
-        try await withSignWorld(app: .apollo, variant: .noMinOS, minOS: nil, declaredMinOS: "15.0") { w in
+        try await withSignWorld(app: .apollo, variant: .noMinOS, minOS: nil, declaredMinOS: "15.0")
+        { w in
             let out = await w.run()
             #expect(out.ok, "\(out.errors)")
             #expect(out.data["deviceOS"]?["minimum"] == "15.0")
         }
-        try await withSignWorld(app: .apollo, variant: .noMinOS, minOS: nil, declaredMinOS: "30.0") { w in
-            #expect(code(await w.run()) == "DEVICE_OS_TOO_OLD", "a declared minimum alone is enforced")
+        try await withSignWorld(app: .apollo, variant: .noMinOS, minOS: nil, declaredMinOS: "30.0")
+        { w in
+            #expect(
+                code(await w.run()) == "DEVICE_OS_TOO_OLD", "a declared minimum alone is enforced")
         }
     }
 
@@ -348,7 +391,9 @@ struct SignDeviceOSTests {
     func numeric() {
         #expect(OSVersion.strictest(["15.0", "16.1", nil, "9.0"]) == "16.1")
         #expect(OSVersion.strictest([nil, nil]) == nil)
-        #expect(OSVersion.strictest(["15.0", "beta"]) == "beta", "an unparsable value stays and fails the comparison")
+        #expect(
+            OSVersion.strictest(["15.0", "beta"]) == "beta",
+            "an unparsable value stays and fails the comparison")
         #expect(OSVersion.strictest(["beta", "99.0"]) == "beta")
         #expect(OSVersion.isAtLeast("15.10", "15.9") == true)
         #expect(OSVersion.isAtLeast("15.9", "15.10") == false)
@@ -371,7 +416,9 @@ struct SignDeviceOSTests {
         }
     }
 
-    @Test("no OS in the listing, or devicectl failing -> DEVICE_OS_UNKNOWN (the minimum cannot be checked)")
+    @Test(
+        "no OS in the listing, or devicectl failing -> DEVICE_OS_UNKNOWN (the minimum cannot be checked)"
+    )
     func unknown() async throws {
         for script in [SignScript(deviceOS: nil), SignScript(devicectlFails: true)] {
             try await withSignWorld(script: script) { w in
@@ -402,7 +449,9 @@ struct SignProfileTests {
             try await withSignWorld(profile: mode) { w in
                 let out = await w.run()
                 #expect(code(out) == "PROFILE_MISSING", "\(mode)")
-                #expect(out.errors.first?.fix?.contains("sideload provision --app stremio-ios --device iphone --yes") == true)
+                #expect(
+                    out.errors.first?.fix?.contains(
+                        "sideload provision --app stremio-ios --device iphone --yes") == true)
                 #expect(!extracted(w))
             }
         }
@@ -419,12 +468,17 @@ struct SignProfileTests {
         }
     }
 
-    @Test("every other defect is PROFILE_INVALID naming the check, never profile content", arguments: [
-        (ProfileMode.wrongTeam, "team"), (.wrongAppId, "application-identifier"), (.wrongPlatform, "platform"),
-        (.noGetTaskAllow, "get-task-allow"), (.wrongDevice, "device"), (.wrongCertificate, "certificate"),
-        (.farFuture, "expiry"), (.undecodable, "decode"), (.otherUUID, "uuid"), (.symlink, "stored-file"),
-        (.foreignFile, "ledger-record"),
-    ])
+    @Test(
+        "every other defect is PROFILE_INVALID naming the check, never profile content",
+        arguments: [
+            (ProfileMode.wrongTeam, "team"), (.wrongAppId, "application-identifier"),
+            (.wrongPlatform, "platform"),
+            (.noGetTaskAllow, "get-task-allow"), (.wrongDevice, "device"),
+            (.wrongCertificate, "certificate"),
+            (.farFuture, "expiry"), (.undecodable, "decode"), (.otherUUID, "uuid"),
+            (.symlink, "stored-file"),
+            (.foreignFile, "ledger-record"),
+        ])
     func invalid(mode: ProfileMode, check: String) async throws {
         try await withSignWorld(profile: mode) { w in
             let out = await w.run()

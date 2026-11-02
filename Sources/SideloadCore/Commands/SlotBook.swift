@@ -28,13 +28,17 @@ struct SlotBook: Sendable {
 
     func slots(_ ledger: Ledger) -> [LedgerSlot] { ledger.slots.filter { $0.device == alias } }
 
-    func slot(_ ledger: Ledger, app: String) -> LedgerSlot? { ledger.slots.first { $0.id == "\(alias)/\(app)" } }
+    func slot(_ ledger: Ledger, app: String) -> LedgerSlot? {
+        ledger.slots.first { $0.id == "\(alias)/\(app)" }
+    }
 
     /// The device's lend record (any state): at most one per device.
     func lentSlot(_ ledger: Ledger) -> LedgerSlot? { slots(ledger).first { $0.lentTo != nil } }
 
     func target(_ appName: String) -> FreeTarget? {
-        ProvisionApp(rawValue: appName).flatMap { try? FreeTarget.resolve(app: $0, alias: alias, config: config) }
+        ProvisionApp(rawValue: appName).flatMap {
+            try? FreeTarget.resolve(app: $0, alias: alias, config: config)
+        }
     }
 
     // MARK: gate
@@ -50,16 +54,21 @@ struct SlotBook: Sendable {
     /// G: while ANY record on the device has an op inside its window, nothing that mutates the device runs (one op per device
     /// keeps the app-set delta checks and the slot counts sound). No device call is made.
     func gate(_ ledger: Ledger, now: Date, extra: [String: JSONValue] = [:]) throws {
-        if let (slot, left) = pending(ledger, now: now) { throw Self.pendingError(slot, retryAfter: left, extra: extra) }
+        if let (slot, left) = pending(ledger, now: now) {
+            throw Self.pendingError(slot, retryAfter: left, extra: extra)
+        }
     }
 
     /// The one code every consumer retries on. `state` is the lab's word (`lending` / `returning`) for a lend record and
     /// `pending` for any other op; `op` is the kind in flight.
-    static func pendingError(_ slot: LedgerSlot, retryAfter: Int, extra: [String: JSONValue] = [:]) -> SideloadError {
+    static func pendingError(_ slot: LedgerSlot, retryAfter: Int, extra: [String: JSONValue] = [:])
+        -> SideloadError
+    {
         let state = slot.lentTo == nil ? "pending" : SlotRule.phase(slot).rawValue
         let kind = slot.op?.kind.rawValue ?? "unknown"
         var data: [String: JSONValue] = [
-            "retryAfter": .number(Double(retryAfter)), "freed": 0, "state": .string(state), "uncertain": true,
+            "retryAfter": .number(Double(retryAfter)), "freed": 0, "state": .string(state),
+            "uncertain": true,
             "lent": .bool(slot.lentTo != nil), "app": .string(slot.app), "op": .string(kind),
         ]
         data.merge(extra) { _, new in new }
@@ -92,7 +101,9 @@ struct SlotBook: Sendable {
                 after.append(slot)
                 continue
             }
-            after.append(SlotRule.settle(slot, present: snapshot.ids.contains(target.bundleId), takenAt: takenAt))
+            after.append(
+                SlotRule.settle(
+                    slot, present: snapshot.ids.contains(target.bundleId), takenAt: takenAt))
         }
         guard after != before else { return Settlement(before: before, after: after) }
         let changes = zip(before, after).filter { $0.0 != $0.1 }
@@ -114,7 +125,8 @@ struct SlotBook: Sendable {
     /// the `installs[]` metadata of a FIRST install (no older copy exists to contradict; a reinstall writes none at W2, see
     /// `finish`). If it throws (or the crash hook does) the device is untouched.
     func begin(
-        _ target: FreeTarget, kind: SlotRule.Kind, by: LedgerSlotBy, presence: LedgerSlotPresence, lend: Bool = false,
+        _ target: FreeTarget, kind: SlotRule.Kind, by: LedgerSlotBy, presence: LedgerSlotPresence,
+        lend: Bool = false,
         since: Date, signed: LedgerFreeSigned? = nil, point: String
     ) async throws {
         let services = services
@@ -130,7 +142,10 @@ struct SlotBook: Sendable {
             }
             ledger.slots.removeAll { $0.id == slot.id }
             ledger.slots.append(slot)
-            if let signed { target.recordInstall(into: &ledger, signed: signed, now: since, present: true, succeeded: false) }
+            if let signed {
+                target.recordInstall(
+                    into: &ledger, signed: signed, now: since, present: true, succeeded: false)
+            }
         }
     }
 
@@ -151,7 +166,8 @@ struct SlotBook: Sendable {
     /// leaves the old copy's entry untouched (an older expiry is fail-safe: the next renewal comes sooner). Returns the record afterwards.
     @discardableResult
     func finish(
-        _ target: FreeTarget, effect: SlotRule.Effect, takenAt: Date, point: String, restore: Restore? = nil,
+        _ target: FreeTarget, effect: SlotRule.Effect, takenAt: Date, point: String,
+        restore: Restore? = nil,
         record: LedgerFreeSigned? = nil, succeeded: Bool = true
     ) async throws -> LedgerSlot? {
         if effect != .keep {
@@ -169,7 +185,9 @@ struct SlotBook: Sendable {
                     }
                 }
                 if effect == .present, let record {
-                    target.recordInstall(into: &ledger, signed: record, now: stamp, present: true, succeeded: succeeded)
+                    target.recordInstall(
+                        into: &ledger, signed: record, now: stamp, present: true,
+                        succeeded: succeeded)
                 }
             }
         }
@@ -189,7 +207,9 @@ struct SlotBook: Sendable {
 
     /// Records on this device that count as used but are not among the snapshot's managed IDs, other than `app` itself. The
     /// install preflight adds them to what the snapshot shows.
-    func usedOutsideSnapshot(_ ledger: Ledger, excluding app: String, snapshot: AppSnapshot) -> OutsideUse {
+    func usedOutsideSnapshot(_ ledger: Ledger, excluding app: String, snapshot: AppSnapshot)
+        -> OutsideUse
+    {
         var use = OutsideUse()
         for slot in slots(ledger) {
             guard slot.app != app, SlotRule.used(slot) else { continue }

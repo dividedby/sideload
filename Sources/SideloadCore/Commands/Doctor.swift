@@ -1,7 +1,8 @@
 /// `doctor`: read-only environment checks. `ok` is false only if some check has severity `fail`.
 public enum Doctor {
     public static let checks: [any Check] = [
-        XcodeCheck(), CLTCheck(), CertificateCheck(), FreeCertificateCheck(), DeviceCheck(), AppleTVCheck(), DiskCheck(),
+        XcodeCheck(), CLTCheck(), CertificateCheck(), FreeCertificateCheck(), DeviceCheck(),
+        AppleTVCheck(), DiskCheck(),
     ]
 
     /// A check that throws is reported as a `fail` row, never as an exception.

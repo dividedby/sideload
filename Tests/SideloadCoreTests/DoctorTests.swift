@@ -6,12 +6,15 @@ import Testing
 private let paidExpiry = utcDate(2027, 10, 16).addingTimeInterval(22 * 3600 + 39 * 60 + 42)
 private let noDevices = Config(devices: [:])
 
-private func severity(_ results: [CheckResult]) -> [CheckResult.Severity] { results.map(\.severity) }
+private func severity(_ results: [CheckResult]) -> [CheckResult.Severity] {
+    results.map(\.severity)
+}
 
 /// The tvOS entry shape used by the Apple TV tests.
 private func tvConfig() -> Config {
     var config = iphoneConfig()
-    config.devices["tv"] = SavedDevice(udid: savedUdid("4"), coreDeviceId: savedCoreId("4"), platform: "tvos")
+    config.devices["tv"] = SavedDevice(
+        udid: savedUdid("4"), coreDeviceId: savedCoreId("4"), platform: "tvos")
     return config
 }
 
@@ -38,7 +41,9 @@ struct DoctorParserTests {
         let list = DeviceList.parse(
             deviceListJSON(
                 phoneEntryJSON(),
-                deviceEntryJSON(name: "Sim", udid: savedUdid("3"), coreId: savedCoreId("3"), reality: "simulated")))
+                deviceEntryJSON(
+                    name: "Sim", udid: savedUdid("3"), coreId: savedCoreId("3"),
+                    reality: "simulated")))
         #expect(list.count == 2)
         #expect(list.map(\.physical) == [true, false])
         #expect(list[0].platform == "ios")
@@ -58,7 +63,9 @@ struct DoctorCertTests {
             #expect(out[0].status == "ok")
             #expect(out[0].message.contains("team 7AGMPUPP64"))
             let text = out.map { $0.json }.map { "\($0)" }.joined()
-            #expect(!text.contains(paid.reference) && !text.contains("TEST000001") && !text.contains("Apple Development:"))
+            #expect(
+                !text.contains(paid.reference) && !text.contains("TEST000001")
+                    && !text.contains("Apple Development:"))
             // Changed: Node ran `security` and `openssl` (PEM on stdin); Swift reads Security.framework in-process.
             #expect(runner.calls.isEmpty)
         }
@@ -67,7 +74,8 @@ struct DoctorCertTests {
     @Test("reports the free team as \"other team, ignored\" and fails when it is the only cert")
     func freeOnly() async throws {
         try await withTestHome(config: iphoneConfig()) { paths, _ in
-            let (services, _) = fakeServices(paths, keychain: FakeKeychain([try keychainCert(TestCerts.free)]))
+            let (services, _) = fakeServices(
+                paths, keychain: FakeKeychain([try keychainCert(TestCerts.free)]))
             let out = try await CertificateCheck().run(services)
             #expect(out[0].id == "cert")
             #expect(out[0].severity == .fail)
@@ -88,7 +96,9 @@ struct DoctorCertTests {
             let out = try await CertificateCheck().run(gone)
             #expect(out[0].severity == .fail)
             // Changed: Node says "expired"; Swift applies `find-identity -v` semantics (design section 14).
-            #expect(out[0].message == "No Apple Development certificate for team 7AGMPUPP64 in the keychain.")
+            #expect(
+                out[0].message
+                    == "No Apple Development certificate for team 7AGMPUPP64 in the keychain.")
         }
     }
 
@@ -104,7 +114,9 @@ struct DoctorCertTests {
     @Test("passes with both teams present and ignores the free one")
     func both() async throws {
         try await withTestHome(config: iphoneConfig()) { paths, _ in
-            let keychain = FakeKeychain([try keychainCert(TestCerts.paid), try keychainCert(TestCerts.free)])
+            let keychain = FakeKeychain([
+                try keychainCert(TestCerts.paid), try keychainCert(TestCerts.free),
+            ])
             let (services, _) = fakeServices(paths, keychain: keychain)
             let out = try await CertificateCheck().run(services)
             #expect(out.map(\.id) == ["cert", "cert-other-team"])
@@ -115,7 +127,8 @@ struct DoctorCertTests {
     @Test("an unreadable keychain is a fail row")
     func unreadable() async throws {
         try await withTestHome(config: iphoneConfig()) { paths, _ in
-            let (services, _) = fakeServices(paths, keychain: FakeKeychain(failure: KeychainError("boom")))
+            let (services, _) = fakeServices(
+                paths, keychain: FakeKeychain(failure: KeychainError("boom")))
             let out = try await CertificateCheck().run(services)
             #expect(out.count == 1 && out[0].severity == .fail)
             #expect(out[0].fix == "Check that the login keychain is unlocked.")
@@ -126,7 +139,8 @@ struct DoctorCertTests {
 @Suite("doctor: device and appletv checks")
 struct DoctorDeviceTests {
     private func run<T>(
-        config: Config = iphoneConfig(), route: Route, _ body: (Services, FakeRunner) async throws -> T
+        config: Config = iphoneConfig(), route: Route,
+        _ body: (Services, FakeRunner) async throws -> T
     ) async throws -> T {
         try await withTestHome(config: config) { paths, _ in
             let (services, runner) = fakeServices(paths, route: route)
@@ -150,13 +164,15 @@ struct DoctorDeviceTests {
             #expect(out[0].severity == .fail)
             #expect(out[0].fix == "Connect the device by USB, unlock it, and tap Trust if asked.")
         }
-        try await run(route: Route(devices: deviceListJSON(phoneEntryJSON(tunnel: "unavailable")))) { services, _ in
+        try await run(route: Route(devices: deviceListJSON(phoneEntryJSON(tunnel: "unavailable"))))
+        { services, _ in
             let out = try await DeviceCheck().run(services)
             #expect(out[0].severity == .warn)
             #expect(out[0].message == "iphone: known but unavailable (locked or unplugged).")
         }
         let unpaired = deviceEntryJSON(
-            name: "Test iPhone", udid: savedUdid("1"), coreId: savedCoreId("1"), pairing: "unpaired")
+            name: "Test iPhone", udid: savedUdid("1"), coreId: savedCoreId("1"), pairing: "unpaired"
+        )
         try await run(route: Route(devices: deviceListJSON(unpaired))) { services, _ in
             let value = try await DeviceCheck().run(services)[0].message
             #expect(value == "iphone: known but not paired.")
@@ -165,7 +181,8 @@ struct DoctorDeviceTests {
 
     @Test("device ignores a simulator that shares the saved ID")
     func simulator() async throws {
-        try await run(route: Route(devices: deviceListJSON(phoneEntryJSON(reality: "simulated")))) { services, _ in
+        try await run(route: Route(devices: deviceListJSON(phoneEntryJSON(reality: "simulated")))) {
+            services, _ in
             let value = try await DeviceCheck().run(services)[0].severity
             #expect(value == .fail)
         }
@@ -173,12 +190,16 @@ struct DoctorDeviceTests {
 
     @Test("missing saved iPhone fails with the device-save fix")
     func missingSaved() async throws {
-        try await run(config: noDevices, route: Route(devices: deviceListJSON(phoneEntryJSON()))) { services, runner in
+        try await run(config: noDevices, route: Route(devices: deviceListJSON(phoneEntryJSON()))) {
+            services, runner in
             let out = try await DeviceCheck().run(services)
             #expect(out.count == 1)
             #expect(out[0].severity == .fail)
             #expect(out[0].message == "No saved iPhone.")
-            #expect(out[0].fix == "sideload device save --alias iphone --match <device name> --platform ios --yes")
+            #expect(
+                out[0].fix
+                    == "sideload device save --alias iphone --match <device name> --platform ios --yes"
+            )
             #expect(runner.calls.isEmpty, "nothing to look up, so devicectl is not run")
         }
     }
@@ -208,7 +229,8 @@ struct DoctorDeviceTests {
 
     @Test("appletv stays not-paired when a saved one is not visible")
     func tvNotVisible() async throws {
-        try await run(config: tvConfig(), route: Route(devices: deviceListJSON(phoneEntryJSON()))) { services, _ in
+        try await run(config: tvConfig(), route: Route(devices: deviceListJSON(phoneEntryJSON()))) {
+            services, _ in
             let out = try await AppleTVCheck().run(services)
             #expect(out[0].status == "not-paired")
             #expect(out[0].severity == .info)
@@ -217,13 +239,17 @@ struct DoctorDeviceTests {
 
     @Test("appletv is checked like the iPhone once saved and visible")
     func tvVisible() async throws {
-        try await run(config: tvConfig(), route: Route(devices: deviceListJSON(phoneEntryJSON(), tvEntry()))) { services, _ in
+        try await run(
+            config: tvConfig(), route: Route(devices: deviceListJSON(phoneEntryJSON(), tvEntry()))
+        ) { services, _ in
             let value = try await AppleTVCheck().run(services)[0].status
             #expect(value == "ok")
         }
         let away = deviceEntryJSON(
-            name: "TV", udid: savedUdid("4"), coreId: savedCoreId("4"), platform: "tvOS", tunnel: "unavailable")
-        try await run(config: tvConfig(), route: Route(devices: deviceListJSON(away))) { services, _ in
+            name: "TV", udid: savedUdid("4"), coreId: savedCoreId("4"), platform: "tvOS",
+            tunnel: "unavailable")
+        try await run(config: tvConfig(), route: Route(devices: deviceListJSON(away))) {
+            services, _ in
             let out = try await AppleTVCheck().run(services)
             #expect(out[0].severity == .warn)
             #expect(out[0].message == "tv: paired but unavailable (asleep or off-network).")
@@ -233,7 +259,8 @@ struct DoctorDeviceTests {
 
     @Test("a failed devicectl listing keeps the Apple TV row informational")
     func tvListFails() async throws {
-        try await run(config: tvConfig(), route: Route(devices: nil, devicectlCode: 1)) { services, _ in
+        try await run(config: tvConfig(), route: Route(devices: nil, devicectlCode: 1)) {
+            services, _ in
             let value = try await AppleTVCheck().run(services)[0].severity
             #expect(value == .info)
         }
@@ -245,7 +272,9 @@ struct DoctorDeviceTests {
             let out = try await DeviceCheck().run(services)
             #expect(out[0].severity == .fail)
             #expect(try #require(out[0].fix).contains("devicectl list devices"))
-            #expect(out[0].message == "iphone: `devicectl list devices` failed, so the device state is unknown.")
+            #expect(
+                out[0].message
+                    == "iphone: `devicectl list devices` failed, so the device state is unknown.")
         }
         // Exit 0 without parseable output counts as a failure too.
         try await run(route: Route(devices: nil, devicectlCode: 0)) { services, _ in
@@ -303,7 +332,9 @@ struct DoctorDiskTests {
         #expect(strictWarn.fix == "Free up space; at least 8.5 GB is required.")
         var zero = iphoneConfig()
         zero.minFreeGB = 0
-        #expect(try await severity(gb: 1, config: zero).severity == .fail, "a non-positive minFreeGB falls back to 2")
+        #expect(
+            try await severity(gb: 1, config: zero).severity == .fail,
+            "a non-positive minFreeGB falls back to 2")
     }
 
     @Test("rounds like JavaScript toFixed(1): exact ties go up")
@@ -321,7 +352,9 @@ struct DoctorDiskTests {
         try await withTestHome { paths, _ in
             let free = try SystemFileSystem().freeBytes(at: paths.home)
             #expect(free > 0)
-            #expect(throws: SideloadError.self) { try SystemFileSystem().freeBytes(at: paths.home + "/missing") }
+            #expect(throws: SideloadError.self) {
+                try SystemFileSystem().freeBytes(at: paths.home + "/missing")
+            }
         }
     }
 }
@@ -339,7 +372,8 @@ struct DoctorXcodeTests {
     func ok() async throws {
         let (result, runner) = try await check(Route())
         #expect(result.severity == .ok)
-        #expect(result.message == "Xcode 27.0 (27A266a), developer directory and devicectl present.")
+        #expect(
+            result.message == "Xcode 27.0 (27A266a), developer directory and devicectl present.")
         #expect(runner.calls.map(\.executable) == ["xcodebuild", "xcode-select", "xcrun"])
         #expect(runner.calls.map(\.args) == [["-version"], ["-p"], ["--find", "devicectl"]])
         #expect(runner.calls.allSatisfy { $0.timeout > .zero })
@@ -347,7 +381,8 @@ struct DoctorXcodeTests {
 
     @Test("warns below Xcode 27")
     func old() async throws {
-        let (result, _) = try await check(Route(xcodebuild: RunResult(stdout: "Xcode 26.4\nBuild version 26E1\n")))
+        let (result, _) = try await check(
+            Route(xcodebuild: RunResult(stdout: "Xcode 26.4\nBuild version 26E1\n")))
         #expect(result.severity == .warn)
         #expect(result.message == "Xcode 26.4 (26E1) found; Xcode 27+ is expected.")
         #expect(result.fix == "Update Xcode to 27 or later.")
@@ -363,7 +398,8 @@ struct DoctorXcodeTests {
         #expect(noXcode.fix == install)
         let (garbled, _) = try await check(Route(xcodebuild: RunResult(stdout: "nonsense")))
         #expect(garbled.message == "xcodebuild is not available.")
-        let (spawn, _) = try await check(Route(xcodebuild: RunResult(code: nil, spawnError: "ENOENT")))
+        let (spawn, _) = try await check(
+            Route(xcodebuild: RunResult(code: nil, spawnError: "ENOENT")))
         #expect(spawn.severity == .fail)
         let (noSelect, _) = try await check(Route(xcodeSelect: RunResult(stdout: "\n")))
         #expect(noSelect.message == "No developer directory selected (xcode-select -p failed).")
@@ -373,8 +409,11 @@ struct DoctorXcodeTests {
 
     @Test("parses version text")
     func parse() {
-        #expect(XcodeCheck.parseVersion("Xcode 27.0\nBuild version 27A266a\n") == .init(version: "27.0", build: "27A266a", major: 27))
-        #expect(XcodeCheck.parseVersion("Xcode 27\n") == .init(version: "27", build: nil, major: 27))
+        #expect(
+            XcodeCheck.parseVersion("Xcode 27.0\nBuild version 27A266a\n")
+                == .init(version: "27.0", build: "27A266a", major: 27))
+        #expect(
+            XcodeCheck.parseVersion("Xcode 27\n") == .init(version: "27", build: nil, major: 27))
         #expect(XcodeCheck.parseVersion("junk\nXcode 26.1.1\n")?.major == 26)
         #expect(XcodeCheck.parseVersion("Xcode beta") == nil)
     }
@@ -423,7 +462,8 @@ struct DoctorCommandTests {
     func realShaped() async throws {
         try await withTestHome(config: noDevices) { paths, _ in
             let keychain = FakeKeychain([try keychainCert(TestCerts.paid)])
-            let (services, _) = fakeServices(paths, route: Route(devices: deviceListJSON()), keychain: keychain)
+            let (services, _) = fakeServices(
+                paths, route: Route(devices: deviceListJSON()), keychain: keychain)
             let out = await Doctor.run(services)
             #expect(!out.ok)
             let checks = try #require(out.data["checks"]?.array)
@@ -442,13 +482,17 @@ struct DoctorCommandTests {
     func allGood() async throws {
         try await withTestHome(config: iphoneConfig()) { paths, _ in
             let keychain = FakeKeychain([try keychainCert(TestCerts.paid)])
-            let (services, _) = fakeServices(paths, route: Route(devices: deviceListJSON(phoneEntryJSON())), keychain: keychain)
+            let (services, _) = fakeServices(
+                paths, route: Route(devices: deviceListJSON(phoneEntryJSON())), keychain: keychain)
             let out = await Doctor.run(services)
             #expect(out.ok)
             #expect(out.errors.isEmpty)
             #expect(out.exitCode == 0)
             let checks = try #require(out.data["checks"]?.array)
-            #expect(checks.compactMap { $0["id"]?.string } == ["xcode", "clt", "cert", "device", "appletv", "disk"])
+            #expect(
+                checks.compactMap { $0["id"]?.string } == [
+                    "xcode", "clt", "cert", "device", "appletv", "disk",
+                ])
         }
     }
 
@@ -486,13 +530,20 @@ struct DoctorCommandTests {
     func rowShape() async throws {
         try await withTestHome(config: iphoneConfig()) { paths, _ in
             let keychain = FakeKeychain([try keychainCert(TestCerts.paid)])
-            let (services, _) = fakeServices(paths, route: Route(devices: deviceListJSON(phoneEntryJSON())), keychain: keychain)
+            let (services, _) = fakeServices(
+                paths, route: Route(devices: deviceListJSON(phoneEntryJSON())), keychain: keychain)
             let checks = try #require(await Doctor.run(services).data["checks"]?.array)
             let cert = try #require(checks.first { $0["id"] == "cert" })
-            guard case .object(let fields) = cert else { Issue.record("not an object"); return }
+            guard case .object(let fields) = cert else {
+                Issue.record("not an object")
+                return
+            }
             #expect(Set(fields.keys) == ["id", "status", "severity", "message", "daysLeft"])
             #expect(cert["daysLeft"] == 362)
-            guard case .object(let xcode) = checks[0] else { Issue.record("not an object"); return }
+            guard case .object(let xcode) = checks[0] else {
+                Issue.record("not an object")
+                return
+            }
             #expect(Set(xcode.keys) == ["id", "status", "severity", "message"])
         }
     }
@@ -500,8 +551,11 @@ struct DoctorCommandTests {
     @Test("printed output hides ids, names and the home directory")
     func printedRedaction() async throws {
         try await withTestHome(config: iphoneConfig()) { paths, _ in
-            let keychain = FakeKeychain([try keychainCert(TestCerts.paid), try keychainCert(TestCerts.free)])
-            let (services, _) = fakeServices(paths, route: Route(devices: deviceListJSON(phoneEntryJSON())), keychain: keychain)
+            let keychain = FakeKeychain([
+                try keychainCert(TestCerts.paid), try keychainCert(TestCerts.free),
+            ])
+            let (services, _) = fakeServices(
+                paths, route: Route(devices: deviceListJSON(phoneEntryJSON())), keychain: keychain)
             let (text, json) = try await Doctor.run(services).printed()
             #expect(json["command"] == "doctor")
             #expect(!text.contains(savedUdid("1")) && !text.contains(savedCoreId("1")))

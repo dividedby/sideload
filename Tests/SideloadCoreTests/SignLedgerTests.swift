@@ -8,10 +8,14 @@ import Testing
 
 private func signedEntry(_ id: String = "iphone/stremio-ios") -> LedgerFreeSigned {
     LedgerFreeSigned(
-        id: id, device: "iphone", app: "stremio-ios", bundleId: stremioId, version: "1.9.6b142", sha256Prefix: "0a1b2c3d",
-        profileUuid: signProfileUUID, profileExpires: daysFromNow(5), certFp8: "12345678", signedAt: testNow,
+        id: id, device: "iphone", app: "stremio-ios", bundleId: stremioId, version: "1.9.6b142",
+        sha256Prefix: "0a1b2c3d",
+        profileUuid: signProfileUUID, profileExpires: daysFromNow(5), certFp8: "12345678",
+        signedAt: testNow,
         path: "builds/signed/stremio-ios/iphone/Stremio.app",
-        strippedExtensions: [LedgerStrippedExtension(path: "PlugIns/W.appex", bundleId: "com.stremio.pal.w")],
+        strippedExtensions: [
+            LedgerStrippedExtension(path: "PlugIns/W.appex", bundleId: "com.stremio.pal.w")
+        ],
         droppedEntitlements: ["aps-environment"])
 }
 
@@ -21,7 +25,8 @@ struct LedgerFreeSignedTests {
     func absentWhenEmpty() throws {
         let text = String(decoding: try LedgerStore.encode(Ledger()), as: UTF8.self)
         #expect(!text.contains("freeSigned"))
-        let signed = String(decoding: try LedgerStore.encode(Ledger(freeSigned: [signedEntry()])), as: UTF8.self)
+        let signed = String(
+            decoding: try LedgerStore.encode(Ledger(freeSigned: [signedEntry()])), as: UTF8.self)
         #expect(signed.contains("\"freeSigned\""))
     }
 
@@ -30,9 +35,12 @@ struct LedgerFreeSignedTests {
         let ledger = Ledger(
             freeProfiles: [
                 LedgerFreeProfile(
-                    id: "iphone/stremio-ios", device: "iphone", deviceTail: "…AAA1", app: "stremio-ios", bundleId: stremioId,
-                    profileUuid: signProfileUUID, created: nil, expires: daysFromNow(5), certFp8: "12345678", file: "x")
-            ], freeSigned: [signedEntry(), signedEntry("appletv/stremio-tvos")], extra: ["futureKey": ["a": 1]])
+                    id: "iphone/stremio-ios", device: "iphone", deviceTail: "…AAA1",
+                    app: "stremio-ios", bundleId: stremioId,
+                    profileUuid: signProfileUUID, created: nil, expires: daysFromNow(5),
+                    certFp8: "12345678", file: "x")
+            ], freeSigned: [signedEntry(), signedEntry("appletv/stremio-tvos")],
+            extra: ["futureKey": ["a": 1]])
         let back = try LedgerStore.parse(try LedgerStore.encode(ledger))
         #expect(back == ledger)
         #expect(back.freeSigned.map(\.id) == ["iphone/stremio-ios", "appletv/stremio-tvos"])
@@ -52,7 +60,9 @@ struct LedgerFreeSignedTests {
                 ledger.freeSigned.sort { $0.id < $1.id }
             }
             let ledger = try store.load()
-            #expect(ledger.freeSigned.map(\.id) == ["a/y", "b/x"] && ledger.freeSigned.first?.version == "2.0")
+            #expect(
+                ledger.freeSigned.map(\.id) == ["a/y", "b/x"]
+                    && ledger.freeSigned.first?.version == "2.0")
             #expect(modeOf(paths.ledger) == 0o600)
         }
     }
@@ -63,18 +73,30 @@ struct SignCLITests {
     @Test("sign is dispatched: usage, unknown options, --yes, and no extra positional")
     func dispatch() async throws {
         try await withSignWorld(profile: .noRecord) { w in
-            func invoke(_ argv: [String]) async -> Envelope { await run(argv: argv, services: w.services) }
+            func invoke(_ argv: [String]) async -> Envelope {
+                await run(argv: argv, services: w.services)
+            }
             #expect(await invoke(["sign"]).errors.first?.code == "USAGE")
             #expect(await invoke(["sign", "--bogus"]).errors.first?.code == "USAGE")
-            #expect(await invoke(["sign", "--app", "stremio-ios", "--device", "iphone", "--force"]).errors.first?.code == "USAGE")
-            #expect(await invoke(["sign", "--app", "stremio-ios", "--device", "iphone", "extra"]).errors.first?.code == "USAGE")
-            #expect(await invoke(["sign", "--app", "nope", "--device", "iphone", "--yes"]).errors.first?.code == "USAGE")
-            #expect(await invoke(["sign", "--app", "stremio-ios", "--device", "iphone"]).errors.first?.code == "CONFIRM_REQUIRED")
+            #expect(
+                await invoke(["sign", "--app", "stremio-ios", "--device", "iphone", "--force"])
+                    .errors.first?.code == "USAGE")
+            #expect(
+                await invoke(["sign", "--app", "stremio-ios", "--device", "iphone", "extra"]).errors
+                    .first?.code == "USAGE")
+            #expect(
+                await invoke(["sign", "--app", "nope", "--device", "iphone", "--yes"]).errors.first?
+                    .code == "USAGE")
+            #expect(
+                await invoke(["sign", "--app", "stremio-ios", "--device", "iphone"]).errors.first?
+                    .code == "CONFIRM_REQUIRED")
             #expect(w.runner.calls.isEmpty)
             // Both spellings of a value reach the command; this one stops at the missing profile.
             let inline = await invoke(["sign", "--app=stremio-ios", "--device=iphone", "--yes"])
             #expect(inline.command == "sign" && inline.errors.first?.code == "PROFILE_MISSING")
-            let spaced = await invoke(["sign", "--app", "stremio-ios", "--device", "iphone", "--yes"])
+            let spaced = await invoke([
+                "sign", "--app", "stremio-ios", "--device", "iphone", "--yes",
+            ])
             #expect(spaced.errors.first?.code == "PROFILE_MISSING")
         }
     }
@@ -86,7 +108,12 @@ struct SignCLITests {
                 let out = await run(argv: argv, services: w.services)
                 #expect(out.data["built"]?.array?.contains("sign") == true, "\(argv)")
                 let usage = out.data["usage"]?.array?.compactMap(\.string) ?? []
-                #expect(usage.contains { $0.hasPrefix("sign --app <apollo|stremio-ios|stremio-tvos> --device <alias>") && $0.hasSuffix("--yes") })
+                #expect(
+                    usage.contains {
+                        $0.hasPrefix(
+                            "sign --app <apollo|stremio-ios|stremio-tvos> --device <alias>")
+                            && $0.hasSuffix("--yes")
+                    })
             }
             #expect(w.runner.calls.isEmpty)
         }
@@ -95,7 +122,8 @@ struct SignCLITests {
     @Test("install is built: it needs its options and no longer answers NOT_IMPLEMENTED")
     func installBuilt() async throws {
         try await withSignWorld { w in
-            #expect(await run(argv: ["install"], services: w.services).errors.first?.code == "USAGE")
+            #expect(
+                await run(argv: ["install"], services: w.services).errors.first?.code == "USAGE")
         }
     }
 }

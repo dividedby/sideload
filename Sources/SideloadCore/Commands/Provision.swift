@@ -15,7 +15,8 @@ public struct ProvisionOptions: Sendable, Equatable {
     public var renewAck: Bool
 
     public init(
-        app: String? = nil, device: String? = nil, registerDevice: Bool = false, renew: Bool = false, yes: Bool = false,
+        app: String? = nil, device: String? = nil, registerDevice: Bool = false,
+        renew: Bool = false, yes: Bool = false,
         renewAck: Bool = false
     ) {
         self.renewAck = renewAck
@@ -61,7 +62,9 @@ enum ProvisionApp: String, CaseIterable {
     var profilePlatform: String { Self.osName(devicePlatform: devicePlatform) }
 
     /// The OS as people and profiles spell it, from a saved device's `platform`.
-    static func osName(devicePlatform: String?) -> String { devicePlatform == "tvos" ? "tvOS" : "iOS" }
+    static func osName(devicePlatform: String?) -> String {
+        devicePlatform == "tvos" ? "tvOS" : "iOS"
+    }
 
     /// The SDK folder name under `Build/Products/Debug-<sdk>`.
     var sdk: String { self == .stremioTVOS ? "appletvos" : "iphoneos" }
@@ -116,7 +119,9 @@ public enum ProvisionCommand {
         await run(services, options, hooks: ProvisionHooks())
     }
 
-    static func run(_ services: Services, _ options: ProvisionOptions, hooks: ProvisionHooks) async -> Envelope {
+    static func run(_ services: Services, _ options: ProvisionOptions, hooks: ProvisionHooks) async
+        -> Envelope
+    {
         // Read once, first, without the lock: whatever happens next, the envelope says what an earlier --renew run
         // left in tmp/. An unreadable record is said too, never silently dropped.
         let record = RenewRecord.read(services)
@@ -150,14 +155,18 @@ public enum ProvisionCommand {
         /// not be read); empty when there is nothing to report.
         public var json: [String: JSONValue] {
             var data: [String: JSONValue] = [:]
-            if !moves.isEmpty { data["cachedProfilesFromEarlierRun"] = ProvisionCommand.earlierRunJSON(moves, home: home) }
+            if !moves.isEmpty {
+                data["cachedProfilesFromEarlierRun"] = ProvisionCommand.earlierRunJSON(
+                    moves, home: home)
+            }
             if unreadable { data["renewRecordUnreadable"] = true }
             return data
         }
 
         public static func read(_ services: Services) -> RenewRecord {
             do {
-                return RenewRecord(home: services.home, moves: try services.ledgerStore.load().freeRenewMoves)
+                return RenewRecord(
+                    home: services.home, moves: try services.ledgerStore.load().freeRenewMoves)
             } catch {
                 return RenewRecord(home: services.home, unreadable: true)
             }
@@ -169,33 +178,55 @@ public enum ProvisionCommand {
             guard !listed, !extra.isEmpty else { return envelope }
             var data = envelope.data
             data.merge(extra) { _, new in new }
-            return Envelope(ok: envelope.ok, command: envelope.command, data: data, errors: envelope.errors)
+            return Envelope(
+                ok: envelope.ok, command: envelope.command, data: data, errors: envelope.errors)
         }
     }
 
     /// The profile checks, in order. Nil means all of them hold. The message names the check, never profile content.
     static func verify(
-        _ profile: ProvisioningProfile, bundleId: String, platform: String, udid: String, certificate: String, now: Date
+        _ profile: ProvisioningProfile, bundleId: String, platform: String, udid: String,
+        certificate: String, now: Date
     ) -> (check: String, message: String)? {
-        if profile.team != Team.free { return ("team", "The profile does not belong to the free team.") }
+        if profile.team != Team.free {
+            return ("team", "The profile does not belong to the free team.")
+        }
         if profile.applicationIdentifier != Team.free + "." + bundleId {
-            return ("application-identifier", "The profile's application-identifier is not the free team and this bundle ID.")
+            return (
+                "application-identifier",
+                "The profile's application-identifier is not the free team and this bundle ID."
+            )
         }
-        if !profile.platforms.contains(platform) { return ("platform", "The profile's platform does not match the device.") }
-        if profile.getTaskAllow != true { return ("get-task-allow", "The profile does not set get-task-allow to true.") }
-        if !profile.includes(device: udid) { return ("device", "The device is not in the profile's ProvisionedDevices.") }
+        if !profile.platforms.contains(platform) {
+            return ("platform", "The profile's platform does not match the device.")
+        }
+        if profile.getTaskAllow != true {
+            return ("get-task-allow", "The profile does not set get-task-allow to true.")
+        }
+        if !profile.includes(device: udid) {
+            return ("device", "The device is not in the profile's ProvisionedDevices.")
+        }
         if !profile.contains(certificate: certificate) {
-            return ("certificate", "The pinned free certificate is not in the profile's DeveloperCertificates.")
+            return (
+                "certificate",
+                "The pinned free certificate is not in the profile's DeveloperCertificates."
+            )
         }
-        guard let expires = profile.expires, expires > now, expires <= now.addingTimeInterval(maxProfileLife)
-        else { return ("expiry", "The profile's expiry is missing, past, or more than 8 days away.") }
+        guard let expires = profile.expires, expires > now,
+            expires <= now.addingTimeInterval(maxProfileLife)
+        else {
+            return ("expiry", "The profile's expiry is missing, past, or more than 8 days away.")
+        }
         return nil
     }
 
     /// `provision --renew-ack --yes`: forgets the ledger's record of cached profiles an earlier run left in `tmp/`.
     /// It reads and clears the record only; no file is touched.
-    private static func acknowledgeRenewMoves(_ services: Services, _ options: ProvisionOptions) async throws -> Envelope {
-        guard options.app == nil, options.device == nil, !options.renew, !options.registerDevice else {
+    private static func acknowledgeRenewMoves(_ services: Services, _ options: ProvisionOptions)
+        async throws -> Envelope
+    {
+        guard options.app == nil, options.device == nil, !options.renew, !options.registerDevice
+        else {
             return .fail(
                 command, code: "USAGE", message: "--renew-ack stands alone.",
                 fix: "sideload provision --renew-ack --yes")
@@ -203,8 +234,11 @@ public enum ProvisionCommand {
         guard options.yes else {
             return .fail(
                 command, code: "CONFIRM_REQUIRED",
-                message: "--renew-ack forgets the record of cached profiles an earlier --renew run moved into tmp/. No file is touched.",
-                fix: "The owner confirms by re-running with --yes. Agents must not pass --yes on their own.")
+                message:
+                    "--renew-ack forgets the record of cached profiles an earlier --renew run moved into tmp/. No file is touched.",
+                fix:
+                    "The owner confirms by re-running with --yes. Agents must not pass --yes on their own."
+            )
         }
         let lock = try OperationLock.acquire(paths: services.home)
         defer { lock.release() }
@@ -226,10 +260,13 @@ public enum ProvisionCommand {
         .array(
             moves.map { move in
                 var st = stat()
-                let inTmp = move.to.hasPrefix("tmp/") && !move.to.contains("..") && lstat(home.home + "/" + move.to, &st) == 0
+                let inTmp =
+                    move.to.hasPrefix("tmp/") && !move.to.contains("..")
+                    && lstat(home.home + "/" + move.to, &st) == 0
                 var entry: [String: JSONValue] = [
                     "from": .string(move.from), "to": .string(move.to),
-                    "at": .string(ProgressLog.isoTimestamp(move.at)), "state": .string(move.state.rawValue),
+                    "at": .string(ProgressLog.isoTimestamp(move.at)),
+                    "state": .string(move.state.rawValue),
                     "inTmp": .bool(inTmp),
                 ]
                 if let folder = move.folder { entry["folder"] = .string(folder) }
@@ -238,13 +275,18 @@ public enum ProvisionCommand {
     }
 
     private static func execute(
-        _ services: Services, _ options: ProvisionOptions, hooks: ProvisionHooks, record: RenewRecord
+        _ services: Services, _ options: ProvisionOptions, hooks: ProvisionHooks,
+        record: RenewRecord
     ) async throws -> Envelope {
         if options.renewAck { return try await acknowledgeRenewMoves(services, options) }
-        guard let appName = options.app, !appName.isEmpty, let alias = options.device, !alias.isEmpty else {
+        guard let appName = options.app, !appName.isEmpty, let alias = options.device,
+            !alias.isEmpty
+        else {
             return .fail(
                 command, code: "USAGE", message: "provision needs --app and --device <alias>.",
-                fix: "sideload provision --app <\(ProvisionApp.names.joined(separator: "|"))> --device iphone --yes")
+                fix:
+                    "sideload provision --app <\(ProvisionApp.names.joined(separator: "|"))> --device iphone --yes"
+            )
         }
         guard let app = ProvisionApp(rawValue: appName) else {
             return .fail(
@@ -254,21 +296,26 @@ public enum ProvisionCommand {
         let config = try services.store.load()
         guard let prefix = config.bundleIdPrefix, CanaryCommand.isValidPrefix(prefix) else {
             return .fail(
-                command, code: "CONFIG_MISSING", message: "bundleIdPrefix is missing or invalid in config.json.",
+                command, code: "CONFIG_MISSING",
+                message: "bundleIdPrefix is missing or invalid in config.json.",
                 fix: "Add \"bundleIdPrefix\": \"com.yourname\" to $SIDELOAD_HOME/config.json.")
         }
         let bundleId = prefix + ".free." + app.suffix
         guard Config.isFreeBundleId(bundleId, prefix: prefix) else {
             return .fail(
                 command, code: "BUNDLE_ID_NOT_ALLOWED",
-                message: "The free team may only be used for the configured <prefix>.free. namespace.",
+                message:
+                    "The free team may only be used for the configured <prefix>.free. namespace.",
                 fix: "Check bundleIdPrefix in config.json.")
         }
         let device = try config.requireDevice(alias)
         guard DeviceCommand.isValidAlias(alias), let udid = device.udid, !udid.isEmpty else {
             return .fail(
-                command, code: "DEVICE_NOT_SAVED", message: "The saved device has no UDID, which the profile check needs.",
-                fix: "Re-save it: sideload device save --alias <alias> --match <device name> --platform ios|tvos --yes")
+                command, code: "DEVICE_NOT_SAVED",
+                message: "The saved device has no UDID, which the profile check needs.",
+                fix:
+                    "Re-save it: sideload device save --alias <alias> --match <device name> --platform ios|tvos --yes"
+            )
         }
         guard device.platform == app.devicePlatform else {
             return .fail(
@@ -276,7 +323,8 @@ public enum ProvisionCommand {
                 message:
                     "\(app.rawValue) needs a \(app.devicePlatform) device; the saved device is \(device.platform ?? "of unknown platform").",
                 fix: app == .stremioTVOS
-                    ? "Use --device with a saved Apple TV (tvos)." : "Use --device with a saved iPhone or iPad (ios).",
+                    ? "Use --device with a saved Apple TV (tvos)."
+                    : "Use --device with a saved iPhone or iPad (ios).",
                 data: ["app": .string(app.rawValue), "device": .string(alias)])
         }
         guard options.yes else {
@@ -285,15 +333,19 @@ public enum ProvisionCommand {
                 message:
                     "provision has portal side effects: Xcode creates the App ID \(bundleId) on the free team (if it has none) and a 7-day development profile"
                     + (options.registerDevice ? ", and registers this device on the free team" : "")
-                    + (options.renew ? ", after sideload moves its own cached profile for this app aside" : "") + ".",
-                fix: "The owner confirms by re-running with --yes. Agents must not pass --yes on their own.",
+                    + (options.renew
+                        ? ", after sideload moves its own cached profile for this app aside" : "")
+                    + ".",
+                fix:
+                    "The owner confirms by re-running with --yes. Agents must not pass --yes on their own.",
                 data: ["bundleId": .string(bundleId), "device": .string(alias)])
         }
 
         let lock = try OperationLock.acquire(paths: services.home)
         defer { lock.release() }
         var run = ProvisionRun(
-            services: services, options: options, config: config, app: app, alias: alias, device: device,
+            services: services, options: options, config: config, app: app, alias: alias,
+            device: device,
             udid: udid, bundleId: bundleId, hooks: hooks, record: record)
         return await run.execute()
     }
@@ -347,8 +399,10 @@ private struct ProvisionRun {
     var renew: ProfileCacheRenewal.Outcome?
 
     init(
-        services: Services, options: ProvisionOptions, config: Config, app: ProvisionApp, alias: String,
-        device: ResolvedDevice, udid: String, bundleId: String, hooks: ProvisionHooks, record: ProvisionCommand.RenewRecord
+        services: Services, options: ProvisionOptions, config: Config, app: ProvisionApp,
+        alias: String,
+        device: ResolvedDevice, udid: String, bundleId: String, hooks: ProvisionHooks,
+        record: ProvisionCommand.RenewRecord
     ) {
         self.record = record
         self.hooks = hooks
@@ -409,7 +463,8 @@ private struct ProvisionRun {
         let stray = Set(renew.strayInTmp)
         guard !stray.isEmpty else { return }
         _ = try? await services.ledgerStore.update { ledger in
-            for i in ledger.freeRenewMoves.indices where stray.contains(ledger.freeRenewMoves[i].to) {
+            for i in ledger.freeRenewMoves.indices where stray.contains(ledger.freeRenewMoves[i].to)
+            {
                 ledger.freeRenewMoves[i].state = .stray
             }
         }
@@ -461,7 +516,8 @@ private struct ProvisionRun {
                     ["pinnedFp8": .string(pinnedFp8)])
             case .ambiguous:
                 return fail(
-                    "FREE_IDENTITY_AMBIGUOUS", "More than one valid free-team identity has the pinned fingerprint prefix.",
+                    "FREE_IDENTITY_AMBIGUOUS",
+                    "More than one valid free-team identity has the pinned fingerprint prefix.",
                     "The owner removes the duplicate in Keychain Access; sideload does not delete keychain items.",
                     ["pinnedFp8": .string(pinnedFp8)])
             }
@@ -470,8 +526,10 @@ private struct ProvisionRun {
             switch candidates.count {
             case 0:
                 return fail(
-                    "FREE_IDENTITY_MISSING", "No valid free-team Apple Development identity is in the keychain.",
-                    "Check Xcode > Settings > Accounts > Manage Certificates (owner action). sideload never creates a certificate.")
+                    "FREE_IDENTITY_MISSING",
+                    "No valid free-team Apple Development identity is in the keychain.",
+                    "Check Xcode > Settings > Accounts > Manage Certificates (owner action). sideload never creates a certificate."
+                )
             case 1: identity = candidates[0]
             default:
                 return fail(
@@ -484,14 +542,16 @@ private struct ProvisionRun {
 
         let ledger = try services.ledgerStore.load()
         let reserved = try config.freeTeamReservedAppIds()
-        let budget = FreeAppIdBudget.evaluate(ledger.freeAppIds, bundleId: bundleId, reserved: reserved, now: now)
+        let budget = FreeAppIdBudget.evaluate(
+            ledger.freeAppIds, bundleId: bundleId, reserved: reserved, now: now)
         guard budget.allowed else {
             return fail(
                 "FREE_APP_ID_LIMIT",
                 "A new App ID would exceed the free team's budget: \(budget.recent) in the last 7 days + \(reserved) reserved + 1 > \(FreeAppIdBudget.limit).",
                 "Wait until an App ID is a week old, or the owner lowers `freeTeam.reservedAppIds`. Nothing was run.",
                 [
-                    "appIdsLast7Days": .number(Double(budget.recent)), "reservedAppIds": .number(Double(reserved)),
+                    "appIdsLast7Days": .number(Double(budget.recent)),
+                    "reservedAppIds": .number(Double(reserved)),
                     "appIdNew": true,
                 ])
         }
@@ -503,10 +563,13 @@ private struct ProvisionRun {
         // 3. The carrier project and a clean products folder.
         let project = try CarrierProject.write(to: services.home.carrierProject)
         // The derived data is ours; clearing the products means any profile found afterwards is from this build.
-        guard ScratchDirectory.removeTree(services.home.carrierDerivedData + "/Build/Products") else {
+        guard ScratchDirectory.removeTree(services.home.carrierDerivedData + "/Build/Products")
+        else {
             return fail(
-                "DERIVED_DATA_NOT_CLEARED", "The previous carrier build products could not be removed.",
-                "Delete $SIDELOAD_HOME/builds/carrier-dd by hand (it is only a build cache) and retry. Nothing was built.")
+                "DERIVED_DATA_NOT_CLEARED",
+                "The previous carrier build products could not be removed.",
+                "Delete $SIDELOAD_HOME/builds/carrier-dd by hand (it is only a build cache) and retry. Nothing was built."
+            )
         }
 
         // 4. --renew: move sideload's own cached profile aside, then build. What it did is reported in every
@@ -515,15 +578,21 @@ private struct ProvisionRun {
             log("provision: moving this app's cached profile aside")
             // Registered first, so a signal from here on reports the (sealed) progress even though the build, not the
             // renewal, is what it interrupts.
-            let progress = hooks.renewProgress, context = self.context
+            let progress = hooks.renewProgress
+            let context = self.context
             let earlier = record.json
             services.interruptReport.set {
-                earlier.merging(context) { _, new in new }.merging(progress.seal().json) { _, new in new }
+                earlier.merging(context) { _, new in new }.merging(progress.seal().json) { _, new in
+                    new
+                }
             }
             let outcome = await ProfileCacheRenewal.moveOwnProfiles(
-                in: services.xcodeProfileDirectories, bundleId: bundleId, platform: app.profilePlatform,
-                to: services.home.tmp, runner: services.runner, now: now, progress: progress, fs: hooks.renewFS,
-                journal: hooks.renewJournal(.ledger(services.ledgerStore)), beforeMove: { _ in }, afterCheck: { _ in })
+                in: services.xcodeProfileDirectories, bundleId: bundleId,
+                platform: app.profilePlatform,
+                to: services.home.tmp, runner: services.runner, now: now, progress: progress,
+                fs: hooks.renewFS,
+                journal: hooks.renewJournal(.ledger(services.ledgerStore)), beforeMove: { _ in },
+                afterCheck: { _ in })
             renew = outcome
             if let error = outcome.error { return .from(error, command: ProvisionCommand.command) }
         }
@@ -533,22 +602,26 @@ private struct ProvisionRun {
         // The App ID epoch goes in the same atomic write, so a build killed halfway still counts it (conservatively
         // high: xcodebuild may or may not have registered it). A failed write stops the run before the build.
         let marker = LedgerFreeInFlight(
-            beforeFp8: FreeIdentityGuard.fp8s(identities), startedAt: now, app: app.rawValue, device: alias)
+            beforeFp8: FreeIdentityGuard.fp8s(identities), startedAt: now, app: app.rawValue,
+            device: alias)
         let (epochBundleId, epochNow) = (bundleId, now)
         try hooks.checkpoint(.markerWrite)
         try await services.ledgerStore.update { ledger in
             ledger.freeProvisionInFlight = marker
-            ledger.freeAppIds = FreeAppIdBudget.recording(ledger.freeAppIds, bundleId: epochBundleId, now: epochNow)
+            ledger.freeAppIds = FreeAppIdBudget.recording(
+                ledger.freeAppIds, bundleId: epochBundleId, now: epochNow)
         }
 
         log("provision: building the carrier (up to 10 minutes)")
         let build = await services.runner.run(
             CommandSpec(
                 executable: "xcodebuild", args: buildArguments(project: project),
-                timeout: ProvisionCommand.buildTimeout, maxOutputBytes: ProvisionCommand.buildOutputCap))
+                timeout: ProvisionCommand.buildTimeout,
+                maxOutputBytes: ProvisionCommand.buildOutputCap))
         let failure = ProvisionClassifier.classify(
             .init(
-                exitCode: build.code, stderr: build.stderr, stdout: build.stdout, timedOut: build.timedOut,
+                exitCode: build.code, stderr: build.stderr, stdout: build.stdout,
+                timedOut: build.timedOut,
                 overflow: build.overflow, spawnError: build.spawnError),
             registerDevice: options.registerDevice)
 
@@ -582,7 +655,9 @@ private struct ProvisionRun {
         }
         if identityBroken {
             return identityStop(
-                diff.map { FreeIdentityGuard.Change(addedFp8: $0.addedFp8, removedFp8: $0.removedFp8) },
+                diff.map {
+                    FreeIdentityGuard.Change(addedFp8: $0.addedFp8, removedFp8: $0.removedFp8)
+                },
                 buildSucceeded: failure == nil, suspensionRecorded: suspensionRecorded)
         }
         if let failure { return buildFailure(failure, build, budget) }
@@ -593,34 +668,42 @@ private struct ProvisionRun {
         var st = stat()
         guard stat(built, &st) == 0 else {
             return fail(
-                "BUILD_PRODUCT_MISSING", "The build succeeded but \(CarrierProject.productName) was not found.",
+                "BUILD_PRODUCT_MISSING",
+                "The build succeeded but \(CarrierProject.productName) was not found.",
                 "Retry; if it repeats, open the carrier project in Xcode once.")
         }
         let profilePath = built + "/embedded.mobileprovision"
         // Read once, without following a symlink: these exact bytes are decoded (on stdin) and, if they pass, stored.
         var embedded = stat()
         guard lstat(profilePath, &embedded) == 0 else {
-            return invalidProfile("decode", "The embedded provisioning profile is missing or could not be decoded.")
+            return invalidProfile(
+                "decode", "The embedded provisioning profile is missing or could not be decoded.")
         }
         guard let candidate = ProfileCacheRenewal.readCandidate(profilePath) else {
             return invalidProfile(
                 "embedded-profile",
-                "The embedded provisioning profile is not a regular file of a sane size (a symlink, a special file, over 1 MiB or unreadable).")
+                "The embedded provisioning profile is not a regular file of a sane size (a symlink, a special file, over 1 MiB or unreadable)."
+            )
         }
         let profileBytes = candidate.bytes
         let decoded = await services.runner.run(
             CommandSpec(
-                executable: "/usr/bin/security", args: ["cms", "-D"], timeout: ProvisionCommand.toolTimeout,
+                executable: "/usr/bin/security", args: ["cms", "-D"],
+                timeout: ProvisionCommand.toolTimeout,
                 stdin: profileBytes))
         guard decoded.code == 0, let profile = ProvisioningProfile.parse(decoded.stdout) else {
-            return invalidProfile("decode", "The embedded provisioning profile is missing or could not be decoded.")
+            return invalidProfile(
+                "decode", "The embedded provisioning profile is missing or could not be decoded.")
         }
         if let problem = ProvisionCommand.verify(
-            profile, bundleId: bundleId, platform: app.profilePlatform, udid: udid, certificate: identity.sha1, now: now)
+            profile, bundleId: bundleId, platform: app.profilePlatform, udid: udid,
+            certificate: identity.sha1, now: now)
         {
             return invalidProfile(problem.check, problem.message)
         }
-        guard let expires = profile.expires else { return invalidProfile("expiry", "The profile has no expiry date.") }
+        guard let expires = profile.expires else {
+            return invalidProfile("expiry", "The profile has no expiry date.")
+        }
 
         // The first success with no pin pins the one valid free identity (re-read after the build).
         var pinnedNow = false
@@ -628,14 +711,18 @@ private struct ProvisionRun {
             let valid = CertCheck.freeIdentities(afterIdentities, now: now)
             guard valid.count == 1, valid[0].sha1 == identity.sha1 else {
                 return fail(
-                    "FREE_IDENTITY_AMBIGUOUS", "There is not exactly one valid free-team identity to pin.",
-                    "Leave exactly one valid free-team identity (owner action) and run provision again.")
+                    "FREE_IDENTITY_AMBIGUOUS",
+                    "There is not exactly one valid free-team identity to pin.",
+                    "Leave exactly one valid free-team identity (owner action) and run provision again."
+                )
             }
             pinnedNow = true
         }
 
         // 6. Renewal: a refresh must move the expiry on by more than a day.
-        if let previous, expires <= previous.expires.addingTimeInterval(ProvisionCommand.renewalMargin) {
+        if let previous,
+            expires <= previous.expires.addingTimeInterval(ProvisionCommand.renewalMargin)
+        {
             return fail(
                 "PROFILE_NOT_RENEWED",
                 "Xcode reused its cached profile: the new expiry is not more than 24 hours past the previous one.",
@@ -644,7 +731,8 @@ private struct ProvisionRun {
                     : "Spike S3. The owner may re-run with --renew --yes, which moves sideload's own cached profile for this app aside so Xcode makes a fresh one.",
                 [
                     "profile": profileJSON(profile, expires: expires),
-                    "sameProfile": .bool(profile.uuid.caseInsensitiveCompare(previous.profileUuid) == .orderedSame),
+                    "sameProfile": .bool(
+                        profile.uuid.caseInsensitiveCompare(previous.profileUuid) == .orderedSame),
                 ])
         }
 
@@ -671,8 +759,10 @@ private struct ProvisionRun {
         try hooks.checkpoint(.storeProfile)
         try storeProfile(profileBytes, uuid: profile.uuid)
         let entry = LedgerFreeProfile(
-            id: key, device: alias, deviceTail: Redactor.tail4(udid), app: app.rawValue, bundleId: bundleId,
-            profileUuid: profile.uuid, created: profile.created.map(Self.wholeSeconds), expires: Self.wholeSeconds(expires),
+            id: key, device: alias, deviceTail: Redactor.tail4(udid), app: app.rawValue,
+            bundleId: bundleId,
+            profileUuid: profile.uuid, created: profile.created.map(Self.wholeSeconds),
+            expires: Self.wholeSeconds(expires),
             certFp8: identity.fp8, file: relative)
         let entryKey = key
         // The filler's signed app goes into place in one rename and is recorded in the same ledger write as the
@@ -680,12 +770,15 @@ private struct ProvisionRun {
         var placed: (swapped: Bool, destination: String)?
         var signedRecord: LedgerFreeSigned?
         if let filler {
-            let destination = "\(services.home.signedBuilds)/\(app.rawValue)/\(alias)/\(CarrierProject.productName)"
+            let destination =
+                "\(services.home.signedBuilds)/\(app.rawValue)/\(alias)/\(CarrierProject.productName)"
             try makeSignedDirectories((destination as NSString).deletingLastPathComponent)
             placed = (try SignCommand.place(filler.copy, at: destination), destination)
             signedRecord = LedgerFreeSigned(
-                id: key, device: alias, app: app.rawValue, bundleId: bundleId, version: Self.fillerVersion,
-                sha256Prefix: filler.sha256Prefix, profileUuid: profile.uuid, profileExpires: Self.wholeSeconds(expires),
+                id: key, device: alias, app: app.rawValue, bundleId: bundleId,
+                version: Self.fillerVersion,
+                sha256Prefix: filler.sha256Prefix, profileUuid: profile.uuid,
+                profileExpires: Self.wholeSeconds(expires),
                 certFp8: identity.fp8, signedAt: now, path: Self.fillerSignedPath(alias: alias),
                 strippedExtensions: [], droppedEntitlements: [])
         }
@@ -708,7 +801,9 @@ private struct ProvisionRun {
             }
         } catch {
             if let placed, let filler {
-                _ = SignCommand.restore(swapped: placed.swapped, scratchApp: filler.copy, destination: placed.destination)
+                _ = SignCommand.restore(
+                    swapped: placed.swapped, scratchApp: filler.copy,
+                    destination: placed.destination)
             }
             throw error
         }
@@ -719,7 +814,8 @@ private struct ProvisionRun {
             "app": .string(app.rawValue), "device": .string(alias), "bundleId": .string(bundleId),
             "profile": profileJSON(profile, expires: expires), "file": .string(relative),
             "appIdNew": .bool(budget.isNew), "appIdsLast7Days": .number(Double(live.count)),
-            "identityChanged": false, "pinnedFp8": .string(identity.fp8), "pinnedNow": .bool(pinnedNow),
+            "identityChanged": false, "pinnedFp8": .string(identity.fp8),
+            "pinnedNow": .bool(pinnedNow),
         ]
         if cleared { data["suspensionCleared"] = true }
         if signedRecord != nil { data["signed"] = .string(Self.fillerSignedPath(alias: alias)) }
@@ -749,31 +845,40 @@ private struct ProvisionRun {
         case stop(Envelope)
     }
 
-    private static let fillerCopyFix = "Retry; if it repeats, open the carrier project in Xcode once. Nothing was recorded."
+    private static let fillerCopyFix =
+        "Retry; if it repeats, open the carrier project in Xcode once. Nothing was recorded."
 
     /// Copies the Xcode-signed carrier (`ditto` keeps the signature) into a registered 0700 scratch folder and runs the
     /// free guard on the copy. Nothing is placed, stored or recorded here.
-    private func prepareFiller(built: String, identity: FreeIdentity, scratch: inout ScratchDirectory?) async throws -> FillerStep {
+    private func prepareFiller(
+        built: String, identity: FreeIdentity, scratch: inout ScratchDirectory?
+    ) async throws -> FillerStep {
         guard let pinned = CertReference(identity.sha1) else {
             return .stop(
                 fail(
-                    "FREE_IDENTITY_MISSING", "The pinned free-team identity has no usable fingerprint.",
+                    "FREE_IDENTITY_MISSING",
+                    "The pinned free-team identity has no usable fingerprint.",
                     "Check the login keychain (owner action)."))
         }
         // A folder left by a run that was killed; safe to remove under the lock.
-        for name in (try? FileManager.default.contentsOfDirectory(atPath: services.home.tmp)) ?? [] where name.hasPrefix("provision-") {
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: services.home.tmp)) ?? []
+        where name.hasPrefix("provision-") {
             _ = ScratchDirectory.removeTree(services.home.tmp + "/" + name)
         }
-        let folder = try ScratchDirectory.create(under: services.home.tmp, registry: .shared, prefix: "provision")
+        let folder = try ScratchDirectory.create(
+            under: services.home.tmp, registry: .shared, prefix: "provision")
         scratch = folder
         let copy = folder.path + "/" + CarrierProject.productName
         log("provision: copying the signed carrier")
         let copied = await services.runner.run(
-            CommandSpec(executable: "/usr/bin/ditto", args: [built, copy], timeout: ProvisionCommand.toolTimeout))
+            CommandSpec(
+                executable: "/usr/bin/ditto", args: [built, copy],
+                timeout: ProvisionCommand.toolTimeout))
         guard copied.code == 0 else {
             return .stop(
                 fail(
-                    "BUILD_PRODUCT_MISSING", "The signed carrier could not be copied for its checks.",
+                    "BUILD_PRODUCT_MISSING",
+                    "The signed carrier could not be copied for its checks.",
                     Self.fillerCopyFix))
         }
         guard let digest = Self.executableDigest(of: copy) else {
@@ -785,13 +890,15 @@ private struct ProvisionRun {
         let verdict = await Guard.run(
             context: .free(
                 FreeSigning(
-                    bundleId: bundleId, bundleIdPrefix: config.bundleIdPrefix, pinnedCertificate: pinned, now: now,
+                    bundleId: bundleId, bundleIdPrefix: config.bundleIdPrefix,
+                    pinnedCertificate: pinned, now: now,
                     scratchRoot: services.home.tmp)),
             runner: services.runner, app: copy, udid: udid)
         guard verdict.passed else {
             return .stop(
                 fail(
-                    verdict.code ?? "GUARD_FAILED", verdict.reason ?? "The signed carrier failed the free-team guard.",
+                    verdict.code ?? "GUARD_FAILED",
+                    verdict.reason ?? "The signed carrier failed the free-team guard.",
                     "Nothing was recorded. Check the free account in Xcode and retry."))
         }
         return .staged(StagedFiller(copy: copy, sha256Prefix: String(digest.prefix(8))))
@@ -800,8 +907,11 @@ private struct ProvisionRun {
     /// SHA-256 (hex) of the file `CFBundleExecutable` names in the app's Info.plist; nil when it cannot be read.
     private static func executableDigest(of app: String) -> String? {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: app + "/Info.plist")),
-            let info = (try? PropertyListSerialization.propertyList(from: data, options: [], format: nil)) as? [String: Any],
-            let name = info["CFBundleExecutable"] as? String, IPAInspector.isPlainName(name), !name.hasPrefix(".")
+            let info =
+                (try? PropertyListSerialization.propertyList(from: data, options: [], format: nil))
+                as? [String: Any],
+            let name = info["CFBundleExecutable"] as? String, IPAInspector.isPlainName(name),
+            !name.hasPrefix(".")
         else { return nil }
         return (try? FileDigest.sha256(path: app + "/" + name))?.hex
     }
@@ -828,9 +938,12 @@ private struct ProvisionRun {
             "-project", project, "-scheme", CarrierProject.scheme, "-destination", "id=\(udid)",
             "-derivedDataPath", services.home.carrierDerivedData, "-allowProvisioningUpdates",
         ]
-        if options.registerDevice && options.yes { args.append("-allowProvisioningDeviceRegistration") }
+        if options.registerDevice && options.yes {
+            args.append("-allowProvisioningDeviceRegistration")
+        }
         args += [
-            "CODE_SIGN_STYLE=Automatic", "DEVELOPMENT_TEAM=\(Team.free)", "CODE_SIGN_IDENTITY=Apple Development",
+            "CODE_SIGN_STYLE=Automatic", "DEVELOPMENT_TEAM=\(Team.free)",
+            "CODE_SIGN_IDENTITY=Apple Development",
             "PRODUCT_BUNDLE_IDENTIFIER=\(bundleId)", "build",
         ]
         return args
@@ -846,7 +959,8 @@ private struct ProvisionRun {
     private func profileJSON(_ profile: ProvisioningProfile, expires: Date) -> JSONValue {
         let days = Int((expires.timeIntervalSince(now) / 86_400).rounded(.down))
         return [
-            "uuid": .string(profile.uuid), "created": profile.created.map(iso) ?? .null, "expires": iso(expires),
+            "uuid": .string(profile.uuid), "created": profile.created.map(iso) ?? .null,
+            "expires": iso(expires),
             "daysLeft": .number(Double(days)),
         ]
     }
@@ -876,8 +990,10 @@ private struct ProvisionRun {
             "removedFp8": .array((change?.removedFp8 ?? []).map { .string($0) }),
         ]
         if let buildSucceeded { extra["buildSucceeded"] = .bool(buildSucceeded) }
-        let suspendedText = suspensionRecorded
-            ? "Auto-refresh is suspended." : "Auto-refresh could not be marked suspended (the ledger write failed)."
+        let suspendedText =
+            suspensionRecorded
+            ? "Auto-refresh is suspended."
+            : "Auto-refresh could not be marked suspended (the ledger write failed)."
         guard let change else {
             return fail(
                 "IDENTITY_CHECK_FAILED",
@@ -885,7 +1001,10 @@ private struct ProvisionRun {
                 "\(suspendedText) Unlock the login keychain and run `sideload doctor`; check Manage Certificates in Xcode.",
                 extra)
         }
-        let when = interrupted ? "during an earlier run that did not finish (interrupted or crashed)" : "during the build"
+        let when =
+            interrupted
+            ? "during an earlier run that did not finish (interrupted or crashed)"
+            : "during the build"
         return fail(
             "FREE_CERT_CHANGED",
             "The free team's signing identities changed \(when) (\(change.addedFp8.count) added, \(change.removedFp8.count) removed). Nothing was stored.",
@@ -894,21 +1013,25 @@ private struct ProvisionRun {
     }
 
     private func buildFailure(
-        _ failure: ProvisionClassifier.Failure, _ build: RunResult, _ budget: FreeAppIdBudget.Decision
+        _ failure: ProvisionClassifier.Failure, _ build: RunResult,
+        _ budget: FreeAppIdBudget.Decision
     ) -> Envelope {
         var extra: [String: JSONValue] = [:]
         if failure.code == "PROVISION_FAILED" {
             extra["logTail"] = .string(
                 ProvisionClassifier.tail(stderr: build.stderr, stdout: build.stdout, redact: scrub))
         }
-        if failure.code == "FREE_APP_ID_LIMIT" { extra["appIdsLast7Days"] = .number(Double(budget.recent)) }
+        if failure.code == "FREE_APP_ID_LIMIT" {
+            extra["appIdsLast7Days"] = .number(Double(budget.recent))
+        }
         return fail(failure.code, failure.message, failure.fix, extra)
     }
 
     /// Build output with the device's IDs, names and the identities' common names masked.
     private func scrub(_ line: String) -> String {
         var out = line
-        for name in [device.name].compactMap({ $0 }) + device.hostnames + identityNames where name.count >= 3 {
+        for name in [device.name].compactMap({ $0 }) + device.hostnames + identityNames
+        where name.count >= 3 {
             out = out.replacingOccurrences(of: name, with: "<hidden>")
         }
         return Redactor(literals: [udid, device.coreDeviceId].compactMap { $0 }).redact(out)

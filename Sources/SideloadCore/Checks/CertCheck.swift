@@ -5,7 +5,8 @@ import Foundation
 public enum CertCheck {
     public static let warnDays = 60
     public static let criticalDays = 14
-    private static let fixRenew = "Renew the certificate in Xcode > Settings > Accounts > Manage Certificates."
+    private static let fixRenew =
+        "Renew the certificate in Xcode > Settings > Accounts > Manage Certificates."
     private static let fixCreate =
         "In Xcode > Settings > Accounts > Manage Certificates, create an Apple Development certificate for the paid team (owner action)."
 
@@ -20,17 +21,22 @@ public enum CertCheck {
     }
 
     /// Identities `security find-identity -v -p codesigning` would list: trusted, unexpired, de-duplicated.
-    private static func validCertificates(_ certificates: [KeychainCertificate], now: Date) -> [KeychainCertificate] {
+    private static func validCertificates(_ certificates: [KeychainCertificate], now: Date)
+        -> [KeychainCertificate]
+    {
         var seen = Set<String>()
         return certificates.filter {
-            $0.isValidForCodeSigning && $0.info.isAppleDevelopment && ($0.info.notAfter.map { $0 > now } ?? false)
+            $0.isValidForCodeSigning && $0.info.isAppleDevelopment
+                && ($0.info.notAfter.map { $0 > now } ?? false)
                 && seen.insert($0.reference).inserted
         }
     }
 
     /// The valid paid-team certificate with the latest `notAfter`: the one `evaluate` reports, and what the
     /// canary evidence calls the keychain certificate (not proof of what Xcode signed with).
-    public static func selectedPaid(_ certificates: [KeychainCertificate], now: Date) -> KeychainCertificate? {
+    public static func selectedPaid(_ certificates: [KeychainCertificate], now: Date)
+        -> KeychainCertificate?
+    {
         validCertificates(certificates, now: now)
             .compactMap { cert in cert.info.notAfter.map { (cert, $0) } }
             .filter { $0.0.info.isPaidTeam }
@@ -38,7 +44,9 @@ public enum CertCheck {
     }
 
     /// Every valid paid-team certificate, latest `notAfter` first (`export-cert` ranks these against profiles).
-    public static func paidCandidates(_ certificates: [KeychainCertificate], now: Date) -> [KeychainCertificate] {
+    public static func paidCandidates(_ certificates: [KeychainCertificate], now: Date)
+        -> [KeychainCertificate]
+    {
         validCertificates(certificates, now: now)
             .filter { $0.info.isPaidTeam }
             .compactMap { cert in cert.info.notAfter.map { (cert, $0) } }
@@ -52,16 +60,19 @@ public enum CertCheck {
 
         if let best = selectedPaid(certificates, now: now)?.info.notAfter {
             let days = Int(((best.timeIntervalSince(now)) / 86_400).rounded(.down))
-            let base = "Apple Development (team \(Team.id)) valid until \(isoDate(best)) (\(days) days)."
+            let base =
+                "Apple Development (team \(Team.id)) valid until \(isoDate(best)) (\(days) days)."
             out.append(
                 days < warnDays
-                    ? CheckResult(id: "cert", severity: .warn, message: base, fix: fixRenew, daysLeft: days)
+                    ? CheckResult(
+                        id: "cert", severity: .warn, message: base, fix: fixRenew, daysLeft: days)
                     : CheckResult(id: "cert", severity: .ok, message: base, daysLeft: days))
         } else {
             out.append(
                 CheckResult(
                     id: "cert", severity: .fail,
-                    message: "No Apple Development certificate for team \(Team.id) in the keychain.",
+                    message:
+                        "No Apple Development certificate for team \(Team.id) in the keychain.",
                     fix: fixCreate))
         }
 
@@ -74,7 +85,8 @@ public enum CertCheck {
             out.append(
                 CheckResult(
                     id: "cert-other-team", severity: .info,
-                    message: "other team, ignored" + (denied.map { " (\($0), deny-listed)" } ?? "")))
+                    message: "other team, ignored" + (denied.map { " (\($0), deny-listed)" } ?? ""))
+            )
         }
         return out
     }
@@ -108,16 +120,24 @@ public enum PinnedFreeIdentity: Sendable, Equatable {
 extension CertCheck {
     /// Valid free-team identities (trusted, unexpired, de-duplicated; first OU free, paid OU absent), latest
     /// `notAfter` first. Matched on OU, never name.
-    public static func freeIdentities(_ certificates: [KeychainCertificate], now: Date) -> [FreeIdentity] {
+    public static func freeIdentities(_ certificates: [KeychainCertificate], now: Date)
+        -> [FreeIdentity]
+    {
         validCertificates(certificates, now: now)
             .filter { $0.info.isFreeTeam }
-            .compactMap { cert in cert.info.notAfter.map { FreeIdentity(sha1: cert.reference.uppercased(), notAfter: $0) } }
+            .compactMap { cert in
+                cert.info.notAfter.map {
+                    FreeIdentity(sha1: cert.reference.uppercased(), notAfter: $0)
+                }
+            }
             .sorted { ($0.notAfter, $1.sha1) > ($1.notAfter, $0.sha1) }
     }
 
     /// Requires exactly the identity whose SHA-1 starts with `fp8` (`freeTeam.certFp8`) among the valid
     /// free-team identities. A different or additional free certificate never substitutes for it.
-    public static func pinnedFree(_ certificates: [KeychainCertificate], fp8: String, now: Date) -> PinnedFreeIdentity {
+    public static func pinnedFree(_ certificates: [KeychainCertificate], fp8: String, now: Date)
+        -> PinnedFreeIdentity
+    {
         guard fp8.wholeMatch(of: /[0-9A-Fa-f]{8}/) != nil else { return .notFound }
         let matches = freeIdentities(certificates, now: now).filter { $0.fp8 == fp8.lowercased() }
         switch matches.count {

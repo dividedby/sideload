@@ -34,7 +34,9 @@ public enum CleanCommand {
     }
 
     /// `afterMarked` is the test hook for a crash: called once the manifest write is durable and before any file goes.
-    static func run(_ services: Services, _ options: CleanOptions, afterMarked: (() throws -> Void)?) -> Envelope {
+    static func run(
+        _ services: Services, _ options: CleanOptions, afterMarked: (() throws -> Void)?
+    ) -> Envelope {
         do {
             return try execute(services, options, afterMarked: afterMarked)
         } catch {
@@ -42,7 +44,9 @@ public enum CleanCommand {
         }
     }
 
-    private static func execute(_ services: Services, _ options: CleanOptions, afterMarked: (() throws -> Void)?) throws -> Envelope {
+    private static func execute(
+        _ services: Services, _ options: CleanOptions, afterMarked: (() throws -> Void)?
+    ) throws -> Envelope {
         let lock = try OperationLock.acquire(paths: services.home)
         defer { lock.release() }
 
@@ -57,9 +61,11 @@ public enum CleanCommand {
         let downloadPlan = CleanDownloads.plan(services, manifest: manifest, ledger: ledger)
         let verb = options.yes ? "deleting" : "would delete"
         services.log(
-            "clean: backups: \(verb) \(backupPlan.counts.deleted), keeping \(backupPlan.counts.kept), unreadable \(backupPlan.counts.unreadable)")
+            "clean: backups: \(verb) \(backupPlan.counts.deleted), keeping \(backupPlan.counts.kept), unreadable \(backupPlan.counts.unreadable)"
+        )
         services.log(
-            "clean: downloads: \(verb) \(downloadPlan.deleted) version(s), keeping \(downloadPlan.kept)")
+            "clean: downloads: \(verb) \(downloadPlan.deleted) version(s), keeping \(downloadPlan.kept)"
+        )
 
         var backups = backupPlan.counts
         var downloads = downloadPlan
@@ -86,7 +92,9 @@ public enum CleanCommand {
 
     // MARK: output
 
-    private static func envelope(dryRun: Bool, backups: CleanBackups.Counts, downloads: CleanDownloads.Plan) -> Envelope {
+    private static func envelope(
+        dryRun: Bool, backups: CleanBackups.Counts, downloads: CleanDownloads.Plan
+    ) -> Envelope {
         var warnings: [JSONValue] = []
         if backups.unreadable > 0 {
             warnings.append(
@@ -110,10 +118,14 @@ public enum CleanCommand {
                     "Check backups/ and downloads/ under $SIDELOAD_HOME."))
         }
         var data: [String: JSONValue] = [
-            "dryRun": .bool(dryRun), "retentionDays": .number(Double(retentionDays)), "backups": .object(backups.json),
+            "dryRun": .bool(dryRun), "retentionDays": .number(Double(retentionDays)),
+            "backups": .object(backups.json),
             "downloads": .object(downloads.json), "warnings": .array(warnings),
         ]
-        if dryRun { data["next"] = .string("Nothing was deleted. The owner deletes with: sideload clean --yes") }
+        if dryRun {
+            data["next"] = .string(
+                "Nothing was deleted. The owner deletes with: sideload clean --yes")
+        }
 
         let failed = backups.failed + downloads.failed
         guard failed > 0 else { return .result(command, data) }
@@ -122,7 +134,9 @@ public enum CleanCommand {
             errors: [
                 .init(
                     code: "CLEAN_INCOMPLETE", message: "\(failed) folder(s) could not be deleted.",
-                    fix: "Check the permissions under $SIDELOAD_HOME, then run `sideload clean --yes` again.")
+                    fix:
+                        "Check the permissions under $SIDELOAD_HOME, then run `sideload clean --yes` again."
+                )
             ])
     }
 }

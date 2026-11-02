@@ -10,7 +10,9 @@ public struct CanaryOptions: Sendable, Equatable {
     /// Write an evidence bundle for a `blocked` or `error` result (opt-in; never automatic).
     public var evidence: Bool
 
-    public init(device: String? = nil, yes: Bool = false, keep: Bool = false, evidence: Bool = false) {
+    public init(
+        device: String? = nil, yes: Bool = false, keep: Bool = false, evidence: Bool = false
+    ) {
         self.device = device
         self.yes = yes
         self.keep = keep
@@ -40,10 +42,13 @@ public enum CanaryCommand {
         "SNAPSHOT_FAILED": "Unlock the device, keep it connected, and retry.",
         "BUILD_FAILED":
             "Check that Xcode holds the paid-team account (Settings > Accounts) and the device is registered, then retry.",
-        "OUTPUT_LIMIT": "Retry; if it repeats, run the command by hand to see what is flooding the output.",
-        "BUILD_TIMEOUT": "Retry; if it repeats, open the project in Xcode once to see the signing error.",
+        "OUTPUT_LIMIT":
+            "Retry; if it repeats, run the command by hand to see what is flooding the output.",
+        "BUILD_TIMEOUT":
+            "Retry; if it repeats, open the project in Xcode once to see the signing error.",
         "BUILD_PRODUCT_MISSING": "The build reported success but produced no app; retry.",
-        "GUARD_FAILED": "The built app is unsigned or has no embedded profile; check automatic signing for the paid team.",
+        "GUARD_FAILED":
+            "The built app is unsigned or has no embedded profile; check automatic signing for the paid team.",
         "WRONG_TEAM": "The build was not signed by team \(Team.id). Nothing was installed.",
         "FREE_TEAM_SELECTED":
             "The build was signed by the free team. Nothing was installed; check DEVELOPMENT_TEAM resolves to \(Team.id).",
@@ -77,7 +82,9 @@ public enum CanaryCommand {
         }
     }
 
-    private static func execute(_ services: Services, _ options: CanaryOptions) async throws -> Envelope {
+    private static func execute(_ services: Services, _ options: CanaryOptions) async throws
+        -> Envelope
+    {
         guard let alias = options.device, !alias.isEmpty else {
             return .fail(
                 command, code: "USAGE", message: "canary needs --device <alias>.",
@@ -86,9 +93,11 @@ public enum CanaryCommand {
         let config = try services.store.load()
         guard let prefix = config.bundleIdPrefix, isValidPrefix(prefix) else {
             return .fail(
-                command, code: "CONFIG_MISSING", message: "bundleIdPrefix is missing or invalid in config.json.",
+                command, code: "CONFIG_MISSING",
+                message: "bundleIdPrefix is missing or invalid in config.json.",
                 fix:
-                    "Add \"bundleIdPrefix\": \"com.yourname\" to $SIDELOAD_HOME/config.json. It becomes portal-visible (App ID <prefix>.sideload.canary).")
+                    "Add \"bundleIdPrefix\": \"com.yourname\" to $SIDELOAD_HOME/config.json. It becomes portal-visible (App ID <prefix>.sideload.canary)."
+            )
         }
         let dev = try config.requireDevice(alias)
         let bundleId = prefix + ".sideload.canary"
@@ -97,19 +106,24 @@ public enum CanaryCommand {
                 command, code: "CONFIRM_REQUIRED",
                 message:
                     "The canary has portal side effects: Xcode will create the App ID and a development profile for the canary bundle ID in the paid team, and may register this device. It then installs and removes the canary on the device.",
-                fix: "The owner confirms by re-running with --yes. Agents must not pass --yes on their own.",
+                fix:
+                    "The owner confirms by re-running with --yes. Agents must not pass --yes on their own.",
                 data: ["bundleId": .string(bundleId), "device": .string(alias)])
         }
         guard let udid = dev.udid, !udid.isEmpty else {
             return .fail(
-                command, code: "DEVICE_NOT_SAVED", message: "The saved device has no UDID, which the profile guard needs.",
-                fix: "Re-save it: sideload device save --alias <alias> --match <device name> --platform ios --yes")
+                command, code: "DEVICE_NOT_SAVED",
+                message: "The saved device has no UDID, which the profile guard needs.",
+                fix:
+                    "Re-save it: sideload device save --alias <alias> --match <device name> --platform ios --yes"
+            )
         }
 
         let lock = try OperationLock.acquire(paths: services.home)
         defer { lock.release() }
         var run = CanaryRun(
-            services: services, options: options, config: config, alias: alias, udid: udid, bundleId: bundleId)
+            services: services, options: options, config: config, alias: alias, udid: udid,
+            bundleId: bundleId)
         return try await run.execute()
     }
 }
@@ -142,7 +156,10 @@ private struct CanaryRun {
     /// The scrubbed devicectl document for the local log (`canary-install-*.json`); never used by the evidence bundle.
     var scrubbedLogMemo: JSONValue?
 
-    init(services: Services, options: CanaryOptions, config: Config, alias: String, udid: String, bundleId: String) {
+    init(
+        services: Services, options: CanaryOptions, config: Config, alias: String, udid: String,
+        bundleId: String
+    ) {
         self.services = services
         self.options = options
         self.config = config
@@ -162,11 +179,14 @@ private struct CanaryRun {
         var overflow = false
     }
 
-    private func devicectl(_ args: [String], timeoutSec: Int, positional: [String] = []) async throws -> Outcome {
+    private func devicectl(_ args: [String], timeoutSec: Int, positional: [String] = [])
+        async throws -> Outcome
+    {
         do {
             let res = try await services.deviceCtl.run(
                 args, deviceAlias: alias, timeoutSec: timeoutSec, positional: positional)
-            return Outcome(code: res.code, json: res.json, stderr: res.stderr, timedOut: res.timedOut)
+            return Outcome(
+                code: res.code, json: res.json, stderr: res.stderr, timedOut: res.timedOut)
         } catch let error as SideloadError where error.code == "OUTPUT_LIMIT" {
             // Only the output-limit failure is a device outcome; an unsaved device or a wrapper misuse still throws.
             return Outcome(overflow: true)
@@ -191,7 +211,8 @@ private struct CanaryRun {
     }
 
     private func uninstall() async throws -> Bool {
-        let un = try await devicectl(["device", "uninstall", "app"], timeoutSec: 60, positional: [bundleId])
+        let un = try await devicectl(
+            ["device", "uninstall", "app"], timeoutSec: 60, positional: [bundleId])
         return un.code == 0
     }
 
@@ -212,7 +233,8 @@ private struct CanaryRun {
         let failed = checks.filter { $0.severity == .fail }
         if !failed.isEmpty {
             return try await finish(
-                .error, "PRECHECK_FAILED", "Preflight failed: \(failed.map(\.message).joined(separator: " "))",
+                .error, "PRECHECK_FAILED",
+                "Preflight failed: \(failed.map(\.message).joined(separator: " "))",
                 extra: ["checks": .array(checks.map(\.json))])
         }
         xcodeVersion = await XcodeCheck.versionLabel(runner: services.runner)
@@ -246,14 +268,17 @@ private struct CanaryRun {
                 timeout: CanaryCommand.buildTimeout, maxOutputBytes: CanaryCommand.buildOutputCap))
         if let failure = BuildClassifier.classify(
             .init(
-                exitCode: build.code, stderr: build.stderr, stdout: build.stdout, timedOut: build.timedOut,
+                exitCode: build.code, stderr: build.stderr, stdout: build.stdout,
+                timedOut: build.timedOut,
                 overflow: build.overflow, spawnError: build.spawnError))
         {
             return try await finish(failure.status, failure.code, failure.reason)
         }
         let app = derived + "/Build/Products/Debug-iphoneos/Canary.app"
         guard followsToExisting(app) else {
-            return try await finish(.error, "BUILD_PRODUCT_MISSING", "The build succeeded but Canary.app was not found.")
+            return try await finish(
+                .error, "BUILD_PRODUCT_MISSING", "The build succeeded but Canary.app was not found."
+            )
         }
 
         // 4. Guard: nothing touches the device unless team and profile check out.
@@ -268,13 +293,15 @@ private struct CanaryRun {
 
         // 5. Install.
         log("canary: installing")
-        let install = try await devicectl(["device", "install", "app"], timeoutSec: 120, positional: [app])
+        let install = try await devicectl(
+            ["device", "install", "app"], timeoutSec: 120, positional: [app])
         installOutcome = install
 
         // 6. Classify.
         let verdict = InstallClassifier.classify(
             .init(
-                exitCode: install.code, json: install.json, stderr: install.stderr, timedOut: install.timedOut,
+                exitCode: install.code, json: install.json, stderr: install.stderr,
+                timedOut: install.timedOut,
                 overflow: install.overflow, guardPassed: true, bundleId: bundleId))
         installCode = verdict.code
         if verdict.status != .working {
@@ -296,7 +323,8 @@ private struct CanaryRun {
             if try await !uninstall() {
                 warnings.append(
                     CanaryCommand.warning(
-                        "CANARY_LEFT_ON_DEVICE", "Uninstalling \(bundleId) failed; the canary is still on the device.",
+                        "CANARY_LEFT_ON_DEVICE",
+                        "Uninstalling \(bundleId) failed; the canary is still on the device.",
                         "Delete the Canary app from the device by hand."))
             }
         }
@@ -306,12 +334,14 @@ private struct CanaryRun {
         if after == nil {
             warnings.append(
                 CanaryCommand.warning(
-                    "SNAPSHOT_FAILED", "Could not list apps after the install.", "Check the device manually."))
+                    "SNAPSHOT_FAILED", "Could not list apps after the install.",
+                    "Check the device manually."))
         }
 
         // 8b. A timed-out or ambiguous install can still land the canary. If the exact canary bundle id is
         // now present and was not before, remove it (that id only) unless --keep.
-        if let present = after, !before.contains(bundleId), present.contains(bundleId), !options.keep,
+        if let present = after, !before.contains(bundleId), present.contains(bundleId),
+            !options.keep,
             !uninstallAttempted
         {
             log("canary: removing canary left by an ambiguous install")
@@ -354,10 +384,13 @@ private struct CanaryRun {
     private mutating func subjects() async -> EvidenceSubjects {
         let user = services.localUser
         let machine = services.machineNames()
-        let home = user.homeDirectory.isEmpty ? "" : URL(fileURLWithPath: user.homeDirectory).lastPathComponent
+        let home =
+            user.homeDirectory.isEmpty
+            ? "" : URL(fileURLWithPath: user.homeDirectory).lastPathComponent
         return EvidenceSubjects(
             ids: [udid] + [config.devices[alias]?.coreDeviceId].compactMap { $0 },
-            names: InstallScrubber.literals(config: config, listed: await listedDevices()), login: user.login,
+            names: InstallScrubber.literals(config: config, listed: await listedDevices()),
+            login: user.login,
             fullName: user.fullName, identityNames: identityNames,
             computerName: user.computerName.isEmpty ? machine.computerName : user.computerName,
             localHostName: user.localHostName.isEmpty ? machine.localHostName : user.localHostName,
@@ -370,7 +403,8 @@ private struct CanaryRun {
         if let memo = scrubbedLogMemo { return memo }
         let subjects = InstallLogScrubber.Subjects(await subjects())
         let result = InstallLogScrubber.document(
-            InstallScrubber.scrubbed(installOutcome?.json, literals: subjects.nameLiterals), subjects)
+            InstallScrubber.scrubbed(installOutcome?.json, literals: subjects.nameLiterals),
+            subjects)
         scrubbedLogMemo = result
         return result
     }
@@ -390,7 +424,8 @@ private struct CanaryRun {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
         try AtomicFile.write(
-            try encoder.encode(scrubbed) + Data("\n".utf8), to: "\(logs)/canary-install-\(stamp()).json")
+            try encoder.encode(scrubbed) + Data("\n".utf8),
+            to: "\(logs)/canary-install-\(stamp()).json")
     }
 
     /// `/usr/bin/sw_vers` output for the macOS version and build; nil when empty or not shaped like one.
@@ -403,7 +438,8 @@ private struct CanaryRun {
             return text.isEmpty ? nil : text
         }
         return (
-            DeviceList.validVersion(await ask("-productVersion")), DeviceList.validBuild(await ask("-buildVersion"))
+            DeviceList.validVersion(await ask("-productVersion")),
+            DeviceList.validBuild(await ask("-buildVersion"))
         )
     }
 
@@ -434,34 +470,44 @@ private struct CanaryRun {
         }
         let input = EvidenceInput(
             generatedAt: services.clock.now(), status: status.rawValue, code: code,
-            reason: MessageFilter.admit(reason, tokens: tokens, bundleId: bundleId), guardRecord: guardRecord,
-            durationMs: durationMs, bundleId: bundleId, macosVersion: macos.version, macosBuild: macos.build,
-            xcode: xcodeVersion, iosVersion: ios.version, iosBuild: ios.build, certificate: signingCert?.info,
-            certFp: signingCert.map { EvidenceBuilder.certFp($0.reference) }, guardFacts: guardFacts,
+            reason: MessageFilter.admit(reason, tokens: tokens, bundleId: bundleId),
+            guardRecord: guardRecord,
+            durationMs: durationMs, bundleId: bundleId, macosVersion: macos.version,
+            macosBuild: macos.build,
+            xcode: xcodeVersion, iosVersion: ios.version, iosBuild: ios.build,
+            certificate: signingCert?.info,
+            certFp: signingCert.map { EvidenceBuilder.certFp($0.reference) },
+            guardFacts: guardFacts,
             deviceTail4: Redactor.tail4(udid), install: install, appleCase: config.appleSupportCase)
         switch EvidenceWriter.write(
-            EvidenceBuilder.build(input), stamp: stamp(), home: services.home, tokens: tokens, bundleId: bundleId)
+            EvidenceBuilder.build(input), stamp: stamp(), home: services.home, tokens: tokens,
+            bundleId: bundleId)
         {
         case .written(let dir, let files):
-            return ["written": true, "dir": .string(dir), "files": .array(files.map(JSONValue.string))]
+            return [
+                "written": true, "dir": .string(dir), "files": .array(files.map(JSONValue.string)),
+            ]
         case .redactionFailed:
             warnings.append(
                 CanaryCommand.warning(
                     "EVIDENCE_REDACTION_FAILED",
                     "The evidence bundle was not written: a final check found text that must not be in it.",
-                    "The canary result is unaffected. Report this; do not attach anything by hand."))
+                    "The canary result is unaffected. Report this; do not attach anything by hand.")
+            )
         case .writeFailed:
             warnings.append(
                 CanaryCommand.warning(
                     "EVIDENCE_WRITE_FAILED", "Could not write the evidence bundle.",
-                    "Check that $SIDELOAD_HOME/evidence is writable and that this run's folder does not already exist."))
+                    "Check that $SIDELOAD_HOME/evidence is writable and that this run's folder does not already exist."
+                ))
         }
         return none
     }
 
     /// Computes the delta, appends the `canary.jsonl` line, and builds the envelope.
     private mutating func finish(
-        _ status: Classification.Status, _ code: String, _ reason: String, extra: [String: JSONValue] = [:]
+        _ status: Classification.Status, _ code: String, _ reason: String,
+        extra: [String: JSONValue] = [:]
     ) async throws -> Envelope {
         let durationMs = Int((services.clock.now().timeIntervalSince(started) * 1000).rounded())
         var delta: (added: [String], removed: [String])?
@@ -480,22 +526,29 @@ private struct CanaryRun {
             }
         }
         let macos = await macOS()
-        let ios = guardRecord == "passed" ? await iOS() : (version: String?.none, build: String?.none)
+        let ios =
+            guardRecord == "passed" ? await iOS() : (version: String?.none, build: String?.none)
         do {
             let line: JSONValue = [
-                "ts": .string(ProgressLog.isoTimestamp(services.clock.now())), "status": .string(status.rawValue),
+                "ts": .string(ProgressLog.isoTimestamp(services.clock.now())),
+                "status": .string(status.rawValue),
                 "code": .string(Self.clip(code)), "device": .string(Redactor.tail4(udid)),
-                "xcodeVersion": xcodeVersion.map { .string(Self.clip($0)) } ?? .null, "guard": .string(Self.clip(guardRecord)),
+                "xcodeVersion": xcodeVersion.map { .string(Self.clip($0)) } ?? .null,
+                "guard": .string(Self.clip(guardRecord)),
                 "durationMs": .number(Double(durationMs)),
                 "macosVersion": macos.version.map(JSONValue.string) ?? .null,
                 "iosVersion": ios.version.map(JSONValue.string) ?? .null,
-                "certFp": signingCert.map { .string(EvidenceBuilder.certFp($0.reference)) } ?? .null,
-                "certNotAfter": signingCert?.info.notAfter.map { .string(CertCheck.isoDate($0)) } ?? .null,
+                "certFp": signingCert.map { .string(EvidenceBuilder.certFp($0.reference)) }
+                    ?? .null,
+                "certNotAfter": signingCert?.info.notAfter.map { .string(CertCheck.isoDate($0)) }
+                    ?? .null,
             ]
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
             try makeDirectories(services.home.logs, mode: 0o700)
-            try AppendFile.appendLine(String(decoding: try encoder.encode(line), as: UTF8.self), to: services.home.canaryLog)
+            try AppendFile.appendLine(
+                String(decoding: try encoder.encode(line), as: UTF8.self),
+                to: services.home.canaryLog)
         } catch {
             warnings.append(
                 CanaryCommand.warning(
@@ -504,21 +557,25 @@ private struct CanaryRun {
         }
         var evidence: JSONValue?
         if options.evidence {
-            evidence = await writeEvidence(status, code, reason, durationMs: durationMs, macos: macos, ios: ios)
+            evidence = await writeEvidence(
+                status, code, reason, durationMs: durationMs, macos: macos, ios: ios)
         }
         var data: [String: JSONValue] = [
             "status": .string(status.rawValue), "code": .string(code), "reason": .string(reason),
             "bundleId": .string(bundleId), "device": .string(alias),
             "deviceDelta": delta.map { .array($0.added.map(JSONValue.string)) } ?? .null,
             "deviceRemoved": delta.map { .array($0.removed.map(JSONValue.string)) } ?? .null,
-            "guard": .string(guardRecord), "xcodeVersion": xcodeVersion.map(JSONValue.string) ?? .null,
+            "guard": .string(guardRecord),
+            "xcodeVersion": xcodeVersion.map(JSONValue.string) ?? .null,
             "durationMs": .number(Double(durationMs)), "warnings": .array(warnings),
         ]
         // Only with --evidence, so a run without the flag keeps exactly the pre-evidence envelope.
         data["evidence"] = evidence
         data.merge(extra) { _, new in new }
         if status == .error {
-            return .fail(CanaryCommand.command, code: code, message: reason, fix: CanaryCommand.fix(for: code), data: data)
+            return .fail(
+                CanaryCommand.command, code: code, message: reason,
+                fix: CanaryCommand.fix(for: code), data: data)
         }
         return .result(CanaryCommand.command, data)
     }

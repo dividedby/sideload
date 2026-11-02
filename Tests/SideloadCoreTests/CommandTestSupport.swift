@@ -28,7 +28,8 @@ func utcDate(_ year: Int, _ month: Int, _ day: Int) -> Date {
 
 /// A `devicectl list devices` entry (jsonVersion 5 shape).
 func deviceEntryJSON(
-    name: String, udid: String, coreId: String, platform: String = "iOS", reality: String = "physical",
+    name: String, udid: String, coreId: String, platform: String = "iOS",
+    reality: String = "physical",
     pairing: String = "paired", tunnel: String = "connected", hostnames: [String] = [],
     osVersion: String? = nil, osBuild: String? = nil
 ) -> JSONValue {
@@ -37,10 +38,13 @@ func deviceEntryJSON(
         "visibilityClass": reality == "simulated" ? "simulators" : "default",
         "properties": [
             "connection": [
-                "pairingState": .string(pairing), "tunnelState": .string(tunnel), "transportType": "wired",
+                "pairingState": .string(pairing), "tunnelState": .string(tunnel),
+                "transportType": "wired",
                 "potentialHostnames": .array(hostnames.map { .string($0) }),
             ],
-            "hardware": ["platform": .string(platform), "reality": .string(reality), "udid": .string(udid)],
+            "hardware": [
+                "platform": .string(platform), "reality": .string(reality), "udid": .string(udid),
+            ],
             "state": ["name": .string(name)],
         ],
     ]
@@ -61,9 +65,12 @@ func deviceListJSON(_ entries: JSONValue...) -> JSONValue {
 }
 
 func phoneEntryJSON(
-    name: String = "Test iPhone", seed: String = "1", reality: String = "physical", tunnel: String = "connected"
+    name: String = "Test iPhone", seed: String = "1", reality: String = "physical",
+    tunnel: String = "connected"
 ) -> JSONValue {
-    deviceEntryJSON(name: name, udid: savedUdid(seed), coreId: savedCoreId(seed), reality: reality, tunnel: tunnel)
+    deviceEntryJSON(
+        name: name, udid: savedUdid(seed), coreId: savedCoreId(seed), reality: reality,
+        tunnel: tunnel)
 }
 
 /// Scripted answers for everything the checks and device commands run. `devices == nil` means devicectl
@@ -84,13 +91,17 @@ struct Route: Sendable {
             case ("xcode-select", _): return xcodeSelect
             case ("/usr/sbin/pkgutil", _):
                 return pkgInstalled
-                    ? RunResult(stdout: "package-id: com.apple.pkg.CLTools_Executables\nversion: 27.0.0.0.1\n")
+                    ? RunResult(
+                        stdout:
+                            "package-id: com.apple.pkg.CLTools_Executables\nversion: 27.0.0.0.1\n")
                     : RunResult(code: 1, stderr: "No receipt")
             case ("xcrun", "--find"):
                 let tool = spec.args.dropFirst().first ?? ""
-                return missingTools.contains(tool) ? RunResult(code: 1) : RunResult(stdout: "/x/\(tool)\n")
+                return missingTools.contains(tool)
+                    ? RunResult(code: 1) : RunResult(stdout: "/x/\(tool)\n")
             case ("xcrun", "devicectl"):
-                if let devices, let path = spec.args.firstIndex(of: "--json-output").map({ spec.args[$0 + 1] }),
+                if let devices,
+                    let path = spec.args.firstIndex(of: "--json-output").map({ spec.args[$0 + 1] }),
                     let data = try? JSONEncoder().encode(devices)
                 {
                     try? data.write(to: URL(fileURLWithPath: path))
@@ -112,12 +123,15 @@ struct FakeFileSystem: FileSystem {
         return freeBytes
     }
 
-    static func free(gb: Double) -> FakeFileSystem { FakeFileSystem(freeBytes: UInt64(gb * Double(1 << 30))) }
+    static func free(gb: Double) -> FakeFileSystem {
+        FakeFileSystem(freeBytes: UInt64(gb * Double(1 << 30)))
+    }
 }
 
 /// Fake services over an existing temp home. Nothing here touches the real `$SIDELOAD_HOME`.
 func fakeServices(
-    _ paths: Paths, route: Route = Route(), keychain: FakeKeychain = FakeKeychain(), now: Date = testNow,
+    _ paths: Paths, route: Route = Route(), keychain: FakeKeychain = FakeKeychain(),
+    now: Date = testNow,
     fs: FakeFileSystem = .free(gb: 50)
 ) -> (services: Services, runner: FakeRunner) {
     let runner = FakeRunner(route.script)

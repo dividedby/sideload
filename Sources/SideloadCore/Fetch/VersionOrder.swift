@@ -22,11 +22,14 @@ enum VersionOrder {
         let build: Int?
     }
 
-    private static let shape = try! NSRegularExpression(pattern: #"^([0-9]{1,9}(?:\.[0-9]{1,9}){0,3})(?:b([0-9]{1,9}))?$"#)
+    private static let shape = try! NSRegularExpression(
+        pattern: #"^([0-9]{1,9}(?:\.[0-9]{1,9}){0,3})(?:b([0-9]{1,9}))?$"#)
 
     static func parse(_ text: String) -> Parsed? {
         let range = NSRange(text.startIndex..., in: text)
-        guard let match = shape.firstMatch(in: text, range: range), let versionRange = Range(match.range(at: 1), in: text) else {
+        guard let match = shape.firstMatch(in: text, range: range),
+            let versionRange = Range(match.range(at: 1), in: text)
+        else {
             return nil
         }
         let parts = text[versionRange].split(separator: ".").compactMap { Int($0) }
@@ -46,7 +49,9 @@ enum VersionOrder {
         let lhs = have.parts + Array(repeating: 0, count: width - have.parts.count)
         let rhs = want.parts + Array(repeating: 0, count: width - want.parts.count)
         if rhs != lhs { return rhs.lexicographicallyPrecedes(lhs) ? .older : .newer }
-        guard let installedBuild = have.build, let upstreamBuild = want.build else { return .current }
+        guard let installedBuild = have.build, let upstreamBuild = want.build else {
+            return .current
+        }
         if upstreamBuild == installedBuild { return .current }
         return upstreamBuild > installedBuild ? .newer : .older
     }

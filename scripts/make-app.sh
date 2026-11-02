@@ -33,7 +33,7 @@ cp "$bin/SideloadMenu" "$app/Contents/MacOS/SideloadMenu"
 # SPM cannot run a post-build strip (design section 3).
 strip -x "$app/Contents/MacOS/SideloadMenu"
 
-cat > "$app/Contents/Info.plist" <<PLIST
+cat >"$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">

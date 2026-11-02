@@ -14,8 +14,11 @@ private let installApp = "device install app"
 
 /// A legacy `lent[]` record, as an earlier build wrote it. A pending one carries an `opAt` well in the past, so its window is
 /// over (one with no `opAt` is the fail-safe case, tested in `SlotMigrationTests`).
-private func record(_ state: String, app: String = "stremio-ios", to: String = "lab") -> LedgerLent {
-    LedgerLent(app: app, device: "iphone", to: to, since: daysFromNow(-1), state: state, opAt: state == "lent" ? nil : daysFromNow(-1))
+private func record(_ state: String, app: String = "stremio-ios", to: String = "lab") -> LedgerLent
+{
+    LedgerLent(
+        app: app, device: "iphone", to: to, since: daysFromNow(-1), state: state,
+        opAt: state == "lent" ? nil : daysFromNow(-1))
 }
 
 enum SlotRow: String, CaseIterable, Sendable {
@@ -260,7 +263,8 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
                 $0.calls = three
             },
             lend("the uninstall failed but the app is gone") {
-                $0.script = DeviceScript(initial: withWda, uninstallFailure: locked, uninstallFailureRemoves: true)
+                $0.script = DeviceScript(
+                    initial: withWda, uninstallFailure: locked, uninstallFailureRemoves: true)
                 $0.state = .lent
                 $0.ok = true
                 $0.freed = 1
@@ -268,7 +272,9 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
                 $0.calls = three
             },
             lend("another app vanished too: lent is written first, then UNEXPECTED_APP_DELTA") {
-                $0.script = DeviceScript(initial: [stremioId: true, "com.example.other": false], alsoRemovedOnUninstall: ["com.example.other"])
+                $0.script = DeviceScript(
+                    initial: [stremioId: true, "com.example.other": false],
+                    alsoRemovedOnUninstall: ["com.example.other"])
                 $0.state = .lent
                 $0.code = "UNEXPECTED_APP_DELTA"
                 $0.freed = 1
@@ -279,7 +285,9 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
         ]
     case .L9:
         return [
-            lend("the uninstall reported success but the app is listed: kept pending, nothing claimed") {
+            lend(
+                "the uninstall reported success but the app is listed: kept pending, nothing claimed"
+            ) {
                 $0.script = DeviceScript(initial: withWda, uninstallLeavesApp: true)
                 $0.state = .lending
                 $0.code = "UNEXPECTED_APP_DELTA"
@@ -320,7 +328,8 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
                 $0.calls = three
             },
             lend("timeout, then S1 fails") {
-                $0.script = DeviceScript(initial: only, snapshotFailures: [2], uninstallTimeoutRemoves: true)
+                $0.script = DeviceScript(
+                    initial: only, snapshotFailures: [2], uninstallTimeoutRemoves: true)
                 $0.state = .lending
                 $0.code = "TIMEOUT"
                 $0.freed = 0
@@ -353,7 +362,9 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
             },
             back("identities changed during an unfinished run") {
                 $0.lent = record("returning")
-                $0.marker = LedgerFreeInFlight(beforeFp8: ["00000000"], startedAt: testNow, app: "stremio-ios", device: "iphone")
+                $0.marker = LedgerFreeInFlight(
+                    beforeFp8: ["00000000"], startedAt: testNow, app: "stremio-ios",
+                    device: "iphone")
                 $0.state = .returning
                 $0.code = "RETURN_FAILED"
                 $0.fields = ["cause": "FREE_CERT_CHANGED", "state": "returning", "lent": true]
@@ -470,7 +481,8 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
                 $0.installPresent = true
                 $0.calls = reinstall3
             },
-            back("another app landed too: the return is recorded first, then UNEXPECTED_APP_DELTA") {
+            back("another app landed too: the return is recorded first, then UNEXPECTED_APP_DELTA")
+            {
                 $0.script = DeviceScript(alsoAdded: ["com.example.stray": false])
                 $0.lent = record("lent")
                 $0.state = .none
@@ -487,7 +499,10 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
                 $0.lent = record("lent")
                 $0.state = .returning
                 $0.code = "RETURN_FAILED"
-                $0.fields = ["cause": "INSTALL_UNCONFIRMED", "lent": true, "state": "returning", "uncertain": true]
+                $0.fields = [
+                    "cause": "INSTALL_UNCONFIRMED", "lent": true, "state": "returning",
+                    "uncertain": true,
+                ]
                 $0.installPresent = true
                 $0.calls = reinstall3
             },
@@ -516,7 +531,9 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
                 $0.lent = record("lent")
                 $0.state = .returning
                 $0.code = "RETURN_FAILED"
-                $0.fields = ["cause": "TIMEOUT", "uncertain": true, "state": "returning", "lent": true]
+                $0.fields = [
+                    "cause": "TIMEOUT", "uncertain": true, "state": "returning", "lent": true,
+                ]
                 $0.calls = reinstall3
             }
         ]
@@ -527,7 +544,10 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
                 $0.lent = record("lent")
                 $0.state = .returning
                 $0.code = "RETURN_FAILED"
-                $0.fields = ["cause": "SNAPSHOT_FAILED", "uncertain": true, "state": "returning", "lent": true]
+                $0.fields = [
+                    "cause": "SNAPSHOT_FAILED", "uncertain": true, "state": "returning",
+                    "lent": true,
+                ]
                 $0.calls = reinstall3
             },
             back("failure, then S1 fails") {
@@ -593,7 +613,9 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
                 $0.calls = three
             },
             remove("another app vanished too") {
-                $0.script = DeviceScript(initial: [stremioId: true, "com.example.other": false], alsoRemovedOnUninstall: ["com.example.other"])
+                $0.script = DeviceScript(
+                    initial: [stremioId: true, "com.example.other": false],
+                    alsoRemovedOnUninstall: ["com.example.other"])
                 $0.code = "UNEXPECTED_APP_DELTA"
                 $0.installPresent = false
                 $0.calls = three
@@ -632,7 +654,8 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
                 $0.calls = three
             },
             remove("a timeout, then S1 fails") {
-                $0.script = DeviceScript(initial: withWda, snapshotFailures: [2], uninstallTimeoutRemoves: true)
+                $0.script = DeviceScript(
+                    initial: withWda, snapshotFailures: [2], uninstallTimeoutRemoves: true)
                 $0.code = "TIMEOUT"
                 $0.fields = ["uncertain": true]
                 $0.installPresent = true
@@ -681,7 +704,9 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
         ]
     case .I4:
         return [
-            plain("a pending record for another app is settled by the install's snapshot, and then counts as lent") {
+            plain(
+                "a pending record for another app is settled by the install's snapshot, and then counts as lent"
+            ) {
                 $0.lent = record("lending", app: "apollo")
                 $0.installs = []
                 $0.state = .lent
@@ -693,11 +718,17 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
 
     // MARK: the gate: any op in flight on the device answers SLOT_PENDING, with no device call, for every command
     case .G1:
-        return pendingCases("a pending plain install of another app") { $0.slots = [pendingSlot("apollo", .install, by: .install)] }
+        return pendingCases("a pending plain install of another app") {
+            $0.slots = [pendingSlot("apollo", .install, by: .install)]
+        }
     case .G2:
-        return pendingCases("a pending reinstall of this app") { $0.slots = [pendingSlot("stremio-ios", .reinstall, by: .install)] }
+        return pendingCases("a pending reinstall of this app") {
+            $0.slots = [pendingSlot("stremio-ios", .reinstall, by: .install)]
+        }
     case .G3:
-        return pendingCases("a pending remove") { $0.slots = [pendingSlot("stremio-ios", .uninstall, by: .remove)] }
+        return pendingCases("a pending remove") {
+            $0.slots = [pendingSlot("stremio-ios", .uninstall, by: .remove)]
+        }
     case .G4:
         return pendingCases("a pending lend") {
             $0.slots = [pendingSlot("stremio-ios", .uninstall, by: .lend, lentTo: "lab")]
@@ -707,10 +738,15 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
 }
 
 /// An op that started a minute before `testNow` (inside every window).
-private func pendingSlot(_ app: String, _ kind: LedgerSlotKind, by: LedgerSlotBy, lentTo: String? = nil) -> LedgerSlot {
+private func pendingSlot(
+    _ app: String, _ kind: LedgerSlotKind, by: LedgerSlotBy, lentTo: String? = nil
+) -> LedgerSlot {
     LedgerSlot(
-        device: "iphone", app: app, presence: .present, lentTo: lentTo, since: lentTo == nil ? nil : testNow.addingTimeInterval(-60),
-        op: LedgerSlotOp(kind: kind, by: by, startedAt: testNow.addingTimeInterval(-60), window: SlotRule.window(kind)))
+        device: "iphone", app: app, presence: .present, lentTo: lentTo,
+        since: lentTo == nil ? nil : testNow.addingTimeInterval(-60),
+        op: LedgerSlotOp(
+            kind: kind, by: by, startedAt: testNow.addingTimeInterval(-60),
+            window: SlotRule.window(kind)))
 }
 
 /// The same pending record, asked by each of the four mutating commands: SLOT_PENDING, `freed:0`, no device call, no change.
@@ -743,7 +779,8 @@ struct SlotMatrixTests {
     private func run(_ c: RowCase, row: SlotRow) async throws {
         let name = "\(row.rawValue) \(c.label)"
         try await withInstallWorld(
-            script: c.script, lendable: c.lendable, signed: c.signed, profileDays: c.profileDays, keychain: c.keychain,
+            script: c.script, lendable: c.lendable, signed: c.signed, profileDays: c.profileDays,
+            keychain: c.keychain,
             ledger: { ledger in
                 ledger.installs = c.installs
                 if let seed = c.lent { ledger.lent = [seed] }
@@ -757,10 +794,16 @@ struct SlotMatrixTests {
             let printed = json(out)
             #expect(out.ok == c.ok, "\(name): ok=\(out.ok) \(out.errors)")
             if c.gated {
-                #expect(try w.ledger().slots == before.slots && w.ledger().lent == before.lent, "\(name): the gate changed the ledger")
+                #expect(
+                    try w.ledger().slots == before.slots && w.ledger().lent == before.lent,
+                    "\(name): the gate changed the ledger")
             }
             if let code = c.code { #expect(out.errorCodes == [code], "\(name): \(out.errorCodes)") }
-            if let freed = c.freed { #expect(printed["freed"] == .number(Double(freed)), "\(name): freed \(String(describing: printed["freed"]))") }
+            if let freed = c.freed {
+                #expect(
+                    printed["freed"] == .number(Double(freed)),
+                    "\(name): freed \(String(describing: printed["freed"]))")
+            }
             if !c.gated {
                 #expect(
                     SlotPhase(w.lent.first { $0.device == "iphone" }) == c.state,
@@ -770,9 +813,14 @@ struct SlotMatrixTests {
                 let codes = printed["warnings"]?.array?.compactMap { $0["code"]?.string } ?? []
                 #expect(codes == c.warnings, "\(name): warnings \(codes)")
             }
-            for (key, value) in c.fields { #expect(printed[key] == value, "\(name): \(key) = \(String(describing: printed[key]))") }
+            for (key, value) in c.fields {
+                #expect(
+                    printed[key] == value, "\(name): \(key) = \(String(describing: printed[key]))")
+            }
             if let present = c.installPresent {
-                #expect(w.installs.first { $0.id == w.key }?.present == present, "\(name): installs present")
+                #expect(
+                    w.installs.first { $0.id == w.key }?.present == present,
+                    "\(name): installs present")
             }
             if let check = c.check { #expect(check(printed), "\(name): check") }
             #expect(w.runner.deviceCalls == c.calls, "\(name): calls \(w.runner.deviceCalls)")
@@ -782,23 +830,34 @@ struct SlotMatrixTests {
         }
     }
 
-    @Test("a pending state is never answered from the ledger: only lent short-circuits, with no device call")
+    @Test(
+        "a pending state is never answered from the ledger: only lent short-circuits, with no device call"
+    )
     func onlyLentShortCircuits() async throws {
         for state in ["lending", "returning"] {
-            try await withInstallWorld(script: DeviceScript(initial: [stremioId: true]), lendable: "stremio-ios", ledger: { $0.lent = [record(state)] }) { w in
+            try await withInstallWorld(
+                script: DeviceScript(initial: [stremioId: true]), lendable: "stremio-ios",
+                ledger: { $0.lent = [record(state)] }
+            ) { w in
                 let out = await w.slot("lend", device: "iphone", to: "lab")
-                #expect(!w.runner.deviceCalls.isEmpty, "\(state) was answered without asking the device")
+                #expect(
+                    !w.runner.deviceCalls.isEmpty, "\(state) was answered without asking the device"
+                )
                 #expect(json(out)["alreadyLent"] == nil || out.ok)
             }
         }
     }
 
-    @Test("every invalid snapshot shape is a failed read, never an empty device", arguments: SnapshotFault.allCases)
+    @Test(
+        "every invalid snapshot shape is a failed read, never an empty device",
+        arguments: SnapshotFault.allCases)
     func malformedSnapshots(_ fault: SnapshotFault) async throws {
         // S0 invalid: the record is left as it is.
         for state in ["lending", "returning", "lent"] {
             let seeded = record(state)
-            try await withInstallWorld(script: DeviceScript(snapshotShapes: [1: fault]), ledger: { $0.lent = [seeded] }) { w in
+            try await withInstallWorld(
+                script: DeviceScript(snapshotShapes: [1: fault]), ledger: { $0.lent = [seeded] }
+            ) { w in
                 let back = await w.slot("return", device: "iphone")
                 #expect(back.errorCodes == ["RETURN_FAILED"])
                 #expect(w.lent == [seeded], "\(fault) \(state)")
@@ -807,14 +866,18 @@ struct SlotMatrixTests {
         }
         // S1 invalid after an uninstall: nothing is claimed.
         try await withInstallWorld(
-            script: DeviceScript(initial: [stremioId: true], snapshotShapes: [2: fault]), lendable: "stremio-ios"
+            script: DeviceScript(initial: [stremioId: true], snapshotShapes: [2: fault]),
+            lendable: "stremio-ios"
         ) { w in
             let out = await w.slot("lend", device: "iphone", to: "lab")
             #expect(!out.ok && json(out)["freed"] == 0)
             #expect(w.lent.map(\.state) == ["lending"], "\(fault)")
         }
         // S1 invalid after an install: the return is not claimed.
-        try await withInstallWorld(script: DeviceScript(snapshotShapes: [2: fault]), lendable: "stremio-ios", ledger: { $0.lent = [record("lent")] }) { w in
+        try await withInstallWorld(
+            script: DeviceScript(snapshotShapes: [2: fault]), lendable: "stremio-ios",
+            ledger: { $0.lent = [record("lent")] }
+        ) { w in
             #expect(await w.slot("return", device: "iphone").errorCodes == ["RETURN_FAILED"])
             #expect(w.lent.map(\.state) == ["returning"], "\(fault)")
         }
@@ -822,13 +885,18 @@ struct SlotMatrixTests {
 
     @Test("AppSnapshot.parse accepts only a complete listing")
     func parseShapes() {
-        for fault in SnapshotFault.allCases { #expect(AppSnapshot.parse(fault.json) == nil, "\(fault)") }
+        for fault in SnapshotFault.allCases {
+            #expect(AppSnapshot.parse(fault.json) == nil, "\(fault)")
+        }
         #expect(AppSnapshot.parse(nil) == nil)
         let empty: JSONValue = ["info": ["outcome": "success"], "result": ["apps": []]]
         #expect(AppSnapshot.parse(empty)?.ids == [])
         #expect(AppSnapshot.parse(appsJSON([stremioId: true]))?.ids == [stremioId])
         // IDs come only from result.apps elements: one nested elsewhere is not read.
-        let nested: JSONValue = ["info": ["outcome": "success"], "result": ["apps": [], "other": [["bundleIdentifier": "x.y"]]]]
+        let nested: JSONValue = [
+            "info": ["outcome": "success"],
+            "result": ["apps": [], "other": [["bundleIdentifier": "x.y"]]],
+        ]
         #expect(AppSnapshot.parse(nested)?.ids == [])
     }
 }

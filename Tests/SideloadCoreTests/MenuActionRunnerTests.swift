@@ -12,11 +12,14 @@ private final class Log: Sendable {
 
 private func services() -> Services {
     Services(
-        runner: FakeRunner { _ in RunResult() }, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow),
+        runner: FakeRunner { _ in RunResult() }, fs: FakeFileSystem.free(gb: 50),
+        clock: FixedClock(testNow),
         keychain: FakeKeychain(), home: Paths(home: "/nonexistent-sideload-home"))
 }
 
-private func steps(_ log: Log, ok: Bool = true, work: @escaping @Sendable (Services) -> Void = { _ in }) -> MenuActionSteps {
+private func steps(
+    _ log: Log, ok: Bool = true, work: @escaping @Sendable (Services) -> Void = { _ in }
+) -> MenuActionSteps {
     @Sendable func envelope(_ command: String) -> Envelope {
         ok ? .result(command) : .fail(command, code: "BOOM", message: "It failed.")
     }
@@ -54,7 +57,10 @@ struct MenuActionRunnerTests {
                 .renew(device: "iphone", app: "apollo"),
                 "refresh \(RefreshOptions(device: "iphone", app: "apollo", within: nil, force: true, yes: true))"
             ),
-            (.install(device: "iphone", app: "apollo"), "install \(InstallOptions(app: "apollo", device: "iphone", yes: true))"),
+            (
+                .install(device: "iphone", app: "apollo"),
+                "install \(InstallOptions(app: "apollo", device: "iphone", yes: true))"
+            ),
             (
                 .remove(device: "iphone", app: "apollo"),
                 "remove \(AppOptions(sub: "remove", app: "apollo", device: "iphone", yes: true))"
@@ -70,7 +76,9 @@ struct MenuActionRunnerTests {
         ]
         for (action, expected) in cases {
             let before = log.value.count
-            await MenuActionRunner.perform(action, services: services(), steps: steps(log), isCancelled: { false }) { _ in }
+            await MenuActionRunner.perform(
+                action, services: services(), steps: steps(log), isCancelled: { false }
+            ) { _ in }
             #expect(log.value.dropFirst(before) == [expected][...], "\(action)")
         }
     }
@@ -80,20 +88,24 @@ struct MenuActionRunnerTests {
         let log = Log()
         let work = steps(log) { $0.postEmit.add { log.add("postEmit") } }
         await MenuActionRunner.perform(
-            .renew(device: "iphone", app: "apollo"), services: services(), steps: work, isCancelled: { false }
+            .renew(device: "iphone", app: "apollo"), services: services(), steps: work,
+            isCancelled: { false }
         ) { outcome in
             log.add("deliver \(outcome.kind)")
         }
         #expect(log.value.suffix(2) == ["deliver done", "postEmit"])
     }
 
-    @Test("a cancelled action delivers a Cancelled outcome and skips the post-result work, which is not run by the next action")
+    @Test(
+        "a cancelled action delivers a Cancelled outcome and skips the post-result work, which is not run by the next action"
+    )
     func cancelledSkipsPostEmit() async {
         let log = Log()
         let first = steps(log, ok: false) { $0.postEmit.add { log.add("postEmit-from-first") } }
         let kinds = Mutex<[MenuActionOutcome.Kind]>([])
         await MenuActionRunner.perform(
-            .renew(device: "iphone", app: "apollo"), services: services(), steps: first, isCancelled: { true }
+            .renew(device: "iphone", app: "apollo"), services: services(), steps: first,
+            isCancelled: { true }
         ) { outcome in
             kinds.withLock { $0.append(outcome.kind) }
         }
@@ -102,7 +114,8 @@ struct MenuActionRunnerTests {
 
         // The next action starts with nothing registered: the first one's work is gone, not run late.
         await MenuActionRunner.perform(
-            .install(device: "iphone", app: "apollo"), services: services(), steps: steps(log), isCancelled: { false }
+            .install(device: "iphone", app: "apollo"), services: services(), steps: steps(log),
+            isCancelled: { false }
         ) { _ in }
         #expect(!log.value.contains("postEmit-from-first"))
     }
@@ -118,30 +131,44 @@ struct MenuActionRunnerTests {
         if let body { try await LedgerStore(paths: paths).update { body(&$0) } }
         if garbage { try Data("{ not json".utf8).write(to: URL(fileURLWithPath: paths.ledger)) }
         let services = Services(
-            runner: FakeRunner { _ in RunResult() }, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow),
+            runner: FakeRunner { _ in RunResult() }, fs: FakeFileSystem.free(gb: 50),
+            clock: FixedClock(testNow),
             keychain: FakeKeychain(), home: paths)
         let log = Log()
         let outcomes = Mutex<[MenuActionOutcome]>([])
-        await MenuActionRunner.perform(action, services: services, steps: steps(log), isCancelled: { false }) { outcome in
+        await MenuActionRunner.perform(
+            action, services: services, steps: steps(log), isCancelled: { false }
+        ) { outcome in
             outcomes.withLock { $0.append(outcome) }
         }
         return (log.value, outcomes.withLock { $0 })
     }
 
-    @Test("the lendable setting reads the ledger again: a lent or pending slot on the device stops it, others do not")
+    @Test(
+        "the lendable setting reads the ledger again: a lent or pending slot on the device stops it, others do not"
+    )
     func lendableGate() async throws {
         let setting = MenuAction.lendable(device: "iphone", app: "apollo")
 
-        let clear = try await lendableRun(setting) { $0.slots = [LedgerSlot(device: "iphone", app: "apollo", presence: .present)] }
-        #expect(clear.log.count == 1 && clear.log[0].hasPrefix("lendable ") && clear.outcomes.map(\.kind) == [.done])
+        let clear = try await lendableRun(setting) {
+            $0.slots = [LedgerSlot(device: "iphone", app: "apollo", presence: .present)]
+        }
+        #expect(
+            clear.log.count == 1 && clear.log[0].hasPrefix("lendable ")
+                && clear.outcomes.map(\.kind) == [.done])
         let empty = try await lendableRun(setting, ledger: nil)
         #expect(empty.log.count == 1 && empty.outcomes.map(\.kind) == [.done])
 
         let lent = try await lendableRun(setting) {
-            $0.slots = [LedgerSlot(device: "iphone", app: "apollo", presence: .absent, lentTo: "lab", since: testNow)]
+            $0.slots = [
+                LedgerSlot(
+                    device: "iphone", app: "apollo", presence: .absent, lentTo: "lab",
+                    since: testNow)
+            ]
         }
         #expect(lent.log.isEmpty)
-        #expect(lent.outcomes.map(\.kind) == [.failed] && lent.outcomes.first?.headline == "Not run")
+        #expect(
+            lent.outcomes.map(\.kind) == [.failed] && lent.outcomes.first?.headline == "Not run")
         #expect(lent.outcomes.first?.issues.first?.message == MenuActions.lentOrChanging("iphone"))
 
         let pending = try await lendableRun(.lendable(device: "iphone", app: nil)) {
@@ -151,26 +178,36 @@ struct MenuActionRunnerTests {
                     op: LedgerSlotOp(kind: .install, by: .install, startedAt: testNow, window: 600))
             ]
         }
-        #expect(pending.log.isEmpty && pending.outcomes.first?.issues.first?.message == MenuActions.lentOrChanging("iphone"))
+        #expect(
+            pending.log.isEmpty
+                && pending.outcomes.first?.issues.first?.message
+                    == MenuActions.lentOrChanging("iphone")
+        )
 
         let stale = try await lendableRun(setting) {
             $0.slots = [
                 LedgerSlot(
                     device: "iphone", app: "apollo", presence: .unknown,
-                    op: LedgerSlotOp(kind: .install, by: .install, startedAt: testNow.addingTimeInterval(-3_600), window: 600))
+                    op: LedgerSlotOp(
+                        kind: .install, by: .install, startedAt: testNow.addingTimeInterval(-3_600),
+                        window: 600))
             ]
         }
         #expect(stale.log.count == 1 && stale.outcomes.map(\.kind) == [.done])
 
         let other = try await lendableRun(setting) {
-            $0.slots = [LedgerSlot(device: "ipad", app: "apollo", presence: .absent, lentTo: "lab", since: testNow)]
+            $0.slots = [
+                LedgerSlot(
+                    device: "ipad", app: "apollo", presence: .absent, lentTo: "lab", since: testNow)
+            ]
         }
         #expect(other.log.count == 1)
     }
 
     @Test("the lendable setting is not written when the ledger cannot be read")
     func lendableUnreadable() async throws {
-        let run = try await lendableRun(.lendable(device: "iphone", app: "apollo"), ledger: nil, garbage: true)
+        let run = try await lendableRun(
+            .lendable(device: "iphone", app: "apollo"), ledger: nil, garbage: true)
         #expect(run.log.isEmpty)
         #expect(run.outcomes.first?.issues.first?.message == MenuActions.ledgerUnreadable)
     }
@@ -185,15 +222,21 @@ struct MenuActionRunnerTests {
             reports.withLock { $0.append(services.interruptReport) }
         }
         for _ in 0..<2 {
-            await MenuActionRunner.perform(.install(device: "iphone", app: "apollo"), services: shared, steps: probe, isCancelled: { false }) { _ in }
+            await MenuActionRunner.perform(
+                .install(device: "iphone", app: "apollo"), services: shared, steps: probe,
+                isCancelled: { false }
+            ) { _ in }
         }
         let posts = seen.withLock { $0 }
         let interrupts = reports.withLock { $0 }
         #expect(posts.count == 2 && posts[0] !== posts[1] && posts[0] !== shared.postEmit)
-        #expect(interrupts.count == 2 && interrupts[0] !== interrupts[1] && interrupts[0] !== shared.interruptReport)
+        #expect(
+            interrupts.count == 2 && interrupts[0] !== interrupts[1]
+                && interrupts[0] !== shared.interruptReport)
     }
 
-    @Test("a task cancelled inside a step makes the failure a Cancelled outcome, by the default flag")
+    @Test(
+        "a task cancelled inside a step makes the failure a Cancelled outcome, by the default flag")
     func taskCancel() async {
         let kinds = Mutex<[MenuActionOutcome.Kind]>([])
         var cancelling = MenuActionSteps()
@@ -202,7 +245,9 @@ struct MenuActionRunnerTests {
             return .fail("refresh", code: "SIGNING_FAILED", message: "killed")
         }
         let task = Task {
-            await MenuActionRunner.perform(.renew(device: "iphone", app: "apollo"), services: services(), steps: cancelling) { outcome in
+            await MenuActionRunner.perform(
+                .renew(device: "iphone", app: "apollo"), services: services(), steps: cancelling
+            ) { outcome in
                 kinds.withLock { $0.append(outcome.kind) }
             }
         }

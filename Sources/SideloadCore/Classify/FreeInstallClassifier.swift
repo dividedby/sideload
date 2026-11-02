@@ -26,28 +26,34 @@ public enum FreeInstallClassifier {
     }
 
     /// Fix texts shared with the canary's table.
-    static let pairFix = "Pair the device with this Mac in Xcode › Window › Devices and Simulators (owner action; agents never pair), then retry."
-    static let trustFix = "On the device: Settings › General › VPN & Device Management › tap the developer under Developer App and trust it, then retry."
+    static let pairFix =
+        "Pair the device with this Mac in Xcode › Window › Devices and Simulators (owner action; agents never pair), then retry."
+    static let trustFix =
+        "On the device: Settings › General › VPN & Device Management › tap the developer under Developer App and trust it, then retry."
 
     /// Nil when the call worked. For an install that means devicectl exited 0 and reported the bundle ID installed;
     /// an exit 0 that did not name it is `INSTALL_UNCONFIRMED`, which a caller may settle with a snapshot.
     public static func failure(
-        _ operation: Operation, exitCode: Int32?, json: JSONValue?, stderr: String, timedOut: Bool, overflow: Bool,
+        _ operation: Operation, exitCode: Int32?, json: JSONValue?, stderr: String, timedOut: Bool,
+        overflow: Bool,
         spawnError: String? = nil, bundleId: String
     ) -> FreeInstallFailure? {
         if spawnError != nil {
             return FreeInstallFailure(
                 code: "TOOL_FAILED", reason: "xcrun devicectl could not be started.",
-                fix: "Check that Xcode is installed (`xcrun devicectl --version`).", deviceCode: nil)
+                fix: "Check that Xcode is installed (`xcrun devicectl --version`).", deviceCode: nil
+            )
         }
         let verdict = InstallClassifier.classify(
             .init(
-                exitCode: exitCode, json: json, stderr: stderr, timedOut: timedOut, overflow: overflow,
+                exitCode: exitCode, json: json, stderr: stderr, timedOut: timedOut,
+                overflow: overflow,
                 guardPassed: true, bundleId: bundleId, freeTeam: true))
         let succeeded: Bool
         switch operation {
         case .install: succeeded = verdict.code == "INSTALLED"
-        case .uninstall, .snapshot: succeeded = exitCode == 0 && !timedOut && !overflow && !reportedFailed(json)
+        case .uninstall, .snapshot:
+            succeeded = exitCode == 0 && !timedOut && !overflow && !reportedFailed(json)
         }
         if succeeded { return nil }
 
@@ -55,15 +61,19 @@ public enum FreeInstallClassifier {
         case "FREE_APP_LIMIT":
             return FreeInstallFailure(
                 code: "FREE_APP_LIMIT", reason: verdict.reason,
-                fix: "The owner frees a slot with `sideload app remove`, or corrects `device slots --reserved` if it is too high.",
+                fix:
+                    "The owner frees a slot with `sideload app remove`, or corrects `device slots --reserved` if it is too high.",
                 deviceCode: nil)
         case "DEVICE_LOCKED":
             return FreeInstallFailure(
-                code: "DEVICE_LOCKED", reason: verdict.reason, fix: "Unlock the device and retry.", deviceCode: nil)
+                code: "DEVICE_LOCKED", reason: verdict.reason, fix: "Unlock the device and retry.",
+                deviceCode: nil)
         case "DEVICE_NOT_CONNECTED":
             return FreeInstallFailure(
                 code: "DEVICE_NOT_CONNECTED", reason: verdict.reason,
-                fix: "Wake the device and connect it by USB or put it on the same Wi-Fi, then retry.", deviceCode: nil)
+                fix:
+                    "Wake the device and connect it by USB or put it on the same Wi-Fi, then retry.",
+                deviceCode: nil)
         case "DEVICE_NOT_PAIRED":
             return FreeInstallFailure(
                 code: "DEVICE_NOT_PAIRED", reason: verdict.reason,
@@ -81,24 +91,31 @@ public enum FreeInstallClassifier {
                 deviceCode: nil)
         case "DISK_FULL":
             return FreeInstallFailure(
-                code: "DISK_FULL", reason: verdict.reason, fix: "Free storage on the device and retry.", deviceCode: nil)
+                code: "DISK_FULL", reason: verdict.reason,
+                fix: "Free storage on the device and retry.", deviceCode: nil)
         case "OUTPUT_LIMIT":
             return FreeInstallFailure(
-                code: "OUTPUT_LIMIT", reason: verdict.reason, fix: "Retry; if it repeats, run devicectl by hand.", deviceCode: nil)
+                code: "OUTPUT_LIMIT", reason: verdict.reason,
+                fix: "Retry; if it repeats, run devicectl by hand.", deviceCode: nil)
         case "INSTALL_UNCONFIRMED":
             return FreeInstallFailure(
-                code: "INSTALL_UNCONFIRMED", reason: "devicectl exited 0 but did not report the app as installed.",
+                code: "INSTALL_UNCONFIRMED",
+                reason: "devicectl exited 0 but did not report the app as installed.",
                 fix: "Run install again; a reinstall is slot-neutral.", deviceCode: nil)
         default:
             let raw = verdict.code.hasPrefix("0x") ? verdict.code : nil
             return FreeInstallFailure(
-                code: operation.failedCode, reason: "devicectl reported a failure it could not classify.",
-                fix: "Run the same command by hand with `xcrun devicectl` to see the reason, or retry.", deviceCode: raw)
+                code: operation.failedCode,
+                reason: "devicectl reported a failure it could not classify.",
+                fix:
+                    "Run the same command by hand with `xcrun devicectl` to see the reason, or retry.",
+                deviceCode: raw)
         }
     }
 
     private static func reportedFailed(_ json: JSONValue?) -> Bool {
-        guard case .object(let top)? = json, case .object(let info)? = top["info"], case .string(let outcome)? = info["outcome"]
+        guard case .object(let top)? = json, case .object(let info)? = top["info"],
+            case .string(let outcome)? = info["outcome"]
         else { return false }
         return outcome == "failed"
     }

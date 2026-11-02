@@ -27,7 +27,9 @@ struct DeviceCardView: View {
             }
             ForEach(Array(device.apps.enumerated()), id: \.element.id) { index, app in
                 if index > 0 { Divider() }
-                AppRowView(app: app, offers: model.offers(for: app, on: device, in: snapshot), model: model)
+                AppRowView(
+                    app: app, offers: model.offers(for: app, on: device, in: snapshot), model: model
+                )
             }
             ForEach(device.reservedSlots, id: \.self) { title in
                 if !device.apps.isEmpty || title != device.reservedSlots.first { Divider() }
@@ -76,7 +78,8 @@ struct RenewMenu: View {
                 let action = MenuAction.renew(device: card.alias, app: item.app)
                 let availability = model.availability(action, in: snapshot)
                 return PanelMenuItem(
-                    title: label(item, availability), enabled: availability.isEnabled, help: availability.reason
+                    title: label(item, availability), enabled: availability.isEnabled,
+                    help: availability.reason
                 ) { model.request(action) }
             }
         )
@@ -85,7 +88,9 @@ struct RenewMenu: View {
     }
 
     private func label(_ item: MenuRenewMenu.Item, _ availability: MenuAvailability) -> String {
-        let base = item.detail.map { "\(item.title)  \($0)" } ?? (item.due ? "\(item.title)  due" : item.title)
+        let base =
+            item.detail.map { "\(item.title)  \($0)" }
+            ?? (item.due ? "\(item.title)  due" : item.title)
         return availability.reason.map { "\(base)  ·  \($0)" } ?? base
     }
 }
@@ -105,7 +110,8 @@ struct AddAppMenu: View {
                     let action = MenuAction.addFetch(device: card.alias, app: option.app)
                     let availability = model.availability(action, in: snapshot)
                     return PanelMenuItem(
-                        title: availability.reason.map { "\(option.name)  ·  \($0)" } ?? option.name,
+                        title: availability.reason.map { "\(option.name)  ·  \($0)" }
+                            ?? option.name,
                         enabled: availability.isEnabled, help: availability.reason
                     ) { model.request(action) }
                 }
@@ -135,7 +141,8 @@ struct LendableLine: View {
                         let action = MenuAction.lendable(device: card.alias, app: app)
                         let availability = model.availability(action, in: snapshot)
                         return PanelMenuItem(
-                            title: app.map(MenuActions.displayName) ?? "None", enabled: availability.isEnabled,
+                            title: app.map(MenuActions.displayName) ?? "None",
+                            enabled: availability.isEnabled,
                             help: availability.reason
                         ) { model.request(action) }
                     },
@@ -156,15 +163,20 @@ struct AutoRenewLine: View {
     var model: MenuModel
 
     var body: some View {
-        let offer = MenuActions.autoRenewOffer(card, snapshot: snapshot, now: model.services.clock.now())
+        let offer = MenuActions.autoRenewOffer(
+            card, snapshot: snapshot, now: model.services.clock.now())
         let availability = model.availability(offer.action, in: snapshot)
         HStack {
-            Text("Auto-renew: \(card.autoRenew ? "on" : "off")").font(.callout).foregroundStyle(.secondary)
+            Text("Auto-renew: \(card.autoRenew ? "on" : "off")").font(.callout).foregroundStyle(
+                .secondary)
             Spacer()
             PanelMenu(
                 label: .title("Change…"),
                 items: [
-                    PanelMenuItem(title: offer.label, enabled: availability.isEnabled, help: availability.reason) {
+                    PanelMenuItem(
+                        title: offer.label, enabled: availability.isEnabled,
+                        help: availability.reason
+                    ) {
                         model.request(offer.action)
                     }
                 ],
@@ -195,7 +207,8 @@ struct AppRowView: View {
                         label: .symbol("ellipsis.circle", accessibility: "Actions for \(app.name)"),
                         items: others.map { offer in
                             PanelMenuItem(
-                                title: offer.label, enabled: offer.availability.isEnabled, help: offer.availability.reason,
+                                title: offer.label, enabled: offer.availability.isEnabled,
+                                help: offer.availability.reason,
                                 destructive: offer.destructive
                             ) { model.request(offer.action) }
                         }

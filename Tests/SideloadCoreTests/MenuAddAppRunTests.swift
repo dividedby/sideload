@@ -14,12 +14,15 @@ private let profileUuid = "0F0F0F0F-1111-2222-3333-444444444444"
 
 private func freeProfile(days: Double, uuid: String = profileUuid) -> LedgerFreeProfile {
     LedgerFreeProfile(
-        id: "iphone/apollo", device: "iphone", deviceTail: "…0001", app: "apollo", bundleId: menuBundleId("apollo"),
+        id: "iphone/apollo", device: "iphone", deviceTail: "…0001", app: "apollo",
+        bundleId: menuBundleId("apollo"),
         profileUuid: uuid, created: nil, expires: daysFromNow(days), certFp8: "12345678",
         file: "profiles/free/apollo/iphone/\(uuid).mobileprovision")
 }
 
-private func signedBuild(version: String = "3.9.0", prefix: String = String(addSha.prefix(8)), uuid: String = profileUuid)
+private func signedBuild(
+    version: String = "3.9.0", prefix: String = String(addSha.prefix(8)), uuid: String = profileUuid
+)
     -> LedgerFreeSigned
 {
     var signed = menuSigned("iphone", "apollo", days: 6, uuid: uuid)
@@ -45,14 +48,19 @@ private func steps(_ log: Calls, _ script: Script = Script()) -> MenuActionSteps
     let provisions = Mutex(0)
     steps.fetch = { _, options in
         let name = options.approve ? "approve" : "fetch"
-        log.add(options.approve ? "approve \(options.app ?? "") \(options.version ?? "")" : "fetch \(options.app ?? "")")
+        log.add(
+            options.approve
+                ? "approve \(options.app ?? "") \(options.version ?? "")"
+                : "fetch \(options.app ?? "")")
         script.onStep(name)
         if let failure = script.fail[name] { return failure }
         return Envelope(
             ok: true, command: "fetch",
             data: [
-                "version": "3.9.0", "build": "142", "sha256": .string(script.approveSha), "size": 45_200_000, "minOS": nil,
-                "inspectMinOS": "16.0", "alreadyApproved": .bool(script.alreadyApproved), "inspect": ["extensionCount": 2],
+                "version": "3.9.0", "build": "142", "sha256": .string(script.approveSha),
+                "size": 45_200_000, "minOS": nil,
+                "inspectMinOS": "16.0", "alreadyApproved": .bool(script.alreadyApproved),
+                "inspect": ["extensionCount": 2],
             ])
     }
     steps.provision = { services, options in
@@ -64,23 +72,29 @@ private func steps(_ log: Calls, _ script: Script = Script()) -> MenuActionSteps
             return value
         }
         if n <= script.notRenewed {
-            return .fail("provision", code: "PROFILE_NOT_RENEWED", message: "Xcode reused the profile.", fix: "Wait.")
+            return .fail(
+                "provision", code: "PROFILE_NOT_RENEWED", message: "Xcode reused the profile.",
+                fix: "Wait.")
         }
         try? await services.ledgerStore.update { $0.freeProfiles = [freeProfile(days: 7)] }
         return Envelope(ok: true, command: "provision", data: ["appIdNew": true])
     }
     steps.sign = { services, options in
-        log.add("sign \(options.app ?? "") \(options.device ?? "") yes=\(options.yes) version=\(options.version ?? "nil")")
+        log.add(
+            "sign \(options.app ?? "") \(options.device ?? "") yes=\(options.yes) version=\(options.version ?? "nil")"
+        )
         script.onStep("sign")
         if let failure = script.fail["sign"] { return failure }
         try? await services.ledgerStore.update { $0.freeSigned = [script.signs] }
-        return Envelope(ok: true, command: "sign", data: ["version": .string(options.version ?? "")])
+        return Envelope(
+            ok: true, command: "sign", data: ["version": .string(options.version ?? "")])
     }
     steps.install = { _, options in
         log.add("install \(options)")
         script.onStep("install")
         if let failure = script.fail["install"] { return failure }
-        return Envelope(ok: true, command: "install", data: ["warnings": [["code": "W", "message": "A note."]]])
+        return Envelope(
+            ok: true, command: "install", data: ["warnings": [["code": "W", "message": "A note."]]])
     }
     return steps
 }
@@ -92,7 +106,8 @@ private struct RunResult2 {
 
 /// A home with a manifest (Apollo 3.9.0 at `addSha`, unless `entry` says otherwise) and the ledger `body` shapes.
 private func run(
-    _ action: MenuAction, script: Script = Script(), manifestSha: String? = addSha, ledger body: ((inout Ledger) -> Void)? = nil,
+    _ action: MenuAction, script: Script = Script(), manifestSha: String? = addSha,
+    ledger body: ((inout Ledger) -> Void)? = nil,
     isCancelled: @escaping @Sendable () -> Bool = { false }
 ) async throws -> RunResult2 {
     let dir = try makeTempDir()
@@ -103,18 +118,22 @@ private func run(
         var manifest = Manifest()
         manifest.entries = [
             ManifestEntry(
-                app: "apollo", version: "3.9.0", file: "apollo/3.9.0/Apollo.ipa", urlHost: "github.com", sha256: manifestSha,
+                app: "apollo", version: "3.9.0", file: "apollo/3.9.0/Apollo.ipa",
+                urlHost: "github.com", sha256: manifestSha,
                 upstreamDigest: manifestSha, size: 45_200_000, fetchedAt: testNow, approved: false)
         ]
         try ManifestStore(paths: paths).save(manifest)
     }
     if let body { try await LedgerStore(paths: paths).update { body(&$0) } }
     let services = Services(
-        runner: FakeRunner { _ in RunResult() }, fs: FakeFileSystem.free(gb: 50), clock: FixedClock(testNow), keychain: FakeKeychain(),
+        runner: FakeRunner { _ in RunResult() }, fs: FakeFileSystem.free(gb: 50),
+        clock: FixedClock(testNow), keychain: FakeKeychain(),
         home: paths)
     let log = Calls()
     let outcomes = Mutex<[MenuActionOutcome]>([])
-    await MenuActionRunner.perform(action, services: services, steps: steps(log, script), isCancelled: isCancelled) { outcome in
+    await MenuActionRunner.perform(
+        action, services: services, steps: steps(log, script), isCancelled: isCancelled
+    ) { outcome in
         outcomes.withLock { $0.append(outcome) }
     }
     return RunResult2(calls: log.value, outcomes: outcomes.withLock { $0 })
@@ -122,41 +141,61 @@ private func run(
 
 private let approve = MenuAction.addApprove(device: "iphone", app: "apollo", fetched: addFetched)
 
-private func busy() -> Envelope { .fail("x", code: "OPERATION_IN_PROGRESS", message: "Another run holds the lock.") }
+private func busy() -> Envelope {
+    .fail("x", code: "OPERATION_IN_PROGRESS", message: "Another run holds the lock.")
+}
 
-private let provisionCall = "provision \(ProvisionOptions(app: "apollo", device: "iphone", yes: true))"
+private let provisionCall =
+    "provision \(ProvisionOptions(app: "apollo", device: "iphone", yes: true))"
 private let installCall = "install \(InstallOptions(app: "apollo", device: "iphone", yes: true))"
-private let renewCall = "provision \(ProvisionOptions(app: "apollo", device: "iphone", renew: true, yes: true))"
+private let renewCall =
+    "provision \(ProvisionOptions(app: "apollo", device: "iphone", renew: true, yes: true))"
 private let signCall = "sign apollo iphone yes=true version=3.9.0"
 
 @Suite("menu add app: the run")
 struct MenuAddRunTests {
-    @Test("stage 1 runs fetch alone: no approval, no other command, and hands on to the approval confirm")
+    @Test(
+        "stage 1 runs fetch alone: no approval, no other command, and hands on to the approval confirm"
+    )
     func fetchStage() async throws {
         let ran = try await run(.addFetch(device: "iphone", app: "apollo"), manifestSha: nil)
         #expect(ran.calls == ["fetch apollo"])
         #expect(ran.outcomes.count == 1 && ran.outcomes[0].kind == .done)
-        #expect(ran.outcomes[0].proceed == .addApprove(device: "iphone", app: "apollo", fetched: addFetched))
+        #expect(
+            ran.outcomes[0].proceed
+                == .addApprove(device: "iphone", app: "apollo", fetched: addFetched))
     }
 
-    @Test("stage 2 runs approve, provision, sign, install in order, each with exactly its options and the owner's --yes")
+    @Test(
+        "stage 2 runs approve, provision, sign, install in order, each with exactly its options and the owner's --yes"
+    )
     func order() async throws {
         let ran = try await run(approve)
         #expect(ran.calls == ["approve apollo 3.9.0", provisionCall, signCall, installCall])
         let outcome = try #require(ran.outcomes.first)
-        #expect(ran.outcomes.count == 1 && outcome.kind == .done && outcome.headline == "Added Apollo 3.9.0 to iphone")
-        #expect(outcome.lines.map(\.text) == ["Approved", "Profile ready · new App ID", "Signed", "Installed"])
+        #expect(
+            ran.outcomes.count == 1 && outcome.kind == .done
+                && outcome.headline == "Added Apollo 3.9.0 to iphone")
+        #expect(
+            outcome.lines.map(\.text) == [
+                "Approved", "Profile ready · new App ID", "Signed", "Installed",
+            ])
         #expect(outcome.notes == ["A note."] && outcome.proceed == nil)
     }
 
-    @Test("a profile with 6 days or more left is not provisioned again; a signed build for this version and profile is not signed again")
+    @Test(
+        "a profile with 6 days or more left is not provisioned again; a signed build for this version and profile is not signed again"
+    )
     func resume() async throws {
         let done = try await run(approve) {
             $0.freeProfiles = [freeProfile(days: 6.5)]
             $0.freeSigned = [signedBuild()]
         }
         #expect(done.calls == ["approve apollo 3.9.0", installCall])
-        #expect(done.outcomes[0].lines.map(\.text) == ["Approved", "Profile still fresh", "Signed build is current", "Installed"])
+        #expect(
+            done.outcomes[0].lines.map(\.text) == [
+                "Approved", "Profile still fresh", "Signed build is current", "Installed",
+            ])
 
         // 5.9 days is inside the renewal window: provisioned again.
         let near = try await run(approve) {
@@ -174,7 +213,9 @@ struct MenuAddRunTests {
                 $0.freeProfiles = [freeProfile(days: 6.5)]
                 $0.freeSigned = [stale]
             }
-            #expect(again.calls == ["approve apollo 3.9.0", signCall, installCall], "\(stale.version) \(stale.sha256Prefix)")
+            #expect(
+                again.calls == ["approve apollo 3.9.0", signCall, installCall],
+                "\(stale.version) \(stale.sha256Prefix)")
         }
     }
 
@@ -184,12 +225,16 @@ struct MenuAddRunTests {
         #expect(ran.calls.contains("sign apollo iphone yes=true version=3.9.0"))
     }
 
-    @Test("the manifest is read again before anything is approved: another file, no entry or no manifest is not run")
+    @Test(
+        "the manifest is read again before anything is approved: another file, no entry or no manifest is not run"
+    )
     func hashGate() async throws {
         for sha in [String(repeating: "cd", count: 32), nil] {
             let ran = try await run(approve, manifestSha: sha)
             #expect(ran.calls.isEmpty, "\(sha ?? "no manifest")")
-            #expect(ran.outcomes.count == 1 && ran.outcomes[0].headline == "Not run" && ran.outcomes[0].kind == .failed)
+            #expect(
+                ran.outcomes.count == 1 && ran.outcomes[0].headline == "Not run"
+                    && ran.outcomes[0].kind == .failed)
         }
         // The same file runs; the approval that comes back must be for the same bytes too.
         var script = Script()
@@ -207,16 +252,23 @@ struct MenuAddRunTests {
             script.onStep = { name in if name == stopAfter { flag.withLock { $0 = true } } }
             let ran = try await run(approve, script: script, isCancelled: { flag.withLock { $0 } })
             let all = ["approve", "provision", "sign", "install"]
-            #expect(ran.calls.count == all.firstIndex(of: stopAfter)! + 1, "after \(stopAfter): \(ran.calls)")
-            #expect(ran.outcomes.count == 1 && ran.outcomes[0].kind == .cancelled && ran.outcomes[0].headline == "Cancelled")
+            #expect(
+                ran.calls.count == all.firstIndex(of: stopAfter)! + 1,
+                "after \(stopAfter): \(ran.calls)")
+            #expect(
+                ran.outcomes.count == 1 && ran.outcomes[0].kind == .cancelled
+                    && ran.outcomes[0].headline == "Cancelled")
             #expect(ran.outcomes[0].lines.allSatisfy { $0.tone == .good })
             #expect(ran.outcomes[0].lines.count == all.firstIndex(of: stopAfter)! + 1)
             // Install never started, so the device cannot have changed.
-            #expect(!ran.outcomes[0].notes.contains(MenuActionOutcome.deviceNote), "after \(stopAfter)")
+            #expect(
+                !ran.outcomes[0].notes.contains(MenuActionOutcome.deviceNote), "after \(stopAfter)")
         }
     }
 
-    @Test("a cancel during install is cancelled with the device note, and the finished steps are kept")
+    @Test(
+        "a cancel during install is cancelled with the device note, and the finished steps are kept"
+    )
     func cancelInInstall() async throws {
         // The owner's Cancel arrives while the install runs.
         let flag = Mutex(false)
@@ -226,16 +278,22 @@ struct MenuAddRunTests {
         let ran = try await run(approve, script: script, isCancelled: { flag.withLock { $0 } })
         let outcome = try #require(ran.outcomes.first)
         #expect(outcome.kind == .cancelled)
-        #expect(outcome.notes.contains(MenuActionOutcome.deviceNote) && outcome.notes.contains(MenuActionOutcome.addKeptNote))
+        #expect(
+            outcome.notes.contains(MenuActionOutcome.deviceNote)
+                && outcome.notes.contains(MenuActionOutcome.addKeptNote))
     }
 
-    @Test("a busy lock never waits: before the approval it is the plain busy card, later it is a stop with what is done")
+    @Test(
+        "a busy lock never waits: before the approval it is the plain busy card, later it is a stop with what is done"
+    )
     func busyEach() async throws {
         var script = Script()
         script.fail["approve"] = busy()
         let first = try await run(approve, script: script)
         #expect(first.calls == ["approve apollo 3.9.0"])
-        #expect(first.outcomes[0].kind == .busy && first.outcomes[0].headline == MenuActionOutcome.busyHeadline)
+        #expect(
+            first.outcomes[0].kind == .busy
+                && first.outcomes[0].headline == MenuActionOutcome.busyHeadline)
         #expect(first.outcomes[0].lines.first?.retry == approve)
 
         for step in ["provision", "sign", "install"] {
@@ -243,8 +301,11 @@ struct MenuAddRunTests {
             script.fail[step] = busy()
             let ran = try await run(approve, script: script)
             let outcome = try #require(ran.outcomes.first)
-            #expect(outcome.kind == .failed && outcome.headline == "Add stopped at \(step)", "\(step)")
-            #expect(outcome.lines.last?.issue?.code == "OPERATION_IN_PROGRESS" && outcome.lines.last?.retry != nil)
+            #expect(
+                outcome.kind == .failed && outcome.headline == "Add stopped at \(step)", "\(step)")
+            #expect(
+                outcome.lines.last?.issue?.code == "OPERATION_IN_PROGRESS"
+                    && outcome.lines.last?.retry != nil)
             #expect(outcome.notes.contains(MenuActionOutcome.addKeptNote))
             // Later steps did not run.
             let order = ["approve", "provision", "sign", "install"]
@@ -261,10 +322,13 @@ struct MenuAddRunTests {
         }
     }
 
-    @Test("a failure past sign offers Install as its Retry, and Install is available for the row it leaves")
+    @Test(
+        "a failure past sign offers Install as its Retry, and Install is available for the row it leaves"
+    )
     func retryPastSign() async throws {
         var script = Script()
-        script.fail["install"] = .fail("install", code: "DEVICE_LOCKED", message: "Locked.", fix: "Unlock it.")
+        script.fail["install"] = .fail(
+            "install", code: "DEVICE_LOCKED", message: "Locked.", fix: "Unlock it.")
         let ran = try await run(approve, script: script)
         let retry = try #require(ran.outcomes[0].lines.last?.retry)
         #expect(retry == .install(device: "iphone", app: "apollo"))
@@ -272,7 +336,9 @@ struct MenuAddRunTests {
         var ledger = Ledger()
         ledger.freeSigned = [menuSigned("iphone", "apollo", days: 6)]
         let snapshot = addBuild(ledger: ledger)
-        #expect(MenuActions.availability(approve, in: snapshot, now: testNow).reason == "Signed · not installed: use Install")
+        #expect(
+            MenuActions.availability(approve, in: snapshot, now: testNow).reason
+                == "Signed · not installed: use Install")
         #expect(MenuActions.availability(retry, in: snapshot, now: testNow) == .enabled)
 
         // Before sign the retry is Add app again.
@@ -280,17 +346,22 @@ struct MenuAddRunTests {
         early.fail["sign"] = .fail("sign", code: "SIGNING_FAILED", message: "No.", fix: "Fix.")
         let before = try await run(approve, script: early)
         guard case .addApprove? = before.outcomes[0].lines.last?.retry else {
-            Issue.record("expected Add app again, got \(String(describing: before.outcomes[0].lines.last?.retry))")
+            Issue.record(
+                "expected Add app again, got \(String(describing: before.outcomes[0].lines.last?.retry))"
+            )
             return
         }
     }
 
-    @Test("PROFILE_NOT_RENEWED is retried once with renew, like refresh; anything else, or a second one, stops")
+    @Test(
+        "PROFILE_NOT_RENEWED is retried once with renew, like refresh; anything else, or a second one, stops"
+    )
     func profileNotRenewed() async throws {
         var once = Script()
         once.notRenewed = 1
         let ok = try await run(approve, script: once)
-        #expect(ok.calls == ["approve apollo 3.9.0", provisionCall, renewCall, signCall, installCall])
+        #expect(
+            ok.calls == ["approve apollo 3.9.0", provisionCall, renewCall, signCall, installCall])
         #expect(ok.outcomes[0].kind == .done)
 
         var twice = Script()
@@ -301,7 +372,8 @@ struct MenuAddRunTests {
         #expect(stuck.outcomes[0].lines.last?.issue?.code == "PROFILE_NOT_RENEWED")
 
         var other = Script()
-        other.fail["provision"] = .fail("provision", code: "FREE_APP_ID_LIMIT", message: "Limit.", fix: "Wait.")
+        other.fail["provision"] = .fail(
+            "provision", code: "FREE_APP_ID_LIMIT", message: "Limit.", fix: "Wait.")
         let limit = try await run(approve, script: other)
         #expect(limit.calls == ["approve apollo 3.9.0", provisionCall])
     }
@@ -312,7 +384,9 @@ struct MenuAddRunTests {
         script.signs = signedBuild(version: "4.0.0")
         let ran = try await run(approve, script: script)
         #expect(ran.calls == ["approve apollo 3.9.0", provisionCall, signCall])
-        #expect(ran.outcomes[0].kind == .failed && ran.outcomes[0].lines.last?.issue?.code == "SIGNED_BUILD_MISMATCH")
+        #expect(
+            ran.outcomes[0].kind == .failed
+                && ran.outcomes[0].lines.last?.issue?.code == "SIGNED_BUILD_MISMATCH")
         // Neither Add app (off for a signed row) nor Install (it would install that build) is offered.
         #expect(ran.outcomes[0].lines.allSatisfy { $0.retry == nil })
 
@@ -325,13 +399,22 @@ struct MenuAddRunTests {
     @Test("a failed step stops the run with its code, message and fix; a later step is not tried")
     func failure() async throws {
         var script = Script()
-        script.fail["sign"] = .fail("sign", code: "DEVICE_OS_TOO_OLD", message: "Apollo needs OS 17.", fix: "Update the device.")
+        script.fail["sign"] = .fail(
+            "sign", code: "DEVICE_OS_TOO_OLD", message: "Apollo needs OS 17.",
+            fix: "Update the device.")
         let ran = try await run(approve, script: script)
         #expect(ran.calls == ["approve apollo 3.9.0", provisionCall, signCall])
         let outcome = try #require(ran.outcomes.first)
         #expect(outcome.kind == .failed && outcome.headline == "Add stopped at sign")
-        #expect(outcome.lines.map(\.text) == ["Approved", "Profile ready · new App ID", "Failed · DEVICE_OS_TOO_OLD"])
-        #expect(outcome.lines.last?.issue == MenuIssue(code: "DEVICE_OS_TOO_OLD", message: "Apollo needs OS 17.", fix: "Update the device."))
+        #expect(
+            outcome.lines.map(\.text) == [
+                "Approved", "Profile ready · new App ID", "Failed · DEVICE_OS_TOO_OLD",
+            ])
+        #expect(
+            outcome.lines.last?.issue
+                == MenuIssue(
+                    code: "DEVICE_OS_TOO_OLD", message: "Apollo needs OS 17.",
+                    fix: "Update the device."))
     }
 
     @Test("an approval that was given before is reported as such")
@@ -346,10 +429,13 @@ struct MenuAddRunTests {
     func redacted() async throws {
         let udid = savedUdid("1")
         var script = Script()
-        script.fail["install"] = .fail("install", code: "X", message: "device \(udid) failed", fix: "see \(udid)")
+        script.fail["install"] = .fail(
+            "install", code: "X", message: "device \(udid) failed", fix: "see \(udid)")
         let ran = try await run(approve, script: script)
         let outcome = try #require(ran.outcomes.first)
-        let text = (outcome.issues.map { $0.message + ($0.fix ?? "") } + outcome.lines.flatMap { [$0.text, $0.issue?.message ?? "", $0.issue?.fix ?? ""] })
+        let text =
+            (outcome.issues.map { $0.message + ($0.fix ?? "") }
+            + outcome.lines.flatMap { [$0.text, $0.issue?.message ?? "", $0.issue?.fix ?? ""] })
             .joined()
         #expect(!text.contains(udid))
     }
@@ -361,18 +447,26 @@ struct MenuAddFetchOutcomeTests {
 
     private func ok(_ extra: [String: JSONValue] = [:]) -> Envelope {
         var data: [String: JSONValue] = [
-            "version": "3.9.0", "build": "142", "sha256": .string(addSha), "size": 45_200_000, "minOS": "15.0",
+            "version": "3.9.0", "build": "142", "sha256": .string(addSha), "size": 45_200_000,
+            "minOS": "15.0",
             "inspectMinOS": "16.0", "alreadyApproved": false, "inspect": ["extensionCount": 2],
         ]
         data.merge(extra) { _, new in new }
         return Envelope(ok: true, command: "fetch", data: data)
     }
 
-    @Test("a fetched version carries its facts to the approval confirm; the stricter minimum OS wins")
+    @Test(
+        "a fetched version carries its facts to the approval confirm; the stricter minimum OS wins")
     func facts() {
         let outcome = MenuActionOutcome(action: fetch, envelope: ok(), cancelled: false)
-        #expect(outcome.kind == .done && outcome.proceed == .addApprove(device: "iphone", app: "apollo", fetched: addFetched))
-        let earlier = MenuActionOutcome(action: fetch, envelope: ok(["alreadyApproved": true, "minOS": "17.0"]), cancelled: false)
+        #expect(
+            outcome.kind == .done
+                && outcome.proceed
+                    == .addApprove(device: "iphone", app: "apollo", fetched: addFetched)
+        )
+        let earlier = MenuActionOutcome(
+            action: fetch, envelope: ok(["alreadyApproved": true, "minOS": "17.0"]),
+            cancelled: false)
         guard case .addApprove(_, _, let fetched)? = earlier.proceed else {
             Issue.record("expected the approval")
             return
@@ -380,7 +474,9 @@ struct MenuAddFetchOutcomeTests {
         #expect(fetched.alreadyApproved && fetched.minOS == "17.0")
     }
 
-    @Test("a Cancel that came too late opens no approval; a failure or a busy lock is a card with a Retry of the fetch")
+    @Test(
+        "a Cancel that came too late opens no approval; a failure or a busy lock is a card with a Retry of the fetch"
+    )
     func endings() {
         let late = MenuActionOutcome(action: fetch, envelope: ok(), cancelled: true)
         #expect(late.proceed == nil && late.kind == .done)
@@ -389,38 +485,56 @@ struct MenuAddFetchOutcomeTests {
         #expect(late.notes == ["Choose Add app again to approve and install."])
 
         let failed = MenuActionOutcome(
-            action: fetch, envelope: .fail("fetch", code: "DIGEST_MISMATCH", message: "Wrong file.", fix: "Retry."), cancelled: false)
-        #expect(failed.kind == .failed && failed.headline == "Fetch failed" && failed.proceed == nil)
-        #expect(failed.issues.map(\.code) == ["DIGEST_MISMATCH"] && failed.lines.first?.retry == fetch)
+            action: fetch,
+            envelope: .fail(
+                "fetch", code: "DIGEST_MISMATCH", message: "Wrong file.", fix: "Retry."),
+            cancelled: false)
+        #expect(
+            failed.kind == .failed && failed.headline == "Fetch failed" && failed.proceed == nil)
+        #expect(
+            failed.issues.map(\.code) == ["DIGEST_MISMATCH"] && failed.lines.first?.retry == fetch)
 
         let held = MenuActionOutcome(action: fetch, envelope: busy(), cancelled: false)
         #expect(held.kind == .busy && held.lines.first?.retry == fetch && held.proceed == nil)
 
         let cancelled = MenuActionOutcome(
-            action: fetch, envelope: .fail("fetch", code: "CANCELLED", message: "fetch was interrupted."), cancelled: true)
-        #expect(cancelled.kind == .cancelled && cancelled.notes == ["Nothing was signed or installed."] && cancelled.proceed == nil)
+            action: fetch,
+            envelope: .fail("fetch", code: "CANCELLED", message: "fetch was interrupted."),
+            cancelled: true)
+        #expect(
+            cancelled.kind == .cancelled && cancelled.notes == ["Nothing was signed or installed."]
+                && cancelled.proceed == nil)
     }
 
     @Test("an envelope without the version it stored is a failure, never a blank approval")
     func incomplete() {
         let outcome = MenuActionOutcome(
-            action: fetch, envelope: Envelope(ok: true, command: "fetch", data: ["sha256": .string(addSha)]), cancelled: false)
+            action: fetch,
+            envelope: Envelope(ok: true, command: "fetch", data: ["sha256": .string(addSha)]),
+            cancelled: false)
         #expect(outcome.kind == .failed && outcome.proceed == nil)
     }
 }
 
 private func notRegistered() -> Envelope {
     .fail(
-        "provision", code: ProvisionClassifier.deviceNotRegistered, message: "The device is not registered with the free team.",
-        fix: "The owner registers it once: sideload provision --app <app> --device <alias> --register-device --yes.")
+        "provision", code: ProvisionClassifier.deviceNotRegistered,
+        message: "The device is not registered with the free team.",
+        fix:
+            "The owner registers it once: sideload provision --app <app> --device <alias> --register-device --yes."
+    )
 }
 
-private let registerAction = MenuAction.addRegister(device: "iphone", app: "apollo", fetched: addFetched)
-private let registerCall = "provision \(ProvisionOptions(app: "apollo", device: "iphone", registerDevice: true, yes: true))"
+private let registerAction = MenuAction.addRegister(
+    device: "iphone", app: "apollo", fetched: addFetched)
+private let registerCall =
+    "provision \(ProvisionOptions(app: "apollo", device: "iphone", registerDevice: true, yes: true))"
 
 @Suite("menu add app: registering the device")
 struct MenuAddRegisterTests {
-    @Test("Add app never registers by itself: a not-registered device stops at provision and offers Register and retry…")
+    @Test(
+        "Add app never registers by itself: a not-registered device stops at provision and offers Register and retry…"
+    )
     func offers() async throws {
         let ran = try await run(approve, script: Script(fail: ["provision": notRegistered()]))
         #expect(ran.calls == ["approve apollo 3.9.0", provisionCall])
@@ -432,24 +546,35 @@ struct MenuAddRegisterTests {
         #expect(line.retry == .addRegister(device: "iphone", app: "apollo", fetched: approved))
         #expect(line.retryLabel == "Register and retry…")
         // The menu's own button replaces the CLI command.
-        #expect(line.issue?.fix == MenuActionOutcome.registerFix && line.issue?.code == "DEVICE_NOT_REGISTERED")
+        #expect(
+            line.issue?.fix == MenuActionOutcome.registerFix
+                && line.issue?.code == "DEVICE_NOT_REGISTERED")
     }
 
-    @Test("the confirmed retry passes --register-device, on its one renewal retry too, and carries on to install")
+    @Test(
+        "the confirmed retry passes --register-device, on its one renewal retry too, and carries on to install"
+    )
     func registers() async throws {
         let ran = try await run(registerAction)
         #expect(ran.calls == ["approve apollo 3.9.0", registerCall, signCall, installCall])
-        #expect(ran.outcomes[0].kind == .done && ran.outcomes[0].headline == "Added Apollo 3.9.0 to iphone")
+        #expect(
+            ran.outcomes[0].kind == .done
+                && ran.outcomes[0].headline == "Added Apollo 3.9.0 to iphone")
 
         let retried = try await run(registerAction, script: Script(notRenewed: 1))
-        let renewRegister = "provision \(ProvisionOptions(app: "apollo", device: "iphone", registerDevice: true, renew: true, yes: true))"
-        #expect(retried.calls.filter { $0.hasPrefix("provision") } == [registerCall, renewRegister])
+        let renewRegister =
+            "provision \(ProvisionOptions(app: "apollo", device: "iphone", registerDevice: true, renew: true, yes: true))"
+        #expect(
+            retried.calls.filter { $0.hasPrefix("provision") } == [registerCall, renewRegister])
     }
 
-    @Test("still not registered after asking: the retry is the same confirm, with the classifier's own fix")
+    @Test(
+        "still not registered after asking: the retry is the same confirm, with the classifier's own fix"
+    )
     func stillRefused() async throws {
         let refused = Envelope.fail(
-            "provision", code: ProvisionClassifier.deviceNotRegistered, message: "Refused.", fix: "Connect the device, unlock it and retry.")
+            "provision", code: ProvisionClassifier.deviceNotRegistered, message: "Refused.",
+            fix: "Connect the device, unlock it and retry.")
         let ran = try await run(registerAction, script: Script(fail: ["provision": refused]))
         let line = try #require(ran.outcomes[0].lines.first { $0.app == "provision" })
         var approved = addFetched
@@ -458,7 +583,9 @@ struct MenuAddRegisterTests {
         #expect(line.issue?.fix == "Connect the device, unlock it and retry.")
     }
 
-    @Test("registered, then sign fails: the retry is Add app's plain one and does not ask to register again")
+    @Test(
+        "registered, then sign fails: the retry is Add app's plain one and does not ask to register again"
+    )
     func registeredThenSignFails() async throws {
         let failed = Envelope.fail("sign", code: "SIGN_FAILED", message: "No.", fix: "Retry.")
         let ran = try await run(registerAction, script: Script(fail: ["sign": failed]))
@@ -466,12 +593,17 @@ struct MenuAddRegisterTests {
         let line = try #require(ran.outcomes[0].lines.first { $0.app == "sign" })
         var approved = addFetched
         approved.alreadyApproved = true
-        #expect(line.retry == .addApprove(device: "iphone", app: "apollo", fetched: approved) && line.retryLabel == "Retry")
+        #expect(
+            line.retry == .addApprove(device: "iphone", app: "apollo", fetched: approved)
+                && line.retryLabel == "Retry")
     }
 
-    @Test("Add app's other provision failures, and an Update or a Reinstall refused the same way, never offer to register")
+    @Test(
+        "Add app's other provision failures, and an Update or a Reinstall refused the same way, never offer to register"
+    )
     func onlyAddApp() async throws {
-        let locked = Envelope.fail("provision", code: "DEVICE_LOCKED", message: "Locked.", fix: "Unlock it.")
+        let locked = Envelope.fail(
+            "provision", code: "DEVICE_LOCKED", message: "Locked.", fix: "Unlock it.")
         let other = try await run(approve, script: Script(fail: ["provision": locked]))
         let otherLine = try #require(other.outcomes[0].lines.first { $0.app == "provision" })
         #expect(otherLine.retryLabel == "Retry")
@@ -482,25 +614,37 @@ struct MenuAddRegisterTests {
             script: Script(fail: ["provision": notRegistered()]))
         #expect(update.calls.filter { $0.hasPrefix("provision") } == [provisionCall])
         let updateLine = try #require(update.outcomes[0].lines.first { $0.app == "provision" })
-        #expect(updateLine.retryLabel == "Retry" && updateLine.issue?.fix?.contains("--register-device") == true)
+        #expect(
+            updateLine.retryLabel == "Retry"
+                && updateLine.issue?.fix?.contains("--register-device") == true)
 
         // Reinstall needs a stored, approved file to get as far as `provision`, so its result is read directly.
         let reinstall = MenuAction.reinstallPrevious(
-            device: "iphone", app: "apollo", from: "3.10.0", to: MenuPrevious(version: "3.9.0", sha256: addSha, size: 1))
+            device: "iphone", app: "apollo", from: "3.10.0",
+            to: MenuPrevious(version: "3.9.0", sha256: addSha, size: 1))
         let failed = Envelope(
-            ok: false, command: "reinstall", data: ["steps": [["step": "provision", "status": "failed"]]],
+            ok: false, command: "reinstall",
+            data: ["steps": [["step": "provision", "status": "failed"]]],
             errors: notRegistered().errors)
-        let reinstallLine = try #require(MenuActionOutcome(action: reinstall, envelope: failed, cancelled: false).lines.first { $0.app == "provision" })
+        let reinstallLine = try #require(
+            MenuActionOutcome(action: reinstall, envelope: failed, cancelled: false).lines.first {
+                $0.app == "provision"
+            })
         #expect(reinstallLine.retry == reinstall && reinstallLine.retryLabel == "Retry")
     }
 
-    @Test("the confirm says plainly that it registers the device on the free team, and is otherwise Add app's")
+    @Test(
+        "the confirm says plainly that it registers the device on the free team, and is otherwise Add app's"
+    )
     func prompt() throws {
         let snapshot = addBuild()
-        let prompt = try #require(MenuActions.prompt(for: registerAction, in: snapshot, now: testNow))
+        let prompt = try #require(
+            MenuActions.prompt(for: registerAction, in: snapshot, now: testNow))
         #expect(prompt.title == "Register iphone and install Apollo 3.9.0")
         #expect(prompt.confirmLabel == "Register and install" && !prompt.destructive)
-        #expect(prompt.lines.contains("Registers iphone on your free Apple team; sideload can't remove it"))
+        #expect(
+            prompt.lines.contains(
+                "Registers iphone on your free Apple team; sideload can't remove it"))
         #expect(prompt.lines.contains("SHA-256 \(addSha)") && prompt.monospacedLines == [1])
         #expect(prompt.lines[1] == "SHA-256 \(addSha)")
 
@@ -508,7 +652,11 @@ struct MenuAddRegisterTests {
         #expect(!plain.lines.joined().contains("Registers"))
         #expect(MenuActions.availability(registerAction, in: snapshot, now: testNow) == .enabled)
         // It stops for what Add app stops for.
-        let suspended = addBuild(ledger: Ledger(freeSuspended: LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow)))
-        #expect(MenuActions.availability(registerAction, in: suspended, now: testNow).reason == "Free certificate changed")
+        let suspended = addBuild(
+            ledger: Ledger(
+                freeSuspended: LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow)))
+        #expect(
+            MenuActions.availability(registerAction, in: suspended, now: testNow).reason
+                == "Free certificate changed")
     }
 }

@@ -18,7 +18,8 @@ enum SlotRestore {
         var extra: [String: JSONValue] = [:]
         do {
             guard options.udid == nil, options.to == nil else {
-                throw SideloadError("USAGE", "slot restore takes --device <alias>, not --udid or --to.", fix: usage)
+                throw SideloadError(
+                    "USAGE", "slot restore takes --device <alias>, not --udid or --to.", fix: usage)
             }
             guard let alias = options.device, !alias.isEmpty else {
                 throw SideloadError("USAGE", "slot restore needs --device <alias>.", fix: usage)
@@ -33,7 +34,9 @@ enum SlotRestore {
             let configured = config.devices[alias]?.lendableApp.flatMap { $0.isEmpty ? nil : $0 }
             guard let appName = options.app.flatMap({ $0.isEmpty ? nil : $0 }) ?? configured else {
                 throw SideloadError(
-                    "USAGE", "slot restore needs --app <app>: this device has no lendable app configured.", fix: usage)
+                    "USAGE",
+                    "slot restore needs --app <app>: this device has no lendable app configured.",
+                    fix: usage)
             }
             let app = try FreeTarget.parseApp(appName)
             let target = try FreeTarget.resolve(app: app, alias: alias, config: config)
@@ -42,7 +45,8 @@ enum SlotRestore {
                 throw SideloadError(
                     "CONFIRM_REQUIRED",
                     "slot restore pushes the saved backup of \(app.rawValue) into the app on the saved device (it overwrites the files the app has there).",
-                    fix: "The owner confirms by re-running with --yes. Agents must not pass --yes on their own.",
+                    fix:
+                        "The owner confirms by re-running with --yes. Agents must not pass --yes on their own.",
                     data: target.identity)
             }
             do {
@@ -57,7 +61,8 @@ enum SlotRestore {
         }
     }
 
-    private static func restore(_ services: Services, _ target: FreeTarget) async throws -> Envelope {
+    private static func restore(_ services: Services, _ target: FreeTarget) async throws -> Envelope
+    {
         let now = wholeSeconds(services.clock.now())
         _ = try await FreeSession.settle(services, now: now)
         let book = SlotBook(services: services, config: target.config, alias: target.alias)
@@ -66,7 +71,8 @@ enum SlotRestore {
         // The lab's slot: while the app is lent (in any phase) its data is not this command's to touch.
         if let lent = book.lentSlot(ledger), lent.app == target.app.rawValue {
             throw SideloadError(
-                "ALREADY_LENT", "\(target.app.rawValue) is lent on this device, so there is no app to restore into.",
+                "ALREADY_LENT",
+                "\(target.app.rawValue) is lent on this device, so there is no app to restore into.",
                 fix: "Return it first: sideload slot return --device \(target.alias)")
         }
         let found: (directory: String, manifest: AppDataBackup.Manifest)
@@ -83,11 +89,15 @@ enum SlotRestore {
                 why = "The newest backup belongs to an earlier lend that a later lend replaced."
                 fix = "Nothing to do; if the app asks to sign in, the owner signs in again."
             } else if notUninstalled {
-                why = "The newest backup is not marked as taken from an uninstalled app (its lend did not remove the app, or it predates the mark), so the app's data on the device may be newer."
-                fix = "Nothing to do; restoring it could overwrite newer data. If the app asks to sign in, the owner signs in again."
+                why =
+                    "The newest backup is not marked as taken from an uninstalled app (its lend did not remove the app, or it predates the mark), so the app's data on the device may be newer."
+                fix =
+                    "Nothing to do; restoring it could overwrite newer data. If the app asks to sign in, the owner signs in again."
             } else if unreadable {
-                why = "The newest saved data of this app could not be read, is not this app's, or part of it is a link (nothing behind a link is followed)."
-                fix = "The owner checks this app's saved data under $SIDELOAD_HOME (real folders and readable files only, no links); otherwise the app signs in again."
+                why =
+                    "The newest saved data of this app could not be read, is not this app's, or part of it is a link (nothing behind a link is followed)."
+                fix =
+                    "The owner checks this app's saved data under $SIDELOAD_HOME (real folders and readable files only, no links); otherwise the app signs in again."
             } else {
                 why = "There is no backup of this app on this Mac."
                 fix = "Nothing to do; if the app asks to sign in, the owner signs in again."
@@ -95,20 +105,26 @@ enum SlotRestore {
             throw SideloadError(
                 "NO_PENDING_RESTORE", "\(why) Nothing is waiting to be restored.", fix: fix,
                 data: [
-                    "restored": .bool(restored), "superseded": .bool(superseded), "unreadable": .bool(unreadable),
+                    "restored": .bool(restored), "superseded": .bool(superseded),
+                    "unreadable": .bool(unreadable),
                     "notUninstalled": .bool(notUninstalled),
                 ])
         }
 
-        let calls = FreeDeviceCalls(services: services, alias: target.alias, bundleId: target.bundleId)
+        let calls = FreeDeviceCalls(
+            services: services, alias: target.alias, bundleId: target.bundleId)
         let read = await calls.trySnapshot()
         guard let snapshot = read.snapshot else {
-            throw read.error ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read.")
+            throw read.error
+                ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read.")
         }
         guard snapshot.ids.contains(target.bundleId) else {
             throw SideloadError(
-                "APP_NOT_INSTALLED", "\(target.app.rawValue) is not installed on the device, so there is nowhere to restore to.",
-                fix: "Install it first (`sideload slot return --device \(target.alias)` after a lend, or `sideload install`), then run slot restore again.")
+                "APP_NOT_INSTALLED",
+                "\(target.app.rawValue) is not installed on the device, so there is nowhere to restore to.",
+                fix:
+                    "Install it first (`sideload slot return --device \(target.alias)` after a lend, or `sideload install`), then run slot restore again."
+            )
         }
 
         let result = await AppDataBackup.push(services, target: target, calls: calls, found: found)
@@ -124,8 +140,10 @@ enum SlotRestore {
             data["kept"] = true
             data["warnings"] = .array(result.warnings)
             throw SideloadError(
-                "RESTORE_FAILED", "The app's data was not (or could not be confirmed to be) restored. The backup is kept.",
-                fix: "Unlock the device, keep it awake and run `sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes` again; a push overwrites, so it is safe to repeat.",
+                "RESTORE_FAILED",
+                "The app's data was not (or could not be confirmed to be) restored. The backup is kept.",
+                fix:
+                    "Unlock the device, keep it awake and run `sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes` again; a push overwrites, so it is safe to repeat.",
                 data: data)
         }
         if !result.warnings.isEmpty { out["warnings"] = .array(result.warnings) }

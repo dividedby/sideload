@@ -11,7 +11,9 @@ import Testing
 
 @Suite("slot model: random walk with crash injection and late landings")
 struct SlotWalkTests {
-    @Test("random sequences of lend, return, remove, install and status (500 steps)", arguments: Array(1...20))
+    @Test(
+        "random sequences of lend, return, remove, install and status (500 steps)",
+        arguments: Array(1...20))
     func randomSequences(seed: Int) async throws {
         // At most three walks at a time: the other suites include timing-sensitive process tests that a saturated CPU fails.
         await walkGate.enter()
@@ -20,7 +22,8 @@ struct SlotWalkTests {
         let limit = try loadFixtureJSON("install-free-app-limit.json")
         var rng = SplitMix64(seed: UInt64(seed))
         try await withInstallWorld(
-            app: .stremioIOS, alsoSigned: [.apollo], script: DeviceScript(initial: [stremioId: true]), lendable: "stremio-ios",
+            app: .stremioIOS, alsoSigned: [.apollo],
+            script: DeviceScript(initial: [stremioId: true]), lendable: "stremio-ios",
             ledger: { $0.installs = [installRecord(.stremioIOS)] }
         ) { w in
             var visited = Set<SlotPhase>()
@@ -35,11 +38,17 @@ struct SlotWalkTests {
                 if Int.random(in: 0..<10, using: &rng) == 0 {
                     buildDays += 1
                     w.runner.buildExpiry = daysFromNow(buildDays)
-                    validSigned = validSigned.map { var r = $0; r.profileExpires = daysFromNow(buildDays); return r }
+                    validSigned = validSigned.map {
+                        var r = $0
+                        r.profileExpires = daysFromNow(buildDays)
+                        return r
+                    }
                     try await signing.apply(to: w, valid: validSigned)
                 }
                 if Int.random(in: 0..<25, using: &rng) == 0 {
-                    signing = [Signing.valid, .valid, .unsigned, .expired].randomElement(using: &rng) ?? .valid
+                    signing =
+                        [Signing.valid, .valid, .unsigned, .expired].randomElement(using: &rng)
+                        ?? .valid
                     try await signing.apply(to: w, valid: validSigned)
                 }
 
@@ -51,7 +60,8 @@ struct SlotWalkTests {
                 if !installs { script.installLandsAfter = nil }
                 if installs { script.uninstallLandsAfter = nil }
                 w.runner.arm(script)
-                w.clock.advance([0, 0, 0, 5, 30, 120, 301, 700, 1000].randomElement(using: &rng) ?? 0)
+                w.clock.advance(
+                    [0, 0, 0, 5, 30, 120, 301, 700, 1000].randomElement(using: &rng) ?? 0)
 
                 let kind: SlotCommandKind
                 var app = "stremio-ios"
@@ -71,7 +81,9 @@ struct SlotWalkTests {
                 let isStatus = action == 11
                 let before = try w.ledger()
                 let nowBefore = w.clock.now()
-                let crashAt = Int.random(in: 0..<8, using: &rng) == 0 ? crashPoints.randomElement(using: &rng) : nil
+                let crashAt =
+                    Int.random(in: 0..<8, using: &rng) == 0
+                    ? crashPoints.randomElement(using: &rng) : nil
 
                 let out: Envelope
                 if isStatus {
@@ -81,7 +93,8 @@ struct SlotWalkTests {
                     let paths = w.paths
                     let watcher = opWatcher(w) { label }
                     out = await runSlotCommand(
-                        kind, w, app: app, crashAt: crashAt, thrown: script.timeoutShape == .thrown, runner: watcher,
+                        kind, w, app: app, crashAt: crashAt, thrown: script.timeoutShape == .thrown,
+                        runner: watcher,
                         watch: { point in
                             guard let ledger = try? LedgerStore(paths: paths).load() else { return }
                             var projected = ledger
@@ -100,7 +113,9 @@ struct SlotWalkTests {
                 // I7: a slot becomes lent only in a run where the signed build was valid.
                 for slot in after.slots where slot.lentTo != nil {
                     if before.slots.first(where: { $0.id == slot.id })?.lentTo == nil {
-                        #expect(signing == .valid, "\(label): I7 \(slot.id) was lent with the signed build \(signing)")
+                        #expect(
+                            signing == .valid,
+                            "\(label): I7 \(slot.id) was lent with the signed build \(signing)")
                     }
                 }
 
@@ -109,15 +124,33 @@ struct SlotWalkTests {
                 let printed = json(out)
                 if !isStatus && out.ok {
                     switch kind {
-                    case .lend: #expect(there[stremioId] == nil, "\(label): lend ok but the app is on the device")
-                    case .giveBack: if printed["reinstalled"] == true { #expect(there[stremioId] != nil, "\(label): return ok but the app is not back") }
-                    case .remove: if printed["removed"] == true { #expect(there[w.bundleId(of: app)] == nil, "\(label): remove ok but the app is on the device") }
-                    case .install: #expect(there[w.bundleId(of: app)] != nil, "\(label): install ok but the app is not on the device")
+                    case .lend:
+                        #expect(
+                            there[stremioId] == nil,
+                            "\(label): lend ok but the app is on the device")
+                    case .giveBack:
+                        if printed["reinstalled"] == true {
+                            #expect(
+                                there[stremioId] != nil,
+                                "\(label): return ok but the app is not back")
+                        }
+                    case .remove:
+                        if printed["removed"] == true {
+                            #expect(
+                                there[w.bundleId(of: app)] == nil,
+                                "\(label): remove ok but the app is on the device")
+                        }
+                    case .install:
+                        #expect(
+                            there[w.bundleId(of: app)] != nil,
+                            "\(label): install ok but the app is not on the device")
                     }
                 }
                 if !isStatus, out.errorCodes == ["SLOT_PENDING"] {
                     gated += 1
-                    #expect(printed["freed"] == 0 && printed["retryAfter"] != nil, "\(label): a gate answer claims nothing")
+                    #expect(
+                        printed["freed"] == 0 && printed["retryAfter"] != nil,
+                        "\(label): a gate answer claims nothing")
                 }
                 if after.slots.contains(where: { $0.op?.kind == .reinstall }) { reinstallKept += 1 }
 
@@ -127,15 +160,23 @@ struct SlotWalkTests {
                 visited.insert(SlotPhase(entry))
                 let iphone = status["slots"]?["devices"]?.array?.first { $0["alias"] == "iphone" }
                 if let entry {
-                    #expect(iphone?["used"] != 0 && iphone?["used"] != nil, "\(label): a record counts as used")
+                    #expect(
+                        iphone?["used"] != 0 && iphone?["used"] != nil,
+                        "\(label): a record counts as used")
                     #expect(iphone?["lent"]?["state"] == .string(entry.state))
-                    #expect(iphone?["pending"] == .bool(SlotPhase(entry).pending || after.slots.contains { $0.op != nil }))
-                    #expect(status["lent"]?.array?.first?["holds"] == .bool(SlotPhase(entry) == .lent))
+                    #expect(
+                        iphone?["pending"]
+                            == .bool(
+                                SlotPhase(entry).pending || after.slots.contains { $0.op != nil }))
+                    #expect(
+                        status["lent"]?.array?.first?["holds"] == .bool(SlotPhase(entry) == .lent))
                 }
             }
             // The walk is not vacuous: it reached every state, kept a reinstall pending, and was gated.
             #expect(visited == Set(SlotPhase.allCases), "seed \(seed) visited \(visited)")
-            #expect(gated > 0 && reinstallKept > 0, "seed \(seed): gated \(gated), reinstall kept \(reinstallKept)")
+            #expect(
+                gated > 0 && reinstallKept > 0,
+                "seed \(seed): gated \(gated), reinstall kept \(reinstallKept)")
         }
     }
 }
@@ -187,11 +228,15 @@ private actor WalkGate {
 private let walkGate = WalkGate()
 
 private let crashPoints = [
-    "migrate", "lend.settle", "lend.intent", "lend.final", "return.settle", "return.intent", "return.final",
-    "remove.settle", "remove.intent", "remove.final", "install.settle", "install.intent", "install.final",
+    "migrate", "lend.settle", "lend.intent", "lend.final", "return.settle", "return.intent",
+    "return.final",
+    "remove.settle", "remove.intent", "remove.final", "install.settle", "install.intent",
+    "install.final",
 ]
 
-private func randomScript(_ rng: inout SplitMix64, locked: JSONValue, limit: JSONValue) -> DeviceScript {
+private func randomScript(_ rng: inout SplitMix64, locked: JSONValue, limit: JSONValue)
+    -> DeviceScript
+{
     func chance(_ p: Double) -> Bool { Double.random(in: 0..<1, using: &rng) < p }
     var script = DeviceScript()
     script.timeoutsTakeTime = chance(0.7)
@@ -199,7 +244,10 @@ private func randomScript(_ rng: inout SplitMix64, locked: JSONValue, limit: JSO
     // and a thrown call.
     script.timeoutShape = TimeoutShape.allCases.randomElement(using: &rng) ?? .runnerKill
     for call in 1...3 where chance(0.12) { script.snapshotFailures.insert(call) }
-    if chance(0.06) { script.snapshotShapes[Int.random(in: 1...3, using: &rng)] = SnapshotFault.allCases.randomElement(using: &rng) }
+    if chance(0.06) {
+        script.snapshotShapes[Int.random(in: 1...3, using: &rng)] = SnapshotFault.allCases
+            .randomElement(using: &rng)
+    }
     let roll = Double.random(in: 0..<1, using: &rng)
     switch roll {
     case ..<0.55: script.install = .succeed
@@ -216,9 +264,13 @@ private func randomScript(_ rng: inout SplitMix64, locked: JSONValue, limit: JSO
     }
     if chance(0.2) {
         script.uninstallTimeoutRemoves = chance(0.5)
-        if script.uninstallTimeoutRemoves == false, chance(0.6) { script.uninstallLandsAfter = Double(Int.random(in: 5...200, using: &rng)) }
+        if script.uninstallTimeoutRemoves == false, chance(0.6) {
+            script.uninstallLandsAfter = Double(Int.random(in: 5...200, using: &rng))
+        }
     }
-    if case .timeout = script.install, chance(0.6) { script.installLandsAfter = Double(Int.random(in: 5...200, using: &rng)) }
+    if case .timeout = script.install, chance(0.6) {
+        script.installLandsAfter = Double(Int.random(in: 5...200, using: &rng))
+    }
     // A third of the steps are "late" ones: the install and the uninstall both time out and finish later.
     if chance(0.35) {
         script.install = .timeout

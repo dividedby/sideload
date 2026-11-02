@@ -12,7 +12,8 @@ public enum PromptGuard {
         timeout: Duration = defaultTimeout, _ body: @escaping @Sendable () throws -> T
     ) async throws -> T {
         let gate = Gate()
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<T, any Error>) in
+        return try await withCheckedThrowingContinuation {
+            (continuation: CheckedContinuation<T, any Error>) in
             @Sendable func finish(_ result: Result<T, any Error>) {
                 if gate.claim() { continuation.resume(with: result) }
             }

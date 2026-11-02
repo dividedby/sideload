@@ -19,12 +19,14 @@ public struct FreeTeamProfiles: Sendable, Equatable {
     public static func parse(_ json: JSONValue?) -> FreeTeamProfiles? {
         guard case .object(let top)? = json,
             case .object(let info)? = top["info"], info["outcome"] == .string("success"),
-            case .object(let result)? = top["result"], case .array(let items)? = result["provisioningProfiles"]
+            case .object(let result)? = top["result"],
+            case .array(let items)? = result["provisioningProfiles"]
         else { return nil }
         let prefix = Team.free + "."
         var ids: Set<String> = []
         for item in items {
-            guard case .object(let fields) = item, case .string(let team)? = fields["teamIdentifier"],
+            guard case .object(let fields) = item,
+                case .string(let team)? = fields["teamIdentifier"],
                 case .string(let app)? = fields["appIdentifier"]
             else { return nil }
             if team == Team.free, app.hasPrefix(prefix), app.count > prefix.count {

@@ -32,7 +32,9 @@ public enum FetchCommand {
         await run(services, options, registry: .shared)
     }
 
-    static func run(_ services: Services, _ options: FetchOptions, registry: ScratchRegistry) async -> Envelope {
+    static func run(_ services: Services, _ options: FetchOptions, registry: ScratchRegistry) async
+        -> Envelope
+    {
         do {
             return .result(command, try await execute(services, options, registry: registry))
         } catch {
@@ -40,10 +42,15 @@ public enum FetchCommand {
         }
     }
 
-    private static func execute(_ services: Services, _ options: FetchOptions, registry: ScratchRegistry) async throws -> [String: JSONValue] {
+    private static func execute(
+        _ services: Services, _ options: FetchOptions, registry: ScratchRegistry
+    ) async throws -> [String: JSONValue] {
         guard let app = options.app, !app.isEmpty else {
             throw SideloadError(
-                "USAGE", "fetch needs --app.", fix: "sideload fetch --app <\(FetchCatalog.appNames.joined(separator: "|"))> [--approve --version <v>]")
+                "USAGE", "fetch needs --app.",
+                fix:
+                    "sideload fetch --app <\(FetchCatalog.appNames.joined(separator: "|"))> [--approve --version <v>]"
+            )
         }
         if options.approve, options.version?.isEmpty != false {
             throw SideloadError(
@@ -51,7 +58,9 @@ public enum FetchCommand {
                 fix: "sideload fetch --app \(app) --approve --version <v>")
         }
         if !options.approve, options.version != nil {
-            throw SideloadError("USAGE", "--version only applies to --approve.", fix: "sideload fetch --app \(app) --approve --version <v>")
+            throw SideloadError(
+                "USAGE", "--version only applies to --approve.",
+                fix: "sideload fetch --app \(app) --approve --version <v>")
         }
         let source = try FetchCatalog.approved(app: app, config: try services.store.load())
         sweepStale(in: services.home.tmp)
@@ -72,7 +81,9 @@ private struct FetchRun {
     /// The entry's file is on disk and still hashes to the manifest's value. A pruned entry (`clean`) is not stored, whatever a
     /// crash left behind: the download replaces it and clears the mark.
     private func isStored(_ entry: ManifestEntry) -> Bool {
-        guard entry.prunedAt == nil, let stored = try? FileDigest.sha256(path: store.path(of: entry)) else { return false }
+        guard entry.prunedAt == nil,
+            let stored = try? FileDigest.sha256(path: store.path(of: entry))
+        else { return false }
         return stored.hex == entry.sha256
     }
 
@@ -86,11 +97,15 @@ private struct FetchRun {
 
         let prior = manifest.entry(app: asset.app, version: asset.version)
         if let prior {
-            guard prior.upstreamDigest == asset.upstreamDigest else { throw Self.contentChanged(asset) }
+            guard prior.upstreamDigest == asset.upstreamDigest else {
+                throw Self.contentChanged(asset)
+            }
             if isStored(prior) {
                 services.log("fetch: \(asset.app) \(asset.version) is already stored")
                 // A file an earlier busy run kept for this digest is no longer needed.
-                if isHex(asset.upstreamDigest, count: 64, lowercaseOnly: true) { unlink(FetchStaging.path(digest: asset.upstreamDigest, tmp: services.home.tmp)) }
+                if isHex(asset.upstreamDigest, count: 64, lowercaseOnly: true) {
+                    unlink(FetchStaging.path(digest: asset.upstreamDigest, tmp: services.home.tmp))
+                }
                 return try await report(prior, downloaded: false, alreadyApproved: prior.approved)
             }
         }
@@ -122,7 +137,9 @@ private struct FetchRun {
     }
 
     /// Streams the body into `part`, then checks the byte count and our SHA-256 against what the source declared.
-    private func downloadBody(_ asset: ResolvedAsset, to part: String) async throws -> (digest: String, count: Int64) {
+    private func downloadBody(_ asset: ResolvedAsset, to part: String) async throws -> (
+        digest: String, count: Int64
+    ) {
         let sink = try DownloadSink(path: part, maxBytes: asset.size)
         defer { sink.abort() }
 
@@ -130,7 +147,8 @@ private struct FetchRun {
         let response: DownloadResponse
         do {
             let request = DownloadRequest(
-                url: asset.url, allowedHosts: source.downloadHosts, maxRedirects: FetchLimits.maxRedirects, maxBytes: asset.size,
+                url: asset.url, allowedHosts: source.downloadHosts,
+                maxRedirects: FetchLimits.maxRedirects, maxBytes: asset.size,
                 timeout: FetchCommand.downloadTimeout)
             response = try await services.http.download(request) { try sink.accept($0) }
         } catch {
@@ -138,7 +156,8 @@ private struct FetchRun {
         }
         guard response.status == 200 else {
             throw SideloadError(
-                "FETCH_HTTP_ERROR", "The download answered HTTP \(response.status).", fix: "Retry later.",
+                "FETCH_HTTP_ERROR", "The download answered HTTP \(response.status).",
+                fix: "Retry later.",
                 data: ["status": .number(Double(response.status))])
         }
         guard DownloadPolicy.permits(response.finalURL, hosts: source.downloadHosts) else {
@@ -148,13 +167,15 @@ private struct FetchRun {
         // The source declared this size and it was the cap; a short body is as wrong as a long one.
         guard count == asset.size else {
             throw SideloadError(
-                "SIZE_MISMATCH", "The download is \(count) bytes but the source declared \(asset.size). The file was deleted.",
+                "SIZE_MISMATCH",
+                "The download is \(count) bytes but the source declared \(asset.size). The file was deleted.",
                 fix: "Retry; if it repeats, do not use this release.",
                 data: ["declared": .number(Double(asset.size)), "received": .number(Double(count))])
         }
         guard digest == asset.upstreamDigest else {
             throw SideloadError(
-                "DIGEST_MISMATCH", "The downloaded file's SHA-256 does not match the publisher's. The file was deleted.",
+                "DIGEST_MISMATCH",
+                "The downloaded file's SHA-256 does not match the publisher's. The file was deleted.",
                 fix: "Retry; if it repeats, do not use this release.",
                 data: ["expected": .string(asset.upstreamDigest), "actual": .string(digest)])
         }
@@ -171,7 +192,8 @@ private struct FetchRun {
         do {
             lock = try OperationLock.acquire(paths: services.home)
         } catch let busy as SideloadError where busy.code == OperationLock.busyCode {
-            let staged = rename(part, FetchStaging.path(digest: digest, tmp: services.home.tmp)) == 0
+            let staged =
+                rename(part, FetchStaging.path(digest: digest, tmp: services.home.tmp)) == 0
             throw SideloadError(
                 busy.code, busy.message,
                 fix: staged
@@ -183,11 +205,15 @@ private struct FetchRun {
         var manifest = try store.load()
         let prior = manifest.entry(app: asset.app, version: asset.version)
         if let prior {
-            guard prior.upstreamDigest == asset.upstreamDigest else { throw Self.contentChanged(asset) }
+            guard prior.upstreamDigest == asset.upstreamDigest else {
+                throw Self.contentChanged(asset)
+            }
             // Another fetch recorded this version while ours downloaded: keep theirs.
             if isStored(prior) {
                 services.log("fetch: \(asset.app) \(asset.version) was stored by another run")
-                return Self.data(prior, store: store, downloaded: false, alreadyApproved: prior.approved, inspected: inspected)
+                return Self.data(
+                    prior, store: store, downloaded: false, alreadyApproved: prior.approved,
+                    inspected: inspected)
             }
         }
 
@@ -197,10 +223,13 @@ private struct FetchRun {
 
         let keepApproval = prior?.sha256 == digest
         let entry = ManifestEntry(
-            app: asset.app, version: asset.version, file: "\(asset.app)/\(asset.version)/\(asset.fileName)",
-            urlHost: asset.url.host ?? "", sha256: digest, upstreamDigest: asset.upstreamDigest, size: count,
+            app: asset.app, version: asset.version,
+            file: "\(asset.app)/\(asset.version)/\(asset.fileName)",
+            urlHost: asset.url.host ?? "", sha256: digest, upstreamDigest: asset.upstreamDigest,
+            size: count,
             fetchedAt: services.clock.now(), approved: keepApproval && prior?.approved == true,
-            approvedAt: keepApproval ? prior?.approvedAt : nil, build: asset.build ?? inspected.build,
+            approvedAt: keepApproval ? prior?.approvedAt : nil,
+            build: asset.build ?? inspected.build,
             declaredSize: asset.size, minOS: asset.minOS, inspectMinOS: inspected.minOS)
         manifest.upsert(entry)
         do {
@@ -209,7 +238,8 @@ private struct FetchRun {
             if prior == nil { unlink(directory + "/" + asset.fileName) }
             throw error
         }
-        return Self.data(entry, store: store, downloaded: true, alreadyApproved: false, inspected: inspected)
+        return Self.data(
+            entry, store: store, downloaded: true, alreadyApproved: false, inspected: inspected)
     }
 
     // MARK: approve
@@ -220,8 +250,11 @@ private struct FetchRun {
         var manifest = try store.load()
         guard var entry = manifest.entry(app: source.app, version: version) else {
             throw SideloadError(
-                "NOT_FETCHED", "Version \(printableCut(version)) of \(source.app) is not in the manifest, so there is nothing to approve.",
-                fix: "Run `sideload fetch --app \(source.app)`, then approve the version it reports: --approve --version <v>.")
+                "NOT_FETCHED",
+                "Version \(printableCut(version)) of \(source.app) is not in the manifest, so there is nothing to approve.",
+                fix:
+                    "Run `sideload fetch --app \(source.app)`, then approve the version it reports: --approve --version <v>."
+            )
         }
         let already = entry.approved
         let inspected = try await verifiedInspection(of: entry)
@@ -231,20 +264,26 @@ private struct FetchRun {
             manifest.upsert(entry)
             try store.save(manifest)
         }
-        return Self.data(entry, store: store, downloaded: false, alreadyApproved: already, inspected: inspected)
+        return Self.data(
+            entry, store: store, downloaded: false, alreadyApproved: already, inspected: inspected)
     }
 
     // MARK: shared
 
-    private func report(_ entry: ManifestEntry, downloaded: Bool, alreadyApproved: Bool) async throws -> [String: JSONValue] {
-        Self.data(entry, store: store, downloaded: downloaded, alreadyApproved: alreadyApproved, inspected: try await verifiedInspection(of: entry))
+    private func report(_ entry: ManifestEntry, downloaded: Bool, alreadyApproved: Bool)
+        async throws -> [String: JSONValue]
+    {
+        Self.data(
+            entry, store: store, downloaded: downloaded, alreadyApproved: alreadyApproved,
+            inspected: try await verifiedInspection(of: entry))
     }
 
     /// The stored file must still hash to the manifest's value; then it is inspected.
     private func verifiedInspection(of entry: ManifestEntry) async throws -> Inspected {
         if entry.prunedAt != nil {
             throw SideloadError(
-                "IPA_PRUNED", "The fetched file for \(entry.app) \(printableCut(entry.version)) was deleted by `sideload clean`.",
+                "IPA_PRUNED",
+                "The fetched file for \(entry.app) \(printableCut(entry.version)) was deleted by `sideload clean`.",
                 fix: "Run `sideload fetch --app \(entry.app)` to download it again.")
         }
         let path = try store.path(of: entry)
@@ -255,7 +294,8 @@ private struct FetchRun {
         }
         guard stored.hex == entry.sha256 else {
             throw SideloadError(
-                "DIGEST_MISMATCH", "The stored file no longer matches the manifest's SHA-256. Nothing was approved.",
+                "DIGEST_MISMATCH",
+                "The stored file no longer matches the manifest's SHA-256. Nothing was approved.",
                 fix: "Remove the file and its manifest entry, then fetch again.",
                 data: ["expected": .string(entry.sha256), "actual": .string(stored.hex)])
         }
@@ -276,11 +316,13 @@ private struct FetchRun {
 
     private func inspect(path: String) async throws -> Inspected {
         let inspector = IPAInspector(
-            runner: services.runner, tmp: services.home.tmp, registry: registry, limits: InspectLimits(), log: services.log)
+            runner: services.runner, tmp: services.home.tmp, registry: registry,
+            limits: InspectLimits(), log: services.log)
         let report = try await inspector.inspect(path: path)
         let app = report["app"]?.fields ?? [:]
         return Inspected(
-            summary: Self.summarize(report), warnings: report["warnings"]?.list ?? [], build: app["build"]?.text,
+            summary: Self.summarize(report), warnings: report["warnings"]?.list ?? [],
+            build: app["build"]?.text,
             minOS: app["minOS"]?.text)
     }
 
@@ -288,10 +330,15 @@ private struct FetchRun {
     static func summarize(_ report: [String: JSONValue]) -> JSONValue {
         let app = report["app"]?.fields ?? [:]
         var out: [String: JSONValue] = [:]
-        for key in ["bundleId", "name", "version", "build", "minOS", "platform", "deviceFamily"] { out[key] = app[key] ?? .null }
+        for key in ["bundleId", "name", "version", "build", "minOS", "platform", "deviceFamily"] {
+            out[key] = app[key] ?? .null
+        }
         let extensions = (report["extensions"]?.list ?? []).map { item -> JSONValue in
             let fields = item.fields ?? [:]
-            return .object(["path", "bundleId", "extensionPoint"].reduce(into: [:]) { $0[$1] = fields[$1] ?? .null })
+            return .object(
+                ["path", "bundleId", "extensionPoint"].reduce(into: [:]) {
+                    $0[$1] = fields[$1] ?? .null
+                })
         }
         out["extensions"] = .array(extensions)
         out["extensionCount"] = .number(Double(extensions.count))
@@ -301,14 +348,18 @@ private struct FetchRun {
     }
 
     private static func data(
-        _ entry: ManifestEntry, store: ManifestStore, downloaded: Bool, alreadyApproved: Bool, inspected: Inspected
+        _ entry: ManifestEntry, store: ManifestStore, downloaded: Bool, alreadyApproved: Bool,
+        inspected: Inspected
     ) -> [String: JSONValue] {
         let stamp = ISO8601DateFormatter()
         var out: [String: JSONValue] = [
-            "app": .string(entry.app), "version": .string(entry.version), "file": .string(entry.file),
+            "app": .string(entry.app), "version": .string(entry.version),
+            "file": .string(entry.file),
             "path": .string((try? store.path(of: entry)) ?? ""), "downloaded": .bool(downloaded),
-            "approved": .bool(entry.approved), "alreadyApproved": .bool(alreadyApproved), "sha256": .string(entry.sha256),
-            "upstreamDigest": .string(entry.upstreamDigest), "size": .number(Double(entry.size)), "urlHost": .string(entry.urlHost),
+            "approved": .bool(entry.approved), "alreadyApproved": .bool(alreadyApproved),
+            "sha256": .string(entry.sha256),
+            "upstreamDigest": .string(entry.upstreamDigest), "size": .number(Double(entry.size)),
+            "urlHost": .string(entry.urlHost),
             "build": entry.build.map(JSONValue.string) ?? .null,
             "declaredSize": entry.declaredSize.map { .number(Double($0)) } ?? .null,
             "minOS": entry.minOS.map(JSONValue.string) ?? .null,
@@ -317,7 +368,11 @@ private struct FetchRun {
             "warnings": .array(inspected.warnings),
         ]
         if let at = entry.approvedAt { out["approvedAt"] = .string(stamp.string(from: at)) }
-        if !entry.approved { out["next"] = .string("Review `inspect`, then the owner runs: sideload fetch --app \(entry.app) --approve --version \(entry.version)") }
+        if !entry.approved {
+            out["next"] = .string(
+                "Review `inspect`, then the owner runs: sideload fetch --app \(entry.app) --approve --version \(entry.version)"
+            )
+        }
         return out
     }
 
@@ -325,8 +380,11 @@ private struct FetchRun {
 
     private static func contentChanged(_ asset: ResolvedAsset) -> SideloadError {
         SideloadError(
-            "VERSION_CONTENT_CHANGED", "The publisher now lists a different SHA-256 for \(asset.app) \(asset.version) than the one fetched before.",
-            fix: "Treat this as a swapped file. Inspect it by hand; the owner removes the manifest entry and its folder to start over.")
+            "VERSION_CONTENT_CHANGED",
+            "The publisher now lists a different SHA-256 for \(asset.app) \(asset.version) than the one fetched before.",
+            fix:
+                "Treat this as a swapped file. Inspect it by hand; the owner removes the manifest entry and its folder to start over."
+        )
     }
 
 }
@@ -354,7 +412,10 @@ private final class DownloadSink: Sendable {
             guard s.fd >= 0 else { throw ioError("write", EBADF) }
             s.count += Int64(chunk.count)
             if s.count > maxBytes {
-                throw SideloadError("DOWNLOAD_TOO_LARGE", "The download is larger than the size the source declared.", fix: "Nothing was kept.")
+                throw SideloadError(
+                    "DOWNLOAD_TOO_LARGE",
+                    "The download is larger than the size the source declared.",
+                    fix: "Nothing was kept.")
             }
             s.hasher.update(data: chunk)
             try chunk.withUnsafeBytes { raw in
@@ -395,18 +456,18 @@ private final class DownloadSink: Sendable {
     }
 }
 
-private extension JSONValue {
-    var list: [JSONValue]? {
+extension JSONValue {
+    fileprivate var list: [JSONValue]? {
         if case .array(let a) = self { return a }
         return nil
     }
 
-    var text: String? {
+    fileprivate var text: String? {
         if case .string(let s) = self { return s }
         return nil
     }
 
-    var fields: [String: JSONValue]? {
+    fileprivate var fields: [String: JSONValue]? {
         if case .object(let o) = self { return o }
         return nil
     }

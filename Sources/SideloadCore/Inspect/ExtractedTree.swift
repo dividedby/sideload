@@ -22,7 +22,9 @@ enum ExtractedTree {
         var names: [String] = []
         while let entry = readdir(dir) {
             let name = withUnsafePointer(to: &entry.pointee.d_name) {
-                $0.withMemoryRebound(to: CChar.self, capacity: Int(entry.pointee.d_namlen) + 1) { String(cString: $0) }
+                $0.withMemoryRebound(to: CChar.self, capacity: Int(entry.pointee.d_namlen) + 1) {
+                    String(cString: $0)
+                }
             }
             if name != "." && name != ".." { names.append(name) }
         }
@@ -34,28 +36,41 @@ enum ExtractedTree {
     /// (`IPA_UNSAFE_TREE`, `IPA_TOO_MANY_ENTRIES`, `IPA_TOO_LARGE`).
     static func verify(root: String, limits: InspectLimits) throws -> TreeFacts {
         var rootInfo = stat()
-        guard lstat(root, &rootInfo) == 0, rootInfo.st_mode & S_IFMT == S_IFDIR else { throw unsafe("The extraction folder is not a plain directory.") }
+        guard lstat(root, &rootInfo) == 0, rootInfo.st_mode & S_IFMT == S_IFDIR else {
+            throw unsafe("The extraction folder is not a plain directory.")
+        }
         var facts = TreeFacts()
         var pending: [(path: String, depth: Int)] = [(root, 0)]
         while let (dirPath, depth) = pending.popLast() {
-            guard depth < limits.maxTreeDepth else { throw unsafe("The extracted tree is nested too deeply.") }
-            guard let names = children(of: dirPath) else { throw unsafe("A folder in the extracted tree could not be read.") }
+            guard depth < limits.maxTreeDepth else {
+                throw unsafe("The extracted tree is nested too deeply.")
+            }
+            guard let names = children(of: dirPath) else {
+                throw unsafe("A folder in the extracted tree could not be read.")
+            }
             for name in names {
                 let path = dirPath + "/" + name
                 var st = stat()
-                guard lstat(path, &st) == 0 else { throw unsafe("An extracted entry could not be examined.") }
-                if st.st_dev != rootInfo.st_dev { throw unsafe("The extracted tree crosses a volume boundary.") }
+                guard lstat(path, &st) == 0 else {
+                    throw unsafe("An extracted entry could not be examined.")
+                }
+                if st.st_dev != rootInfo.st_dev {
+                    throw unsafe("The extracted tree crosses a volume boundary.")
+                }
                 facts.entries += 1
                 if facts.entries > limits.maxEntries * 2 {
                     throw SideloadError(
-                        "IPA_TOO_MANY_ENTRIES", "The extracted tree has more entries than the limit.",
+                        "IPA_TOO_MANY_ENTRIES",
+                        "The extracted tree has more entries than the limit.",
                         fix: "Inspect a normal IPA.")
                 }
                 switch st.st_mode & S_IFMT {
                 case S_IFDIR:
                     pending.append((path, depth + 1))
                 case S_IFREG:
-                    if st.st_nlink > 1 { throw unsafe("The extracted tree contains a hard-linked file.") }
+                    if st.st_nlink > 1 {
+                        throw unsafe("The extracted tree contains a hard-linked file.")
+                    }
                     facts.bytes += UInt64(max(st.st_size, 0))
                     if facts.bytes > limits.maxTotalBytes { throw tooLarge() }
                     if name.hasSuffix(".dylib") { facts.dylibs += 1 }
@@ -95,10 +110,13 @@ enum ExtractedTree {
     }
 
     private static func unsafe(_ message: String) -> SideloadError {
-        SideloadError("IPA_UNSAFE_TREE", message, fix: "Do not use this IPA; it is not a normal app archive.")
+        SideloadError(
+            "IPA_UNSAFE_TREE", message, fix: "Do not use this IPA; it is not a normal app archive.")
     }
 
     private static func tooLarge() -> SideloadError {
-        SideloadError("IPA_TOO_LARGE", "The extracted data is larger than the limit.", fix: "Inspect a normal IPA.")
+        SideloadError(
+            "IPA_TOO_LARGE", "The extracted data is larger than the limit.",
+            fix: "Inspect a normal IPA.")
     }
 }

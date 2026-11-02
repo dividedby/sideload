@@ -51,21 +51,28 @@ struct IPAInspector: Sendable {
         let fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else {
             throw SideloadError(
-                "IPA_NOT_FOUND", "No readable IPA file at that path (a symbolic link is not followed).",
+                "IPA_NOT_FOUND",
+                "No readable IPA file at that path (a symbolic link is not followed).",
                 fix: "Pass the real path of an .ipa file.")
         }
         defer { close(fd) }
         var before = stat()
         guard fstat(fd, &before) == 0, before.st_mode & S_IFMT == S_IFREG else {
-            throw SideloadError("IPA_NOT_FOUND", "The path is not a regular file.", fix: "Pass the path of an .ipa file.")
+            throw SideloadError(
+                "IPA_NOT_FOUND", "The path is not a regular file.",
+                fix: "Pass the path of an .ipa file.")
         }
         let size = UInt64(max(before.st_size, 0))
         if size > limits.maxFileBytes {
-            throw SideloadError("IPA_TOO_LARGE", "The file is larger than the \(limits.maxFileBytes >> 30) GiB limit.", fix: "Inspect a normal IPA.")
+            throw SideloadError(
+                "IPA_TOO_LARGE",
+                "The file is larger than the \(limits.maxFileBytes >> 30) GiB limit.",
+                fix: "Inspect a normal IPA.")
         }
 
         _ = try ZipListing.read(fd: fd, fileSize: size, limits: limits)
-        return OpenedIPA(path: path, before: before, size: size, sha256: try Self.sha256(fd: fd, size: size))
+        return OpenedIPA(
+            path: path, before: before, size: size, sha256: try Self.sha256(fd: fd, size: size))
     }
 
     func inspect(path rawPath: String) async throws -> [String: JSONValue] {
@@ -79,7 +86,8 @@ struct IPAInspector: Sendable {
         }
         let removed = scratch.remove()
         let leftover = CanaryCommand.warning(
-            "SCRATCH_NOT_REMOVED", "The scratch folder under $SIDELOAD_HOME/tmp could not be removed.",
+            "SCRATCH_NOT_REMOVED",
+            "The scratch folder under $SIDELOAD_HOME/tmp could not be removed.",
             "Delete the inspect-* folders in $SIDELOAD_HOME/tmp.")
         if !removed { log("inspect: the scratch folder could not be removed") }
         switch outcome {
@@ -97,7 +105,9 @@ struct IPAInspector: Sendable {
     static func carrying(_ warning: JSONValue, _ error: any Error) -> SideloadError {
         let known =
             (error as? SideloadError)
-            ?? SideloadError("INTERNAL_ERROR", "inspect failed unexpectedly.", fix: "This is a bug in sideload; re-run and report the code.")
+            ?? SideloadError(
+                "INTERNAL_ERROR", "inspect failed unexpectedly.",
+                fix: "This is a bug in sideload; re-run and report the code.")
         var data = known.data
         data["warnings"] = .array((data["warnings"]?.items ?? []) + [warning])
         return SideloadError(known.code, known.message, fix: known.fix, data: data)
@@ -105,7 +115,9 @@ struct IPAInspector: Sendable {
 
     // MARK: analysis
 
-    private func analyze(ipa: OpenedIPA, scratch: ScratchDirectory) async throws -> (report: [String: JSONValue], appDir: String) {
+    private func analyze(ipa: OpenedIPA, scratch: ScratchDirectory) async throws -> (
+        report: [String: JSONValue], appDir: String
+    ) {
         let (path, before, size, sha256) = (ipa.path, ipa.before, ipa.size, ipa.sha256)
         var warnings: [JSONValue] = []
         let dest = scratch.path + "/x"
@@ -113,24 +125,36 @@ struct IPAInspector: Sendable {
 
         log("inspect: unpacking")
         try await extract(ipa: path, into: dest)
-        if registry.isClosed { throw SideloadError("CANCELLED", "inspect was interrupted.", fix: "Re-run the command.") }
+        if registry.isClosed {
+            throw SideloadError("CANCELLED", "inspect was interrupted.", fix: "Re-run the command.")
+        }
 
         // The listing and the hash describe the file that was opened; make sure the path still names it.
         var after = stat()
-        guard stat(path, &after) == 0, after.st_dev == before.st_dev, after.st_ino == before.st_ino, after.st_size == before.st_size,
-            after.st_mtimespec.tv_sec == before.st_mtimespec.tv_sec, after.st_mtimespec.tv_nsec == before.st_mtimespec.tv_nsec
+        guard stat(path, &after) == 0, after.st_dev == before.st_dev, after.st_ino == before.st_ino,
+            after.st_size == before.st_size,
+            after.st_mtimespec.tv_sec == before.st_mtimespec.tv_sec,
+            after.st_mtimespec.tv_nsec == before.st_mtimespec.tv_nsec
         else {
-            throw SideloadError("IPA_CHANGED", "The file changed while it was being inspected.", fix: "Re-run the command.")
+            throw SideloadError(
+                "IPA_CHANGED", "The file changed while it was being inspected.",
+                fix: "Re-run the command.")
         }
         let facts = try ExtractedTree.verify(root: dest, limits: limits)
 
         let payload = dest + "/Payload"
-        let apps = (ExtractedTree.children(of: payload) ?? []).filter { $0.hasSuffix(".app") && Self.isDirectory(payload + "/" + $0) }
+        let apps = (ExtractedTree.children(of: payload) ?? []).filter {
+            $0.hasSuffix(".app") && Self.isDirectory(payload + "/" + $0)
+        }
         guard !apps.isEmpty else {
-            throw SideloadError("IPA_NO_APP", "The IPA has no Payload/<name>.app folder.", fix: "Inspect an iOS or tvOS app archive.")
+            throw SideloadError(
+                "IPA_NO_APP", "The IPA has no Payload/<name>.app folder.",
+                fix: "Inspect an iOS or tvOS app archive.")
         }
         guard apps.count == 1 else {
-            throw SideloadError("IPA_MULTIPLE_APPS", "The IPA holds \(apps.count) apps under Payload/.", fix: "Inspect an archive with exactly one app.")
+            throw SideloadError(
+                "IPA_MULTIPLE_APPS", "The IPA holds \(apps.count) apps under Payload/.",
+                fix: "Inspect an archive with exactly one app.")
         }
         let appDir = payload + "/" + apps[0]
 
@@ -141,14 +165,20 @@ struct IPAInspector: Sendable {
         let signature = try await describe(bundle: appDir, label: "app", warnings: &warnings)
         let build = await tools.buildVersion(of: executable)
         if build == nil {
-            warnings.append(CanaryCommand.warning("BUILD_VERSION_UNREADABLE", "vtool could not read the app's platform and minimum OS; the Info.plist values are used.", "Run `sideload doctor`."))
+            warnings.append(
+                CanaryCommand.warning(
+                    "BUILD_VERSION_UNREADABLE",
+                    "vtool could not read the app's platform and minimum OS; the Info.plist values are used.",
+                    "Run `sideload doctor`."))
         }
 
         let minOS = build?.minOS ?? Self.string(info.plist, "MinimumOSVersion")
         let platform = build?.platform ?? Self.plistPlatform(info.plist)
         let app: [String: JSONValue] = [
             "bundleId": .string(info.bundleId),
-            "name": Self.optional(Self.string(info.plist, "CFBundleDisplayName") ?? Self.string(info.plist, "CFBundleName")),
+            "name": Self.optional(
+                Self.string(info.plist, "CFBundleDisplayName")
+                    ?? Self.string(info.plist, "CFBundleName")),
             "version": Self.optional(Self.string(info.plist, "CFBundleShortVersionString")),
             "build": Self.optional(Self.string(info.plist, "CFBundleVersion")),
             "minOS": Self.optional(minOS),
@@ -163,36 +193,59 @@ struct IPAInspector: Sendable {
         // PlugIns/*.appex
         var extensions: [JSONValue] = []
         var groups = Set(signature.appGroups)
-        let appexNames = (ExtractedTree.children(of: appDir + "/PlugIns") ?? []).filter { $0.hasSuffix(".appex") }
+        let appexNames = (ExtractedTree.children(of: appDir + "/PlugIns") ?? []).filter {
+            $0.hasSuffix(".appex")
+        }
         if appexNames.count > limits.maxExtensions {
-            warnings.append(CanaryCommand.warning("EXTENSIONS_TRUNCATED", "Only the first \(limits.maxExtensions) of \(appexNames.count) extensions are reported.", "Review the IPA's PlugIns folder by hand."))
+            warnings.append(
+                CanaryCommand.warning(
+                    "EXTENSIONS_TRUNCATED",
+                    "Only the first \(limits.maxExtensions) of \(appexNames.count) extensions are reported.",
+                    "Review the IPA's PlugIns folder by hand."))
         }
         for name in appexNames.prefix(limits.maxExtensions) {
             let dir = appDir + "/PlugIns/" + name
             guard Self.isDirectory(dir) else {
-                warnings.append(CanaryCommand.warning("EXTENSION_NOT_A_BUNDLE", "A PlugIns entry named *.appex is not a folder; it was skipped.", "Review the IPA by hand."))
+                warnings.append(
+                    CanaryCommand.warning(
+                        "EXTENSION_NOT_A_BUNDLE",
+                        "A PlugIns entry named *.appex is not a folder; it was skipped.",
+                        "Review the IPA by hand."))
                 continue
             }
             log("inspect: reading an extension")
             let extensionInfo = try bundleInfo(dir: dir, role: "extension")
-            let archs = try await tools.architectures(of: dir + "/" + extensionInfo.executable, role: "extension")
+            let archs = try await tools.architectures(
+                of: dir + "/" + extensionInfo.executable, role: "extension")
             let sig = try await describe(bundle: dir, label: "extension", warnings: &warnings)
             groups.formUnion(sig.appGroups)
             var point: String?
-            if let ns = extensionInfo.plist["NSExtension"] as? [String: Any] { point = Self.string(ns, "NSExtensionPointIdentifier") }
+            if let ns = extensionInfo.plist["NSExtension"] as? [String: Any] {
+                point = Self.string(ns, "NSExtensionPointIdentifier")
+            }
             extensions.append([
-                "path": .string(BinaryTools.cut("PlugIns/" + name)), "bundleId": .string(extensionInfo.bundleId),
-                "extensionPoint": Self.optional(point), "executable": .string(BinaryTools.cut(extensionInfo.executable)),
-                "architectures": .array(archs.map { .string($0) }), "signed": sig.signed, "entitlements": sig.entitlements,
+                "path": .string(BinaryTools.cut("PlugIns/" + name)),
+                "bundleId": .string(extensionInfo.bundleId),
+                "extensionPoint": Self.optional(point),
+                "executable": .string(BinaryTools.cut(extensionInfo.executable)),
+                "architectures": .array(archs.map { .string($0) }), "signed": sig.signed,
+                "entitlements": sig.entitlements,
                 "appGroups": .array(sig.appGroups.map { .string($0) }),
             ])
         }
 
-        let frameworks = (ExtractedTree.children(of: appDir + "/Frameworks") ?? []).filter { $0.hasSuffix(".framework") }.count
-        let watchApps = (ExtractedTree.children(of: appDir + "/Watch") ?? []).filter { $0.hasSuffix(".app") }.count
+        let frameworks = (ExtractedTree.children(of: appDir + "/Frameworks") ?? []).filter {
+            $0.hasSuffix(".framework")
+        }.count
+        let watchApps = (ExtractedTree.children(of: appDir + "/Watch") ?? []).filter {
+            $0.hasSuffix(".app")
+        }.count
 
         let report: [String: JSONValue] = [
-            "ipa": ["path": .string(path), "sizeBytes": .number(Double(size)), "sha256": .string(sha256)],
+            "ipa": [
+                "path": .string(path), "sizeBytes": .number(Double(size)),
+                "sha256": .string(sha256),
+            ],
             "app": .object(app),
             "extensions": .array(extensions),
             "appGroups": .array(groups.sorted().map { .string($0) }),
@@ -208,19 +261,28 @@ struct IPAInspector: Sendable {
 
     // MARK: extraction
 
-    private enum Raced { case ditto(RunResult), overBudget, stopped }
+    private enum Raced {
+        case ditto(RunResult)
+        case overBudget, stopped
+    }
 
     private func extract(ipa: String, into dest: String) async throws {
         let spec = CommandSpec(
-            executable: "/usr/bin/ditto", args: ["-x", "-k", "--norsrc", "--noextattr", "--noqtn", "--noacl", ipa, dest],
+            executable: "/usr/bin/ditto",
+            args: ["-x", "-k", "--norsrc", "--noextattr", "--noqtn", "--noacl", ipa, dest],
             timeout: limits.extractTimeout, maxOutputBytes: 64 * 1024)
         let (result, overBudget) = await withTaskGroup(of: Raced.self) { group in
             group.addTask { .ditto(await runner.run(spec)) }
             // A header can lie about sizes, so the folder is measured while ditto writes; passing the cap stops it.
             group.addTask {
                 while true {
-                    do { try await Task.sleep(for: limits.monitorInterval) } catch { return .stopped }
-                    if ExtractedTree.measure(root: dest, cap: limits.maxTotalBytes, maxEntries: limits.maxEntries * 2) > limits.maxTotalBytes {
+                    do { try await Task.sleep(for: limits.monitorInterval) } catch {
+                        return .stopped
+                    }
+                    if ExtractedTree.measure(
+                        root: dest, cap: limits.maxTotalBytes, maxEntries: limits.maxEntries * 2)
+                        > limits.maxTotalBytes
+                    {
                         return .overBudget
                     }
                 }
@@ -241,20 +303,34 @@ struct IPAInspector: Sendable {
             return (result, over)
         }
         if overBudget {
-            throw SideloadError("IPA_TOO_LARGE", "Unpacking was stopped: the data written passed the size limit.", fix: "Do not use this IPA.")
+            throw SideloadError(
+                "IPA_TOO_LARGE", "Unpacking was stopped: the data written passed the size limit.",
+                fix: "Do not use this IPA.")
         }
-        guard let result else { throw SideloadError("CANCELLED", "inspect was interrupted.", fix: "Re-run the command.") }
-        if result.spawnError == "INTERRUPTED" || (result.code == nil && result.signal != nil && Task.isCancelled) {
+        guard let result else {
+            throw SideloadError("CANCELLED", "inspect was interrupted.", fix: "Re-run the command.")
+        }
+        if result.spawnError == "INTERRUPTED"
+            || (result.code == nil && result.signal != nil && Task.isCancelled)
+        {
             throw SideloadError("CANCELLED", "inspect was interrupted.", fix: "Re-run the command.")
         }
         if let spawnError = result.spawnError {
-            throw SideloadError("TOOL_FAILED", "ditto could not be started (\(spawnError)).", fix: "Run `sideload doctor`.")
+            throw SideloadError(
+                "TOOL_FAILED", "ditto could not be started (\(spawnError)).",
+                fix: "Run `sideload doctor`.")
         }
         if result.timedOut {
-            throw SideloadError("IPA_EXTRACT_TIMEOUT", "Unpacking took longer than \(limits.extractTimeout.components.seconds) s and was stopped.", fix: "Do not use this IPA.")
+            throw SideloadError(
+                "IPA_EXTRACT_TIMEOUT",
+                "Unpacking took longer than \(limits.extractTimeout.components.seconds) s and was stopped.",
+                fix: "Do not use this IPA.")
         }
         guard result.code == 0 else {
-            throw SideloadError("IPA_EXTRACT_FAILED", "ditto could not unpack the archive (status \(result.code.map(String.init) ?? "unknown")).", fix: "The IPA may be damaged; download it again.")
+            throw SideloadError(
+                "IPA_EXTRACT_FAILED",
+                "ditto could not unpack the archive (status \(result.code.map(String.init) ?? "unknown")).",
+                fix: "The IPA may be damaged; download it again.")
         }
     }
 
@@ -269,17 +345,25 @@ struct IPAInspector: Sendable {
     /// Reads `<dir>/Info.plist`, requires a bundle identifier and a plain executable name, and checks that the
     /// executable is a regular file inside the bundle. Messages never contain file contents.
     private func bundleInfo(dir: String, role: String) throws -> BundleInfo {
-        let plist = try Self.readPlist(dir + "/Info.plist", role: role, maxBytes: limits.maxPlistBytes)
+        let plist = try Self.readPlist(
+            dir + "/Info.plist", role: role, maxBytes: limits.maxPlistBytes)
         guard let bundleId = plist["CFBundleIdentifier"] as? String, !bundleId.isEmpty else {
-            throw SideloadError("INFO_PLIST_INVALID", "The \(role)'s Info.plist has no CFBundleIdentifier.", fix: "Do not use this IPA.")
-        }
-        guard let executable = plist["CFBundleExecutable"] as? String, Self.isPlainName(executable) else {
             throw SideloadError(
-                "IPA_EXECUTABLE_INVALID", "The \(role)'s CFBundleExecutable is missing or is not a plain file name.",
+                "INFO_PLIST_INVALID", "The \(role)'s Info.plist has no CFBundleIdentifier.",
+                fix: "Do not use this IPA.")
+        }
+        guard let executable = plist["CFBundleExecutable"] as? String, Self.isPlainName(executable)
+        else {
+            throw SideloadError(
+                "IPA_EXECUTABLE_INVALID",
+                "The \(role)'s CFBundleExecutable is missing or is not a plain file name.",
                 fix: "Do not use this IPA; the executable name must not contain a path.")
         }
         guard Self.isFile(dir + "/" + executable) else {
-            throw SideloadError("IPA_EXECUTABLE_INVALID", "The \(role)'s executable is not a regular file in the bundle.", fix: "Do not use this IPA.")
+            throw SideloadError(
+                "IPA_EXECUTABLE_INVALID",
+                "The \(role)'s executable is not a regular file in the bundle.",
+                fix: "Do not use this IPA.")
         }
         return BundleInfo(plist: plist, bundleId: BinaryTools.cut(bundleId), executable: executable)
     }
@@ -292,15 +376,22 @@ struct IPAInspector: Sendable {
     static func readPlist(_ path: String, role: String, maxBytes: Int) throws -> [String: Any] {
         let fd = open(path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else {
-            throw SideloadError("INFO_PLIST_MISSING", "The \(role) has no readable Info.plist.", fix: "Do not use this IPA.")
+            throw SideloadError(
+                "INFO_PLIST_MISSING", "The \(role) has no readable Info.plist.",
+                fix: "Do not use this IPA.")
         }
         defer { close(fd) }
         var st = stat()
         guard fstat(fd, &st) == 0, st.st_mode & S_IFMT == S_IFREG else {
-            throw SideloadError("INFO_PLIST_MISSING", "The \(role) has no readable Info.plist.", fix: "Do not use this IPA.")
+            throw SideloadError(
+                "INFO_PLIST_MISSING", "The \(role) has no readable Info.plist.",
+                fix: "Do not use this IPA.")
         }
         guard st.st_size <= maxBytes else {
-            throw SideloadError("INFO_PLIST_TOO_LARGE", "The \(role)'s Info.plist is larger than \(maxBytes >> 20) MiB.", fix: "Do not use this IPA.")
+            throw SideloadError(
+                "INFO_PLIST_TOO_LARGE",
+                "The \(role)'s Info.plist is larger than \(maxBytes >> 20) MiB.",
+                fix: "Do not use this IPA.")
         }
         let length = Int(st.st_size)
         var bytes = [UInt8](repeating: 0, count: length)
@@ -316,10 +407,14 @@ struct IPAInspector: Sendable {
         }
         let data = Data(bytes[0..<done])
         // The parser's own error text can quote the document, so it is dropped.
-        guard let object = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+        guard
+            let object = try? PropertyListSerialization.propertyList(
+                from: data, options: [], format: nil),
             let dictionary = object as? [String: Any]
         else {
-            throw SideloadError("INFO_PLIST_INVALID", "The \(role)'s Info.plist is not a property-list dictionary.", fix: "Do not use this IPA.")
+            throw SideloadError(
+                "INFO_PLIST_INVALID", "The \(role)'s Info.plist is not a property-list dictionary.",
+                fix: "Do not use this IPA.")
         }
         return dictionary
     }
@@ -332,18 +427,31 @@ struct IPAInspector: Sendable {
         var appGroups: [String]
     }
 
-    private func describe(bundle: String, label: String, warnings: inout [JSONValue]) async throws -> Described {
+    private func describe(bundle: String, label: String, warnings: inout [JSONValue]) async throws
+        -> Described
+    {
         switch await tools.signature(of: bundle) {
         case .unsigned:
             return Described(signed: false, entitlements: .null, appGroups: [])
         case .signed(let entitlements, let warning):
             if let warning {
-                warnings.append(CanaryCommand.warning(warning, "The \(label)'s entitlements could not be read in full.", "Review the IPA with `codesign -d --entitlements - --xml` by hand."))
+                warnings.append(
+                    CanaryCommand.warning(
+                        warning, "The \(label)'s entitlements could not be read in full.",
+                        "Review the IPA with `codesign -d --entitlements - --xml` by hand."))
             }
-            return Described(signed: true, entitlements: entitlements ?? .null, appGroups: BinaryTools.appGroups(entitlements))
+            return Described(
+                signed: true, entitlements: entitlements ?? .null,
+                appGroups: BinaryTools.appGroups(entitlements))
         case .unknown(let why):
-            if why.hasSuffix("was interrupted") { throw SideloadError("CANCELLED", "inspect was interrupted.", fix: "Re-run the command.") }
-            warnings.append(CanaryCommand.warning("CODESIGN_FAILED", "\(why) for the \(label).", "Review the IPA with `codesign -dvv` by hand."))
+            if why.hasSuffix("was interrupted") {
+                throw SideloadError(
+                    "CANCELLED", "inspect was interrupted.", fix: "Re-run the command.")
+            }
+            warnings.append(
+                CanaryCommand.warning(
+                    "CODESIGN_FAILED", "\(why) for the \(label).",
+                    "Review the IPA with `codesign -dvv` by hand."))
             return Described(signed: .null, entitlements: .null, appGroups: [])
         }
     }
@@ -356,12 +464,15 @@ struct IPAInspector: Sendable {
 
     static func deviceFamily(_ plist: [String: Any]) -> JSONValue {
         guard let list = plist["UIDeviceFamily"] as? [Any] else { return .null }
-        return .array(list.prefix(8).compactMap { ($0 as? NSNumber).map { .number($0.doubleValue) } })
+        return .array(
+            list.prefix(8).compactMap { ($0 as? NSNumber).map { .number($0.doubleValue) } })
     }
 
     /// `CFBundleSupportedPlatforms` (`iPhoneOS`, `AppleTVOS`) in vtool's spelling, for when vtool said nothing.
     static func plistPlatform(_ plist: [String: Any]) -> String? {
-        guard let first = (plist["CFBundleSupportedPlatforms"] as? [Any])?.first as? String else { return nil }
+        guard let first = (plist["CFBundleSupportedPlatforms"] as? [Any])?.first as? String else {
+            return nil
+        }
         let lower = BinaryTools.cut(first).lowercased()
         return lower == "iphoneos" ? "ios" : lower == "appletvos" ? "tvos" : lower
     }
@@ -382,12 +493,18 @@ struct IPAInspector: Sendable {
         var offset: UInt64 = 0
         while offset < size {
             let want = Int(min(UInt64(buffer.count), size - offset))
-            let n = buffer.withUnsafeMutableBytes { pread(fd, $0.baseAddress!, want, off_t(offset)) }
+            let n = buffer.withUnsafeMutableBytes {
+                pread(fd, $0.baseAddress!, want, off_t(offset))
+            }
             if n < 0 {
                 if errno == EINTR { continue }
                 throw ioError("read")
             }
-            if n == 0 { throw SideloadError("IPA_CHANGED", "The file changed while it was being inspected.", fix: "Re-run the command.") }
+            if n == 0 {
+                throw SideloadError(
+                    "IPA_CHANGED", "The file changed while it was being inspected.",
+                    fix: "Re-run the command.")
+            }
             hasher.update(data: buffer[0..<n])
             offset += UInt64(n)
         }
@@ -395,8 +512,8 @@ struct IPAInspector: Sendable {
     }
 }
 
-private extension JSONValue {
-    var items: [JSONValue]? {
+extension JSONValue {
+    fileprivate var items: [JSONValue]? {
         if case .array(let a) = self { return a }
         return nil
     }

@@ -19,7 +19,9 @@ public struct PortalOptions: Sendable, Equatable {
 public enum PortalCommand {
     static let command = "portal"
 
-    public static func run(_ services: Services, _ options: PortalOptions = PortalOptions()) async -> Envelope {
+    public static func run(_ services: Services, _ options: PortalOptions = PortalOptions()) async
+        -> Envelope
+    {
         do {
             return try await execute(services, options)
         } catch {
@@ -27,13 +29,16 @@ public enum PortalCommand {
         }
     }
 
-    private static func execute(_ services: Services, _ options: PortalOptions) async throws -> Envelope {
+    private static func execute(_ services: Services, _ options: PortalOptions) async throws
+        -> Envelope
+    {
         let credentials = try ASCCredentials.load(services.home)
         let config = try services.store.load()
         let token = try ASCToken.make(credentials, now: services.clock.now())
 
         let client = PortalClient(
-            transport: services.http, token: token, clock: services.clock, sleep: services.sleep, log: services.log)
+            transport: services.http, token: token, clock: services.clock, sleep: services.sleep,
+            log: services.log)
         let requested = options.resource.map { [$0] } ?? PortalResource.allCases
         var results: [PortalResource: Result<PortalListing, SideloadError>] = [:]
         // One list at a time: gentle on the API's rate limit.
@@ -55,10 +60,13 @@ public enum PortalCommand {
         return PortalReport.build(
             PortalReportInput(
                 requested: requested, results: results, role: credentials.role,
-                keyIdTail: String(credentials.keyId.suffix(4)), bundleIdPrefix: config.bundleIdPrefix,
+                keyIdTail: String(credentials.keyId.suffix(4)),
+                bundleIdPrefix: config.bundleIdPrefix,
                 savedUDIDs: configPresent ? saved : nil,
                 keychainReferences: {
-                    (try? keychain.developmentIdentities()).map { Set($0.map { $0.reference.uppercased() }) }
+                    (try? keychain.developmentIdentities()).map {
+                        Set($0.map { $0.reference.uppercased() })
+                    }
                 },
                 now: services.clock.now(), showIdentifiers: options.showIdentifiers))
     }
