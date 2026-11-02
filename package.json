@@ -9,6 +9,11 @@
     "test": "node --test test/check-secrets.test.mjs",
     "check-secrets": "node scripts/check-secrets.mjs --staged",
     "check-secrets:all": "node scripts/check-secrets.mjs --all",
-    "prepare": "git config core.hooksPath .githooks"
+    "prepare": "git config core.hooksPath .githooks",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "prettier": "3.9.10"
   }
 }
