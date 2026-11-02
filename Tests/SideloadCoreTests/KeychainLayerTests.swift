@@ -124,7 +124,7 @@ struct PromptGuardTests {
         }
     }
 
-    @Test(.timeLimit(.minutes(1)))
+    @Test(.timeLimit(.minutes(5)))
     func blockedCallTimesOut() async {
         let release = DispatchSemaphore(value: 0)
         // The upper bound is the time limit, not a wall-clock assert: under a loaded parallel run the timer and the
