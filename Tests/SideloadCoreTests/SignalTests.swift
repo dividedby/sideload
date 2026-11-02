@@ -299,7 +299,7 @@ struct InterruptTests {
         let start = clock.now
         #expect(
             !Interrupt.bounded(timeout: .milliseconds(50)) { _ = stuck.wait(timeout: .now() + 20) })
-        #expect(clock.now - start < .seconds(1))
+        #expect(clock.now - start < runnerSlack)
         #expect(Interrupt.bounded(timeout: .seconds(5)) {})
     }
 
@@ -323,7 +323,7 @@ struct InterruptTests {
             writer: own.writer, children: LiveChildren(), emitTimeout: .milliseconds(50))
         var start = clock.now
         #expect(i1.handle(signal: SIGTERM) == 143)
-        #expect(clock.now - start < .seconds(1))
+        #expect(clock.now - start < runnerSlack)
 
         // Main's write never returns.
         let mainBlocked = GatedWriter(gate: isAnyObject)
@@ -334,7 +334,7 @@ struct InterruptTests {
         #expect(mainBlocked.entered.wait(timeout: .now() + 10) == .success)
         start = clock.now
         #expect(i2.handle(signal: SIGTERM) == 143)
-        #expect(clock.now - start < .seconds(1))
+        #expect(clock.now - start < runnerSlack)
     }
 
     @Test("stress: main and handler race 2000 times; one write and one exit owner each time")
