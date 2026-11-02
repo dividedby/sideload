@@ -178,7 +178,7 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     {
         return .fail(
             command, code: "USAGE", message: "refresh --auto takes no other option (--\(option) was given).",
-            fix: "Run `sideload refresh --auto` on its own; the opted-in devices and the limits are the policy's.")
+            fix: "Run `sideload refresh --auto` on its own; the devices with auto-renew on and the limits are the policy's.")
     }
 
     var portalResource: PortalResource?

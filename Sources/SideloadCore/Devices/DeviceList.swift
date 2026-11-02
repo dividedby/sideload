@@ -202,7 +202,7 @@ public enum DeviceList {
         case probe
     }
 
-    /// Whether `refresh --auto` may act on this device now, and how: the owner opted in (`autoRefresh`), the listed entry is a
+    /// Whether `refresh --auto` may act on this device now, and how: auto-renew is on (`autoRefresh`), the listed entry is a
     /// physical device that is paired, reached over Wi-Fi or USB, and its link is `connected` (`.connected`) or `disconnected`
     /// (`.probe`). An absent entry, an `unknown` transport, an `unavailable` link and any unrecognised link are nil. Pure; says
     /// nothing about the install itself.

@@ -42,6 +42,8 @@ public struct MenuActionOutcome: Sendable, Equatable {
     static let deviceNote = "The device may have finished; the row shows Change in progress until the window ends."
     static let savedDeviceNote =
         "Next: Add app… on its card, with Developer Mode on. If Apple says it is not registered, the result offers to register it. After the first install, trust the developer on the device: Settings › General › VPN & Device Management."
+    static let autoRenewOnNote = "Nothing was renewed now. Installs with 5 days or fewer left renew while you are logged in."
+    static let autoRenewOffNote = "Installs expire after 7 days unless you renew them by hand: Renew… on the card."
     /// Replaces `provision`'s CLI fix when the result offers "Register and retry…".
     static let registerFix = "Register and retry… asks first, then registers it on the free team and carries on."
 
@@ -73,6 +75,11 @@ public struct MenuActionOutcome: Sendable, Equatable {
             readSingle(
                 envelope, action: action, app: app ?? "",
                 done: name.map { "\($0) is lendable on \(alias)" } ?? "Lending is off on \(alias)", failed: "Setting not saved")
+        case .autoRenew(_, let on):
+            readSingle(
+                envelope, action: action, app: "", done: on ? "Auto-renew is on for \(alias)" : "Auto-renew is off for \(alias)",
+                failed: "Setting not saved")
+            if envelope.ok { notes = [on ? Self.autoRenewOnNote : Self.autoRenewOffNote] }
         case .addFetch(_, let app):
             readFetch(app, alias: alias, envelope: envelope, action: action, cancelled: cancelled, chain: .add)
         case .updateFetch(_, let app, let from):
@@ -104,7 +111,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
                 // Only an install that started may have finished on the device.
                 if steps.installStarted { notes.append(Self.deviceNote) }
                 if !steps.done.isEmpty, let chain = action.chainKind { notes.append(chain.keptNote) }
-            case .renew, .lendable, .saveDevice: break
+            case .renew, .lendable, .autoRenew, .saveDevice: break
             }
             // What finished before the stop stays visible; what was cut short is not a failure to retry.
             lines = lines.filter { $0.tone == .good }

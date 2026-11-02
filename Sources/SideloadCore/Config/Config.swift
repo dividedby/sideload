@@ -35,7 +35,9 @@ public struct SavedDevice: Codable, Sendable, Equatable {
     public var platform: String?
     public var name: String?
     public var hostnames: [String]
-    /// Owner opt-in for `refresh --auto` on this device (design section 18); set only by `device auto-refresh`.
+    /// Whether `refresh --auto` renews this device (design section 18). `device save` writes true for a new device (owner
+    /// decision 2026-11-01); a missing key still decodes as false, so an older config does not change. Set by `device
+    /// auto-refresh` and `device save`.
     public var autoRefresh: Bool
     /// Dev-signed apps on the device that sideload does not manage (WebDriverAgent, atvloadly's copy); counted
     /// against the free team's 3 apps per device. Owner-set through `device slots`, 0...3. The stored value is

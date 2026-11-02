@@ -94,12 +94,12 @@ final class MenuModel {
                 // showing it while it is read again.
                 let due = visible.filter { apps.needsRead($0, force: force, now: services.clock.now()) }
                 for alias in due where apps.entries[alias] == nil { apps.set(alias, .checking) }
-                panel = MenuLoader.panel(local, probe: probe, apps: apps.entries, checked: checked)
+                panel = MenuLoader.panel(lastLocal ?? local, probe: probe, apps: apps.entries, checked: checked)
                 for alias in due {
                     let read = await MenuLoader.readApps(services, alias: alias, prefix: inputs.config.bundleIdPrefix)
                     guard generation == loadGeneration else { return }
                     apps.set(alias, read)
-                    panel = MenuLoader.panel(local, probe: probe, apps: apps.entries, checked: checked)
+                    panel = MenuLoader.panel(lastLocal ?? local, probe: probe, apps: apps.entries, checked: checked)
                 }
                 // A lend or return by the lab can land while the reads run: draw once more from the ledger as it is now.
                 let fresh = await Task.detached { MenuLoader.loadLocal(services) }.value
@@ -177,8 +177,9 @@ final class MenuModel {
             return
         }
         // A load in flight must not write over the action's state or store a read cut short by it. The fetch of Add app
-        // changes neither the device nor the ledger, so it leaves the load alone and the panel stays current for stage 2.
-        if !action.isFetchStage {
+        // changes neither the device nor the ledger, so it leaves the load alone and the panel stays current for stage 2; so
+        // does a setting that only writes config.
+        if !action.leavesDeviceReadAlone {
             loadGeneration += 1
             loadTask?.cancel()
             loadTask = nil
@@ -228,7 +229,26 @@ final class MenuModel {
             checkUpdates(force: false)
             return
         }
+        // What is left that leaves the device read alone is the auto-renew setting in `config.json`: the cache stays and the card
+        // shows the new setting. (A fetch above redraws nothing, so the two ends differ.)
+        if action.leavesDeviceReadAlone {
+            redrawConfig()
+            checkUpdates(force: false)
+            return
+        }
         invalidateAndReload(action)
+    }
+
+    /// Reads the local files again and draws them over what the last load learned of the devices (no `devicectl`). A load that
+    /// is still running paints from `lastLocal` too, so its later repaints carry the new setting; there is nothing to defer.
+    private func redrawConfig() {
+        Task { [services] in
+            let local = await Task.detached { MenuLoader.loadLocal(services) }.value
+            // An action that started meanwhile reads the files itself when it ends.
+            guard actionTask == nil else { return }
+            lastLocal = local
+            repaint(renewing: false)
+        }
     }
 
     private func openApproval(_ action: MenuAction) {

@@ -2,7 +2,7 @@ import Darwin
 import Foundation
 
 extension RefreshCommand {
-    /// `refresh --auto`: what the launchd agent runs (design section 18). It takes no option: the opted-in devices, the
+    /// `refresh --auto`: what the launchd agent runs (design section 18). It takes no option: the devices with auto-renew on, the
     /// window (5 days) and the limits are the policy's. Never waits for `.op.lock`; a busy lock, the kill switch, a
     /// suspension or nothing due is `ok:true`.
     public static func runAuto(_ services: Services) async -> Envelope {
@@ -24,7 +24,7 @@ extension RefreshRun {
         let expires: Date
     }
 
-    /// One opted-in device: the apps that passed the install gates, and what became of the rest.
+    /// One device with auto-renew on: the apps that passed the install gates, and what became of the rest.
     private struct DevicePlan {
         let alias: String
         let saved: SavedDevice
@@ -127,7 +127,7 @@ extension RefreshRun {
 
     // MARK: 2. the devices and their installs
 
-    /// The opted-in devices and, per install, the gates against the ledger as it is now. Returns a code only when the run ends.
+    /// The devices with auto-renew on and, per install, the gates against the ledger as it is now. Returns a code only when the run ends.
     private func planDevices(_ state: inout AutoState, _ config: Config, _ auto: RefreshAutoContext) -> String? {
         let (eligible, invalid) = RefreshPolicy.autoDevices(config.devices)
         for alias in invalid { skipDevice(alias, .configInvalid, &state, auto) }

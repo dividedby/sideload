@@ -136,6 +136,7 @@ public enum MenuAddDevice {
             lines: [
                 candidate.title,
                 "Saves it in config.json; the device and the free team are unchanged",
+                "Auto-renew will be on: its installs renew while you are logged in and it is reachable; turn it off from its card",
                 "Registering it on the free team is a separate confirm, only if Apple asks when you add its first app",
             ],
             confirmLabel: "Save device", destructive: false, runningLabel: "Saving \(alias)…", apps: [])

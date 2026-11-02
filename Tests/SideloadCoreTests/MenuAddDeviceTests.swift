@@ -179,6 +179,10 @@ struct MenuAddDeviceConfirmTests {
         #expect(prompt.lines[0] == item.title)
         #expect(prompt.lines.contains("Saves it in config.json; the device and the free team are unchanged"))
         #expect(prompt.lines.contains { $0.contains("separate confirm") && $0.contains("free team") })
+        // Saving turns auto-renew on (owner decision 2026-11-01): the confirm says so, with the condition and the way back.
+        #expect(
+            prompt.lines.contains(
+                "Auto-renew will be on: its installs renew while you are logged in and it is reachable; turn it off from its card"))
         #expect(!(prompt.lines + [prompt.title, prompt.runningLabel]).joined().contains(item.match))
     }
 
@@ -216,7 +220,7 @@ struct MenuAddDeviceRunTests {
             #expect(ran.outcome.kind == .done && ran.outcome.headline == "Saved ipad")
             #expect(ran.outcome.notes == [MenuActionOutcome.savedDeviceNote])
             #expect(ran.saved["ipad"]?.udid == savedUdid("2") && ran.saved["ipad"]?.platform == "ios")
-            #expect(ran.saved["ipad"]?.autoRefresh == false && ran.saved["ipad"]?.freeSlotsReserved == 0)
+            #expect(ran.saved["ipad"]?.autoRefresh == true && ran.saved["ipad"]?.freeSlotsReserved == 0)
         }
     }
 
