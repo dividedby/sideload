@@ -27,3 +27,17 @@ jobs:
       # Zero dependencies: no install step.
       - run: pnpm test
       - run: node scripts/check-secrets.mjs --all
+
+  swift:
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "27.0"
+      - name: Check Swift formatting
+        run: |
+          xcrun swift-format format --in-place --recursive Sources Tests Package.swift
+          git diff --exit-code
+      - run: swift test -j 2
