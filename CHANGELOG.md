@@ -7,12 +7,13 @@ All notable changes to this project are documented here. Format follows
 
 ## [0.6.0] - 2026-11-01
 
-A new device without the terminal, and auto-renew you can see. The menu bar app's Add device… saves a paired device, and
-Register and retry… registers it on the free team when `provision` says it is not (not yet run on a device); spike S6 passed
-on 2026-11-01 with the iPad saved and given Stremio and Apollo that way. Auto-renew is now on by default for a newly saved
-device, and every device card shows it with a toggle. `URLSessionTransport.get` no longer reports `timedOut` on an answer that
-had already arrived. CLI changes in behaviour: `device save` writes `autoRefresh: true` for a device with no saved entry and
-prints `autoRefresh`, and `provision` reads two more messages as `DEVICE_NOT_REGISTERED`.
+A new device without the terminal, and auto-renew you can see. The menu bar app's Add device… saves a paired device; spike S6
+passed on 2026-11-01 with the iPad saved that way and given Stremio and Apollo with Add app…. Register and retry… registers a
+device on the free team when `provision` says it is not (not yet run on a device). Auto-renew is now on by default for a newly
+saved device (no device has been saved with that default yet), and every device card shows it with a toggle.
+`URLSessionTransport.get` no longer reports `timedOut` on an answer that had already arrived. CLI changes in behaviour:
+`device save` writes `autoRefresh: true` for a device with no saved entry and prints `autoRefresh`, and `provision` reads two
+more messages as `DEVICE_NOT_REGISTERED`.
 
 ### Added
 
