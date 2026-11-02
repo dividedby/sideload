@@ -9,13 +9,7 @@
           "code": 4000,
           "domain": "wrapper",
           "userInfo": {
-            "NSUnderlyingError": {
-              "error": {
-                "code": -402620392,
-                "domain": "com.apple.dt.MobileDevice",
-                "userInfo": {}
-              }
-            }
+            "NSUnderlyingError": { "error": { "code": -402620392, "domain": "com.apple.dt.MobileDevice", "userInfo": {} } }
           }
         }
       }

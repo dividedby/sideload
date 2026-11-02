@@ -6,7 +6,9 @@
   "reason": "devicectl produced more output than the safety limit; the install outcome is unknown.",
   "bundleId": "com.example.sideload.canary",
   "device": "iphone",
-  "deviceDelta": ["com.example.sideload.canary"],
+  "deviceDelta": [
+    "com.example.sideload.canary"
+  ],
   "deviceRemoved": [],
   "guard": "passed",
   "xcodeVersion": "27.0 (27A266a)",

@@ -1,3 +1,2 @@
 #!/bin/sh
-printf aaaaaaaa
-printf bbbbbb >&2
+printf aaaaaaaa; printf bbbbbb >&2

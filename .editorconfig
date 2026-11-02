@@ -3,3 +3,6 @@ root = true
 [*.{sh,bash}]
 indent_style = space
 indent_size = 2
+
+[**/Fixtures/**]
+ignore = true

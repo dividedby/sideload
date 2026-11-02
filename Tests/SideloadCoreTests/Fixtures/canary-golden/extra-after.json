@@ -6,7 +6,9 @@
   "reason": "Install succeeded; Apple has fixed the install block.",
   "bundleId": "com.example.sideload.canary",
   "device": "iphone",
-  "deviceDelta": ["com.unexpected.app"],
+  "deviceDelta": [
+    "com.unexpected.app"
+  ],
   "deviceRemoved": [],
   "guard": "passed",
   "xcodeVersion": "27.0 (27A266a)",
