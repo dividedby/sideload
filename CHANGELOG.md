@@ -5,6 +5,16 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-01
+
+A new device without the terminal, and auto-renew you can see. The menu bar app's Add device… saves a paired device; spike S6
+passed on 2026-11-01 with the iPad saved that way and given Stremio and Apollo with Add app…. Register and retry… registers a
+device on the free team when `provision` says it is not (not yet run on a device). Auto-renew is now on by default for a newly
+saved device (no device has been saved with that default yet), and every device card shows it with a toggle.
+`URLSessionTransport.get` no longer reports `timedOut` on an answer that had already arrived. CLI changes in behaviour:
+`device save` writes `autoRefresh: true` for a device with no saved entry and prints `autoRefresh`, and `provision` reads two
+more messages as `DEVICE_NOT_REGISTERED`.
+
 ### Added
 
 - Add device… in the menu bar app, so a paired device can be added without the terminal. It lists the physical iOS and tvOS
@@ -22,8 +32,8 @@ All notable changes to this project are documented here. Format follows
   logged in and it is reachable, spends no new App ID, and needs the refresh agent loaded; off: installs then expire after 7 days unless renewed by hand); the
   click is your `--yes` for `device auto-refresh --on|--off`. It writes `config.json` only: no provision, sign, install,
   portal, device command or `.op.lock`, and the card shows the new state without reading the device again. A confirm left open
-  while the setting changed elsewhere is blocked ("Already on" / "Already off"). Built and tested with fakes; not yet run on a
-  device.
+  while the setting changed elsewhere is blocked ("Already on" / "Already off"). Built and tested with fakes; the owner tried the
+  cards and the toggle on 2026-11-01, in a build of 946fe88.
 - `device save` prints `autoRefresh` in its device object.
 
 ### Changed
@@ -1050,7 +1060,8 @@ and `slot restore`. The restore that `slot return` does was checked live on 2026
 - The CLI no longer crashes with an `EPIPE` stack trace when its stdout reader closes early
   (e.g. `sideload doctor | head`).
 
-[Unreleased]: https://github.com/dividedby/sideload/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/dividedby/sideload/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/dividedby/sideload/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dividedby/sideload/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/dividedby/sideload/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/dividedby/sideload/compare/v0.2.0...v0.3.0
