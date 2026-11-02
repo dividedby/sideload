@@ -458,6 +458,9 @@ struct BinarySignalTests {
         process.standardOutput = pipe.writer
         process.standardError = FileHandle.nullDevice
         process.standardInput = FileHandle.nullDevice
+        // Marked off the test's task: resuming that task can lag by seconds on a loaded machine.
+        let ended = Moment()
+        process.terminationHandler = { _ in ended.mark() }
         try process.run()
         guard await eventually(timeout: .seconds(10), { Self.isReady(ready) }) else {
             process.terminate()
@@ -467,13 +470,12 @@ struct BinarySignalTests {
         }
         try await Task.sleep(for: .milliseconds(200))  // main reaches its blocked result write right after the marker
         #expect(process.isRunning, "sideload exited before the signal\(Self.termination(process))")
-        let clock = ContinuousClock()
-        let start = clock.now
+        let start = ContinuousClock.now
         kill(process.processIdentifier, SIGTERM)
-        let exited = await eventually(timeout: .seconds(5)) { !process.isRunning }
+        let exited = await eventually(timeout: .seconds(5)) { ended.at != nil }
         if !exited { kill(process.processIdentifier, SIGKILL) }
         #expect(exited, "sideload ignored SIGTERM while stdout was blocked")
-        #expect(clock.now - start < .seconds(4))
+        if let at = ended.at { #expect(at - start < .seconds(4)) }
         #expect(process.terminationReason == .exit, "\(Self.termination(process))")
         #expect(process.terminationStatus == 143, "\(Self.termination(process))")
         withExtendedLifetime(pipe.reader) {}
