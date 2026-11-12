@@ -177,8 +177,8 @@ public enum AppCommand {
                 data["uninstalled"] = false
                 throw unexpectedDelta(
                     AppSnapshot.delta(
-                    from: before, to: outcome.after ?? before, relevantTo: target.bundleId,
-                    prefix: target.prefix, profiles: profiles),
+                        from: before, to: outcome.after ?? before, relevantTo: target.bundleId,
+                        prefix: target.prefix, profiles: profiles),
                     expectation:
                         "the app is still on the device after its uninstall reported success",
                     extra: data)

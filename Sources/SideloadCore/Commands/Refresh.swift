@@ -93,7 +93,9 @@ struct RefreshFailure {
     /// The app-delta counts of an `UNEXPECTED_APP_DELTA` stop (numbers only), for the automatic run's log.
     var deltaCounts: [String: JSONValue] = [:]
 
-    static let deltaCountKeys = ["addedCount", "removedCount", "otherAddedCount", "otherRemovedCount"]
+    static let deltaCountKeys = [
+        "addedCount", "removedCount", "otherAddedCount", "otherRemovedCount",
+    ]
 
     init(code: String, message: String, fix: String?, retryAfter: Double? = nil) {
         self.code = code
@@ -707,7 +709,9 @@ struct RefreshRun {
                 if case .number(let n) = value { fields[key] = RefreshLog.int(Int(n)) }
             }
         }
-        if !warningCodes.isEmpty { fields["warnings"] = .array(warningCodes.map { .string(RefreshLog.code($0)) }) }
+        if !warningCodes.isEmpty {
+            fields["warnings"] = .array(warningCodes.map { .string(RefreshLog.code($0)) })
+        }
         if retried { fields["renewRetried"] = true }
         auto.log.record("step", fields)
     }
