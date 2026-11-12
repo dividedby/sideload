@@ -291,7 +291,9 @@ struct FreeInstallRun: Sendable {
             // A definite failure and the app is not there: the failure stands (a reinstall that lost the app is a hard stop).
             if confirmation.note == .unexpectedAppDelta {
                 throw unexpectedDelta(
-                    AppSnapshot.delta(from: before, to: outcome.after ?? before),
+                    AppSnapshot.delta(
+                        from: before, to: outcome.after ?? before, relevantTo: target.bundleId,
+                        prefix: target.prefix, profiles: planned.profiles),
                     expectation: "the app is gone after a failed reinstall",
                     extra: [
                         "installed": false, "reinstall": true,
@@ -310,7 +312,9 @@ struct FreeInstallRun: Sendable {
             }
             if confirmation.note == .unexpectedAppDelta {
                 throw unexpectedDelta(
-                    AppSnapshot.delta(from: before, to: outcome.after ?? before),
+                    AppSnapshot.delta(
+                        from: before, to: outcome.after ?? before, relevantTo: target.bundleId,
+                        prefix: target.prefix, profiles: planned.profiles),
                     expectation: "the app is gone after its reinstall reported success",
                     extra: pendingData(["reinstall": true]))
             }
@@ -360,18 +364,23 @@ struct FreeInstallRun: Sendable {
                     "The install reported a failure (\(failure.code)) but the app is on the device, so it is recorded as installed.",
                     "No action needed."))
         }
-        let delta = AppSnapshot.delta(from: before, to: after)
+        let relevant = AppSnapshot.delta(
+            from: before, to: after, relevantTo: target.bundleId, prefix: target.prefix,
+            profiles: planned.profiles)
+        let delta = relevant.delta
         let expected =
             planned.reinstall
             ? delta.isEmpty : (delta.added == [target.bundleId] && delta.removed.isEmpty)
         guard expected else {
             throw unexpectedDelta(
-                delta,
+                relevant,
                 expectation: planned.reinstall
                     ? "a reinstall should change nothing"
                     : "a first install should add only this app",
                 extra: ["installed": true, "recorded": true, "reinstall": .bool(planned.reinstall)])
         }
+
+        if let other = relevant.otherAppsWarning { warnings.append(other) }
 
         let daysLeft = Int((signed.profileExpires.timeIntervalSince(now) / 86_400).rounded(.down))
         return [
@@ -389,6 +398,8 @@ struct FreeInstallRun: Sendable {
             "delta": [
                 "added": .number(Double(delta.added.count)),
                 "removed": .number(Double(delta.removed.count)),
+                "otherAdded": .number(Double(relevant.otherAdded)),
+                "otherRemoved": .number(Double(relevant.otherRemoved)),
             ],
             "warnings": .array(warnings),
         ]

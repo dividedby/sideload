@@ -90,6 +90,12 @@ struct RefreshFailure {
     var message: String
     var fix: String?
     var retryAfter: Double?
+    /// The app-delta counts of an `UNEXPECTED_APP_DELTA` stop (numbers only), for the automatic run's log.
+    var deltaCounts: [String: JSONValue] = [:]
+
+    static let deltaCountKeys = [
+        "addedCount", "removedCount", "otherAddedCount", "otherRemovedCount",
+    ]
 
     init(code: String, message: String, fix: String?, retryAfter: Double? = nil) {
         self.code = code
@@ -115,6 +121,9 @@ struct RefreshFailure {
         message = entry?.message ?? "A step failed without saying why."
         fix = entry?.fix
         if case .number(let seconds)? = envelope.data["retryAfter"] { retryAfter = seconds }
+        for key in Self.deltaCountKeys {
+            if case .number? = envelope.data[key] { deltaCounts[key] = envelope.data[key] }
+        }
     }
 }
 
@@ -542,7 +551,14 @@ struct RefreshRun {
                         installBlock = failed
                     }
                 }
-                logStep(.install, target, since: began, failure: failure)
+                var codes: [String] = []
+                if case .array(let items)? = envelope.data["warnings"] {
+                    codes = items.compactMap {
+                        if case .object(let w) = $0, case .string(let c)? = w["code"] { return c }
+                        return nil
+                    }
+                }
+                logStep(.install, target, since: began, failure: failure, warningCodes: codes)
             }
         }
 
@@ -677,7 +693,7 @@ struct RefreshRun {
     /// One line of the automatic run's log per step that ran; the manual run writes none.
     private func logStep(
         _ step: RefreshStep, _ target: FreeTarget, since began: Date, failure: RefreshFailure?,
-        retried: Bool = false
+        retried: Bool = false, warningCodes: [String] = []
     ) {
         guard let auto else { return }
         var fields: [String: JSONValue] = [
@@ -687,7 +703,15 @@ struct RefreshRun {
             "durationMs": RefreshLog.int(
                 max(0, Int(services.clock.now().timeIntervalSince(began) * 1000))),
         ]
-        if let failure { fields["code"] = .string(RefreshLog.code(failure.code)) }
+        if let failure {
+            fields["code"] = .string(RefreshLog.code(failure.code))
+            for (key, value) in failure.deltaCounts {
+                if case .number(let n) = value { fields[key] = RefreshLog.int(Int(n)) }
+            }
+        }
+        if !warningCodes.isEmpty {
+            fields["warnings"] = .array(warningCodes.map { .string(RefreshLog.code($0)) })
+        }
         if retried { fields["renewRetried"] = true }
         auto.log.record("step", fields)
     }

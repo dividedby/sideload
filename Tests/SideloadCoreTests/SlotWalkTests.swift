@@ -283,7 +283,7 @@ private func randomScript(_ rng: inout SplitMix64, locked: JSONValue, limit: JSO
     }
     script.uninstallLeavesApp = chance(0.06)
     script.installLeavesApp = chance(0.05)
-    if chance(0.03) { script.alsoAdded = ["com.example.stray": false] }
+    if chance(0.03) { script.alsoAdded = ["com.example.stray": true] }
     return script
 }
 

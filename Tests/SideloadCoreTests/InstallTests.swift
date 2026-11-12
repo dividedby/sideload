@@ -201,27 +201,102 @@ struct InstallTests {
     // MARK: delta
 
     @Test(
-        "a first install that also adds another app is UNEXPECTED_APP_DELTA, a hard stop (counts only)"
+        "a first install that also adds another developer-signed app is UNEXPECTED_APP_DELTA, a hard stop (counts only)"
     )
     func unexpectedDeltaAdded() async throws {
-        try await withInstallWorld(script: DeviceScript(alsoAdded: ["com.example.stray": false])) {
+        try await withInstallWorld(script: DeviceScript(alsoAdded: ["com.example.stray": true])) {
             w in
             let out = await w.install()
             #expect(out.errorCodes == ["UNEXPECTED_APP_DELTA"])
             let json = try out.printed().json
             #expect(json["addedCount"] == 2 && json["removedCount"] == 0)
+            #expect(json["otherAddedCount"] == 0 && json["otherRemovedCount"] == 0)
             #expect(!text(out).contains("com.example.stray"))
             #expect(w.installs.first?.present == true, "the app did land, so it is recorded")
         }
     }
 
-    @Test("a reinstall that makes another app vanish is UNEXPECTED_APP_DELTA")
+    @Test("a reinstall that makes another developer-signed app vanish is UNEXPECTED_APP_DELTA")
     func unexpectedDeltaRemoved() async throws {
         let script = DeviceScript(
-            initial: [stremioId: true, "com.example.other": false],
+            initial: [stremioId: true, "com.example.other": true],
             alsoRemovedOnInstall: ["com.example.other"])
         try await withInstallWorld(script: script) { w in
             #expect(await w.install().errorCodes == ["UNEXPECTED_APP_DELTA"])
+        }
+    }
+
+    @Test(
+        "a reinstall while App Store apps come and go is ok with OTHER_APPS_CHANGED (counts only) and the ledger is not failed"
+    )
+    func reinstallAppStoreChurn() async throws {
+        let script = DeviceScript(
+            initial: [stremioId: true, "com.example.store.old": false],
+            alsoAdded: ["com.example.store.new": false],
+            alsoRemovedOnInstall: ["com.example.store.old"])
+        try await withInstallWorld(
+            script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }
+        ) { w in
+            let out = await w.install()
+            #expect(out.ok, "\(out.errors)")
+            let printed = try out.printed()
+            #expect(printed.json["reinstall"] == true)
+            #expect(printed.json["delta"]?["added"] == 0 && printed.json["delta"]?["removed"] == 0)
+            #expect(
+                printed.json["delta"]?["otherAdded"] == 1
+                    && printed.json["delta"]?["otherRemoved"] == 1)
+            let warnings = try #require(printed.json["warnings"]?.array)
+            let other = try #require(warnings.first { $0["code"] == "OTHER_APPS_CHANGED" })
+            #expect(other["data"]?["addedCount"] == 1 && other["data"]?["removedCount"] == 1)
+            #expect(!printed.text.contains("com.example.store"))
+            let record = try #require(w.installs.first)
+            #expect(record.present && !record.refresh.suspended)
+            #expect(record.refresh.consecutiveFailures == 0)
+        }
+    }
+
+    @Test("a reinstall that also adds a developer-signed app is still UNEXPECTED_APP_DELTA")
+    func reinstallDeveloperAdded() async throws {
+        let script = DeviceScript(
+            initial: [stremioId: true],
+            alsoAdded: ["com.example.store.new": false, "com.example.dev": true])
+        try await withInstallWorld(
+            script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }
+        ) { w in
+            let out = await w.install()
+            #expect(out.errorCodes == ["UNEXPECTED_APP_DELTA"])
+            let json = try out.printed().json
+            #expect(json["addedCount"] == 1 && json["otherAddedCount"] == 1)
+        }
+    }
+
+    @Test(
+        "an added app named by a free-team profile is relevant even when devicectl does not flag it"
+    )
+    func profileListedAdded() async throws {
+        let script = DeviceScript(
+            initial: [stremioId: true], alsoAdded: ["com.example.profiled": false],
+            staleFreeProfiles: ["com.example.profiled"])
+        try await withInstallWorld(
+            script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }
+        ) { w in
+            #expect(await w.install().errorCodes == ["UNEXPECTED_APP_DELTA"])
+        }
+    }
+
+    @Test("a first install while an App Store app lands is ok with OTHER_APPS_CHANGED")
+    func firstInstallAppStoreChurn() async throws {
+        try await withInstallWorld(
+            script: DeviceScript(alsoAdded: ["com.example.store.new": false])
+        ) { w in
+            let out = await w.install()
+            #expect(out.ok, "\(out.errors)")
+            let printed = try out.printed()
+            #expect(
+                printed.json["delta"]?["added"] == 1 && printed.json["delta"]?["otherAdded"] == 1)
+            let warnings = try #require(printed.json["warnings"]?.array)
+            #expect(warnings.map { $0["code"] } == ["OTHER_APPS_CHANGED"])
+            #expect(w.installs.first?.present == true)
         }
     }
 

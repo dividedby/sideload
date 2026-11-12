@@ -346,13 +346,16 @@ struct FreeDeviceCalls: Sendable {
     }
 }
 
-/// An `UNEXPECTED_APP_DELTA` stop: counts only, never the other apps' IDs.
+/// An `UNEXPECTED_APP_DELTA` stop: counts only, never the other apps' IDs. `addedCount`/`removedCount` are the relevant
+/// apps' (all of them under the strict fallback); the rest are `otherAddedCount`/`otherRemovedCount`.
 func unexpectedDelta(
-    _ delta: AppSnapshot.Delta, expectation: String, extra: [String: JSONValue] = [:]
+    _ delta: AppSnapshot.RelevantDelta, expectation: String, extra: [String: JSONValue] = [:]
 ) -> SideloadError {
     var data: [String: JSONValue] = [
-        "addedCount": .number(Double(delta.added.count)),
-        "removedCount": .number(Double(delta.removed.count)),
+        "addedCount": .number(Double(delta.delta.added.count)),
+        "removedCount": .number(Double(delta.delta.removed.count)),
+        "otherAddedCount": .number(Double(delta.otherAdded)),
+        "otherRemovedCount": .number(Double(delta.otherRemoved)),
     ]
     data.merge(extra) { _, new in new }
     return SideloadError(
@@ -361,4 +364,21 @@ func unexpectedDelta(
         fix:
             "A hard stop: check the device by hand. If our app landed wrongly, the owner can `sideload app remove` it.",
         data: data)
+}
+
+extension AppSnapshot.RelevantDelta {
+    /// The `OTHER_APPS_CHANGED` warning when apps outside the relevant set changed (counts only), else nil.
+    var otherAppsWarning: JSONValue? {
+        guard hasOtherChanges else { return nil }
+        return [
+            "code": "OTHER_APPS_CHANGED",
+            "message":
+                "Other apps on the device changed during this command (App Store or system apps); they use no free-team slot.",
+            "fix": "No action needed.",
+            "data": [
+                "addedCount": .number(Double(otherAdded)),
+                "removedCount": .number(Double(otherRemoved)),
+            ],
+        ]
+    }
 }

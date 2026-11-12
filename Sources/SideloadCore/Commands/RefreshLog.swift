@@ -3,9 +3,9 @@ import Foundation
 
 /// `logs/refresh.jsonl`: what `refresh --auto` decided and did (design section 18), one JSON line each. Only aliases, app names,
 /// codes and numbers go in (never a device ID, a device or identity name, a path or a message): `record` cleans every field
-/// itself (`device` as an alias, `code` and `reason` as codes, the keys of `skipped` as codes, any other string as a plain
-/// token, anything that is not a scalar not at all), so no caller can forget. A write that fails is ignored: logging never
-/// breaks a run.
+/// itself (`device` as an alias, `code` and `reason` as codes, the keys of `skipped` and the entries of `warnings` as codes,
+/// any other string as a plain token, anything else that is not a scalar not at all), so no caller can forget. A write that
+/// fails is ignored: logging never breaks a run.
 struct RefreshLog: Sendable {
     /// The file is moved to `refresh.jsonl.1` (replacing the older one) once it reaches this size, so the log stays near 2 MiB.
     static let rotateAt = 1 << 20
@@ -79,6 +79,12 @@ struct RefreshLog: Sendable {
                 }
             }
             return .object(tally)
+        case .array(let items) where key == "warnings":
+            return .array(
+                items.compactMap {
+                    if case .string(let text) = $0 { return .string(code(text)) }
+                    return nil
+                })
         case .bool, .number: return value
         case .null, .array, .object: return .null
         }

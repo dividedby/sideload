@@ -5,6 +5,16 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A renewal no longer fails with `UNEXPECTED_APP_DELTA` (and suspends the install) because an App Store app was installed,
+  removed or offloaded on the device during the command. The check after `install`, `app remove` and `slot lend|return`
+  now compares only the relevant apps: ours, any `builtByDeveloper` app, and any app a free-team profile names. Other
+  changes are the warning `OTHER_APPS_CHANGED` with counts only (`delta` gains `otherAdded`/`otherRemoved`, and the
+  `UNEXPECTED_APP_DELTA` data gains `otherAddedCount`/`otherRemovedCount`). If our own app is not flagged
+  `builtByDeveloper` in the snapshots, the whole list is compared as before. The `refresh.jsonl` step line now carries the
+  delta counts of such a stop and the codes of the step's warnings.
+
 ## [0.6.0] - 2026-11-01
 
 A new device without the terminal, and auto-renew you can see. The menu bar app's Add device… saves a paired device; spike S6

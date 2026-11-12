@@ -40,6 +40,27 @@ struct SlotTests {
         }
     }
 
+    @Test("lend while an App Store app vanishes too is ok with OTHER_APPS_CHANGED (counts only)")
+    func lendAppStoreChurn() async throws {
+        try await withInstallWorld(
+            script: DeviceScript(
+                initial: [stremioId: true, wdaId: true, "com.example.store": false],
+                alsoRemovedOnUninstall: ["com.example.store"]),
+            lendable: "stremio-ios",
+            ledger: { $0.installs = [installRecord(.stremioIOS)] }
+        ) { w in
+            let out = await w.slot("lend", device: "iphone", to: "lab")
+            #expect(out.ok, "\(out.errors)")
+            let printed = json(out)
+            #expect(printed["freed"] == 1)
+            let other = try #require(
+                printed["warnings"]?.array?.first { $0["code"] == "OTHER_APPS_CHANGED" })
+            #expect(other["data"]?["removedCount"] == 1 && other["data"]?["addedCount"] == 0)
+            #expect(!text(out).contains("com.example.store"))
+            #expect(try w.ledger().lent.count == 1)
+        }
+    }
+
     @Test(
         "lend is idempotent when the slot is already lent to the lab: ok, freed 0, no device call")
     func lendIdempotent() async throws {
@@ -191,6 +212,29 @@ struct SlotTests {
             #expect(ledger.lent.isEmpty)
             #expect(ledger.installs.first?.present == true)
             try w.expectClean(out)
+        }
+    }
+
+    @Test("return while an App Store app lands too is ok with OTHER_APPS_CHANGED (counts only)")
+    func returnAppStoreChurn() async throws {
+        try await withInstallWorld(
+            script: DeviceScript(alsoAdded: ["com.example.store.new": false]),
+            lendable: "stremio-ios",
+            ledger: { ledger in
+                ledger.lent = [lentToLab]
+                ledger.installs = [installRecord(.stremioIOS, present: false)]
+            }
+        ) { w in
+            let out = await w.slot("return", device: "iphone")
+            #expect(out.ok, "\(out.errors)")
+            let printed = json(out)
+            #expect(printed["reinstalled"] == true)
+            let other = try #require(
+                printed["warnings"]?.array?.first { $0["code"] == "OTHER_APPS_CHANGED" })
+            #expect(other["data"]?["addedCount"] == 1 && other["data"]?["removedCount"] == 0)
+            #expect(!text(out).contains("com.example.store"))
+            let ledger = try w.ledger()
+            #expect(ledger.lent.isEmpty && ledger.installs.first?.present == true)
         }
     }
 
