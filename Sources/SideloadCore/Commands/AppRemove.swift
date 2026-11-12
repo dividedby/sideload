@@ -154,7 +154,9 @@ public enum AppCommand {
             // A definite failure and the app is still there.
             if let failure = outcome.opFailure { throw failure }
             throw unexpectedDelta(
-                AppSnapshot.delta(from: before, to: outcome.after ?? before),
+                AppSnapshot.delta(
+                    from: before, to: outcome.after ?? before, relevantTo: target.bundleId,
+                    prefix: target.prefix, profiles: profiles),
                 expectation: "the app is still on the device after its uninstall reported success",
                 extra: ["uninstalled": false])
         case .keep:
@@ -174,7 +176,9 @@ public enum AppCommand {
             if confirmation.note == .unexpectedAppDelta {
                 data["uninstalled"] = false
                 throw unexpectedDelta(
-                    AppSnapshot.delta(from: before, to: outcome.after ?? before),
+                    AppSnapshot.delta(
+                    from: before, to: outcome.after ?? before, relevantTo: target.bundleId,
+                    prefix: target.prefix, profiles: profiles),
                     expectation:
                         "the app is still on the device after its uninstall reported success",
                     extra: data)
@@ -189,14 +193,18 @@ public enum AppCommand {
             break
         }
         let after = outcome.after ?? before
-        let delta = AppSnapshot.delta(from: before, to: after)
+        let relevant = AppSnapshot.delta(
+            from: before, to: after, relevantTo: target.bundleId, prefix: target.prefix,
+            profiles: profiles)
+        let delta = relevant.delta
         if delta.removed != [target.bundleId] || !delta.added.isEmpty {
             throw unexpectedDelta(
-                delta, expectation: "an uninstall should remove only this app",
+                relevant, expectation: "an uninstall should remove only this app",
                 extra: ["uninstalled": true])
         }
 
         var warnings: [JSONValue] = []
+        if let other = relevant.otherAppsWarning { warnings.append(other) }
         if outcome.result != .success {
             warnings.append(
                 CanaryCommand.warning(

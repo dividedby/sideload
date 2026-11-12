@@ -245,11 +245,32 @@ struct AppRemoveTests {
     }
 
     @Test(
-        "an uninstall that also takes another app away is UNEXPECTED_APP_DELTA; the ledger still records ours"
+        "an uninstall that also takes another App Store app away is ok with OTHER_APPS_CHANGED (counts only)"
+    )
+    func appStoreChurn() async throws {
+        let script = DeviceScript(
+            initial: [stremioId: true, "com.example.store": false],
+            alsoRemovedOnUninstall: ["com.example.store"])
+        try await withInstallWorld(
+            script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }
+        ) { w in
+            let out = await w.remove()
+            #expect(out.ok, "\(out.errors)")
+            let printed = try out.printed()
+            let other = try #require(
+                printed.json["warnings"]?.array?.first { $0["code"] == "OTHER_APPS_CHANGED" })
+            #expect(other["data"]?["removedCount"] == 1 && other["data"]?["addedCount"] == 0)
+            #expect(!printed.text.contains("com.example.store"))
+            #expect(w.installs.first?.present == false)
+        }
+    }
+
+    @Test(
+        "an uninstall that also takes another developer-signed app away is UNEXPECTED_APP_DELTA; the ledger still records ours"
     )
     func unexpectedDelta() async throws {
         let script = DeviceScript(
-            initial: [stremioId: true, "com.example.other": false],
+            initial: [stremioId: true, "com.example.other": true],
             alsoRemovedOnUninstall: ["com.example.other"])
         try await withInstallWorld(
             script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }

@@ -273,7 +273,7 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
             },
             lend("another app vanished too: lent is written first, then UNEXPECTED_APP_DELTA") {
                 $0.script = DeviceScript(
-                    initial: [stremioId: true, "com.example.other": false],
+                    initial: [stremioId: true, "com.example.other": true],
                     alsoRemovedOnUninstall: ["com.example.other"])
                 $0.state = .lent
                 $0.code = "UNEXPECTED_APP_DELTA"
@@ -483,7 +483,7 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
             },
             back("another app landed too: the return is recorded first, then UNEXPECTED_APP_DELTA")
             {
-                $0.script = DeviceScript(alsoAdded: ["com.example.stray": false])
+                $0.script = DeviceScript(alsoAdded: ["com.example.stray": true])
                 $0.lent = record("lent")
                 $0.state = .none
                 $0.code = "UNEXPECTED_APP_DELTA"
@@ -614,7 +614,7 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
             },
             remove("another app vanished too") {
                 $0.script = DeviceScript(
-                    initial: [stremioId: true, "com.example.other": false],
+                    initial: [stremioId: true, "com.example.other": true],
                     alsoRemovedOnUninstall: ["com.example.other"])
                 $0.code = "UNEXPECTED_APP_DELTA"
                 $0.installPresent = false

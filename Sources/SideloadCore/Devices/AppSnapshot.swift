@@ -158,6 +158,46 @@ public struct AppSnapshot: Sendable, Equatable {
             added: after.ids.subtracting(before.ids).sorted(),
             removed: before.ids.subtracting(after.ids).sorted())
     }
+
+    /// A delta split into the apps a free-team install could have caused and everyone else's. `delta` holds the relevant IDs
+    /// (what the commands judge); the rest are counted only, never named.
+    public struct RelevantDelta: Sendable, Equatable {
+        public let delta: Delta
+        public let otherAdded: Int
+        public let otherRemoved: Int
+        /// The developer flag could not be trusted for this read, so every ID is relevant (the full-list comparison).
+        public let strict: Bool
+
+        public var hasOtherChanges: Bool { otherAdded + otherRemoved > 0 }
+    }
+
+    /// The delta restricted to IDs that matter: ours (`<prefix>.free.*`), `builtByDeveloper` in either snapshot, or listed in
+    /// the installed free-team profiles (when those were read). App Store and system churn, which uses no free-team slot and
+    /// cannot be caused by an install, lands in the `other` counts.
+    ///
+    /// Strict fallback: our app is free-signed, so devicectl flags it. If `target` is listed in a snapshot without the flag, or
+    /// is in neither, there is no evidence the flag works (a devicectl format change may have dropped it) and the check is not
+    /// weakened: every ID is relevant.
+    public static func delta(
+        from before: AppSnapshot, to after: AppSnapshot, relevantTo target: String, prefix: String?,
+        profiles: FreeTeamProfiles?
+    ) -> RelevantDelta {
+        let full = delta(from: before, to: after)
+        let flagged = [before, after].compactMap { $0.apps[target] }
+        guard !flagged.isEmpty, !flagged.contains(false) else {
+            return RelevantDelta(delta: full, otherAdded: 0, otherRemoved: 0, strict: true)
+        }
+        func relevant(_ id: String) -> Bool {
+            Config.isFreeBundleId(id, prefix: prefix) || before.apps[id] == true
+                || after.apps[id] == true || profiles?.bundleIds.contains(id) == true
+        }
+        let added = full.added.filter(relevant)
+        let removed = full.removed.filter(relevant)
+        return RelevantDelta(
+            delta: Delta(added: added, removed: removed),
+            otherAdded: full.added.count - added.count,
+            otherRemoved: full.removed.count - removed.count, strict: false)
+    }
 }
 
 /// Known free-team signers whose apps keep the developer's trust on a device (design section 18).

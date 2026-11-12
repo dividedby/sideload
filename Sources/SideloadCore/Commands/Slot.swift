@@ -352,10 +352,13 @@ public enum SlotCommand {
         case .absent:  // L8
             AppDataBackup.markUninstalled(services, target, since: lendSince)
             let after = outcome.after ?? s0
-            let delta = AppSnapshot.delta(from: s0, to: after)
+            let relevant = AppSnapshot.delta(
+                from: s0, to: after, relevantTo: target.bundleId, prefix: target.prefix,
+                profiles: nil)
+            let delta = relevant.delta
             if delta.removed != [target.bundleId] || !delta.added.isEmpty {
                 throw unexpectedDelta(
-                    delta, expectation: "an uninstall should remove only this app",
+                    relevant, expectation: "an uninstall should remove only this app",
                     extra: [
                         "uninstalled": true, "state": .string(LedgerLent.lent), "freed": 1,
                         "app": .string(app.rawValue),
@@ -363,6 +366,7 @@ public enum SlotCommand {
             }
             out["freed"] = 1
             var warnings: [JSONValue] = []
+            if let other = relevant.otherAppsWarning { warnings.append(other) }
             if outcome.result != .success {
                 warnings.append(
                     CanaryCommand.warning(
@@ -385,7 +389,9 @@ public enum SlotCommand {
         case .present:  // L9: a definite failure and the app is still there; the lend is undone
             guard let failure = outcome.opFailure else {
                 throw unexpectedDelta(
-                    AppSnapshot.delta(from: s0, to: outcome.after ?? s0),
+                    AppSnapshot.delta(
+                        from: s0, to: outcome.after ?? s0, relevantTo: target.bundleId,
+                        prefix: target.prefix, profiles: nil),
                     expectation:
                         "the app is still on the device after its uninstall reported success",
                     extra: ["uninstalled": false, "freed": 0])
@@ -401,7 +407,9 @@ public enum SlotCommand {
             }
             if confirmation.note == .unexpectedAppDelta {
                 throw unexpectedDelta(
-                    AppSnapshot.delta(from: s0, to: outcome.after ?? s0),
+                    AppSnapshot.delta(
+                        from: s0, to: outcome.after ?? s0, relevantTo: target.bundleId,
+                        prefix: target.prefix, profiles: nil),
                     expectation:
                         "the app is still on the device after its uninstall reported success",
                     extra: pendingFields(["uninstalled": false]))
@@ -540,10 +548,13 @@ public enum SlotCommand {
         switch confirmation.effect {
         case .present:  // T7: our ID is back and recorded
             let after = outcome.after ?? s0
-            let delta = AppSnapshot.delta(from: s0, to: after)
+            let relevant = AppSnapshot.delta(
+                from: s0, to: after, relevantTo: target.bundleId, prefix: target.prefix,
+                profiles: planned.profiles)
+            let delta = relevant.delta
             if delta.added != [target.bundleId] || !delta.removed.isEmpty {
                 throw unexpectedDelta(
-                    delta, expectation: "a first install should add only this app",
+                    relevant, expectation: "a first install should add only this app",
                     extra: [
                         "returned": true, "lent": false, "app": .string(record.app),
                         "installed": true, "recorded": true,
@@ -558,6 +569,7 @@ public enum SlotCommand {
                 ).json(),
             ]
             var warnings: [JSONValue] = []
+            if let other = relevant.otherAppsWarning { warnings.append(other) }
             if outcome.result != .success, let failure = outcome.opFailure {
                 warnings.append(
                     CanaryCommand.warning(

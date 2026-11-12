@@ -435,10 +435,12 @@ private func withAutoWorld(
     _ apps: [ProvisionApp] = [.stremioIOS], profileDays: Double = 2, optIn: [String] = ["iphone"],
     listing: JSONValue? = phoneAndTV, manifest seedVersions: Bool = true,
     ledger tweak: ((inout Ledger) -> Void)? = nil,
-    snapshotFailures: Set<Int> = [], _ body: (AutoWorld) async throws -> Void
+    snapshotFailures: Set<Int> = [], alsoAdded: [String: Bool] = [:],
+    _ body: (AutoWorld) async throws -> Void
 ) async throws {
     var script = DeviceScript()
     script.snapshotFailures = snapshotFailures
+    script.alsoAdded = alsoAdded
     for app in apps { script.initial[bundleId(app)] = true }
     try await withInstallWorld(
         app: apps[0], alsoSigned: Array(apps.dropFirst()), script: script, profileDays: profileDays,
@@ -1009,6 +1011,45 @@ struct RefreshAutoTests {
             #expect(counts == [2, 1, 1])
             let installs = try a.w.ledger().installs
             #expect(RefreshPolicy.deviceAttempts(installs, device: "iphone", today: today) == 4)
+        }
+    }
+
+    @Test(
+        "a reinstall while an App Store app lands is refreshed, not suspended; the step line names the warning"
+    )
+    func appStoreChurnRefreshes() async throws {
+        try await withAutoWorld(profileDays: 2, alsoAdded: ["com.example.store.new": false]) { a in
+            let log = CallBox([])
+            let steps = autoSteps(log, install: { await InstallCommand.run(a.services, $0) })
+            let out = await auto(a, steps)
+            #expect(out.ok, "\(out.errors)")
+            #expect(autoResult(out, .stremioIOS)?["status"] == "renewed")
+            let refresh = try fields(a)
+            #expect(!refresh.suspended && refresh.consecutiveFailures == 0)
+            #expect(refresh.lastResult == "refreshed")
+            let install = try #require(try logged(a, "step").first { $0["step"] == "install" })
+            #expect(install["ok"] == true)
+            #expect(install["warnings"] == ["OTHER_APPS_CHANGED"])
+            #expect(!String(describing: try logLines(a)).contains("com.example.store"))
+        }
+    }
+
+    @Test(
+        "an UNEXPECTED_APP_DELTA install step logs its relevant and other counts and suspends the install"
+    )
+    func unexpectedDeltaLogsCounts() async throws {
+        try await withAutoWorld(
+            profileDays: 2, alsoAdded: ["com.example.dev": true, "com.example.store": false]
+        ) { a in
+            let log = CallBox([])
+            let steps = autoSteps(log, install: { await InstallCommand.run(a.services, $0) })
+            let out = await auto(a, steps)
+            #expect(!out.ok && out.errors.map(\.code) == ["UNEXPECTED_APP_DELTA"])
+            #expect(try fields(a).suspended)
+            let install = try #require(try logged(a, "step").first { $0["step"] == "install" })
+            #expect(install["ok"] == false && install["code"] == "UNEXPECTED_APP_DELTA")
+            #expect(install["addedCount"] == 1 && install["removedCount"] == 0)
+            #expect(install["otherAddedCount"] == 1 && install["otherRemovedCount"] == 0)
         }
     }
 
