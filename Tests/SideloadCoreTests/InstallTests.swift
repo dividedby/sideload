@@ -258,7 +258,8 @@ struct InstallTests {
     @Test("a reinstall that also adds a developer-signed app is still UNEXPECTED_APP_DELTA")
     func reinstallDeveloperAdded() async throws {
         let script = DeviceScript(
-            initial: [stremioId: true], alsoAdded: ["com.example.store.new": false, "com.example.dev": true])
+            initial: [stremioId: true],
+            alsoAdded: ["com.example.store.new": false, "com.example.dev": true])
         try await withInstallWorld(
             script: script, ledger: { $0.installs = [installRecord(.stremioIOS)] }
         ) { w in
@@ -291,7 +292,8 @@ struct InstallTests {
             let out = await w.install()
             #expect(out.ok, "\(out.errors)")
             let printed = try out.printed()
-            #expect(printed.json["delta"]?["added"] == 1 && printed.json["delta"]?["otherAdded"] == 1)
+            #expect(
+                printed.json["delta"]?["added"] == 1 && printed.json["delta"]?["otherAdded"] == 1)
             let warnings = try #require(printed.json["warnings"]?.array)
             #expect(warnings.map { $0["code"] } == ["OTHER_APPS_CHANGED"])
             #expect(w.installs.first?.present == true)
