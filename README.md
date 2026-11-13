@@ -73,6 +73,9 @@ swift test            # Swift Testing suite
 scripts/check.sh      # local gate: swift build + test, release build (debug-only hook check), pnpm test (secrets suite), check-secrets --all
 ```
 
+To install the CLI and the menu bar app on this Mac, or update them after a merge, run `scripts/install-local.sh` from a
+clean `main` (below, "Updating the installed build").
+
 Save the iPhone once (reads IDs from `devicectl`; nothing is typed into config by hand; the menu bar app's Add device… does the same):
 
 ```sh
@@ -149,7 +152,7 @@ cannot be read (locked, offline, timed out) the card says so once and the rows s
 panel starts by itself is the update check (`sideload updates` in process: one metadata GET per approved, installed source, at most
 every 6 hours, 5 minutes for Check status now); it downloads no IPA and writes only `updates.json`.
 
-Build, install and launch (the build never installs or launches anything; it signs ad hoc, with no identity or Apple ID):
+`scripts/install-local.sh` builds, installs and opens it ("Updating the installed build" below). By hand (the build never installs or launches anything; it signs ad hoc, with no identity or Apple ID):
 
 ```sh
 scripts/make-app.sh                        # prints .build/app/SideloadMenu.app (a release build takes a few minutes)
@@ -162,6 +165,37 @@ It reads `$SIDELOAD_HOME` (default `~/.sideload`; an app opened from Finder does
 default). It loads at launch, when the panel opens and on the refresh button; there are no timers. Run doctor runs the
 checks inside the app, so no CLI copy is needed. Each rebuild is a new ad-hoc identity, so macOS may ask again before
 the app uses a keychain item. Quit from the panel, or `pkill SideloadMenu`.
+
+## Updating the installed build
+
+`scripts/install-local.sh` (owner-run; agents never run it) builds this checkout and installs both pieces: the CLI at
+`~/.local/bin/sideload`, which the launchd agents run, and the menu bar app at `~/Applications/SideloadMenu.app`. Run it
+from a clean `main` after a merge:
+
+```sh
+git switch main && git pull
+scripts/install-local.sh
+```
+
+It stops if you are not on `main` or have uncommitted changes (`--allow-dirty` installs anyway), or if a sideload
+operation holds `~/.sideload/.op.lock` or the refresh agent is running, so a Renew in progress is never cut off; it checks
+that before the build and again before replacing each piece. Then it does a release build (Apple Silicon only) and builds the
+app with `scripts/make-app.sh`, copies the new CLI beside the old one and renames it into place (a new file, never a copy over the
+old one, and no moment without a binary), checks the copy matches the build and that `sideload status` answers `ok`, copies
+the new app beside the old one, quits the running app, renames the new one into place and opens it. Last, it reads both agents from `launchctl print` (runs, job state, last exit
+code) and the last `run` line of `~/.sideload/logs/refresh.jsonl` (its time, `ok`, renewed and failed counts), and,
+without `--kick` and with the refresh agent loaded, says when the next timed refresh run, the first on the new binary, is
+due (from that line's time, or every 30 minutes when the log has none). A `spawn failed` job state or an `OS_REASON_CODESIGNING` exit reason makes it exit non-zero with the fix
+(`launchctl kickstart`, then the `bootout` and `install` lines of `--print-agent` if that fails).
+
+- `--kick` also starts one refresh agent run now (`launchctl kickstart`, without `-k`, so a running one is never killed),
+  waits up to 15 minutes for it and says whether it logged a new `run` line with `ok`; it exits non-zero if not. It needs the refresh agent
+  loaded and stops before building otherwise. That run is a normal `refresh --auto`: it renews whatever is due on the
+  devices with auto-renew on.
+- `--check` installs nothing: it prints the agents' state and the last refresh run, for checking after the next timed run.
+
+It never loads, unloads or reloads an agent; setting them up the first time stays the steps below. Cutting a release (the
+version and the changelog) is separate.
 
 ## Commands
 
@@ -203,7 +237,8 @@ The setting alone renews nothing: a device with auto-renew on is renewed only wh
 `sideload refresh --print-agent`), and the menu bar app does not check whether it is. It never installs an app the device does not have, and it stays silent unless something needs you (a notification for
 each renewal attempt, and for an install it gives up on).
 
-1. Put a release build where the agent will find it, and check it runs:
+1. Put a release build where the agent will find it, and check it runs: `scripts/install-local.sh` (it installs the menu
+   bar app too; "Updating the installed build" above), or by hand:
 
    ```sh
    swift build -c release --arch arm64
@@ -226,7 +261,7 @@ each renewal attempt, and for an install it gives up on).
 To pause, `touch ~/.sideload/refresh.disabled` (every run skips with `KILL_SWITCH`; `rm` the file to resume). To remove the
 agent, `launchctl bootout gui/$(id -u)/io.github.dividedby.sideload.refresh` and delete the plist; to take a device
 out, `device auto-refresh --alias iphone --off --yes` (or "Turn auto-renew off…" on its card). After a new release build, `rm` the old binary, then copy the
-new one in (copying over a signed binary in place can get it killed by macOS); the agent needs no reload. The menu bar app shows "Auto-renew off" under the rows of a device that has it off, and "Auto-renew: on|off" with its toggle on every card.
+new one in (copying over a signed binary in place can get it killed by macOS; `scripts/install-local.sh` renames a new file into place instead); the agent needs no reload. The menu bar app shows "Auto-renew off" under the rows of a device that has it off, and "Auto-renew: on|off" with its toggle on every card.
 
 ## Turning on expiry notifications
 
