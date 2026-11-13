@@ -1,5 +1,7 @@
 # Feather on-device signing: research notes
 
+> Historical. Feather was retired on 2026-11-01 and `export-cert`, the command that served it, was removed (issue 44). These notes are kept as they were written and describe nothing sideload still does.
+
 Accessed 2026-10-19. Feather source read at tag v2.9.0 (latest release). Read-only research; nothing downloaded or run.
 
 ## Summary

@@ -1,7 +1,7 @@
 import Foundation
 
 /// The two teams (identities match on certificate OU, never name). `paid` is the locked team; every paid-only
-/// path (`canary`, `export-cert`, `portal`, ledger certificates and profiles, `config.teamId`) rejects `free`
+/// path (`canary`, `portal`, ledger certificates and profiles, `config.teamId`) rejects `free`
 /// through `denied`. Only the explicit free signing context (design section 18) accepts it.
 public enum Team {
     public static let paid = "7AGMPUPP64"

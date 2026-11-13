@@ -412,7 +412,7 @@ struct FetchRefusalTests {
             envelope, _, _ in
             #expect(envelope.firstCode == "SOURCE_NOT_ALLOWED")
         }
-        try await withFetch(FetchOptions(app: "feather"), http: transport) { envelope, _, _ in
+        try await withFetch(FetchOptions(app: "sample"), http: transport) { envelope, _, _ in
             #expect(envelope.firstCode == "SOURCE_NOT_ALLOWED")
         }
         try await withFetch(FetchOptions(app: nil), http: transport) { envelope, _, _ in

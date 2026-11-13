@@ -5,6 +5,16 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Removed
+
+- The `export-cert` command and the Feather route (issue 44; owner decision 2026-11-01). Gone with it: the Feather kit
+  writer, the `.p12` export, check and password item code, the pasteboard and its 90-second clipboard hold, the signal hold
+  that protected an export, the menu bar app's disabled "Export cert kit…" row, and the `ledger` command's `exports` list.
+  `sideload export-cert` now answers `UNKNOWN_COMMAND` like any other unknown command. The `sideload` CLI no longer imports
+  AppKit. An old `ledger.json` with an `exports` array still loads and is written back unchanged. Nothing deletes the
+  leftovers on your Mac: the README says how to remove the keychain item and the `secrets/p12/` and `exports/` folders by
+  hand. `docs/research/feather-signing.md` stays as a historical note. `export-cert` had never been run on the owner's Mac.
+
 ### Added
 
 - `scripts/install-local.sh` (owner-run) builds the checkout and installs the CLI at `~/.local/bin/sideload` and the menu

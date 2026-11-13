@@ -2143,7 +2143,7 @@ struct CanaryEvidenceCLITests {
             #expect(usage.contains { $0.contains("--evidence") })
             #expect(
                 out.json["built"] == [
-                    "doctor", "device", "canary", "ledger", "portal", "export-cert", "status",
+                    "doctor", "device", "canary", "ledger", "portal", "status",
                     "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot",
                     "updates", "clean",
                 ])

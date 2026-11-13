@@ -50,8 +50,8 @@ struct LedgerCommandTests {
         let w = try await invoke()
         #expect(w.envelope.ok && w.json["command"] == "ledger")
         #expect(
-            w.json["certificates"] == [] && w.json["profiles"] == [] && w.json["exports"] == []
-                && w.json["items"] == [])
+            w.json["certificates"] == [] && w.json["profiles"] == [] && w.json["items"] == []
+                && w.json["exports"] == nil)
         #expect(w.json["updated"] == .null)
         #expect(w.ledgerText == nil, "no ledger.json created")
         #expect(w.keychain.readCount == 0 && w.source.readCount == 0 && w.runner.calls.isEmpty)
@@ -117,37 +117,6 @@ struct LedgerCommandTests {
                 await run(argv: ["ledger"], services: services).data["items"]?.array?.first?[
                     "daysLeft"] == 9)
         }
-    }
-
-    @Test("exports in the ledger are listed with whether their cert and profile are known")
-    func exportsListed() async throws {
-        let paid = try keychainCert(TestCerts.paid)
-        let known = paidProfile()
-        let fp = LedgerSync.fp8(paid.reference)
-        var ledger = Ledger()
-        LedgerSync.merge(&ledger, certificates: [paid], profiles: [known], now: testNow)
-        ledger.exports = [
-            LedgerExport(
-                id: "e1", createdAt: testNow, certFp8: fp, profileUuid: known.uuid,
-                p12File: "secrets/p12/a.p12",
-                p12Sha256Prefix: "deadbeef", encryption: "pbes2", passwordItem: "keychain",
-                kitPath: "exports/feather-1",
-                verified: true),
-            LedgerExport(
-                id: "e2", createdAt: testNow, certFp8: "00000000", profileUuid: UUID().uuidString,
-                p12File: "secrets/p12/b.p12",
-                p12Sha256Prefix: "cafebabe", encryption: "legacy", passwordItem: "keychain",
-                kitPath: "exports/feather-2",
-                verified: false),
-        ]
-        let seed = String(decoding: try LedgerStore.encode(ledger), as: UTF8.self)
-        let w = try await invoke(seed: seed)
-        let exports = try #require(w.json["exports"]?.array)
-        #expect(exports.map { $0["id"]?.string } == ["e1", "e2"])
-        #expect(exports[0]["certificateInLedger"] == true && exports[0]["profileInLedger"] == true)
-        #expect(
-            exports[1]["certificateInLedger"] == false && exports[1]["profileInLedger"] == false)
-        #expect(exports[0]["profileUuid"]?.string == Redactor.tail4(known.uuid))
     }
 
     @Test("output, ledger file and logs hold no full UDID, no full fingerprint, no identity name")

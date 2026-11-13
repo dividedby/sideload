@@ -43,17 +43,6 @@ public enum CertCheck {
             .max { $0.1 < $1.1 }?.0
     }
 
-    /// Every valid paid-team certificate, latest `notAfter` first (`export-cert` ranks these against profiles).
-    public static func paidCandidates(_ certificates: [KeychainCertificate], now: Date)
-        -> [KeychainCertificate]
-    {
-        validCertificates(certificates, now: now)
-            .filter { $0.info.isPaidTeam }
-            .compactMap { cert in cert.info.notAfter.map { (cert, $0) } }
-            .sorted { ($0.1, $1.0.reference) > ($1.1, $0.0.reference) }
-            .map(\.0)
-    }
-
     public static func evaluate(_ certificates: [KeychainCertificate], now: Date) -> [CheckResult] {
         let others = validCertificates(certificates, now: now).map(\.info).filter { !$0.isPaidTeam }
         var out: [CheckResult] = []

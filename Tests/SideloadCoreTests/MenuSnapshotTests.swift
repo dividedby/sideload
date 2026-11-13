@@ -374,14 +374,12 @@ struct MenuSnapshotTests {
         #expect(snapshot.devices.map(\.alias) == ["iphone", "appletv"])
     }
 
-    @Test("the strip reads from the canary and the cert kit Export is hidden only while blocked")
-    func stripAndExport() {
+    @Test("the strip reads from the canary")
+    func strip() {
         let blocked = build(ledger: installed(("iphone", "apollo", 5)), canary: "blocked")
         #expect(blocked.strip.line == "Free account in use · Paid account blocked")
-        #expect(!blocked.showsCertKitExport)
         let working = build(canary: "working")
         #expect(working.strip.paidText == "Paid account working")
-        #expect(working.showsCertKitExport)
         #expect(build(canary: "error").strip.paid == .unknown)
     }
 }

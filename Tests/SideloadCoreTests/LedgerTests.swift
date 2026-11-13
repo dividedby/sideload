@@ -19,6 +19,13 @@ private func cert(_ base64: String, valid: Bool = true) throws -> KeychainCertif
     return c
 }
 
+/// An entry of the removed `export-cert` command, as an old ledger holds it. Kept as opaque JSON.
+private let legacyExport: JSONValue = [
+    "id": "e1", "createdAt": "2026-10-02T00:00:00Z", "certFp8": "0a1b2c3d", "profileUuid": "P",
+    "p12File": "secrets/p12/x.p12", "p12Sha256Prefix": "deadbeef", "encryption": "pbes2",
+    "passwordItem": "keychain", "kitPath": "exports/kit-1", "verified": true, "note": "mine",
+]
+
 @Suite("Ledger store")
 struct LedgerStoreTests {
     private func sample() -> Ledger {
@@ -38,13 +45,7 @@ struct LedgerStoreTests {
                     certFp8s: ["0a1b2c3d"],
                     source: "xcode-managed", firstSeen: testNow, lastSeen: testNow, present: true)
             ],
-            exports: [
-                LedgerExport(
-                    id: "e1", createdAt: testNow, certFp8: "0a1b2c3d", profileUuid: "P",
-                    p12File: "secrets/p12/x.p12",
-                    p12Sha256Prefix: "deadbeef", encryption: "pbes2", passwordItem: "keychain",
-                    kitPath: "exports/feather-1", verified: true)
-            ])
+            exports: [legacyExport])
     }
 
     @Test("a missing file is an empty ledger; update writes 0600 and round-trips")
@@ -116,7 +117,7 @@ struct LedgerStoreTests {
             let merged = try store.load()
             #expect(merged.certificates[0].extra == ["label": ["k": [1]]])
             #expect(merged.profiles[0].extra == ["pinned": true])
-            #expect(merged.exports[0].extra == ["note": "mine"])
+            #expect(merged.exports[0]["note"] == "mine")
             #expect(merged.profiles[0].expires == daysFromNow(200), "known fields are refreshed")
             #expect(
                 merged.certificates[0].firstSeen == Date(timeIntervalSince1970: 1_790_812_800),
@@ -202,6 +203,39 @@ struct LedgerStoreTests {
         }
     }
 
+    @Test("a ledger with the removed export-cert `exports` array decodes and re-encodes intact")
+    func legacyExportsSurvive() async throws {
+        try await withTestHome { paths, _ in
+            let store = LedgerStore(paths: paths)
+            let doc = """
+                {"schema":1,"updated":"2026-10-01T00:00:00Z","certificates":[],"profiles":[],
+                 "exports":[{"id":"e1","createdAt":"2026-10-02T00:00:00Z","certFp8":"0a1b2c3d",
+                   "profileUuid":"P","p12File":"secrets/p12/x.p12","p12Sha256Prefix":"deadbeef",
+                   "encryption":"pbes2","passwordItem":"keychain","kitPath":"exports/kit-1",
+                   "verified":true,"extra-key":{"n":[1,2.5,null]}}]}
+                """
+            let before = try decodeJSON(doc)
+            try Data(doc.utf8).write(to: URL(fileURLWithPath: paths.ledger))
+
+            let loaded = try store.load()
+            #expect(loaded.exports.count == 1 && loaded.exports[0]["id"] == "e1")
+
+            // A save that changes something else leaves the exports array exactly as it was.
+            try await store.update { $0.updated = testNow }
+            let after = try decodeJSON(try String(contentsOfFile: paths.ledger, encoding: .utf8))
+            #expect(after["exports"] == before["exports"])
+
+            // A ledger without the key still loads, and is written with an empty array (older builds require it).
+            let bare = #"{"schema":1,"certificates":[],"profiles":[]}"#
+            try Data(bare.utf8).write(to: URL(fileURLWithPath: paths.ledger))
+            #expect(try store.load().exports.isEmpty)
+            try await store.update { $0.updated = testNow }
+            let rewritten = try decodeJSON(
+                try String(contentsOfFile: paths.ledger, encoding: .utf8))
+            #expect(rewritten["exports"]?.array?.isEmpty == true)
+        }
+    }
+
     @Test("a body that throws writes nothing")
     func bodyThrows() async throws {
         try await withTestHome { paths, _ in
@@ -244,7 +278,6 @@ struct LedgerStoreTests {
     func paths() {
         let p = Paths(home: "/h")
         #expect(p.ledger == "/h/ledger.json" && p.ledgerLock == "/h/.ledger.lock")
-        #expect(p.p12Dir == "/h/secrets/p12" && p.exports == "/h/exports")
         #expect(!Paths.subdirectories.contains("exports") && !Paths.subdirectories.contains("p12"))
     }
 }
@@ -332,17 +365,13 @@ struct LedgerSyncTests {
         "an untrusted or expired certificate is present but not valid; exports and unknown keys are untouched"
     )
     func validity() throws {
-        let export = LedgerExport(
-            id: "e", createdAt: testNow, certFp8: "ffffffff", profileUuid: "P", p12File: "f",
-            p12Sha256Prefix: "00000000",
-            encryption: "pbes2", passwordItem: "keychain", kitPath: "k", verified: true)
-        var ledger = Ledger(exports: [export], extra: ["future": 1])
+        var ledger = Ledger(exports: [legacyExport], extra: ["future": 1])
         LedgerSync.merge(
             &ledger,
             certificates: [try cert(TestCerts.paid, valid: false), try cert(TestCerts.expired)],
             profiles: [], now: testNow)
         #expect(ledger.certificates.allSatisfy { $0.present && !$0.valid })
-        #expect(ledger.exports == [export] && ledger.extra == ["future": 1])
+        #expect(ledger.exports == [legacyExport] && ledger.extra == ["future": 1])
     }
 
     @Test("duplicate identities and profiles are recorded once")

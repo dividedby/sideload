@@ -56,7 +56,7 @@ automatically; if yours reads only another file (for example `CLAUDE.md`), point
   `$SIDELOAD_HOME/backups/`.
 - **Ask before anything that changes a device, the developer portal, the keychain or the owner's state.** Everything
   `AGENTS.md` lists under "Ask the owner first" is the device owner's to run, including (not limited to) `canary`,
-  `provision`, `sign`, `install`, `refresh` in any mode, `app remove`, `slot restore`, `export-cert`, a live `portal`
+  `provision`, `sign`, `install`, `refresh` in any mode, `app remove`, `slot restore`, a live `portal`
   run, `device remove`, `device lendable`, `device slots`, `device auto-refresh`, `--register-device`,
   `fetch --approve`, a new download source, `status --notify` against the real home, `clean --yes`, pairing and
   launchd agents. An agent prepares and explains them; the owner runs them. The read-only commands `AGENTS.md` allows (`status`, `updates`,

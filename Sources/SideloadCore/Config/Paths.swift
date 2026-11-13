@@ -19,8 +19,6 @@ public struct Paths: Sendable, Equatable {
     public var logs: String { home + "/logs" }
     /// Opt-in canary evidence bundles (`canary --evidence`). Created lazily, not part of `subdirectories`.
     public var evidence: String { home + "/evidence" }
-    /// Feather kits (`export-cert`). Created lazily, not part of `subdirectories`.
-    public var exports: String { home + "/exports" }
     /// The App Store Connect API key for `portal` (`key.json` + the `.p8`). The owner creates it; `ensureHome` does not.
     public var asc: String { home + "/asc" }
     public var tmp: String { home + "/tmp" }
@@ -36,9 +34,7 @@ public struct Paths: Sendable, Equatable {
     /// Free-team re-signed apps `sign` leaves for `install` (`builds/signed/<app>/<device>/<Name>.app`, folders 0700).
     /// Created lazily, not part of `subdirectories`.
     public var signedBuilds: String { builds + "/signed" }
-    /// Exported `.p12` masters (`export-cert`), inside `secrets/`. Created lazily.
-    public var p12Dir: String { secrets + "/p12" }
-    /// Certificate, profile and export history (design section 9). Holds no secrets.
+    /// Certificate and profile history (design section 9). Holds no secrets.
     public var ledger: String { home + "/ledger.json" }
     /// Every IPA `fetch` downloaded: sha256, version, approval (design section 9). Holds no secrets.
     public var manifest: String { home + "/manifest.json" }
@@ -72,7 +68,7 @@ public struct Paths: Sendable, Equatable {
         try Self.gitWorkTree(containing: home)
     }
 
-    /// The same walk for any path (`export-cert --out`): the nearest existing ancestor, then up to a `.git` entry.
+    /// The same walk for any path: the nearest existing ancestor, then up to a `.git` entry.
     public static func gitWorkTree(containing path: String) throws -> String? {
         var dir = resolvePath(path)
         while try !pathExists(dir) {

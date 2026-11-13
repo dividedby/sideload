@@ -1,7 +1,7 @@
 import Foundation
 
 /// `$SIDELOAD_HOME/ledger.json` (design section 9): what sideload has seen of the paid team's certificates and
-/// provisioning profiles, and which Feather kits it exported. It holds no secrets: no password, no private key,
+/// provisioning profiles. It holds no secrets: no password, no private key,
 /// no full fingerprint (first 8 hex only), no identity name, no full device ID (last 4 only).
 public struct Ledger: Codable, Sendable, Equatable {
     public static let schema = 1
@@ -9,7 +9,10 @@ public struct Ledger: Codable, Sendable, Equatable {
     public var updated: Date?
     public var certificates: [LedgerCertificate]
     public var profiles: [LedgerProfile]
-    public var exports: [LedgerExport]
+    /// Entries the removed `export-cert` command wrote (Feather kits). Nothing reads or writes them any more; they are kept
+    /// as opaque JSON so an old ledger survives a save unchanged, and always written (as `[]` when empty) so an older
+    /// build, which requires the key, still reads the file.
+    public var exports: [JSONValue]
     /// Free-team state (design section 18), written by `provision`. Each is written only when non-empty, so a ledger
     /// that never used the free team is byte-identical to before. Free profiles stay out of `profiles`.
     public var freeAppIds: [LedgerFreeAppId]
@@ -44,7 +47,7 @@ public struct Ledger: Codable, Sendable, Equatable {
     public init(
         updated: Date? = nil, certificates: [LedgerCertificate] = [],
         profiles: [LedgerProfile] = [],
-        exports: [LedgerExport] = [], freeAppIds: [LedgerFreeAppId] = [],
+        exports: [JSONValue] = [], freeAppIds: [LedgerFreeAppId] = [],
         freeProfiles: [LedgerFreeProfile] = [],
         freeSuspended: LedgerFreeSuspension? = nil,
         freeProvisionInFlight: LedgerFreeInFlight? = nil,
@@ -83,7 +86,7 @@ public struct Ledger: Codable, Sendable, Equatable {
         updated = try c.decodeIfPresent(Date.self, forKey: AnyKey("updated"))
         certificates = try c.decode([LedgerCertificate].self, forKey: AnyKey("certificates"))
         profiles = try c.decode([LedgerProfile].self, forKey: AnyKey("profiles"))
-        exports = try c.decode([LedgerExport].self, forKey: AnyKey("exports"))
+        exports = try c.decodeIfPresent([JSONValue].self, forKey: AnyKey("exports")) ?? []
         freeAppIds =
             try c.decodeIfPresent([LedgerFreeAppId].self, forKey: AnyKey("freeAppIds")) ?? []
         freeProfiles =
@@ -562,23 +565,6 @@ public struct LedgerProfile: Sendable, Equatable {
     public var extra: [String: JSONValue] = [:]
 }
 
-/// One `export-cert` run (written by that command, not by `ledger refresh`).
-public struct LedgerExport: Sendable, Equatable {
-    public var id: String
-    public var createdAt: Date
-    public var certFp8: String
-    public var profileUuid: String
-    /// Relative to `$SIDELOAD_HOME`.
-    public var p12File: String
-    public var p12Sha256Prefix: String
-    public var encryption: String
-    /// `keychain`: the password lives in the keychain, never here.
-    public var passwordItem: String
-    public var kitPath: String
-    public var verified: Bool
-    public var extra: [String: JSONValue] = [:]
-}
-
 // MARK: - Coding
 // Entries decode every known key (a missing or mistyped one is an error) and keep the rest in `extra`.
 // Declared in extensions so the memberwise initialisers stay.
@@ -688,43 +674,5 @@ extension LedgerProfile: Codable {
         try c.put(firstSeen, "firstSeen")
         try c.put(lastSeen, "lastSeen")
         try c.put(present, "present")
-    }
-}
-
-extension LedgerExport: Codable {
-    private static let known: Set<String> = [
-        "id", "createdAt", "certFp8", "profileUuid", "p12File", "p12Sha256Prefix", "encryption",
-        "passwordItem",
-        "kitPath", "verified",
-    ]
-
-    public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: AnyKey.self)
-        id = try c.value("id")
-        createdAt = try c.value("createdAt")
-        certFp8 = try c.value("certFp8")
-        profileUuid = try c.value("profileUuid")
-        p12File = try c.value("p12File")
-        p12Sha256Prefix = try c.value("p12Sha256Prefix")
-        encryption = try c.value("encryption")
-        passwordItem = try c.value("passwordItem")
-        kitPath = try c.value("kitPath")
-        verified = try c.value("verified")
-        extra = try c.decodeExtra(excluding: Self.known)
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        var c = encoder.container(keyedBy: AnyKey.self)
-        try c.encodeExtra(extra)
-        try c.put(id, "id")
-        try c.put(createdAt, "createdAt")
-        try c.put(certFp8, "certFp8")
-        try c.put(profileUuid, "profileUuid")
-        try c.put(p12File, "p12File")
-        try c.put(p12Sha256Prefix, "p12Sha256Prefix")
-        try c.put(encryption, "encryption")
-        try c.put(passwordItem, "passwordItem")
-        try c.put(kitPath, "kitPath")
-        try c.put(verified, "verified")
     }
 }

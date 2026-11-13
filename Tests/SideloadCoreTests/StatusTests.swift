@@ -144,7 +144,7 @@ struct StatusTests {
     @Test("devices print only the last four characters; apps are alias keys")
     func devicesAndApps() async throws {
         var config = iphoneConfig()
-        config.apps = ["feather": ["version": "1.0"], "stremio": .null]
+        config.apps = ["sample": ["version": "1.0"], "stremio": .null]
         let w = try await invoke(config: config)
         let device = try #require(w.json["devices"]?.array?.first)
         #expect(
@@ -153,7 +153,7 @@ struct StatusTests {
         #expect(device["udid"]?.string == Redactor.tail4(savedUdid("1")))
         #expect(device["coreDeviceId"]?.string == Redactor.tail4(savedCoreId("1")))
         #expect(!w.text.contains(savedUdid("1")) && !w.text.contains(savedCoreId("1")))
-        #expect(w.json["apps"] == ["feather", "stremio"])
+        #expect(w.json["apps"] == ["sample", "stremio"])
         #expect(!w.text.contains("1.0"))
         #expect(w.runner.calls.isEmpty)
     }
@@ -213,13 +213,13 @@ struct StatusTests {
     func badDevice() async throws {
         var config = iphoneConfig()
         config.devices["broken"] = SavedDevice(platform: "tvos")
-        config.apps = ["feather": .null]
+        config.apps = ["sample": .null]
         let w = try await invoke(
             config: config, ledger: Ledger(certificates: [cert("aaaaaaaa", days: 300)]))
         #expect(w.envelope.ok)
         #expect(w.warningCodes == ["CONFIG_INVALID"])
         #expect(w.json["devices"] == [])
-        #expect(w.json["apps"] == ["feather"])
+        #expect(w.json["apps"] == ["sample"])
         #expect(w.json["items"]?.array?.count == 1)
     }
 

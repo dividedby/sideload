@@ -137,6 +137,11 @@ struct CLITests {
     @Test("unknown commands and bad flags return JSON errors")
     func unknownAndBad() async throws {
         #expect(try await invoke(["bogus"]).code == "UNKNOWN_COMMAND")
+        // Removed commands answer like any unknown one and are not in the usage text.
+        let removed = try await invoke(["export-cert", "--yes"])
+        #expect(removed.code == "UNKNOWN_COMMAND" && removed.runner.calls.isEmpty)
+        let usage = try await invoke(["help"]).json["usage"]?.array?.compactMap(\.string) ?? []
+        #expect(!usage.contains { $0.hasPrefix("export-cert") })
         #expect(try await invoke(["doctor", "--nope"]).code == "USAGE")
         #expect(try await invoke(["--nope"]).code == "USAGE")
         #expect(
@@ -158,11 +163,11 @@ struct CLITests {
             #expect(out.json["command"] == "help")
             #expect(
                 out.json["built"] == [
-                    "doctor", "device", "canary", "ledger", "portal", "export-cert", "status",
+                    "doctor", "device", "canary", "ledger", "portal", "status",
                     "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot",
                     "updates", "clean",
                 ])
-            #expect(out.json["commands"]?.array?.count == 17)
+            #expect(out.json["commands"]?.array?.count == 16)
             #expect(out.runner.calls.isEmpty)
         }
     }

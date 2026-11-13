@@ -783,7 +783,7 @@ struct CleanRunTests {
             #expect(
                 help.data["built"]?.array?.contains("clean") == true
                     && help.data["commands"]?.array?.contains("clean") == true)
-            #expect(help.data["commands"]?.array?.count == 17, "clean is the seventeenth command")
+            #expect(help.data["commands"]?.array?.count == 16, "clean is in the command list")
             #expect(help.data["usage"]?.array?.contains { $0.string == "clean [--yes]" } == true)
 
             let before = Snapshot(w)
