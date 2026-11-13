@@ -177,18 +177,21 @@ git switch main && git pull
 scripts/install-local.sh
 ```
 
-It stops before building if you are not on `main` or have uncommitted changes (`--allow-dirty` installs anyway), or if a
-sideload operation holds `~/.sideload/.op.lock` or the refresh agent is running, so a Renew in progress is never cut off.
-Then it does a release build, removes the old CLI and copies the new one in (never a copy over it in place), checks the
-copy matches the build and that `sideload status` answers `ok`, builds the app with `scripts/make-app.sh`, quits the running
-app, replaces it and opens it. Last, it reads both agents from `launchctl print` (runs, job state, last exit code) and
-the last `run` line of `~/.sideload/logs/refresh.jsonl`, and says when the next timed refresh run, the first on the new
-binary, is due. A `spawn failed` job state or an `OS_REASON_CODESIGNING` exit reason makes it exit non-zero with the fix
+It stops if you are not on `main` or have uncommitted changes (`--allow-dirty` installs anyway), or if a sideload
+operation holds `~/.sideload/.op.lock` or the refresh agent is running, so a Renew in progress is never cut off; it checks
+that before the build and again before replacing each piece. Then it does a release build and builds the app with
+`scripts/make-app.sh`, copies the new CLI beside the old one and renames it into place (a new file, never a copy over the
+old one, and no moment without a binary), checks the copy matches the build and that `sideload status` answers `ok`, quits
+the running app, replaces it and opens it. Last, it reads both agents from `launchctl print` (runs, job state, last exit
+code) and the last `run` line of `~/.sideload/logs/refresh.jsonl` (its time, `ok`, renewed and failed counts), and says
+when the next timed refresh run, the first on the new binary, is due (from that line's time, or every 30 minutes when the
+log has none). A `spawn failed` job state or an `OS_REASON_CODESIGNING` exit reason makes it exit non-zero with the fix
 (`launchctl kickstart`, then the `bootout` and `install` lines of `--print-agent` if that fails).
 
-- `--kick` also starts one refresh agent run now (`launchctl kickstart`, without `-k`, so a running one is never killed) and
-  waits up to 15 minutes for it. That run is a normal `refresh --auto`: it renews whatever is due on the devices with
-  auto-renew on.
+- `--kick` also starts one refresh agent run now (`launchctl kickstart`, without `-k`, so a running one is never killed),
+  waits up to 15 minutes for it and says whether it logged `ok`; it exits non-zero if not. It needs the refresh agent
+  loaded and stops before building otherwise. That run is a normal `refresh --auto`: it renews whatever is due on the
+  devices with auto-renew on.
 - `--check` installs nothing: it prints the agents' state and the last refresh run, for checking after the next timed run.
 
 It never loads, unloads or reloads an agent; setting them up the first time stays the steps below. Cutting a release (the
@@ -258,7 +261,7 @@ each renewal attempt, and for an install it gives up on).
 To pause, `touch ~/.sideload/refresh.disabled` (every run skips with `KILL_SWITCH`; `rm` the file to resume). To remove the
 agent, `launchctl bootout gui/$(id -u)/io.github.dividedby.sideload.refresh` and delete the plist; to take a device
 out, `device auto-refresh --alias iphone --off --yes` (or "Turn auto-renew off…" on its card). After a new release build, `rm` the old binary, then copy the
-new one in (copying over a signed binary in place can get it killed by macOS; `scripts/install-local.sh` does this); the agent needs no reload. The menu bar app shows "Auto-renew off" under the rows of a device that has it off, and "Auto-renew: on|off" with its toggle on every card.
+new one in (copying over a signed binary in place can get it killed by macOS; `scripts/install-local.sh` renames a new file into place instead); the agent needs no reload. The menu bar app shows "Auto-renew off" under the rows of a device that has it off, and "Auto-renew: on|off" with its toggle on every card.
 
 ## Turning on expiry notifications
 

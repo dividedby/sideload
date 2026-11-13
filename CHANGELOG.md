@@ -9,8 +9,9 @@ All notable changes to this project are documented here. Format follows
 
 - `scripts/install-local.sh` (owner-run) builds the checkout and installs the CLI at `~/.local/bin/sideload` and the menu
   bar app, then reports the launchd agents' state. It refuses a dirty tree or a branch other than `main` (unless
-  `--allow-dirty`) and a busy `.op.lock`, always removes the old CLI before copying, and flags a `spawn failed` agent.
-  `--kick` starts one refresh agent run and waits for it; `--check` only reports.
+  `--allow-dirty`), a busy `.op.lock` and a running refresh agent, renames the new CLI into place as a new file (never a
+  copy over the old one), and flags a `spawn failed` agent. `--kick` starts one refresh agent run, waits for it and says
+  whether it logged `ok`; `--check` only reports.
 
 ### Fixed
 

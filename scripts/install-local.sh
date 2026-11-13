@@ -59,6 +59,9 @@ domain="gui/$(id -u)"
 refresh_label="io.github.dividedby.sideload.refresh"
 status_label="io.github.dividedby.sideload.status"
 refresh_log="$home/logs/refresh.jsonl"
+# The refresh agent's StartInterval (RefreshAgent.swift).
+refresh_interval=1800
+kick_timeout=900
 
 log() { echo "install-local.sh: $*" >&2; }
 die() {
@@ -68,10 +71,11 @@ die() {
 
 agent_loaded() { launchctl print "$domain/$1" >/dev/null 2>&1; }
 
-# One top-level field of `launchctl print` ("runs", "job state", "last exit code", ...); empty when absent.
+# One top-level field of `launchctl print` (one tab deep: "runs", "job state", ...); empty when absent. awk reads all
+# of its input, so launchctl never gets SIGPIPE under pipefail.
 agent_field() {
   launchctl print "$domain/$1" 2>/dev/null |
-    awk -F' = ' -v f="$2" '$1 ~ "^[[:space:]]*" f "$" { print $2; exit }'
+    awk -F' = ' -v f="$2" '!found && $1 == "\t" f { print $2; found = 1 }'
 }
 
 last_run_line() {
@@ -79,10 +83,13 @@ last_run_line() {
   tail -n 400 "$refresh_log" | grep '"event":"run"' | tail -n 1 || true
 }
 
+# One scalar field of a log line ("ok", "renewed", ...); empty when absent.
+line_field() { sed -n "s/.*\"$2\":\"\{0,1\}\([^\",}]*\).*/\1/p" <<<"$1"; }
+
 # Epoch seconds of a log line's "ts" (UTC, ISO 8601); empty when the line has none.
 line_epoch() {
   local ts
-  ts="$(sed -n 's/.*"ts":"\([^"]*\)".*/\1/p' <<<"$1")"
+  ts="$(line_field "$1" ts)"
   [[ -n "$ts" ]] || return 0
   ts="${ts%Z}"
   date -j -u -f '%Y-%m-%dT%H:%M:%S' "${ts%%.*}" +%s 2>/dev/null || true
@@ -90,8 +97,16 @@ line_epoch() {
 
 local_time() { date -r "$1" '+%-I:%M %p %Z'; }
 
+# "at 7:57 PM CST: ok true, renewed 0, failed 0" for a run line: counts only, as the log keeps them.
+run_summary() {
+  local epoch
+  epoch="$(line_epoch "$1")"
+  echo "${epoch:+at $(local_time "$epoch"): }ok $(line_field "$1" ok), renewed $(line_field "$1" renewed), failed $(line_field "$1" failed)"
+}
+
+# Prints both agents' state and the last refresh run; returns 1 when launchd could not start an agent.
 report_agents() {
-  local label name runs state code reason line epoch healthy=true
+  local label name runs state code reason program line agents_ok=true
   for label in "$refresh_label" "$status_label"; do
     name="${label##*.}"
     if ! agent_loaded "$label"; then
@@ -104,22 +119,31 @@ report_agents() {
     reason="$(agent_field "$label" "last exit reason")"
     log "$name agent: runs ${runs:-?}, job state ${state:-?}, last exit code ${code:-?}${reason:+, last exit reason $reason}"
     if [[ "$state" == "spawn failed" || "$reason" == *CODESIGNING* ]]; then
-      healthy=false
+      agents_ok=false
       log "  launchd could not start the new binary. Run: launchctl kickstart $domain/$label"
       log "  If that fails too: run its bootout line, then its install lines, from ~/.local/bin/sideload $name --print-agent"
     fi
-    local program
     program="$(agent_field "$label" program)"
     if [[ -n "$program" && "$program" != "$cli" ]]; then
       log "  note: this agent runs $program, not $cli"
     fi
   done
   line="$(last_run_line)"
-  if [[ -n "$line" ]]; then
-    epoch="$(line_epoch "$line")"
-    log "last refresh run${epoch:+ at $(local_time "$epoch")}: $line"
+  [[ -z "$line" ]] || log "last refresh run $(run_summary "$line")"
+  $agents_ok
+}
+
+# A busy operation lock or a running refresh agent stops here, so a Renew, Add app or renewal is never cut off. The
+# probe holds the lock for an instant only. Called before the build and again before each replace.
+ensure_idle() {
+  if [[ -e "$home/.op.lock" ]]; then
+    perl -MFcntl=:flock -e 'open(my $l, ">>", $ARGV[0]) or exit 2; flock($l, LOCK_EX | LOCK_NB) or exit 1; exit 0' \
+      "$home/.op.lock" ||
+      die "a sideload operation holds ~/.sideload/.op.lock (the menu bar app, the refresh agent or the lab); try again when it finishes"
   fi
-  $healthy
+  if agent_loaded "$refresh_label" && [[ "$(agent_field "$refresh_label" state)" == "running" ]]; then
+    die "the refresh agent is running; try again when it finishes"
+  fi
 }
 
 if $check_only; then
@@ -127,44 +151,41 @@ if $check_only; then
   exit $?
 fi
 
-# --- Preflight -----------------------------------------------------------------------------------------------------
+# Preflight.
 branch="$(git symbolic-ref --quiet --short HEAD || echo "(detached)")"
+tree_changes="$(git status --porcelain)"
 if ! $allow_dirty; then
   [[ "$branch" == "main" ]] || die "on $branch, not main; switch to main or pass --allow-dirty"
-  [[ -z "$(git status --porcelain)" ]] || die "the working tree has uncommitted changes; commit or stash them, or pass --allow-dirty"
+  [[ -z "$tree_changes" ]] || die "the working tree has uncommitted changes; commit or stash them, or pass --allow-dirty"
 fi
 commit="$(git rev-parse --short HEAD)"
 dirty=""
-[[ -z "$(git status --porcelain)" ]] || dirty=" (with uncommitted changes)"
-
-# Replacing the app mid-action would kill a running Renew or Add app, so a busy operation lock stops here.
-if [[ -e "$home/.op.lock" ]]; then
-  perl -MFcntl=:flock -e 'open(my $l, ">>", $ARGV[0]) or exit 2; flock($l, LOCK_EX | LOCK_NB) or exit 1; exit 0' \
-    "$home/.op.lock" ||
-    die "a sideload operation holds ~/.sideload/.op.lock (the menu bar app, the refresh agent or the lab); try again when it finishes"
+[[ -z "$tree_changes" ]] || dirty=" (with uncommitted changes)"
+if $kick && ! agent_loaded "$refresh_label"; then
+  die "--kick: the refresh agent is not loaded (README \"Turning on auto-refresh\")"
 fi
-if agent_loaded "$refresh_label" && [[ "$(agent_field "$refresh_label" state)" == "running" ]]; then
-  die "the refresh agent is running; try again when it finishes"
-fi
+ensure_idle
 
-# --- CLI -----------------------------------------------------------------------------------------------------------
 log "building $commit on $branch$dirty (release, arm64)"
-swift build -c release --arch arm64
+swift build -c release --arch arm64 >&2
 bin="$(swift build -c release --arch arm64 --show-bin-path)"
 [[ -x "$bin/sideload" ]] || die "$bin/sideload was not built"
+log "building SideloadMenu.app"
+scripts/make-app.sh >/dev/null
 
-# rm, then copy: copying over a signed binary in place can get it killed by macOS (README "Turning on auto-refresh").
+# The CLI goes in as a new file (copy beside it, then rename over it): copying over a signed binary in place can get it
+# killed by macOS (README "Turning on auto-refresh"), and the rename leaves no moment without a binary.
+ensure_idle
 log "installing $cli"
 mkdir -p "$(dirname "$cli")"
-rm -f "$cli"
-cp "$bin/sideload" "$cli"
+staged="$cli.new.$$"
+cp "$bin/sideload" "$staged"
+mv -f "$staged" "$cli"
 cmp -s "$bin/sideload" "$cli" || die "$cli does not match the build"
 env -u SIDELOAD_HOME "$cli" status >/dev/null 2>&1 ||
   die "$cli status did not answer ok; run it to see the errors"
 
-# --- Menu bar app --------------------------------------------------------------------------------------------------
-log "building SideloadMenu.app"
-scripts/make-app.sh >/dev/null
+ensure_idle
 if pkill -x SideloadMenu; then
   log "quitting the running SideloadMenu"
   for _ in {1..20}; do
@@ -179,40 +200,48 @@ rm -rf "$app_dest"
 ditto .build/app/SideloadMenu.app "$app_dest"
 open "$app_dest"
 
-# --- Agents --------------------------------------------------------------------------------------------------------
 next_note=""
+kick_ok=true
 if $kick; then
-  agent_loaded "$refresh_label" || die "--kick: the refresh agent is not loaded"
   before="$(agent_field "$refresh_label" runs)"
   log "starting one refresh agent run (it renews whatever is due)"
   launchctl kickstart "$domain/$refresh_label"
   waited=0
-  while ((waited < 900)); do
+  finished=false
+  while ((waited < kick_timeout)); do
     sleep 2
     waited=$((waited + 2))
     if [[ "$(agent_field "$refresh_label" runs)" != "$before" && "$(agent_field "$refresh_label" state)" != "running" ]]; then
+      finished=true
       break
     fi
-    ((waited % 60 == 0)) && log "still running ($((waited / 60)) min)"
+    if ((waited % 60 == 0)); then log "still running ($((waited / 60)) min)"; fi
   done
-  if ((waited >= 900)); then
-    log "the run has not finished after 15 min; check later with scripts/install-local.sh --check"
+  if ! $finished; then
+    log "the run has not finished after $((kick_timeout / 60)) min; check later with scripts/install-local.sh --check"
+  else
+    line="$(last_run_line)"
+    if [[ "$(line_field "$line" ok)" == "true" ]]; then
+      log "kicked run finished: $(run_summary "$line")"
+    else
+      kick_ok=false
+      log "kicked run did not log ok: ${line:+$(run_summary "$line")}; see ~/.sideload/logs/refresh.jsonl and launchd-refresh.err"
+    fi
   fi
 else
-  line="$(last_run_line)"
-  epoch="$(line_epoch "$line")"
+  epoch="$(line_epoch "$(last_run_line)")"
   if [[ -n "$epoch" ]]; then
-    next=$((epoch + 1800))
+    next=$((epoch + refresh_interval))
     now="$(date +%s)"
-    while ((next < now)); do next=$((next + 1800)); done
+    while ((next < now)); do next=$((next + refresh_interval)); done
     next_note="the next timed refresh run, about $(local_time "$next"), is the first on the new binary"
+  else
+    next_note="the next timed refresh run (every $((refresh_interval / 60)) min) is the first on the new binary"
   fi
 fi
 
 log "installed $commit$dirty: $cli and $app_dest"
-healthy=true
-report_agents || healthy=false
-if [[ -n "$next_note" ]]; then
-  log "$next_note; then run scripts/install-local.sh --check"
-fi
-$healthy
+agents_ok=true
+report_agents || agents_ok=false
+[[ -z "$next_note" ]] || log "$next_note; then run scripts/install-local.sh --check"
+$agents_ok && $kick_ok
