@@ -5,6 +5,13 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- `scripts/install-local.sh` (owner-run) builds the checkout and installs the CLI at `~/.local/bin/sideload` and the menu
+  bar app, then reports the launchd agents' state. It refuses a dirty tree or a branch other than `main` (unless
+  `--allow-dirty`) and a busy `.op.lock`, always removes the old CLI before copying, and flags a `spawn failed` agent.
+  `--kick` starts one refresh agent run and waits for it; `--check` only reports.
+
 ### Fixed
 
 - A renewal no longer fails with `UNEXPECTED_APP_DELTA` (and suspends the install) because an App Store app was installed,

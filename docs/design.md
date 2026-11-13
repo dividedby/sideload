@@ -69,6 +69,7 @@ Sources/SideloadMenu/              executableTarget: SwiftUI MenuBarExtra, view 
 Tests/SideloadCoreTests/           Swift Testing + Fixtures/ (read via #filePath, no resource bundle)
 canary/                            unchanged committed Xcode project (the payload, not the Mac app)
 scripts/make-app.sh                assembles SideloadMenu.app (section 4)
+scripts/install-local.sh           owner-run: builds and installs the CLI (~/.local/bin) and the app (~/Applications)
 scripts/check-secrets.mjs          dev hook, unchanged
 ```
 
