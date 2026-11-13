@@ -18,7 +18,7 @@ team) before changing anything.
   and 7-day profiles only for `io.github.dividedby.free.*`. It never creates, revokes or exports a certificate of
   that team (a changed free identity set after a build is a hard stop). It never installs, uninstalls, re-signs
   or launches any bundle ID outside `io.github.dividedby.free.*` (WebDriverAgent and atvloadly's apps included),
-  and never touches mobile-safari-lab. `canary`, `export-cert`, `portal` and the
+  and never touches mobile-safari-lab. `canary`, `portal` and the
   ledger's certificate/profile lists stay paid-only. Signing code matches identities by certificate OU, never by
   name. `provision`, `sign`, `install`, `refresh` (manual), `refresh --auto`, `app remove`, `slot restore` and `slot lend|return` are built (owner-run, or run by the lab for `slot lend|return`; `refresh --auto` is the command the owner's launchd agent runs, and agents never run it on a real device; `refresh --print-agent` is built and pure (no lock, subprocess or write), so an agent may run it, but only the owner runs the `launchctl` commands it prints, see `docs/design.md` section 18). `refresh` runs `provision`, `sign` and `install`, each taking `.op.lock` itself, and spends no new App ID on a renewal.
 - **One lock for the free team.** `$SIDELOAD_HOME/.op.lock` is the shared operation lock for any signing with
@@ -39,14 +39,12 @@ team) before changing anything.
 
 ## Secrets
 
-- Never in the repo: `.p12`, private keys, provisioning profiles, the `.p12` password, Apple ID credentials,
+- Never in the repo: `.p12`, private keys, provisioning profiles, Apple ID credentials,
   device UDIDs / CoreDevice IDs, IPAs. State lives in `$SIDELOAD_HOME` (default `~/.sideload`, 0700) or the
   macOS keychain.
 - Never print secrets in output or logs. UDIDs are redacted to their last 4 characters. Identity common names
   are never printed (one contains an email address).
-- The `.p12` password lives only in the keychain (service `io.github.dividedby.sideload`, account `p12`); it
-  reaches the owner only through `export-cert --copy-password` (concealed clipboard item, cleared after 90 s),
-  never stdout, stderr, logs, the ledger, the kit or the repo. `ledger.json` holds no secrets.
+- `ledger.json` holds no secrets.
 - `$SIDELOAD_HOME/asc/` (the App Store Connect API key `.p8` and `key.json`) is never read, opened, printed or
   copied by an agent. Tests generate throwaway P-256 keys at runtime.
 - App-data backups under `$SIDELOAD_HOME/backups/` (`slot lend` saves the lent app's data container) are secrets-class: they hold
@@ -88,9 +86,6 @@ team) before changing anything.
   and safe for an agent to run.
 - Changing `freeSlotsReserved` or `reservedAppIds` (the free team's slot and App ID budgets).
 - Running `portal` live (it uses the team's API key; owner-initiated).
-- Running `export-cert` against the real keychain (it exports the private key behind a keychain dialog, stores the
-  `.p12` password item and writes the kit). `--yes` and `--copy-password` are owner-only flags: agents never pass
-  them (`--copy-password` puts the password on the clipboard and keeps the command running for 90 s).
 
 ## Downloads
 
@@ -103,8 +98,7 @@ team) before changing anything.
 ## Code
 
 - Swift is the implementation (`docs/design.md`): Swift 6 language mode, macOS 27 / arm64, zero third-party
-  packages, `SideloadCore` imports no AppKit/SwiftUI (the `sideload` CLI target imports AppKit only for
-  the pasteboard, in `Sources/sideload/Pasteboard.swift`; the `SideloadMenu` target is the only other UI target and holds views, the view model and the app delegate's OS wiring (signals, terminate) only; the logic, timings included, lives in `Sources/SideloadCore/Menu/`). Tests use Swift Testing (`import Testing`), not XCTest.
+  packages, `SideloadCore` and the `sideload` CLI target import no AppKit/SwiftUI (the `SideloadMenu` target is the only UI target and holds views, the view model and the app delegate's OS wiring (signals, terminate) only; the logic, timings included, lives in `Sources/SideloadCore/Menu/`). Tests use Swift Testing (`import Testing`), not XCTest.
 - Node remains only for `scripts/check-secrets.mjs` and its test (plain ESM, zero dependencies).
   **pnpm only** (never npm or yarn).
 - `portal` is GET-only: no code path may send a mutating HTTP method or a request body (a test scans `Sources/`).

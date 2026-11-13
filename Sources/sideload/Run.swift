@@ -1,11 +1,11 @@
 import SideloadCore
 
 let allCommands: [JSONValue] = [
-    "doctor", "device", "canary", "portal", "export-cert", "fetch", "sign", "install", "status",
+    "doctor", "device", "canary", "portal", "fetch", "sign", "install", "status",
     "ledger", "inspect", "provision", "app", "slot", "refresh", "updates", "clean",
 ]
 let builtCommands: [JSONValue] = [
-    "doctor", "device", "canary", "ledger", "portal", "export-cert", "status", "inspect", "fetch",
+    "doctor", "device", "canary", "ledger", "portal", "status", "inspect", "fetch",
     "provision", "sign", "install", "refresh", "app", "slot", "updates", "clean",
 ]
 
@@ -42,7 +42,6 @@ private func help() -> Envelope {
                 "slot return --device <alias>|--udid <id>",
                 "slot restore --device <alias> [--app <apollo|stremio-ios|stremio-tvos|filler>] --yes",
                 "clean [--yes]",
-                "export-cert --device <alias> [--profile <uuid>] [--out <dir>] [--copy-password] --yes",
                 "ledger [refresh]",
                 "portal [certificates|bundle-ids|devices|profiles] [--show-identifiers]",
                 "status",
@@ -58,8 +57,6 @@ private let deviceSpec = ArgSpec(
     values: ["alias", "match", "platform", "reserved", "app"], flags: ["yes", "on", "off", "none"])
 private let canarySpec = ArgSpec(values: ["device"], flags: ["yes", "keep", "evidence"])
 
-private let exportCertSpec = ArgSpec(
-    values: ["device", "profile", "out"], flags: ["yes", "copy-password"])
 private let provisionSpec = ArgSpec(
     values: ["app", "device"], flags: ["yes", "register-device", "renew", "renew-ack"])
 private let signSpec = ArgSpec(values: ["app", "device", "version"], flags: ["yes"])
@@ -119,7 +116,6 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     case "canary": spec = canarySpec
     case "ledger": spec = ArgSpec()
     case "portal": spec = portalSpec
-    case "export-cert": spec = exportCertSpec
     case "status": spec = statusSpec
     case "inspect": spec = ArgSpec()
     case "fetch": spec = fetchSpec
@@ -323,15 +319,6 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     }
     if command == "inspect" {
         return await InspectCommand.run(services, InspectOptions(path: parsed.positionals.first))
-    }
-    if command == "export-cert" {
-        return await ExportCertCommand.run(
-            services,
-            ExportCertOptions(
-                device: parsed.values["device"], profile: parsed.values["profile"],
-                out: parsed.values["out"],
-                yes: parsed.flags.contains("yes"),
-                copyPassword: parsed.flags.contains("copy-password")))
     }
     if command == "portal" {
         return await PortalCommand.run(

@@ -115,9 +115,6 @@ public final class Interrupt: Sendable {
     /// the main flow already committed to exiting). A signal after main emitted still yields 128+signo
     /// unless main already set `exiting` (a deliberate exception to "exit 0 iff ok").
     ///
-    /// `kit` is set when a command already created something the owner must not be told to redo (the
-    /// `export-cert` kit): the object then reports it, with `clipboardCleared` when known, instead of "re-run".
-    ///
     /// `cleanup` removes files the running command must not leave behind (`inspect`'s scratch folder). It runs
     /// after the child groups are killed, bounded to 1 s, and before the object is written; it must be idempotent,
     /// because the command's own cleanup may run at the same time.
@@ -125,8 +122,7 @@ public final class Interrupt: Sendable {
     /// `context` is what the running command reported (`InterruptReport`): it is merged into the object's data and
     /// the message says the command had already changed things (`provision --renew` moved cached profiles).
     public func handle(
-        signal signo: Int32, kit: String? = nil, clipboardCleared: Bool? = nil,
-        context: [String: JSONValue] = [:],
+        signal signo: Int32, context: [String: JSONValue] = [:],
         cleanup: (@Sendable () -> Void)? = nil
     ) -> Int32? {
         enum Plan { case park, write, wait, none }
@@ -152,8 +148,7 @@ public final class Interrupt: Sendable {
 
         if plan == .write {
             let name = Self.name(of: signo)
-            let envelope = Self.interrupted(
-                name: name, kit: kit, clipboardCleared: clipboardCleared, context: context)
+            let envelope = Self.interrupted(name: name, context: context)
             // Own thread: with stdout a full pipe nobody reads the write never returns, and a signal must
             // still end the process. A failed or abandoned write is not reported.
             Thread { [self] in
@@ -171,64 +166,45 @@ public final class Interrupt: Sendable {
         return 128 + signo
     }
 
-    static func interrupted(
-        name: String, kit: String?, clipboardCleared: Bool?, context: [String: JSONValue] = [:]
-    ) -> Envelope {
-        guard let kit else {
-            // Context without the renewal's keys (a run without --renew) is just data on the plain object.
-            guard !context.isEmpty else {
-                return Envelope.fail(
-                    "sideload", code: "INTERRUPTED", message: "Interrupted by \(name).",
-                    fix: "Re-run the command; nothing was left running by sideload.")
-            }
-            guard context["cachedProfilesMoved"] != nil else {
-                return Envelope.fail(
-                    "sideload", code: "INTERRUPTED", message: "Interrupted by \(name).",
-                    fix: "Re-run the command; nothing was left running by sideload.", data: context)
-            }
-            // Worded from the counts: "moved" only when something was.
-            func count(_ key: String) -> Int {
-                switch context[key] {
-                case .number(let n)?: Int(n)
-                case .array(let items)?: items.count
-                default: 0
-                }
-            }
-            let (moved, stray) = (count("cachedProfilesMoved"), count("cachedProfilesStrayInTmp"))
-            let noun = { (n: Int) in n == 1 ? "1 cached profile" : "\(n) cached profiles" }
-            let message: String
-            if moved > 0 {
-                message =
-                    "Interrupted by \(name) after provision --renew moved \(noun(moved)) into tmp/."
-            } else if stray > 0 {
-                message =
-                    "Interrupted by \(name) during provision --renew, which left \(noun(stray)) in tmp/ that could not be put back."
-            } else {
-                message =
-                    "Interrupted by \(name) during provision --renew; no cached profiles were moved."
-            }
-            let fix =
-                moved + stray > 0
-                ? "Nothing was deleted; the profiles are listed in cachedProfilesMovedTo and cachedProfilesStrayInTmp. Re-run the command."
-                : "Nothing was deleted. Re-run the command."
+    static func interrupted(name: String, context: [String: JSONValue] = [:]) -> Envelope {
+        // Context without the renewal's keys (a run without --renew) is just data on the plain object.
+        guard !context.isEmpty else {
             return Envelope.fail(
-                "sideload", code: "INTERRUPTED", message: message, fix: fix, data: context)
+                "sideload", code: "INTERRUPTED", message: "Interrupted by \(name).",
+                fix: "Re-run the command; nothing was left running by sideload.")
         }
-        let clipboard =
-            switch clipboardCleared {
-            case true?: "The clipboard was cleared."
-            case false?: "The clipboard was left alone (it did not hold the password)."
-            case nil: "The clipboard state is unknown; copy something else to be sure."
+        guard context["cachedProfilesMoved"] != nil else {
+            return Envelope.fail(
+                "sideload", code: "INTERRUPTED", message: "Interrupted by \(name).",
+                fix: "Re-run the command; nothing was left running by sideload.", data: context)
+        }
+        // Worded from the counts: "moved" only when something was.
+        func count(_ key: String) -> Int {
+            switch context[key] {
+            case .number(let n)?: Int(n)
+            case .array(let items)?: items.count
+            default: 0
             }
+        }
+        let (moved, stray) = (count("cachedProfilesMoved"), count("cachedProfilesStrayInTmp"))
+        let noun = { (n: Int) in n == 1 ? "1 cached profile" : "\(n) cached profiles" }
+        let message: String
+        if moved > 0 {
+            message =
+                "Interrupted by \(name) after provision --renew moved \(noun(moved)) into tmp/."
+        } else if stray > 0 {
+            message =
+                "Interrupted by \(name) during provision --renew, which left \(noun(stray)) in tmp/ that could not be put back."
+        } else {
+            message =
+                "Interrupted by \(name) during provision --renew; no cached profiles were moved."
+        }
+        let fix =
+            moved + stray > 0
+            ? "Nothing was deleted; the profiles are listed in cachedProfilesMovedTo and cachedProfilesStrayInTmp. Re-run the command."
+            : "Nothing was deleted. Re-run the command."
         return Envelope.fail(
-            "sideload", code: "INTERRUPTED",
-            message:
-                "Interrupted by \(name) after the export finished: the kit is at \(kit) and is recorded in ledger.json. \(clipboard)",
-            fix: "Nothing needs repeating; the kit is complete. Use it as it is.",
-            data: [
-                "kit": .string(kit), "ledgerRecorded": true,
-                "clipboardCleared": clipboardCleared.map(JSONValue.bool) ?? .null,
-            ])
+            "sideload", code: "INTERRUPTED", message: message, fix: fix, data: context)
     }
 
     /// Runs `body` on a helper thread and waits up to `timeout`. Returns false if it had not finished, in

@@ -118,63 +118,23 @@ struct InterruptTests {
         #expect(o["ok"] == .bool(false))
     }
 
-    @Test("once the kit exists the object reports it and the clipboard, and never says to re-run")
-    func interruptedAfterKit() throws {
-        let cases: [(Bool?, String)] = [(true, "cleared"), (false, "left alone"), (nil, "unknown")]
-        for (cleared, word) in cases {
-            let capture = Capture()
-            let interrupt = Interrupt(writer: capture.writer, children: LiveChildren())
-            #expect(
-                interrupt.handle(
-                    signal: SIGINT, kit: "exports/feather-1", clipboardCleared: cleared) == 130)
-            let obj = try decode(try #require(capture.writes.first))
-            guard case .object(let o) = obj, case .array(let errors)? = o["errors"],
-                case .object(let e)? = errors.first,
-                case .string(let message)? = e["message"], case .string(let fix)? = e["fix"]
-            else {
-                Issue.record("shape")
-                return
-            }
-            #expect(o["ok"] == .bool(false) && errorCode(obj) == "INTERRUPTED")
-            #expect(
-                message.contains("exports/feather-1") && message.contains("ledger.json")
-                    && message.contains(word))
-            #expect(o["kit"] == .string("exports/feather-1") && o["ledgerRecorded"] == .bool(true))
-            #expect(o["clipboardCleared"] == cleared.map(JSONValue.bool) ?? .null)
-            for text in [message, fix] {
-                #expect(
-                    !text.lowercased().contains("re-run")
-                        && !text.lowercased().contains("run again"))
-            }
-        }
-    }
-
     @Test(
-        "a second signal after the kit exists but before main prints: exactly one object reaches stdout, either order"
-    )
-    func oneObjectEvenWithAKit() throws {
-        // The handler wins: one INTERRUPTED object that names the kit; main yields and writes nothing.
+        "a signal and the main flow racing for stdout: exactly one object reaches it, either order")
+    func oneObjectEitherOrder() throws {
+        // The handler wins: one INTERRUPTED object; main yields and writes nothing.
         let first = Capture()
         let handlerFirst = Interrupt(writer: first.writer, children: LiveChildren())
-        #expect(
-            handlerFirst.handle(signal: SIGINT, kit: "exports/feather-1", clipboardCleared: true)
-                == 130)
-        #expect(
-            handlerFirst.finishMain(.result("export-cert", ["kit": .string("exports/feather-1")]))
-                .isYield)
+        #expect(handlerFirst.handle(signal: SIGINT) == 130)
+        #expect(handlerFirst.finishMain(.result("doctor", ["done": .bool(true)])).isYield)
         #expect(first.writes.count == 1)
         let obj = try decode(try #require(first.writes.first))
-        #expect(errorCode(obj) == "INTERRUPTED" && first.writes[0].contains("exports/feather-1"))
+        #expect(errorCode(obj) == "INTERRUPTED")
 
         // Main wins: the success object is the only one; the late signal parks and writes nothing.
         let second = Capture()
         let mainFirst = Interrupt(writer: second.writer, children: LiveChildren())
-        #expect(
-            mainFirst.finishMain(.result("export-cert", ["kit": .string("exports/feather-1")]))
-                .exitCode == 0)
-        #expect(
-            mainFirst.handle(signal: SIGINT, kit: "exports/feather-1", clipboardCleared: true)
-                == nil)
+        #expect(mainFirst.finishMain(.result("doctor", ["done": .bool(true)])).exitCode == 0)
+        #expect(mainFirst.handle(signal: SIGINT) == nil)
         #expect(second.writes.count == 1 && !second.writes[0].contains("INTERRUPTED"))
     }
 

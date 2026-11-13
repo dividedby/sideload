@@ -113,12 +113,6 @@ struct LoadedView: View {
                 DeviceCardView(device: device, snapshot: snapshot, model: model)
             }
         }
-        if snapshot.showsCertKitExport {
-            // Exporting the cert kit changes the keychain and writes a kit, so it stays off in v1.
-            Button("Export cert kit…") {}
-                .disabled(true)
-                .help("Export arrives later. Run `sideload export-cert` in a terminal.")
-        }
     }
 }
 

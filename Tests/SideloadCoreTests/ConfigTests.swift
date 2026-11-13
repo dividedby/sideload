@@ -102,7 +102,7 @@ struct ConfigTests {
         try await withTestHome { paths, store in
             let raw = #"""
                 {"future": {"a": [1, 2]}, "devices": {"iphone": {"udid": "u1", "novel": true}},
-                 "approvedSources": [{"kind": "x"}], "lastNotified": {"cert": 14}, "apps": {"feather": {"v": "1"}}}
+                 "approvedSources": [{"kind": "x"}], "lastNotified": {"cert": 14}, "apps": {"sample": {"v": "1"}}}
                 """#
             try Data(raw.utf8).write(to: URL(fileURLWithPath: paths.config))
             try await store.update { $0.minFreeGB = 3 }
@@ -112,7 +112,7 @@ struct ConfigTests {
             #expect(cfg.devices["iphone"]?.extra["novel"] == true)
             #expect(cfg.approvedSources == [["kind": "x"]])
             #expect(cfg.lastNotified == ["cert": 14])
-            #expect(cfg.apps["feather"] == ["v": "1"])
+            #expect(cfg.apps["sample"] == ["v": "1"])
         }
     }
 

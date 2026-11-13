@@ -1,4 +1,4 @@
-/// Design section 9, mechanism 3: `canary`, `sign`, `install`, `export-cert` and `fetch --approve` hold a
+/// Design section 9, mechanism 3: `canary`, `sign`, `install` and `fetch --approve` hold a
 /// non-blocking exclusive `flock` on `.op.lock` for their whole run; `fetch` without `--approve` downloads without
 /// it and takes it only to record the verified file. A second concurrent run gets `OPERATION_IN_PROGRESS`
 /// instead of racing portal state or derived data. Released by `release()`, on deinit, and by the kernel

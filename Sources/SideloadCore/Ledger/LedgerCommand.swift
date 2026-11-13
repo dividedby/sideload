@@ -74,23 +74,15 @@ public enum LedgerCommand {
         }
     }
 
-    /// The ledger as printed: `items` (expiry), then each certificate, profile and export. Dates are ISO 8601 UTC.
+    /// The ledger as printed: `items` (expiry), then each certificate and profile. Dates are ISO 8601 UTC.
     /// Profile UUIDs go out whole; `Redactor` masks them to their last four characters in the printed envelope.
     static func report(_ ledger: Ledger, now: Date) -> [String: JSONValue] {
-        let certFp8s = Set(ledger.certificates.map(\.fp8))
-        let profileUuids = Set(ledger.profiles.map(\.uuid))
         return [
             "schema": .number(Double(Ledger.schema)),
             "updated": ledger.updated.map { .string(LedgerDates.string($0)) } ?? .null,
             "items": .array(ExpiryItems.compute(ledger, now: now).map(\.json)),
             "certificates": .array(ledger.certificates.map { certificate($0, now: now) }),
             "profiles": .array(ledger.profiles.map { profile($0, now: now) }),
-            "exports": .array(
-                ledger.exports.map {
-                    export(
-                        $0, certKnown: certFp8s.contains($0.certFp8),
-                        profileKnown: profileUuids.contains($0.profileUuid))
-                }),
         ]
     }
 
@@ -122,18 +114,6 @@ public enum LedgerCommand {
             "certFp8s": .array(p.certFp8s.map { .string($0) }), "source": .string(p.source),
             "present": .bool(p.present),
             "firstSeen": date(p.firstSeen), "lastSeen": date(p.lastSeen),
-        ]
-    }
-
-    private static func export(_ e: LedgerExport, certKnown: Bool, profileKnown: Bool) -> JSONValue
-    {
-        [
-            "id": .string(e.id), "createdAt": date(e.createdAt), "certFp8": .string(e.certFp8),
-            "profileUuid": .string(e.profileUuid), "p12File": .string(e.p12File),
-            "p12Sha256Prefix": .string(e.p12Sha256Prefix), "encryption": .string(e.encryption),
-            "passwordItem": .string(e.passwordItem), "kitPath": .string(e.kitPath),
-            "verified": .bool(e.verified),
-            "certificateInLedger": .bool(certKnown), "profileInLedger": .bool(profileKnown),
         ]
     }
 }

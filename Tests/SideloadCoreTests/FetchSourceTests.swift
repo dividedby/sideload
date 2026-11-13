@@ -353,7 +353,7 @@ struct AllowlistTests {
         #expect(
             failure {
                 try FetchCatalog.approved(
-                    app: "feather", config: Config(approvedSources: [["app": "feather"]]))
+                    app: "sample", config: Config(approvedSources: [["app": "sample"]]))
             } == "SOURCE_NOT_ALLOWED")
         #expect(
             failure {

@@ -458,8 +458,6 @@ public struct MenuSnapshot: Sendable, Equatable {
     public var devices: [MenuDeviceCard]
     /// The Apps section stays hidden until a device is saved: a saved device with no apps still needs its Add app… menu.
     public var showsApps: Bool
-    /// The Feather cert kit Export is hidden while the paid account is blocked.
-    public var showsCertKitExport: Bool
     /// True while `devicectl` has not answered.
     public var checkingDevices: Bool
     /// True while a visible device's app list is being read.

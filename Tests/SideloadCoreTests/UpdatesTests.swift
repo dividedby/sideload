@@ -747,7 +747,7 @@ struct UpdatesCommandTests {
             #expect(
                 !unapproved.ok && unapproved.errorCodes == ["SOURCE_NOT_ALLOWED"]
                     && unapproved.data["sources"] == nil)
-            let unknown = await w.run(UpdatesOptions(app: "feather"))
+            let unknown = await w.run(UpdatesOptions(app: "sample"))
             #expect(unknown.errorCodes == ["SOURCE_NOT_ALLOWED"])
             #expect(http.getRequests.count == 1)
         }

@@ -83,20 +83,9 @@ public struct Services: Sendable {
     /// Provisioning profiles (design section 8, `ledger refresh`). The default is inert, so a test that forgets
     /// to inject a source can never read the real Xcode profile folders.
     public var profiles: any ProfileSource
-    /// Private-key export, the password item and .p12 verification (design section 6). The defaults are inert and
-    /// throw `KEYCHAIN_UNAVAILABLE`, so a test that forgets a fake can never touch the real keychain.
-    public var identityExporter: any IdentityExporter
-    public var secrets: any SecretStore
-    public var p12Verifier: any P12Verifier
-    /// Where `export-cert --copy-password` puts the password. Inert by default (Core has no windowing framework): the `sideload`
-    /// CLI wires the macOS pasteboard, so a test can never touch the real pasteboard.
-    public var pasteboard: any SecretPasteboard
     public var http: any HTTPTransport
     /// Waits between retries of a failed `GET`. Throws `CancellationError` when the run is cancelled; tests pass a no-op.
     public var sleep: @Sendable (Duration) async throws -> Void
-    /// Lets SIGINT/SIGTERM/SIGHUP end the `--copy-password` hold early (the CLI wires its signal handlers to it).
-    /// The default is never tripped, so a hold simply runs its full length.
-    public var holdSignal: HoldSignal
     /// What the running command wants in the `INTERRUPTED` object (`provision --renew` registers what it moved). The
     /// default is inert until a command sets it; the CLI shares one instance with its signal handlers.
     public var interruptReport: InterruptReport
@@ -119,15 +108,11 @@ public struct Services: Sendable {
             ("", "")
         },
         profiles: any ProfileSource = UnavailableProfileSource(),
-        identityExporter: any IdentityExporter = UnavailableIdentityExporter(),
-        secrets: any SecretStore = UnavailableSecretStore(),
-        p12Verifier: any P12Verifier = UnavailableP12Verifier(),
-        pasteboard: any SecretPasteboard = UnavailableSecretPasteboard(),
         http: any HTTPTransport = DisabledTransport(),
         sleep: @escaping @Sendable (Duration) async throws -> Void = {
             try await Task.sleep(for: $0)
         },
-        holdSignal: HoldSignal = HoldSignal(), interruptReport: InterruptReport = InterruptReport(),
+        interruptReport: InterruptReport = InterruptReport(),
         postEmit: PostEmit = PostEmit(),
         xcodeProfileDirectories: [String] = [],
         afterDurableWrite: (@Sendable (String) throws -> Void)? = nil
@@ -142,13 +127,8 @@ public struct Services: Sendable {
         self.localUser = localUser
         self.machineNames = machineNames
         self.profiles = profiles
-        self.identityExporter = identityExporter
-        self.secrets = secrets
-        self.p12Verifier = p12Verifier
-        self.pasteboard = pasteboard
         self.http = http
         self.sleep = sleep
-        self.holdSignal = holdSignal
         self.interruptReport = interruptReport
         self.postEmit = postEmit
         self.xcodeProfileDirectories = xcodeProfileDirectories
@@ -173,8 +153,7 @@ public struct Services: Sendable {
                 runner: runner,
                 directories: XcodeManagedProfileSource.defaultDirectories(
                     homeDirectory: NSHomeDirectory())),
-            identityExporter: SecurityIdentityExporter(), secrets: SecurityKeychainSecretStore(),
-            p12Verifier: SecurityP12Verifier(), http: URLSessionTransport(),
+            http: URLSessionTransport(),
             xcodeProfileDirectories: XcodeManagedProfileSource.defaultDirectories(
                 homeDirectory: NSHomeDirectory()))
     }
