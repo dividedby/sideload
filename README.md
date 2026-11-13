@@ -179,17 +179,17 @@ scripts/install-local.sh
 
 It stops if you are not on `main` or have uncommitted changes (`--allow-dirty` installs anyway), or if a sideload
 operation holds `~/.sideload/.op.lock` or the refresh agent is running, so a Renew in progress is never cut off; it checks
-that before the build and again before replacing each piece. Then it does a release build and builds the app with
-`scripts/make-app.sh`, copies the new CLI beside the old one and renames it into place (a new file, never a copy over the
-old one, and no moment without a binary), checks the copy matches the build and that `sideload status` answers `ok`, quits
-the running app, replaces it and opens it. Last, it reads both agents from `launchctl print` (runs, job state, last exit
-code) and the last `run` line of `~/.sideload/logs/refresh.jsonl` (its time, `ok`, renewed and failed counts), and says
-when the next timed refresh run, the first on the new binary, is due (from that line's time, or every 30 minutes when the
-log has none). A `spawn failed` job state or an `OS_REASON_CODESIGNING` exit reason makes it exit non-zero with the fix
+that before the build and again before replacing each piece. Then it does a release build (Apple Silicon only) and builds the
+app with `scripts/make-app.sh`, copies the new CLI beside the old one and renames it into place (a new file, never a copy over the
+old one, and no moment without a binary), checks the copy matches the build and that `sideload status` answers `ok`, copies
+the new app beside the old one, quits the running app, renames the new one into place and opens it. Last, it reads both agents from `launchctl print` (runs, job state, last exit
+code) and the last `run` line of `~/.sideload/logs/refresh.jsonl` (its time, `ok`, renewed and failed counts), and,
+without `--kick` and with the refresh agent loaded, says when the next timed refresh run, the first on the new binary, is
+due (from that line's time, or every 30 minutes when the log has none). A `spawn failed` job state or an `OS_REASON_CODESIGNING` exit reason makes it exit non-zero with the fix
 (`launchctl kickstart`, then the `bootout` and `install` lines of `--print-agent` if that fails).
 
 - `--kick` also starts one refresh agent run now (`launchctl kickstart`, without `-k`, so a running one is never killed),
-  waits up to 15 minutes for it and says whether it logged `ok`; it exits non-zero if not. It needs the refresh agent
+  waits up to 15 minutes for it and says whether it logged a new `run` line with `ok`; it exits non-zero if not. It needs the refresh agent
   loaded and stops before building otherwise. That run is a normal `refresh --auto`: it renews whatever is due on the
   devices with auto-renew on.
 - `--check` installs nothing: it prints the agents' state and the last refresh run, for checking after the next timed run.

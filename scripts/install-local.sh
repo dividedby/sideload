@@ -83,8 +83,10 @@ last_run_line() {
   tail -n 400 "$refresh_log" | grep '"event":"run"' | tail -n 1 || true
 }
 
-# One scalar field of a log line ("ok", "renewed", ...); empty when absent.
-line_field() { sed -n "s/.*\"$2\":\"\{0,1\}\([^\",}]*\).*/\1/p" <<<"$1"; }
+# The first occurrence of one scalar field of a log line ("ok", "renewed", ...), unquoted; empty when absent.
+line_field() {
+  grep -o "\"$2\":[^,}]*" <<<"$1" | head -n 1 | sed 's/^[^:]*://; s/"//g' || true
+}
 
 # Epoch seconds of a log line's "ts" (UTC, ISO 8601); empty when the line has none.
 line_epoch() {
@@ -134,15 +136,21 @@ report_agents() {
 }
 
 # A busy operation lock or a running refresh agent stops here, so a Renew, Add app or renewal is never cut off. The
-# probe holds the lock for an instant only. Called before the build and again before each replace.
+# probe holds the lock for an instant only. Called before the build and again before each replace; $1 says what is
+# already installed by then.
 ensure_idle() {
+  local done_note="${1:-nothing has been installed}" probe=0
   if [[ -e "$home/.op.lock" ]]; then
     perl -MFcntl=:flock -e 'open(my $l, ">>", $ARGV[0]) or exit 2; flock($l, LOCK_EX | LOCK_NB) or exit 1; exit 0' \
-      "$home/.op.lock" ||
-      die "a sideload operation holds ~/.sideload/.op.lock (the menu bar app, the refresh agent or the lab); try again when it finishes"
+      "$home/.op.lock" || probe=$?
+    case "$probe" in
+    0) ;;
+    1) die "a sideload operation holds ~/.sideload/.op.lock (the menu bar app, the refresh agent or the lab); $done_note; re-run when it finishes" ;;
+    *) die "could not open ~/.sideload/.op.lock to check it; $done_note" ;;
+    esac
   fi
   if agent_loaded "$refresh_label" && [[ "$(agent_field "$refresh_label" state)" == "running" ]]; then
-    die "the refresh agent is running; try again when it finishes"
+    die "the refresh agent is running; $done_note; re-run when it finishes"
   fi
 }
 
@@ -179,13 +187,17 @@ ensure_idle
 log "installing $cli"
 mkdir -p "$(dirname "$cli")"
 staged="$cli.new.$$"
+trap 'rm -rf "$staged"' EXIT
 cp "$bin/sideload" "$staged"
 mv -f "$staged" "$cli"
 cmp -s "$bin/sideload" "$cli" || die "$cli does not match the build"
 env -u SIDELOAD_HOME "$cli" status >/dev/null 2>&1 ||
   die "$cli status did not answer ok; run it to see the errors"
 
-ensure_idle
+ensure_idle "the new CLI is installed, the app is not"
+staged="$app_dest.new.$$"
+mkdir -p "$(dirname "$app_dest")"
+ditto .build/app/SideloadMenu.app "$staged"
 if pkill -x SideloadMenu; then
   log "quitting the running SideloadMenu"
   for _ in {1..20}; do
@@ -195,19 +207,24 @@ if pkill -x SideloadMenu; then
   ! pgrep -x SideloadMenu >/dev/null || die "SideloadMenu did not quit within 10 s; quit it from its panel and re-run"
 fi
 log "installing $app_dest"
-mkdir -p "$(dirname "$app_dest")"
 rm -rf "$app_dest"
-ditto .build/app/SideloadMenu.app "$app_dest"
+mv "$staged" "$app_dest"
+trap - EXIT
 open "$app_dest"
 
 next_note=""
 kick_ok=true
 if $kick; then
   before="$(agent_field "$refresh_label" runs)"
+  kicked_at="$(date +%s)"
   log "starting one refresh agent run (it renews whatever is due)"
-  launchctl kickstart "$domain/$refresh_label"
   waited=0
   finished=false
+  if ! launchctl kickstart "$domain/$refresh_label"; then
+    kick_ok=false
+    waited=$kick_timeout
+    log "launchctl kickstart failed; see the agent state below"
+  fi
   while ((waited < kick_timeout)); do
     sleep 2
     waited=$((waited + 2))
@@ -218,17 +235,21 @@ if $kick; then
     if ((waited % 60 == 0)); then log "still running ($((waited / 60)) min)"; fi
   done
   if ! $finished; then
-    log "the run has not finished after $((kick_timeout / 60)) min; check later with scripts/install-local.sh --check"
+    $kick_ok && log "the run has not finished after $((kick_timeout / 60)) min; check later with scripts/install-local.sh --check"
   else
     line="$(last_run_line)"
-    if [[ "$(line_field "$line" ok)" == "true" ]]; then
+    epoch="$(line_epoch "$line")"
+    if [[ -z "$epoch" ]] || ((epoch < kicked_at - 5)); then
+      kick_ok=false
+      log "the kicked run logged no run line (the newest is older); see ~/.sideload/logs/refresh.jsonl and launchd-refresh.err"
+    elif [[ "$(line_field "$line" ok)" == "true" ]]; then
       log "kicked run finished: $(run_summary "$line")"
     else
       kick_ok=false
       log "kicked run did not log ok: ${line:+$(run_summary "$line")}; see ~/.sideload/logs/refresh.jsonl and launchd-refresh.err"
     fi
   fi
-else
+elif agent_loaded "$refresh_label"; then
   epoch="$(line_epoch "$(last_run_line)")"
   if [[ -n "$epoch" ]]; then
     next=$((epoch + refresh_interval))
