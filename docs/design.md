@@ -62,7 +62,7 @@ Sources/SideloadCore/              library: everything testable, no UI imports
   Inspect/    ZipListing (central-directory pre-check), ScratchDirectory + ScratchRegistry (0700 scratch folder, removed on every path), ExtractedTree (lstat walk), BinaryTools (lipo, vtool, codesign through the Runner), IPAInspector (what `fetch` reuses)
   Signing/    ExtensionStripper, EntitlementReducer, BundleRewriter, BundleSigner (free `sign`, section 18)
   Checks/     xcode, clt, cert, device, appletv, disk
-  Commands/   doctor, canary, device, portal, exportCert, inspect, fetch, provision, sign (free only), status (install: not built)
+  Commands/   doctor, canary, device, portal, inspect, fetch, provision, sign (free only), status (install: not built)
 Sources/sideload/                  executableTarget: ArgParser, dispatch, signal handling, stdout emit, no AppKit import
 Sources/SideloadMenu/              executableTarget: SwiftUI MenuBarExtra, view model and views (the only place that imports SwiftUI; AppKit for the icon, Settings and Quit)
 Tests/SideloadCoreTests/           Swift Testing + Fixtures/ (read via #filePath, no resource bundle)
@@ -278,7 +278,7 @@ Icon: the **countdown ring** (owner decision 2026-10-24; a 16x16 SVG spec, drawn
  |  iphone   visible, paired       ...ab12    |
  |  appletv  not paired (pair it in Xcode)    |
  |--------------------------------------------|
- | Run canary...    Export certificate...     |
+ | Run canary...                              |
  | Open ~/.sideload                     Quit  |
  +--------------------------------------------+
 
