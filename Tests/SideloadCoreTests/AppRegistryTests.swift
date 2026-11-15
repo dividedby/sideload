@@ -264,6 +264,25 @@ struct AppRegistryTests {
         #expect(fetch.errors.first?.code == "SOURCE_NOT_ALLOWED")
     }
 
+    @Test(
+        "a custom app cannot be made lendable: lending backs up data that only built-ins keep findable"
+    )
+    func customNotLendable() async throws {
+        var config = try makeConfig(customApps: #"[{"id": "myapp", "platform": "ios"}]"#)
+        config.devices = iphoneConfig().devices
+        let (out, runner) = try await invoke(
+            ["device", "lendable", "--alias", "iphone", "--app", "myapp"], config: config)
+        #expect(out.errors.first?.code == "USAGE")
+        #expect(
+            out.errors.first?.message == "myapp is a custom app; only built-in apps can be lent.")
+        #expect(out.errors.first?.fix == "Use one of: stremio-ios, stremio-tvos, apollo, filler.")
+        #expect(runner.calls.isEmpty)
+        // A built-in still reaches the owner's confirm.
+        let (builtIn, _) = try await invoke(
+            ["device", "lendable", "--alias", "iphone", "--app", "apollo"], config: config)
+        #expect(builtIn.errors.first?.code == "CONFIRM_REQUIRED")
+    }
+
     @Test("status lists an ignored custom entry as a warning, and nothing when there is none")
     func statusWarnings() async throws {
         let bad = try makeConfig(customApps: #"[{"id": "apollo", "platform": "ios"}]"#)

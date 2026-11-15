@@ -33,7 +33,8 @@ All notable changes to this project are documented here. Format follows
   it. Each entry is checked on its own: an invalid one (a bad ID, suffix, platform or name, an unknown field, a clash with a
   built-in or another custom entry) is left out and `status` warns `CUSTOM_APP_IGNORED`; the built-ins always work. A valid
   custom app can be provisioned, signed, installed, renewed and removed like a built-in one under the same allowlist, App
-  ID budget and slot checks, but it has no download source and the menu bar app does not show it yet. Not run on a device.
+  ID budget and slot checks. It cannot be made lendable, has no download source, and the menu bar app does not offer to add
+  it. Not run on a device.
 
 ### Fixed
 

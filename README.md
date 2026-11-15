@@ -308,10 +308,11 @@ the ID) and `name` (default: the ID capitalised):
 The ID and suffix are 1 to 31 of `a-z`, `0-9` and `-`, starting with a letter or digit; the platform is `ios` or `tvos`.
 An entry may not reuse a built-in app's ID or suffix, or share one with another custom entry. An entry that breaks a rule
 (or has any other field) is left out, and `status` names it in a `CUSTOM_APP_IGNORED` warning; the built-in apps and the
-other entries still work. A valid custom app can be named in `provision`, `sign`, `install`, `refresh`, `app remove` and the
-`slot` commands like a built-in one, under the same `<bundleIdPrefix>.free.*` allowlist, App ID budget and slot checks. It
-has no download source, so `fetch` and `updates` do not know it, and the menu bar app does not offer it yet. None of this
-has been run on a device with a custom app.
+other entries still work. A valid custom app can be named in `provision`, `sign`, `install`, `refresh`, `app remove` and
+`slot restore` like a built-in one, under the same `<bundleIdPrefix>.free.*` allowlist, App ID budget and slot checks. It
+cannot be made lendable (lending backs up the app's data, so only built-in apps are lent). It has no download source, so
+`fetch` and `updates` do not know it. The menu bar app shows it on a device card once the ledger has it (under its ID
+capitalised, not its `name`), but does not offer to add it. None of this has been run on a device with a custom app.
 
 ## Portal audit key
 

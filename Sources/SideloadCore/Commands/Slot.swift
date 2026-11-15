@@ -235,7 +235,9 @@ public enum SlotCommand {
                     "The owner sets one: sideload device lendable --alias \(alias) --app <app> --yes"
             )
         }
-        let apps = config.appRegistry
+        // Built-ins only, as `device lendable` allows: a lend backs up the app's data, and a custom entry may later leave
+        // the config while its backup waits.
+        let apps = AppRegistry.builtIn
         guard let app = apps.app(name) else {
             throw SideloadError(
                 "NO_LENDABLE_APP", "The configured lendable app is not a known app.",

@@ -383,6 +383,13 @@ public enum DeviceCommand {
                     command, code: "USAGE", message: "Unknown app \"\(printableCut(name))\".",
                     fix: "Use one of: \(found.registry.names.joined(separator: ", ")).")
             }
+            // Lending backs up the app's data under its ID; only a built-in's ID is sure to stay known to the restore checks.
+            guard app.builtIn else {
+                return .fail(
+                    command, code: "USAGE",
+                    message: "\(app.id) is a custom app; only built-in apps can be lent.",
+                    fix: "Use one of: \(AppRegistry.builtIn.names.joined(separator: ", ")).")
+            }
             chosen = app
         }
         if let stop = try requireSavedAndConfirmed(
