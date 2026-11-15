@@ -45,6 +45,8 @@ enum RefreshPolicy {
     /// (`pausing`) instead of suspending the install that happened to hit it.
     static let accountNotSignedIn = "ACCOUNT_NOT_SIGNED_IN"
 
+    static func isAccountSignedOut(_ code: String?) -> Bool { code == accountNotSignedIn }
+
     /// Wait before the next probe: after the first hit and after each failed probe (1, 2 and 4 hours, then 6 for good).
     static let accountProbeLadder: [TimeInterval] = [3600, 2 * 3600, 4 * 3600, 6 * 3600]
 
@@ -298,27 +300,28 @@ enum RefreshPolicy {
             next.consecutiveFailures += 1
             next.nextEligible = nextEligible(failures: next.consecutiveFailures, now: now)
             if permanentCodes.contains(code) { next.suspended = true }
-        case .busy, .cancelled, .accountSignedOut:
-            let today = dayKey(now, timeZone: timeZone)
-            if let count = next.attemptsByDay[today] {
-                if count <= 1 {
-                    next.attemptsByDay[today] = nil
-                } else {
-                    next.attemptsByDay[today] = count - 1
-                }
-            }
-            switch result {
-            case .busy:
-                next.lastResult = "skipped"
-                next.lastCode = OperationLock.busyCode
-            case .accountSignedOut:
-                next.lastResult = "failed"
-                next.lastCode = accountNotSignedIn
-            default:
-                next.lastResult = "skipped"
-                next.lastCode = interrupted
-            }
+        case .busy:
+            giveBack(&next, now: now, timeZone: timeZone)
+            next.lastResult = "skipped"
+            next.lastCode = OperationLock.busyCode
+        case .cancelled:
+            giveBack(&next, now: now, timeZone: timeZone)
+            next.lastResult = "skipped"
+            next.lastCode = interrupted
+        case .accountSignedOut:
+            giveBack(&next, now: now, timeZone: timeZone)
+            next.lastResult = "failed"
+            next.lastCode = accountNotSignedIn
         }
         return next
+    }
+
+    /// One attempt less today: the attempt was not the install's doing.
+    private static func giveBack(
+        _ refresh: inout LedgerInstallRefresh, now: Date, timeZone: TimeZone
+    ) {
+        let today = dayKey(now, timeZone: timeZone)
+        guard let count = refresh.attemptsByDay[today] else { return }
+        refresh.attemptsByDay[today] = count <= 1 ? nil : count - 1
     }
 }

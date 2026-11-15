@@ -570,7 +570,7 @@ private struct ProvisionRun {
 
         var suspensionRecorded = true
         let (now, compared) = (self.now, diff != nil)
-        let signedOut = failure?.code == RefreshPolicy.accountNotSignedIn
+        let signedOut = RefreshPolicy.isAccountSignedOut(failure?.code)
         do {
             try hooks.checkpoint(.afterBuildWrite)
             try await services.ledgerStore.update { ledger in
@@ -725,7 +725,8 @@ private struct ProvisionRun {
         let cleared: (suspension: Bool, accountPause: Bool)
         do {
             try hooks.checkpoint(.finalLedgerWrite)
-            cleared = try await services.ledgerStore.update { ledger -> (Bool, Bool) in
+            cleared = try await services.ledgerStore.update {
+                ledger -> (suspension: Bool, accountPause: Bool) in
                 ledger.freeProfiles.removeAll { $0.id == entryKey }
                 ledger.freeProfiles.append(entry)
                 ledger.freeProfiles.sort { $0.id < $1.id }
@@ -738,14 +739,15 @@ private struct ProvisionRun {
                 ledger.freeSuspended = nil
                 let wasPaused = ledger.freeAccountPause != nil
                 ledger.freeAccountPause = nil
-                // Suspensions an earlier build set for a signed-out Xcode; the account is back, so they were not the app's.
+                // What an earlier build recorded against the installs for a signed-out Xcode (a suspension, a failure count, a
+                // backoff): the account is back, so none of it was the app's.
                 for index in ledger.installs.indices
-                where ledger.installs[index].refresh.suspended
-                    && ledger.installs[index].refresh.lastCode == RefreshPolicy.accountNotSignedIn
-                {
+                where RefreshPolicy.isAccountSignedOut(ledger.installs[index].refresh.lastCode) {
                     ledger.installs[index].refresh.suspended = false
+                    ledger.installs[index].refresh.consecutiveFailures = 0
+                    ledger.installs[index].refresh.nextEligible = nil
                 }
-                return (wasSuspended, wasPaused)
+                return (suspension: wasSuspended, accountPause: wasPaused)
             }
         } catch {
             if let placed, let filler {

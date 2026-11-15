@@ -419,7 +419,6 @@ extension RefreshRun {
                 }
             } else {
                 notified = await notify(outcome, target, auto: auto)
-                await noteResumed(outcome, &state, auto)
             }
             if let failure = outcome.failure {
                 state.failures.append(failure)
@@ -430,6 +429,8 @@ extension RefreshRun {
                 }
             }
         }
+        // After the app's own notice, and whatever sign and install did: a provision that went through cleared the pause.
+        if !outcome.trace.accountSignedOut { await noteResumed(outcome, &state, auto) }
         record(outcome, target, since: began, notified: notified, auto: auto)
         state.plans[index].results.append(outcome)
     }
@@ -557,12 +558,13 @@ extension RefreshRun {
         return delivered
     }
 
-    /// Once per run, after a probe run's first renewal: the pause is gone, so Xcode is signed in again.
+    /// Once per run, after a probe run's first attempt whose `provision` went through: the pause is gone, so Xcode is signed in
+    /// again, even if sign or install then failed.
     private func noteResumed(
         _ result: AppResult, _ state: inout AutoState, _ auto: RefreshAutoContext
     ) async {
         guard state.pausedAtStart, !state.resumeNotified,
-            result.status == .renewed || result.status == .renewedNotInstalled,
+            result.steps[.provision] == .done,
             let ledger = try? services.ledgerStore.load(), ledger.freeAccountPause == nil
         else { return }
         state.resumeNotified = true

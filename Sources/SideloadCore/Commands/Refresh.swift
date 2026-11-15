@@ -583,7 +583,7 @@ struct RefreshRun {
                 let busy = failure.code == OperationLock.busyCode && (done == 0 || auto != nil)
                 if busy {
                     outcome = .busy
-                } else if failure.code == RefreshPolicy.accountNotSignedIn {
+                } else if RefreshPolicy.isAccountSignedOut(failure.code) {
                     outcome = .accountSignedOut
                 } else {
                     outcome = .failed(code: failure.code)

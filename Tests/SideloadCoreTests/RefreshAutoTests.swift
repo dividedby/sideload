@@ -1628,6 +1628,38 @@ struct RefreshAutoAccountTests {
         }
     }
 
+    @Test(
+        "a probe whose provision clears the pause announces the resume even when install then fails"
+    )
+    func resumeAfterLaterFailure() async throws {
+        try await withAutoWorld(profileDays: 2) { a in
+            try await a.services.ledgerStore.update {
+                $0.freeAccountPause = LedgerAccountPause(
+                    code: "ACCOUNT_NOT_SIGNED_IN", since: daysFromNow(-1), probes: 1,
+                    nextProbe: daysFromNow(-0.1))
+            }
+            let store = a.services.ledgerStore
+            let log = CallBox([])
+            let steps = autoSteps(
+                log,
+                provision: { options in
+                    try? await store.update { $0.freeAccountPause = nil }
+                    return okStep("provision", options.app)
+                },
+                install: { _ in failStep("INSTALL_FAILED") })
+            let out = await auto(a, steps)
+            #expect(!out.ok && out.errors.map(\.code) == ["INSTALL_FAILED"])
+            #expect(try a.w.ledger().freeAccountPause == nil)
+            let notices = a.runner.notices
+            let resumed = Notifier.sanitised(Notifier.accountResumed())
+            #expect(notices.filter { $0 == resumed }.count == 1)
+            #expect(
+                notices.filter { $0.hasPrefix("stremio-ios @ iphone failed INSTALL_FAILED") }.count
+                    == 1)
+            #expect(notices.count == 2)
+        }
+    }
+
     @Test("an install an earlier build suspended for a signed-out Xcode is tried, and renewed")
     func legacySuspensionIsTried() async throws {
         let legacy = LedgerInstallRefresh(

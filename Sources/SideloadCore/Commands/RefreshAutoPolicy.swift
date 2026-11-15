@@ -13,7 +13,8 @@ extension RefreshPolicy {
     static let versionNotAvailable = "VERSION_NOT_AVAILABLE"
 
     /// Why the automatic run did not act, as the `code` of a skipped result and the key of the envelope's `skipped` counts.
-    /// The first four end the whole run; of them only `ledgerUnreadable` is a failure, the rest are skips.
+    /// The first group ends the whole run (kill switch to account pause); of them only `ledgerUnreadable` is a failure, the rest
+    /// are skips.
     enum AutoSkip: Equatable {
         case killSwitch, freeCertChanged, ledgerUnreadable, operationInProgress
         /// Xcode is signed out and the pause's next probe is not due yet: a quiet whole-run skip.
@@ -91,7 +92,7 @@ extension RefreshPolicy {
         if subject.lent { return .lent }
         guard install.present else { return .notPresent }
         // A suspension an earlier build set for a signed-out Xcode is the team's pause now, not the install's.
-        if install.refresh.suspended, install.refresh.lastCode != accountNotSignedIn {
+        if install.refresh.suspended, !isAccountSignedOut(install.refresh.lastCode) {
             return .suspended
         }
         if slotPending { return .slotPending }

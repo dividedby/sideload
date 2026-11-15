@@ -174,8 +174,9 @@ struct AccountPauseProvisionTests {
             #expect(ledger.freeAccountPause == nil)
             let cleared = try #require(ledger.installs.first { $0.app == "stremio-ios" }).refresh
             #expect(!cleared.suspended)
-            #expect(cleared.lastCode == "ACCOUNT_NOT_SIGNED_IN" && cleared.consecutiveFailures == 3)
-            #expect(cleared.nextEligible == legacy.nextEligible)
+            #expect(cleared.lastCode == "ACCOUNT_NOT_SIGNED_IN")
+            #expect(cleared.consecutiveFailures == 0 && cleared.nextEligible == nil)
+            #expect(cleared.attemptsByDay == legacy.attemptsByDay)
             #expect(try #require(ledger.installs.first { $0.app == "apollo" }).refresh == other)
         }
     }
