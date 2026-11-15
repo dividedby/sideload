@@ -58,7 +58,7 @@ public enum SignCommand {
             return .fail(
                 command, code: "USAGE", message: "sign needs --app and --device <alias>.",
                 fix:
-                    "sideload sign --app <\(ProvisionApp.signedBySign.map(\.rawValue).joined(separator: "|"))> --device iphone [--version <v>] --yes"
+                    "sideload sign --app <\(AppRegistry.builtIn.signedBySign.map(\.id).joined(separator: "|"))> --device iphone [--version <v>] --yes"
             )
         }
         if options.version?.isEmpty == true {
@@ -66,18 +66,19 @@ public enum SignCommand {
                 command, code: "USAGE", message: "--version needs a version.",
                 fix: "sideload sign --app <app> --device <alias> --version <v> --yes")
         }
-        guard let app = ProvisionApp(rawValue: appName) else {
+        let found = AppRegistry.lookup(appName, services: services)
+        guard let app = found.app else {
             return .fail(
                 command, code: "USAGE", message: "Unknown app \"\(printableCut(appName))\".",
                 fix:
-                    "Use one of: \(ProvisionApp.signedBySign.map(\.rawValue).joined(separator: ", "))."
+                    "Use one of: \(found.registry.signedBySign.map(\.id).joined(separator: ", "))."
             )
         }
         guard !app.signedByProvision else {
             return .fail(
                 command, code: "USAGE",
-                message: "\(app.rawValue) is signed by provision, not by sign.",
-                fix: "sideload provision --app \(app.rawValue) --device <alias> --yes")
+                message: "\(app.id) is signed by provision, not by sign.",
+                fix: "sideload provision --app \(app.id) --device <alias> --yes")
         }
         let config = try services.store.load()
         guard let prefix = config.bundleIdPrefix, CanaryCommand.isValidPrefix(prefix) else {
@@ -86,8 +87,9 @@ public enum SignCommand {
                 message: "bundleIdPrefix is missing or invalid in config.json.",
                 fix: "Add \"bundleIdPrefix\": \"com.yourname\" to $SIDELOAD_HOME/config.json.")
         }
-        let bundleId = prefix + ".free." + app.suffix
-        guard Config.isFreeBundleId(bundleId, prefix: prefix) else {
+        guard let bundleId = app.freeBundleId(prefix: prefix),
+            Config.isFreeBundleId(bundleId, prefix: prefix)
+        else {
             return .fail(
                 command, code: "BUNDLE_ID_NOT_ALLOWED",
                 message:
@@ -107,21 +109,21 @@ public enum SignCommand {
             return .fail(
                 command, code: "PLATFORM_MISMATCH",
                 message:
-                    "\(app.rawValue) needs a \(app.devicePlatform) device; the saved device is \(device.platform ?? "of unknown platform").",
-                fix: app == .stremioTVOS
+                    "\(app.id) needs a \(app.devicePlatform) device; the saved device is \(device.platform ?? "of unknown platform").",
+                fix: app.devicePlatform == "tvos"
                     ? "Use --device with a saved Apple TV (tvos)."
                     : "Use --device with a saved iPhone or iPad (ios).",
-                data: ["app": .string(app.rawValue), "device": .string(alias)])
+                data: ["app": .string(app.id), "device": .string(alias)])
         }
         guard options.yes else {
             return .fail(
                 command, code: "CONFIRM_REQUIRED",
                 message:
-                    "sign uses the free team's signing key (the login keychain may ask) and writes a signed copy of \(app.rawValue) for this device.",
+                    "sign uses the free team's signing key (the login keychain may ask) and writes a signed copy of \(app.id) for this device.",
                 fix:
                     "The owner confirms by re-running with --yes. Agents must not pass --yes on their own.",
                 data: [
-                    "app": .string(app.rawValue), "device": .string(alias),
+                    "app": .string(app.id), "device": .string(alias),
                     "bundleId": .string(bundleId),
                 ])
         }
@@ -222,7 +224,7 @@ private struct SignRun {
     let registry: ScratchRegistry
     let config: Config
     let prefix: String
-    let app: ProvisionApp
+    let app: AppDefinition
     let alias: String
     let device: ResolvedDevice
     let udid: String
@@ -234,7 +236,7 @@ private struct SignRun {
 
     init(
         services: Services, registry: ScratchRegistry, config: Config, prefix: String,
-        app: ProvisionApp, alias: String,
+        app: AppDefinition, alias: String,
         device: ResolvedDevice, udid: String, bundleId: String, version: String?, hooks: SignHooks
     ) {
         self.version = version
@@ -252,7 +254,7 @@ private struct SignRun {
         now = Date(timeIntervalSince1970: services.clock.now().timeIntervalSince1970.rounded(.down))
     }
 
-    var key: String { "\(alias)/\(app.rawValue)" }
+    var key: String { "\(alias)/\(app.id)" }
 
     private func log(_ message: String) { services.log(message) }
 
@@ -260,7 +262,7 @@ private struct SignRun {
         _ code: String, _ message: String, _ fix: String, _ extra: [String: JSONValue] = [:]
     ) -> Envelope {
         var data: [String: JSONValue] = [
-            "app": .string(app.rawValue), "device": .string(alias), "bundleId": .string(bundleId),
+            "app": .string(app.id), "device": .string(alias), "bundleId": .string(bundleId),
         ]
         data.merge(extra) { _, new in new }
         return .fail(SignCommand.command, code: code, message: message, fix: fix, data: data)
@@ -272,7 +274,7 @@ private struct SignRun {
             return try await steps()
         } catch let error as SideloadError {
             var data: [String: JSONValue] = [
-                "app": .string(app.rawValue), "device": .string(alias),
+                "app": .string(app.id), "device": .string(alias),
                 "bundleId": .string(bundleId),
             ]
             data.merge(error.data) { _, new in new }
@@ -314,7 +316,7 @@ private struct SignRun {
             return fail(
                 "FREE_IDENTITY_NOT_PINNED",
                 "No free-team identity is pinned yet, so there is nothing to sign with.",
-                "The owner runs `sideload provision --app \(app.rawValue) --device \(alias) --yes` first; its first success pins the identity."
+                "The owner runs `sideload provision --app \(app.id) --device \(alias) --yes` first; its first success pins the identity."
             )
         }
         let identity: FreeIdentity
@@ -342,7 +344,7 @@ private struct SignRun {
         // 2. The IPA: the newest approved manifest entry, still intact.
         let manifestStore = ManifestStore(paths: services.home)
         let manifest = try manifestStore.load()
-        let entries = manifest.entries.filter { $0.app == app.rawValue }
+        let entries = manifest.entries.filter { $0.app == app.id }
         guard
             let entry = entries.filter({ $0.approved && (version == nil || $0.version == version) })
                 .max(by: ManifestEntry.older)
@@ -350,17 +352,17 @@ private struct SignRun {
             if let version {
                 return fail(
                     "NOT_APPROVED",
-                    "Version \(printableCut(version)) of \(app.rawValue) is not fetched and approved, so it is not signed.",
+                    "Version \(printableCut(version)) of \(app.id) is not fetched and approved, so it is not signed.",
                     "Fetch it and the owner approves it with --approve --version <v>.")
             }
             return fail(
                 "NOT_APPROVED",
                 entries.isEmpty
-                    ? "No version of \(app.rawValue) has been fetched, so there is nothing approved to sign."
-                    : "No fetched version of \(app.rawValue) is approved.",
+                    ? "No version of \(app.id) has been fetched, so there is nothing approved to sign."
+                    : "No fetched version of \(app.id) is approved.",
                 entries.isEmpty
-                    ? "Run `sideload fetch --app \(app.rawValue)`, review it, and the owner approves it with --approve --version <v>."
-                    : "Review `sideload fetch --app \(app.rawValue)`, then the owner runs: sideload fetch --app \(app.rawValue) --approve --version <v>."
+                    ? "Run `sideload fetch --app \(app.id)`, review it, and the owner approves it with --approve --version <v>."
+                    : "Review `sideload fetch --app \(app.id)`, then the owner runs: sideload fetch --app \(app.id) --approve --version <v>."
             )
         }
         var warnings: [JSONValue] = []
@@ -370,7 +372,7 @@ private struct SignRun {
             warnings.append(
                 CanaryCommand.warning(
                     "NEWER_VERSION_NOT_APPROVED",
-                    "A newer fetched version of \(app.rawValue) is not approved; the newest approved version is signed.",
+                    "A newer fetched version of \(app.id) is not approved; the newest approved version is signed.",
                     "The owner reviews and approves the newer version to sign it."))
         }
         // Never a block: `install` goes over a newer app and keeps its data, and iOS decides whether it takes the older build.
@@ -458,7 +460,7 @@ private struct SignRun {
         }
 
         var data: [String: JSONValue] = [
-            "app": .string(app.rawValue), "device": .string(alias), "bundleId": .string(bundleId),
+            "app": .string(app.id), "device": .string(alias), "bundleId": .string(bundleId),
             "version": .string(entry.version), "build": entry.build.map(JSONValue.string) ?? .null,
             "profile": ["uuid": .string(profile.uuid), "daysLeft": .number(Double(daysLeft))],
             "stripped": .array(worked.stripped.map(\.json)),
@@ -521,7 +523,7 @@ private struct SignRun {
         case false?:
             return fail(
                 "DEVICE_OS_TOO_OLD",
-                "\(app.rawValue) needs OS \(need) or newer; the device runs \(have). Nothing was signed.",
+                "\(app.id) needs OS \(need) or newer; the device runs \(have). Nothing was signed.",
                 "Update the device, or fetch and approve an older version of the app.",
                 [
                     "deviceOS": .string(have), "minimumOS": .string(need),
@@ -555,16 +557,16 @@ private struct SignRun {
         LoadedProfile
     > {
         let provisionFix =
-            "The owner runs `sideload provision --app \(app.rawValue) --device \(alias) --yes` to get a fresh profile."
+            "The owner runs `sideload provision --app \(app.id) --device \(alias) --yes` to get a fresh profile."
         guard let record = ledger.freeProfiles.first(where: { $0.id == key }) else {
             return profileStop(
                 "PROFILE_MISSING",
-                "No free-team profile is recorded for \(app.rawValue) on this device.", provisionFix
+                "No free-team profile is recorded for \(app.id) on this device.", provisionFix
             )
         }
         // The record is trusted only as far as it names the one file `provision` would have written.
         let expectedFile =
-            "profiles/free/\(app.rawValue)/\(alias)/\(record.profileUuid).mobileprovision"
+            "profiles/free/\(app.id)/\(alias)/\(record.profileUuid).mobileprovision"
         guard UUID(uuidString: record.profileUuid) != nil, record.file == expectedFile else {
             return profileStop(
                 "PROFILE_INVALID",
@@ -661,7 +663,7 @@ private struct SignRun {
             return .stop(
                 fail(
                     "PLATFORM_MISMATCH",
-                    "The fetched IPA is built for \(platform), but \(app.rawValue) is signed for \(app.devicePlatform).",
+                    "The fetched IPA is built for \(platform), but \(app.id) is signed for \(app.devicePlatform).",
                     "Do not use this IPA; fetch the right app."))
         }
         // The binary's own minimum (the manifest's inspect value, else the one just read) and the declared one: the
@@ -756,19 +758,19 @@ private struct SignRun {
         if registry.isClosed { throw cancelled() }
 
         // Move it into place atomically, then record it.
-        let directory = "\(services.home.signedBuilds)/\(app.rawValue)/\(alias)"
+        let directory = "\(services.home.signedBuilds)/\(app.id)/\(alias)"
         try makeDirectories(directory, mode: 0o700)
         var path = services.home.builds
-        for part in ["signed", app.rawValue, alias] {
+        for part in ["signed", app.id, alias] {
             path += "/" + part
             if chmod(path, 0o700) != 0 { throw ioError("chmod") }
         }
         let destination = directory + "/" + appName
         let swapped = try SignCommand.place(appDir, at: destination)
-        worked.relativePath = "builds/signed/\(app.rawValue)/\(alias)/\(appName)"
+        worked.relativePath = "builds/signed/\(app.id)/\(alias)/\(appName)"
 
         let signed = LedgerFreeSigned(
-            id: key, device: alias, app: app.rawValue, bundleId: bundleId, version: entry.version,
+            id: key, device: alias, app: app.id, bundleId: bundleId, version: entry.version,
             sha256Prefix: String(entry.sha256.prefix(8)), profileUuid: profile.uuid,
             profileExpires: Date(
                 timeIntervalSince1970: expires.timeIntervalSince1970.rounded(.down)),

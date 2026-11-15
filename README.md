@@ -293,6 +293,26 @@ Then `sideload fetch --app stremio-ios` downloads and reports; after reviewing t
 the hash it publishes protects against corruption or a swapped file, not against a malicious index author, so
 every new version needs that approval.
 
+## Apps and `customApps`
+
+The apps sideload knows are one registry in code (`AppRegistry`): `apollo`, `stremio-ios`, `stremio-tvos` and `filler`,
+each with its display name, bundle ID suffix (`<bundleIdPrefix>.free.<suffix>`), platform and, for the first three, its
+download source. An optional `customApps` array in `config.json` adds more. sideload only reads it; nothing writes it yet
+(importing a local IPA, issue 46, will). An entry is `{"id": "myapp", "platform": "ios"}` with an optional `suffix` (default:
+the ID) and `name` (default: the ID capitalised):
+
+```json
+"customApps": [{"id": "myapp", "platform": "ios", "name": "My App"}]
+```
+
+The ID and suffix are 1 to 31 of `a-z`, `0-9` and `-`, starting with a letter or digit; the platform is `ios` or `tvos`.
+An entry may not reuse a built-in app's ID or suffix, or share one with another custom entry. An entry that breaks a rule
+(or has any other field) is left out, and `status` names it in a `CUSTOM_APP_IGNORED` warning; the built-in apps and the
+other entries still work. A valid custom app can be named in `provision`, `sign`, `install`, `refresh`, `app remove` and the
+`slot` commands like a built-in one, under the same `<bundleIdPrefix>.free.*` allowlist, App ID budget and slot checks. It
+has no download source, so `fetch` and `updates` do not know it, and the menu bar app does not offer it yet. None of this
+has been run on a device with a custom app.
+
 ## Portal audit key
 
 `portal` needs an App Store Connect API key (App Store Connect > Users and Access > Integrations > Team Keys).

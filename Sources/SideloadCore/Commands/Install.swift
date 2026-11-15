@@ -26,7 +26,7 @@ public enum InstallCommand {
             target = try FreeTarget.resolve(
                 app: options.app, device: options.device, services: services,
                 usageFix:
-                    "sideload install --app <\(ProvisionApp.names.joined(separator: "|"))> --device iphone --yes"
+                    "sideload install --app <\(AppRegistry.builtIn.names.joined(separator: "|"))> --device iphone --yes"
             )
         } catch {
             return .from(error, command: command)
@@ -35,7 +35,7 @@ public enum InstallCommand {
             return .fail(
                 command, code: "CONFIRM_REQUIRED",
                 message:
-                    "install puts \(target.app.rawValue) on the saved device and uses a free-team slot.",
+                    "install puts \(target.app.id) on the saved device and uses a free-team slot.",
                 fix:
                     "The owner confirms by re-running with --yes. Agents must not pass --yes on their own.",
                 data: target.identity)
@@ -116,17 +116,17 @@ struct FreeInstallRun: Sendable {
         let alias = target.alias
         let now = wholeSeconds(services.clock.now())
         let pinned = try FreeSession.pinned(
-            identities, config: target.config, app: app.rawValue, alias: alias, now: now)
+            identities, config: target.config, app: app.id, alias: alias, now: now)
 
         let ledger = try services.ledgerStore.load()
         if !allowLent,
             ledger.slots.contains(where: {
-                $0.device == alias && $0.app == app.rawValue && $0.lentTo != nil
+                $0.device == alias && $0.app == app.id && $0.lentTo != nil
             })
         {
             throw SideloadError(
                 "APP_LENT",
-                "The slot for \(app.rawValue) is lent to the lab, so it is not installed here.",
+                "The slot for \(app.id) is lent to the lab, so it is not installed here.",
                 fix:
                     "Run `sideload slot return --device \(alias)` (the lab does this when it is done)."
             )
@@ -252,7 +252,7 @@ struct FreeInstallRun: Sendable {
         _ = try await book.settle(before, takenAt: s0.takenAt, point: "install.settle")
         let settledLedger = try services.ledgerStore.load()
         let usedOutside = book.usedOutsideSnapshot(
-            settledLedger, excluding: app.rawValue, snapshot: before)
+            settledLedger, excluding: app.id, snapshot: before)
         let profiles = await calls.freeProfiles()
         let planned = try plan(
             checked, before: before, usedOutside: usedOutside, profiles: profiles)
@@ -384,7 +384,7 @@ struct FreeInstallRun: Sendable {
 
         let daysLeft = Int((signed.profileExpires.timeIntervalSince(now) / 86_400).rounded(.down))
         return [
-            "app": .string(app.rawValue), "device": .string(alias),
+            "app": .string(app.id), "device": .string(alias),
             "bundleId": .string(target.bundleId),
             "version": .string(signed.version), "sha256Prefix": .string(signed.sha256Prefix),
             "installed": true, "reinstall": .bool(planned.reinstall),
@@ -458,7 +458,7 @@ extension FreeTarget {
             refresh.suspended = false
         }
         let install = LedgerInstall(
-            id: key, device: alias, deviceTail: Redactor.tail4(udid), app: app.rawValue,
+            id: key, device: alias, deviceTail: Redactor.tail4(udid), app: app.id,
             bundleId: signed.bundleId, team: "free",
             profileUuid: signed.profileUuid, profileCreated: created.map(wholeSeconds),
             profileExpires: signed.profileExpires, certFp8: signed.certFp8, version: signed.version,
@@ -481,11 +481,11 @@ extension FreeTarget {
         let fix = "The owner runs \(app.signStep(device: alias)) first."
         guard let record = ledger.freeSigned.first(where: { $0.id == key }) else {
             throw SideloadError(
-                "NOT_SIGNED", "No signed copy of \(app.rawValue) is recorded for this device.",
+                "NOT_SIGNED", "No signed copy of \(app.id) is recorded for this device.",
                 fix: fix)
         }
         // Trusted only as far as it names a signed app `sign` would have written for this bundle ID.
-        let folder = "builds/signed/\(app.rawValue)/\(alias)/"
+        let folder = "builds/signed/\(app.id)/\(alias)/"
         let name = String(record.path.dropFirst(folder.count))
         guard record.bundleId == bundleId, record.path.hasPrefix(folder),
             IPAInspector.isPlainName(name),

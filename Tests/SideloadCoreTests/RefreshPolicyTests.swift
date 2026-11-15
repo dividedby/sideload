@@ -6,7 +6,7 @@ import Testing
 private let utc = TimeZone(identifier: "UTC")!
 
 private func subject(
-    _ app: ProvisionApp = .stremioIOS, installDays: Double? = nil, signedDays: Double? = nil,
+    _ app: AppDefinition = .stremioIOS, installDays: Double? = nil, signedDays: Double? = nil,
     profileDays: Double? = nil,
     sameProfile: Bool = true, present: Bool = true, lent: Bool = false
 ) -> RefreshPolicy.Subject {
@@ -18,7 +18,7 @@ private func subject(
     install?.present = present
     let signed = signedDays.map { days in
         LedgerFreeSigned(
-            id: "iphone/\(app.rawValue)", device: "iphone", app: app.rawValue,
+            id: "iphone/\(app.id)", device: "iphone", app: app.id,
             bundleId: carrierPrefix + ".free." + app.suffix,
             version: "1", sha256Prefix: "abcd1234", profileUuid: "AAAA",
             profileExpires: daysFromNow(days), certFp8: "deadbeef",
@@ -27,7 +27,7 @@ private func subject(
     }
     let profile = profileDays.map { days in
         LedgerFreeProfile(
-            id: "iphone/\(app.rawValue)", device: "iphone", deviceTail: "AAAA", app: app.rawValue,
+            id: "iphone/\(app.id)", device: "iphone", deviceTail: "AAAA", app: app.id,
             bundleId: carrierPrefix + ".free." + app.suffix,
             profileUuid: sameProfile ? "AAAA" : "BBBB", created: nil,
             expires: daysFromNow(days), certFp8: "deadbeef", file: "profiles/free/x")

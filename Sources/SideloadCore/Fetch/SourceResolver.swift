@@ -177,16 +177,18 @@ enum SourceResolver {
         }
     }
 
-    /// The app with bundle ID `com.stremio.pal`, its first (latest) version. The URL must be https on
-    /// `dl.strem.io`; for tvOS it must be exactly `/apple/<ver>b<build>/tvos/stremio_tvOS.ipa` (design section 8);
+    /// The app with `bundleId` (Stremio's `com.stremio.pal`), its first (latest) version. The URL must be https on
+    /// `host` (`dl.strem.io`); for tvOS it must be exactly `/apple/<ver>b<build>/tvos/stremio_tvOS.ipa` (design section 8);
     /// for iOS the path is pinned only to a plain `.ipa` name until the first approved fetch shows its shape.
-    static func stremio(app: String, tvos: Bool, json: Data) throws -> ResolvedAsset {
+    static func stremio(app: String, bundleId: String, host: String, tvos: Bool, json: Data) throws
+        -> ResolvedAsset
+    {
         let index: Index
         do { index = try JSONDecoder().decode(Index.self, from: json) } catch {
             throw invalid("the index is not valid JSON")
         }
         let candidates = (index.apps ?? []).filter {
-            $0.bundleIdentifier == FetchCatalog.stremioBundleId
+            $0.bundleIdentifier == bundleId
         }
         guard candidates.count == 1 else {
             throw notAllowed("the index has \(candidates.count) apps with the Stremio bundle ID")
@@ -214,10 +216,10 @@ enum SourceResolver {
         let versionKey = "\(ver)b\(build)"
         guard isSafeToken(versionKey), let link = latest.downloadURL, let url = URL(string: link),
             let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
-            parts.scheme == "https", parts.host == FetchCatalog.stremioHost, parts.port == nil,
+            parts.scheme == "https", parts.host == host, parts.port == nil,
             parts.user == nil,
             parts.password == nil, parts.query == nil, parts.fragment == nil
-        else { throw notAllowed("the download URL is not https on \(FetchCatalog.stremioHost)") }
+        else { throw notAllowed("the download URL is not https on \(host)") }
         let path = parts.percentEncodedPath
         let components = path.split(separator: "/", omittingEmptySubsequences: false)
         guard components.count >= 2, components[0].isEmpty,
@@ -248,7 +250,8 @@ enum SourceResolver {
     static func resolve(_ source: FetchSource, json: Data) throws -> ResolvedAsset {
         switch source.kind {
         case .githubRelease(let repo): try apollo(app: source.app, repo: repo, json: json)
-        case .altstoreIndex(_, let tvos): try stremio(app: source.app, tvos: tvos, json: json)
+        case .altstoreIndex(_, let bundleId, let host, let tvos):
+            try stremio(app: source.app, bundleId: bundleId, host: host, tvos: tvos, json: json)
         }
     }
 }

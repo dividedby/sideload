@@ -26,15 +26,16 @@ enum PendingRestores {
         let migrated = SlotRule.migrated(ledger, now: now)
         let slots = migrated.slots
         var found: [Entry] = []
+        let apps = config.appRegistry.apps.sorted { $0.id < $1.id }
         for alias in config.devices.keys.sorted() {
             // `slot restore`'s own gate, on the same migrated ledger.
             guard
                 SlotBook(services: services, config: config, alias: alias).pending(
                     migrated, now: now) == nil
             else { continue }
-            for app in ProvisionApp.allCases.sorted(by: { $0.rawValue < $1.rawValue }) {
+            for app in apps {
                 let busy = slots.contains { slot in
-                    guard slot.device == alias, slot.app == app.rawValue else { return false }
+                    guard slot.device == alias, slot.app == app.id else { return false }
                     return slot.lentTo != nil
                         || slot.seenAt.map { abs(now.timeIntervalSince($0)) < settleWindow } == true
                 }
@@ -42,7 +43,7 @@ enum PendingRestores {
                     let target = try? FreeTarget.resolve(app: app, alias: alias, config: config)
                 else { continue }
                 if case .found = AppDataBackup.pending(services, target) {
-                    found.append(Entry(device: alias, app: app.rawValue))
+                    found.append(Entry(device: alias, app: app.id))
                 }
             }
         }

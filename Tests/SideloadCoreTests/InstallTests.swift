@@ -621,11 +621,11 @@ struct InstallTests {
 
 /// An `installs[]` record for tests.
 func installRecord(
-    _ app: ProvisionApp, alias: String = "iphone", present: Bool = true,
+    _ app: AppDefinition, alias: String = "iphone", present: Bool = true,
     refresh: LedgerInstallRefresh = LedgerInstallRefresh()
 ) -> LedgerInstall {
     LedgerInstall(
-        id: "\(alias)/\(app.rawValue)", device: alias, deviceTail: "AAAA", app: app.rawValue,
+        id: "\(alias)/\(app.id)", device: alias, deviceTail: "AAAA", app: app.id,
         bundleId: carrierPrefix + ".free." + app.suffix,
         profileUuid: "0F0F0F0F-1111-2222-3333-444444444444",
         profileCreated: daysFromNow(-2), profileExpires: daysFromNow(5), certFp8: "deadbeef",

@@ -37,7 +37,7 @@ extension InstallWorld {
         let directory = "\(paths.backups)/\(alias)/\(app)/\(stamp)"
         try write(sentinel, to: "\(directory)/data/\(secretName)")
         if manifest {
-            let suffix = ProvisionApp.allCases.first { $0.rawValue == app }?.suffix ?? app
+            let suffix = AppRegistry.builtIn.app(app)?.suffix ?? app
             let record = AppDataBackup.Manifest(
                 bundleId: carrierPrefix + ".free." + suffix, version: "1.2.3",
                 lendSince: daysFromNow(created),

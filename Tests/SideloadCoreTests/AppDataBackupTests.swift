@@ -936,7 +936,7 @@ struct AppDataBackupTests {
 
     @Test("the tvOS app on the Apple TV goes through the same backup and restore path")
     func tvOS() async throws {
-        let tvId = carrierPrefix + ".free." + ProvisionApp.stremioTVOS.suffix
+        let tvId = carrierPrefix + ".free." + AppDefinition.stremioTVOS.suffix
         let tvPrefs = "Library/Preferences/\(tvId).plist"
         let files: [String: Data] = [
             tvPrefs: data("tv prefs"), "Documents/addons.json": data("tv addons"),

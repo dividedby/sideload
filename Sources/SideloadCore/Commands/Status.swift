@@ -111,6 +111,8 @@ public enum StatusCommand {
             slotDevices = Self.slotDevices(
                 config: config, ledger: ledgerRead, readable: ledgerReadable, now: now)
             apps = config.apps.keys.sorted().map { .string($0) }
+            // A custom app that is left out says why here; none is said when there is no `customApps`.
+            warnings += config.appRegistry.warnings
             // A device without IDs is its own warning; the apps above still count.
             do {
                 devices = try config.savedDevices().map { d in

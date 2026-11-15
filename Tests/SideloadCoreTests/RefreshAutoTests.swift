@@ -14,7 +14,7 @@ private let today = RefreshPolicy.dayKey(testNow, timeZone: utc)
 // MARK: pure gates
 
 private func subject(
-    _ app: ProvisionApp = .stremioIOS, days: Double = 2, present: Bool = true, lent: Bool = false,
+    _ app: AppDefinition = .stremioIOS, days: Double = 2, present: Bool = true, lent: Bool = false,
     installed: Bool = true,
     signedVersion: String? = "1.2.3", refresh: LedgerInstallRefresh = LedgerInstallRefresh()
 ) -> RefreshPolicy.Subject {
@@ -22,7 +22,7 @@ private func subject(
     install.profileExpires = daysFromNow(days)
     let signed = signedVersion.map {
         LedgerFreeSigned(
-            id: "iphone/\(app.rawValue)", device: "iphone", app: app.rawValue, bundleId: "x",
+            id: "iphone/\(app.id)", device: "iphone", app: app.id, bundleId: "x",
             version: $0, sha256Prefix: "abcd1234",
             profileUuid: "u", profileExpires: daysFromNow(days), certFp8: "deadbeef",
             signedAt: daysFromNow(-1), path: "p",
@@ -400,14 +400,14 @@ private struct AutoWorld {
 
 private typealias CallBox = Box<[String]>
 
-private func bundleId(_ app: ProvisionApp) -> String { carrierPrefix + ".free." + app.suffix }
+private func bundleId(_ app: AppDefinition) -> String { carrierPrefix + ".free." + app.suffix }
 
 private func seedInstall(
-    _ ledger: inout Ledger, _ app: ProvisionApp, days: Double, installed: Bool = true,
+    _ ledger: inout Ledger, _ app: AppDefinition, days: Double, installed: Bool = true,
     present: Bool = true,
     refresh: LedgerInstallRefresh = LedgerInstallRefresh()
 ) {
-    let key = "\(app.devicePlatform == "tvos" ? "appletv" : "iphone")/\(app.rawValue)"
+    let key = "\(app.devicePlatform == "tvos" ? "appletv" : "iphone")/\(app.id)"
     let expires = daysFromNow(days)
     for i in ledger.freeProfiles.indices where ledger.freeProfiles[i].id == key {
         ledger.freeProfiles[i].expires = expires
@@ -432,7 +432,7 @@ private let phoneAndTV: JSONValue = deviceListJSON(
 
 /// A world with `apps` signed (and on the device), the iPhone (and the Apple TV, if `optIn` names it) opted in to auto-refresh.
 private func withAutoWorld(
-    _ apps: [ProvisionApp] = [.stremioIOS], profileDays: Double = 2, optIn: [String] = ["iphone"],
+    _ apps: [AppDefinition] = [.stremioIOS], profileDays: Double = 2, optIn: [String] = ["iphone"],
     listing: JSONValue? = phoneAndTV, manifest seedVersions: Bool = true,
     ledger tweak: ((inout Ledger) -> Void)? = nil,
     snapshotFailures: Set<Int> = [], alsoAdded: [String: Bool] = [:],
@@ -457,7 +457,7 @@ private func withAutoWorld(
             try seedManifest(
                 w,
                 apps.filter { $0 != .filler }.map {
-                    manifestEntry("1.2.3", app: $0.rawValue, fetchedDays: -9)
+                    manifestEntry("1.2.3", app: $0.id, fetchedDays: -9)
                 })
         }
         let runner = AutoRunner(w.runner, listing: listing)
@@ -510,10 +510,10 @@ private func autoResults(_ out: Envelope, device: String = "iphone") -> [JSONVal
     return entry?["results"]?.array ?? []
 }
 
-private func autoResult(_ out: Envelope, _ app: ProvisionApp, device: String = "iphone")
+private func autoResult(_ out: Envelope, _ app: AppDefinition, device: String = "iphone")
     -> JSONValue?
 {
-    autoResults(out, device: device).first { $0["app"] == .string(app.rawValue) }
+    autoResults(out, device: device).first { $0["app"] == .string(app.id) }
 }
 
 private func skippedCount(_ out: Envelope, _ code: String) -> Int {
@@ -521,10 +521,10 @@ private func skippedCount(_ out: Envelope, _ code: String) -> Int {
     return 0
 }
 
-private func fields(_ a: AutoWorld, _ app: ProvisionApp = .stremioIOS) throws
+private func fields(_ a: AutoWorld, _ app: AppDefinition = .stremioIOS) throws
     -> LedgerInstallRefresh
 {
-    try #require(try a.w.ledger().installs.first { $0.id == "iphone/\(app.rawValue)" }).refresh
+    try #require(try a.w.ledger().installs.first { $0.id == "iphone/\(app.id)" }).refresh
 }
 
 private func logLines(_ a: AutoWorld) throws -> [JSONValue] {
@@ -715,7 +715,7 @@ struct RefreshAutoTests {
 
         var testDescription: String { rawValue }
 
-        var apps: [ProvisionApp] {
+        var apps: [AppDefinition] {
             self == .slotPending || self == .deviceCap ? [.stremioIOS, .apollo] : [.stremioIOS]
         }
 
@@ -1005,7 +1005,7 @@ struct RefreshAutoTests {
             #expect(
                 autoResult(second, .apollo)?["code"] == "DEVICE_CAP"
                     && autoResult(second, .filler)?["code"] == "DEVICE_CAP")
-            let counts = try [ProvisionApp.stremioIOS, .apollo, .filler].map {
+            let counts = try [AppDefinition.stremioIOS, .apollo, .filler].map {
                 try fields(a, $0).attemptsByDay[today]
             }
             #expect(counts == [2, 1, 1])
@@ -1139,7 +1139,7 @@ struct RefreshAutoTests {
             // Devices go in alias order, so the Apple TV is first; one provision was asked for and nothing after it.
             #expect(log.value == ["provision stremio-tvos"])
             #expect(autoResult(out, .stremioTVOS, device: "appletv")?["status"] == "failed")
-            for app in [ProvisionApp.stremioIOS, .apollo] {
+            for app in [AppDefinition.stremioIOS, .apollo] {
                 #expect(
                     autoResult(out, app)?["status"] == "skipped"
                         && autoResult(out, app)?["code"] == "FREE_CERT_CHANGED")

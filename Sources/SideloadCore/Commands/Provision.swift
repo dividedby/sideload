@@ -28,75 +28,6 @@ public struct ProvisionOptions: Sendable, Equatable {
     }
 }
 
-/// The apps `provision` can get a free-team profile for, and the platform each runs on. The bundle ID is
-/// `<bundleIdPrefix>.free.<suffix>`; both Stremio apps share one App ID with two platform profiles (spike S7).
-enum ProvisionApp: String, CaseIterable {
-    case stremioIOS = "stremio-ios"
-    case stremioTVOS = "stremio-tvos"
-    case apollo
-    /// A tiny app with no IPA: the Xcode-signed profile carrier itself. `provision` stages it as the `freeSigned`
-    /// build, so `install` and `slot` can be exercised without a fetched IPA. Uses one App ID and one managed slot.
-    case filler
-
-    var suffix: String {
-        switch self {
-        case .apollo: "apollo"
-        case .filler: "filler"
-        case .stremioIOS, .stremioTVOS: "stremio"
-        }
-    }
-
-    /// `<prefix>.free.<suffix>`, the bundle ID this app has on the free team; nil when the prefix is missing or invalid.
-    func freeBundleId(prefix: String?) -> String? {
-        guard let prefix, CanaryCommand.isValidPrefix(prefix) else { return nil }
-        return prefix + ".free." + suffix
-    }
-
-    /// Signed by `provision` (Xcode signs the carrier), never by `sign`.
-    var signedByProvision: Bool { self == .filler }
-
-    /// The saved device's `platform` this app needs.
-    var devicePlatform: String { self == .stremioTVOS ? "tvos" : "ios" }
-
-    /// `Platform` as a provisioning profile spells it.
-    var profilePlatform: String { Self.osName(devicePlatform: devicePlatform) }
-
-    /// The OS as people and profiles spell it, from a saved device's `platform`.
-    static func osName(devicePlatform: String?) -> String {
-        devicePlatform == "tvos" ? "tvOS" : "iOS"
-    }
-
-    /// The SDK folder name under `Build/Products/Debug-<sdk>`.
-    var sdk: String { self == .stremioTVOS ? "appletvos" : "iphoneos" }
-
-    static var names: [String] { allCases.map(\.rawValue) }
-
-    /// The apps `sign` handles (not the ones `provision` signs itself).
-    static var signedBySign: [ProvisionApp] { allCases.filter { !$0.signedByProvision } }
-
-    /// The one place that says how the owner gets a fresh signed build of this app: `provision` alone for an app that
-    /// `provision` signs (the filler; `sign` refuses it), else `provision` then `sign`. `appName` is a ledger string and may
-    /// not be a known app, which gets the general wording.
-    static func resignSteps(app appName: String, device alias: String) -> String {
-        guard let app = ProvisionApp(rawValue: appName) else {
-            return "`sideload provision` and then `sideload sign` for \(printableCut(appName))"
-        }
-        return app.resignSteps(device: alias)
-    }
-
-    func resignSteps(device alias: String) -> String {
-        let provision = "`sideload provision --app \(rawValue) --device \(alias) --yes`"
-        return signedByProvision ? provision : provision + ", then " + signStep(device: alias)
-    }
-
-    /// What to run when only the signed build is missing: `sign` for most apps, `provision` for one it signs itself.
-    func signStep(device alias: String) -> String {
-        signedByProvision
-            ? "`sideload provision --app \(rawValue) --device \(alias) --yes`"
-            : "`sideload sign --app \(rawValue) --device \(alias) --yes`"
-    }
-}
-
 /// `provision --app <a> --device <d>`: gets a free-team 7-day development profile for one app on one saved device
 /// through Xcode, using the generated profile carrier (design section 18). It builds the carrier with
 /// `xcodebuild -allowProvisioningUpdates` for the free team, so Xcode creates the App ID and the profile; sideload
@@ -285,13 +216,14 @@ public enum ProvisionCommand {
             return .fail(
                 command, code: "USAGE", message: "provision needs --app and --device <alias>.",
                 fix:
-                    "sideload provision --app <\(ProvisionApp.names.joined(separator: "|"))> --device iphone --yes"
+                    "sideload provision --app <\(AppRegistry.builtIn.names.joined(separator: "|"))> --device iphone --yes"
             )
         }
-        guard let app = ProvisionApp(rawValue: appName) else {
+        let found = AppRegistry.lookup(appName, services: services)
+        guard let app = found.app else {
             return .fail(
                 command, code: "USAGE", message: "Unknown app \"\(printableCut(appName))\".",
-                fix: "Use one of: \(ProvisionApp.names.joined(separator: ", ")).")
+                fix: "Use one of: \(found.registry.names.joined(separator: ", ")).")
         }
         let config = try services.store.load()
         guard let prefix = config.bundleIdPrefix, CanaryCommand.isValidPrefix(prefix) else {
@@ -300,8 +232,9 @@ public enum ProvisionCommand {
                 message: "bundleIdPrefix is missing or invalid in config.json.",
                 fix: "Add \"bundleIdPrefix\": \"com.yourname\" to $SIDELOAD_HOME/config.json.")
         }
-        let bundleId = prefix + ".free." + app.suffix
-        guard Config.isFreeBundleId(bundleId, prefix: prefix) else {
+        guard let bundleId = app.freeBundleId(prefix: prefix),
+            Config.isFreeBundleId(bundleId, prefix: prefix)
+        else {
             return .fail(
                 command, code: "BUNDLE_ID_NOT_ALLOWED",
                 message:
@@ -321,11 +254,11 @@ public enum ProvisionCommand {
             return .fail(
                 command, code: "PLATFORM_MISMATCH",
                 message:
-                    "\(app.rawValue) needs a \(app.devicePlatform) device; the saved device is \(device.platform ?? "of unknown platform").",
-                fix: app == .stremioTVOS
+                    "\(app.id) needs a \(app.devicePlatform) device; the saved device is \(device.platform ?? "of unknown platform").",
+                fix: app.devicePlatform == "tvos"
                     ? "Use --device with a saved Apple TV (tvos)."
                     : "Use --device with a saved iPhone or iPad (ios).",
-                data: ["app": .string(app.rawValue), "device": .string(alias)])
+                data: ["app": .string(app.id), "device": .string(alias)])
         }
         guard options.yes else {
             return .fail(
@@ -382,7 +315,7 @@ private struct ProvisionRun {
     let services: Services
     let options: ProvisionOptions
     let config: Config
-    let app: ProvisionApp
+    let app: AppDefinition
     let alias: String
     let device: ResolvedDevice
     let udid: String
@@ -399,7 +332,7 @@ private struct ProvisionRun {
     var renew: ProfileCacheRenewal.Outcome?
 
     init(
-        services: Services, options: ProvisionOptions, config: Config, app: ProvisionApp,
+        services: Services, options: ProvisionOptions, config: Config, app: AppDefinition,
         alias: String,
         device: ResolvedDevice, udid: String, bundleId: String, hooks: ProvisionHooks,
         record: ProvisionCommand.RenewRecord
@@ -424,7 +357,7 @@ private struct ProvisionRun {
         _ code: String, _ message: String, _ fix: String, _ extra: [String: JSONValue] = [:]
     ) -> Envelope {
         var data: [String: JSONValue] = [
-            "app": .string(app.rawValue), "device": .string(alias), "bundleId": .string(bundleId),
+            "app": .string(app.id), "device": .string(alias), "bundleId": .string(bundleId),
         ]
         data.merge(extra) { _, new in new }
         return .fail(ProvisionCommand.command, code: code, message: message, fix: fix, data: data)
@@ -434,7 +367,7 @@ private struct ProvisionRun {
 
     /// app, device and bundleId: what every envelope of a renewing run carries, even a thrown error's.
     private var context: [String: JSONValue] {
-        ["app": .string(app.rawValue), "device": .string(alias), "bundleId": .string(bundleId)]
+        ["app": .string(app.id), "device": .string(alias), "bundleId": .string(bundleId)]
     }
 
     /// The single exit: it never throws. Without `--renew` the envelope is exactly what `steps()` produced. Once
@@ -602,7 +535,7 @@ private struct ProvisionRun {
         // The App ID epoch goes in the same atomic write, so a build killed halfway still counts it (conservatively
         // high: xcodebuild may or may not have registered it). A failed write stops the run before the build.
         let marker = LedgerFreeInFlight(
-            beforeFp8: FreeIdentityGuard.fp8s(identities), startedAt: now, app: app.rawValue,
+            beforeFp8: FreeIdentityGuard.fp8s(identities), startedAt: now, app: app.id,
             device: alias)
         let (epochBundleId, epochNow) = (bundleId, now)
         try hooks.checkpoint(.markerWrite)
@@ -755,11 +688,11 @@ private struct ProvisionRun {
             try await services.store.update { try $0.pinFreeTeamCert(fp8: fp8) }
             log("provision: pinned the free identity")
         }
-        let relative = "profiles/free/\(app.rawValue)/\(alias)/\(profile.uuid).mobileprovision"
+        let relative = "profiles/free/\(app.id)/\(alias)/\(profile.uuid).mobileprovision"
         try hooks.checkpoint(.storeProfile)
         try storeProfile(profileBytes, uuid: profile.uuid)
         let entry = LedgerFreeProfile(
-            id: key, device: alias, deviceTail: Redactor.tail4(udid), app: app.rawValue,
+            id: key, device: alias, deviceTail: Redactor.tail4(udid), app: app.id,
             bundleId: bundleId,
             profileUuid: profile.uuid, created: profile.created.map(Self.wholeSeconds),
             expires: Self.wholeSeconds(expires),
@@ -771,11 +704,11 @@ private struct ProvisionRun {
         var signedRecord: LedgerFreeSigned?
         if let filler {
             let destination =
-                "\(services.home.signedBuilds)/\(app.rawValue)/\(alias)/\(CarrierProject.productName)"
+                "\(services.home.signedBuilds)/\(app.id)/\(alias)/\(CarrierProject.productName)"
             try makeSignedDirectories((destination as NSString).deletingLastPathComponent)
             placed = (try SignCommand.place(filler.copy, at: destination), destination)
             signedRecord = LedgerFreeSigned(
-                id: key, device: alias, app: app.rawValue, bundleId: bundleId,
+                id: key, device: alias, app: app.id, bundleId: bundleId,
                 version: Self.fillerVersion,
                 sha256Prefix: filler.sha256Prefix, profileUuid: profile.uuid,
                 profileExpires: Self.wholeSeconds(expires),
@@ -811,7 +744,7 @@ private struct ProvisionRun {
             FreeAppIdBudget.recording(ledger.freeAppIds, bundleId: bundleId, now: now), now: now)
 
         var data: [String: JSONValue] = [
-            "app": .string(app.rawValue), "device": .string(alias), "bundleId": .string(bundleId),
+            "app": .string(app.id), "device": .string(alias), "bundleId": .string(bundleId),
             "profile": profileJSON(profile, expires: expires), "file": .string(relative),
             "appIdNew": .bool(budget.isNew), "appIdsLast7Days": .number(Double(live.count)),
             "identityChanged": false, "pinnedFp8": .string(identity.fp8),
@@ -822,7 +755,7 @@ private struct ProvisionRun {
         return .result(ProvisionCommand.command, data)
     }
 
-    var key: String { "\(alias)/\(app.rawValue)" }
+    var key: String { "\(alias)/\(app.id)" }
 
     // MARK: filler
 
@@ -830,7 +763,7 @@ private struct ProvisionRun {
     static let fillerVersion = "1.0"
 
     static func fillerSignedPath(alias: String) -> String {
-        "builds/signed/\(ProvisionApp.filler.rawValue)/\(alias)/\(CarrierProject.productName)"
+        "builds/signed/\(AppDefinition.filler.id)/\(alias)/\(CarrierProject.productName)"
     }
 
     private struct StagedFiller {
@@ -920,7 +853,7 @@ private struct ProvisionRun {
     private func makeSignedDirectories(_ directory: String) throws {
         try makeDirectories(directory, mode: 0o700)
         var path = services.home.builds
-        for part in ["signed", app.rawValue, alias] {
+        for part in ["signed", app.id, alias] {
             path += "/" + part
             if chmod(path, 0o700) != 0 { throw ioError("chmod") }
         }
@@ -967,10 +900,10 @@ private struct ProvisionRun {
 
     /// `profiles/free/<app>/<device>/<uuid>.mobileprovision`: directories 0700, file 0600.
     private func storeProfile(_ bytes: Data, uuid: String) throws {
-        let dir = "\(services.home.freeProfiles)/\(app.rawValue)/\(alias)"
+        let dir = "\(services.home.freeProfiles)/\(app.id)/\(alias)"
         try makeDirectories(dir, mode: 0o700)
         var path = services.home.home
-        for part in ["profiles", "free", app.rawValue, alias] {
+        for part in ["profiles", "free", app.id, alias] {
             path += "/" + part
             if chmod(path, 0o700) != 0 { throw ioError("chmod") }
         }

@@ -141,8 +141,8 @@ enum AppDataBackup {
     }
 
     /// `apps.<app>.backupData`: default true; anything but an explicit `false` backs up.
-    static func isEnabled(_ config: Config, app: ProvisionApp) -> Bool {
-        guard case .object(let entry)? = config.apps[app.rawValue],
+    static func isEnabled(_ config: Config, app: AppDefinition) -> Bool {
+        guard case .object(let entry)? = config.apps[app.id],
             case .bool(let flag)? = entry["backupData"]
         else { return true }
         return flag
@@ -467,7 +467,7 @@ enum AppDataBackup {
     }
 
     private static func appDirectory(_ services: Services, _ target: FreeTarget) -> String {
-        appDirectory(services, alias: target.alias, app: target.app.rawValue)
+        appDirectory(services, alias: target.alias, app: target.app.id)
     }
 
     private static func appDirectory(_ services: Services, alias: String, app: String) -> String {
@@ -760,7 +760,7 @@ enum AppDataBackup {
     /// read, listed or `lstat`ed, or that is a link at any level, is `unreadable`, never "no backup": only a real folder chain
     /// that stops at a missing part, or an app folder with no finished backup in it, is that.
     static func pending(_ services: Services, _ target: FreeTarget) -> PendingBackup {
-        pending(services, alias: target.alias, app: target.app.rawValue, bundleId: target.bundleId)
+        pending(services, alias: target.alias, app: target.app.id, bundleId: target.bundleId)
     }
 
     /// The same check from the parts a backup is bound to (alias, app folder, bundle ID), for a caller with no saved device to
@@ -934,7 +934,7 @@ enum AppDataBackup {
                     CanaryCommand.warning(
                         "DATA_RESTORE_UNVERIFIED",
                         "The app's data was copied back, but the device's file list could not be read to confirm it.",
-                        "Open the app and check it is signed in; the backup is kept. The owner can retry: sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes."
+                        "Open the app and check it is signed in; the backup is kept. The owner can retry: sideload slot restore --device \(target.alias) --app \(target.app.id) --yes."
                     ))
             }
         }
@@ -943,7 +943,7 @@ enum AppDataBackup {
                 CanaryCommand.warning(
                     "DATA_RESTORE_INCOMPLETE",
                     "\(result.failed) of \(manifest.files.count) data files were not restored (or did not verify).",
-                    "The backup is kept; the app may ask to sign in again. The owner can retry: sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes (it refuses a backup that holds a link or an unreadable file, and then the app needs signing in again)."
+                    "The backup is kept; the app may ask to sign in again. The owner can retry: sideload slot restore --device \(target.alias) --app \(target.app.id) --yes (it refuses a backup that holds a link or an unreadable file, and then the app needs signing in again)."
                 ))
         }
         if verified {

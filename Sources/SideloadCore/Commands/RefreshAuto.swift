@@ -153,7 +153,7 @@ extension RefreshRun {
             guard let saved = config.devices[alias] else { continue }
             var plan = DevicePlan(alias: alias, saved: saved)
             do {
-                let apps = ProvisionApp.allCases.filter { $0.devicePlatform == saved.platform }
+                let apps = config.appRegistry.apps(for: saved.platform)
                 if apps.isEmpty {
                     skipDevice(alias, .platformMismatch, &state, auto)
                     continue
@@ -254,7 +254,7 @@ extension RefreshRun {
         }
 
         // The device's app list is read once; an app it does not show is skipped, never put back.
-        var presence: [ProvisionApp: RefreshPolicy.Presence] = [:]
+        var presence: [AppDefinition: RefreshPolicy.Presence] = [:]
         var installBlock: RefreshFailure?
         log("auto: reading the app list of \(RefreshLog.alias(alias))")
         let read = await steps.snapshot(services, alias, candidates[0].target.bundleId)
@@ -300,7 +300,7 @@ extension RefreshRun {
             state.failures.append(RefreshFailure(error: error))
             return RefreshPolicy.AutoSkip.ledgerUnreadable.code
         }
-        entries.sort { ($0.expires, $0.target.app.rawValue) < ($1.expires, $1.target.app.rawValue) }
+        entries.sort { ($0.expires, $0.target.app.id) < ($1.expires, $1.target.app.id) }
 
         var deviceStop: String?
         for entry in entries {
@@ -384,7 +384,7 @@ extension RefreshRun {
         auto.log.record(
             "install",
             [
-                "device": .string(target.alias), "app": .string(target.app.rawValue),
+                "device": .string(target.alias), "app": .string(target.app.id),
                 "decision": "renew",
                 "daysLeft": RefreshLog.int(
                     RefreshPolicy.daysLeft(baseline.expires, now: state.start)),
@@ -461,7 +461,7 @@ extension RefreshRun {
         let result = AppResult.skipped(target.app, code: code, expires: expires, now: now)
         if code != RefreshPolicy.notDue {
             var fields: [String: JSONValue] = [
-                "device": .string(target.alias), "app": .string(target.app.rawValue),
+                "device": .string(target.alias), "app": .string(target.app.id),
                 "decision": "skip", "reason": .string(code),
             ]
             if let days = result.daysLeftBefore { fields["daysLeft"] = RefreshLog.int(days) }
@@ -485,7 +485,7 @@ extension RefreshRun {
         auto: RefreshAutoContext
     ) {
         var fields: [String: JSONValue] = [
-            "device": .string(target.alias), "app": .string(target.app.rawValue),
+            "device": .string(target.alias), "app": .string(target.app.id),
             "decision": .string(result.status.rawValue),
             "durationMs": RefreshLog.int(
                 max(0, Int(services.clock.now().timeIntervalSince(began) * 1000))),
@@ -513,7 +513,7 @@ extension RefreshRun {
         -> Bool
     {
         guard !result.trace.cancelled else { return false }
-        let app = target.app.rawValue
+        let app = target.app.id
         let alias = RefreshLog.alias(target.alias)
         let delivered: Bool
         switch result.status {

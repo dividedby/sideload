@@ -23,6 +23,18 @@ All notable changes to this project are documented here. Format follows
   copy over the old one), and flags a `spawn failed` agent. `--kick` starts one refresh agent run, waits for it and says
   whether it logged `ok`; `--check` only reports.
 
+### Changed
+
+- One data-driven app registry (`AppRegistry`, issue 45) replaces the per-app facts that lived in `provision`'s app list,
+  the `fetch` catalog, the display names and the usage text. The built-ins (`apollo`, `stremio-ios`, `stremio-tvos`,
+  `filler`) keep exactly their bundle IDs, platforms, SDKs and sources, and the bundle ID formula is written once. With no
+  `customApps` in `config.json`, every command's output, error codes and usage text are unchanged.
+- An optional `customApps` array in `config.json` adds apps (`{"id", "platform", "suffix"?, "name"?}`). sideload only reads
+  it. Each entry is checked on its own: an invalid one (a bad ID, suffix, platform or name, an unknown field, a clash with a
+  built-in or another custom entry) is left out and `status` warns `CUSTOM_APP_IGNORED`; the built-ins always work. A valid
+  custom app can be provisioned, signed, installed, renewed and removed like a built-in one under the same allowlist, App
+  ID budget and slot checks, but it has no download source and the menu bar app does not show it yet. Not run on a device.
+
 ### Fixed
 
 - A renewal no longer fails with `UNEXPECTED_APP_DELTA` (and suspends the install) because an App Store app was installed,

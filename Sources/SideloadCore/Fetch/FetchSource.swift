@@ -21,15 +21,16 @@ enum DownloadPolicy {
     }
 }
 
-/// One source `fetch` knows how to read (design section 8, approved sources). The catalog is code: it pins the
-/// metadata URL, the asset selection and the host ceiling. `approvedSources` in `config.json` is the owner's
+/// One source `fetch` knows how to read (design section 8, approved sources). Each comes from an app in `AppRegistry`,
+/// which pins the metadata URL, the asset selection and the host ceiling. `approvedSources` in `config.json` is the owner's
 /// switch for each of them and may only narrow the hosts.
 struct FetchSource: Sendable, Equatable {
     enum Kind: Sendable, Equatable {
         /// GitHub releases API; the asset is chosen by exact name.
         case githubRelease(repo: String)
-        /// A gorlev AltStore-style index; `tvos` pins the exact CDN path shape (design section 8).
-        case altstoreIndex(url: String, tvos: Bool)
+        /// A gorlev AltStore-style index: the one app with `bundleId`, downloaded from `host`; `tvos` pins the exact CDN
+        /// path shape (design section 8).
+        case altstoreIndex(url: String, bundleId: String, host: String, tvos: Bool)
 
         var isThirdParty: Bool {
             if case .altstoreIndex = self { true } else { false }
@@ -47,7 +48,7 @@ struct FetchSource: Sendable, Equatable {
         switch kind {
         case .githubRelease(let repo):
             URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
-        case .altstoreIndex(let url, _): URL(string: url)!
+        case .altstoreIndex(let url, _, _, _): URL(string: url)!
         }
     }
 
@@ -58,41 +59,21 @@ struct FetchSource: Sendable, Equatable {
     }
 }
 
+/// The fetch sources of the apps in `AppRegistry`, and the owner's `approvedSources` switch over them.
 enum FetchCatalog {
-    static let apolloRepo = "Apollo-Reborn/Apollo-Reborn"
-    static let stremioIndexBase = "https://raw.githubusercontent.com/gorlev/stremio-altstore/main/"
-    static let stremioBundleId = "com.stremio.pal"
-    static let stremioHost = "dl.strem.io"
-
-    /// Release assets are served by github.com, which redirects to its object store; GitHub has used both
-    /// `objects.githubusercontent.com` and `release-assets.githubusercontent.com` for that.
-    static let sources: [FetchSource] = [
-        FetchSource(
-            app: "apollo", kind: .githubRelease(repo: apolloRepo),
-            metadataHosts: ["api.github.com"],
-            downloadHosts: [
-                "github.com", "objects.githubusercontent.com",
-                "release-assets.githubusercontent.com",
-            ]),
-        FetchSource(
-            app: "stremio-ios",
-            kind: .altstoreIndex(url: stremioIndexBase + "stremio-ios.json", tvos: false),
-            metadataHosts: ["raw.githubusercontent.com"], downloadHosts: [stremioHost]),
-        FetchSource(
-            app: "stremio-tvos",
-            kind: .altstoreIndex(url: stremioIndexBase + "stremio-tvos.json", tvos: true),
-            metadataHosts: ["raw.githubusercontent.com"], downloadHosts: [stremioHost]),
-    ]
+    /// The built-in apps' sources, in app-ID order.
+    static var sources: [FetchSource] { AppRegistry.builtIn.fetchSources }
 
     static var appNames: [String] { sources.map(\.app) }
 
-    /// The catalog entry for `app`, if the owner approved it in `config.approvedSources`. An entry is an object
-    /// `{"app": "<key>"}`; an optional `"hosts": [...]` narrows the allowlist (it can never add a host).
+    /// The source of `app` in the config's registry, if the owner approved it in `config.approvedSources`. An entry is an
+    /// object `{"app": "<key>"}`; an optional `"hosts": [...]` narrows the allowlist (it can never add a host).
     static func approved(app: String, config: Config) throws -> FetchSource {
+        let sources = config.appRegistry.fetchSources
         guard let source = sources.first(where: { $0.app == app }) else {
             throw SideloadError(
                 "SOURCE_NOT_ALLOWED", "\"\(printableCut(app))\" is not a source fetch knows.",
-                fix: "Use one of: \(appNames.joined(separator: ", ")).")
+                fix: "Use one of: \(sources.map(\.app).joined(separator: ", ")).")
         }
         let entries = config.approvedSources.compactMap { value -> [String: JSONValue]? in
             guard case .object(let o) = value, case .string(let name)? = o["app"], name == app
@@ -115,9 +96,9 @@ enum FetchCatalog {
         return source.narrowed(to: hosts)
     }
 
-    /// Every catalog source `approved(app:config:)` accepts, in catalog order.
+    /// Every source `approved(app:config:)` accepts, in app-ID order.
     static func approvedSources(_ config: Config) -> [FetchSource] {
-        sources.compactMap { try? approved(app: $0.app, config: config) }
+        config.appRegistry.fetchSources.compactMap { try? approved(app: $0.app, config: config) }
     }
 }
 

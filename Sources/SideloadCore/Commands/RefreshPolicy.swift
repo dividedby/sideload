@@ -120,7 +120,7 @@ enum RefreshPolicy {
 
     /// What the ledger says about one app on the device.
     struct Subject {
-        let app: ProvisionApp
+        let app: AppDefinition
         let install: LedgerInstall?
         let signed: LedgerFreeSigned?
         let profile: LedgerFreeProfile?

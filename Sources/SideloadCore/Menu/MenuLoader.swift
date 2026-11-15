@@ -98,7 +98,7 @@ public enum MenuLoader {
     public static func readApps(_ services: Services, alias: String, prefix: String?) async
         -> DeviceAppsProbe
     {
-        guard let bundleId = ProvisionApp.apollo.freeBundleId(prefix: prefix) else {
+        guard let bundleId = AppDefinition.apollo.freeBundleId(prefix: prefix) else {
             return .failed(code: "CONFIG_MISSING", takenAt: services.clock.now())
         }
         let calls = FreeDeviceCalls(services: services, alias: alias, bundleId: bundleId)

@@ -211,9 +211,9 @@ struct ProvisionFillerTests {
             _ = await w.run(app: "filler")
             let ids = try w.ledger().freeAppIds.map(\.bundleId)
             #expect(ids == [fillerId])
-            #expect(ProvisionApp.filler.suffix != ProvisionApp.stremioIOS.suffix)
+            #expect(AppDefinition.filler.suffix != AppDefinition.stremioIOS.suffix)
             #expect(
-                ProvisionApp.stremioIOS.suffix == ProvisionApp.stremioTVOS.suffix,
+                AppDefinition.stremioIOS.suffix == AppDefinition.stremioTVOS.suffix,
                 "the two Stremio apps still share one App ID")
         }
     }

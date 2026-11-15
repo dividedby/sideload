@@ -109,9 +109,9 @@ struct RefreshFailure {
     }
 
     /// The message led by the app it is about (the `errors[]` entries of a run name their app).
-    func naming(_ app: ProvisionApp) -> RefreshFailure {
+    func naming(_ app: AppDefinition) -> RefreshFailure {
         var named = self
-        named.message = "\(app.rawValue): \(message)"
+        named.message = "\(app.id): \(message)"
         return named
     }
 
@@ -146,7 +146,7 @@ enum RefreshResultStatus: String {
 struct AppResult {
     typealias Status = RefreshResultStatus
 
-    let app: ProvisionApp
+    let app: AppDefinition
     var status: Status
     var steps: [RefreshStep: RefreshStepState] = [:]
     var code: String?
@@ -174,7 +174,8 @@ struct AppResult {
     }
 
     /// A policy or consequence skip: nothing was run for the app.
-    static func skipped(_ app: ProvisionApp, code: String, expires: Date?, now: Date) -> AppResult {
+    static func skipped(_ app: AppDefinition, code: String, expires: Date?, now: Date) -> AppResult
+    {
         var result = AppResult(app: app, status: .skipped)
         result.code = code
         result.daysLeftBefore = expires.map { RefreshPolicy.daysLeft($0, now: now) }
@@ -191,7 +192,7 @@ struct AppResult {
 
     var json: JSONValue {
         var object: [String: JSONValue] = [
-            "app": .string(app.rawValue), "status": .string(status.rawValue),
+            "app": .string(app.id), "status": .string(status.rawValue),
         ]
         if !steps.isEmpty {
             object["steps"] = .object(
@@ -272,12 +273,12 @@ struct RefreshRun {
         }
 
         // The device's app list is read once, and only if an app that is not lent could be due.
-        var subjects: [ProvisionApp: RefreshPolicy.Subject] = [:]
+        var subjects: [AppDefinition: RefreshPolicy.Subject] = [:]
         for target in targets { subjects[target.app] = subject(target.app, migrated, alias: alias) }
         let optimistic = targets.map {
             RefreshPolicy.decide(subjects[$0.app]!, now: start, within: within, presence: .present)
         }
-        var presence: [ProvisionApp: RefreshPolicy.Presence] = [:]
+        var presence: [AppDefinition: RefreshPolicy.Presence] = [:]
         var snapshotFailure: SideloadError?
         let needsSnapshot = optimistic.contains {
             if case .renew(let t) = $0 { return !t.lent } else { return false }
@@ -312,8 +313,8 @@ struct RefreshRun {
             }
         }
         entries.sort { lhs, rhs in
-            (Self.expiry(lhs.decision) ?? .distantFuture, lhs.target.app.rawValue)
-                < (Self.expiry(rhs.decision) ?? .distantFuture, rhs.target.app.rawValue)
+            (Self.expiry(lhs.decision) ?? .distantFuture, lhs.target.app.id)
+                < (Self.expiry(rhs.decision) ?? .distantFuture, rhs.target.app.id)
         }
 
         var results: [AppResult] = []
@@ -393,11 +394,12 @@ struct RefreshRun {
         if let appName, !appName.isEmpty {
             return [
                 try FreeTarget.resolve(
-                    app: try FreeTarget.parseApp(appName), alias: alias, config: config)
+                    app: try FreeTarget.parseApp(appName, apps: config.appRegistry), alias: alias,
+                    config: config)
             ]
         }
         let device = try config.requireDevice(alias)
-        let apps = ProvisionApp.allCases.filter { $0.devicePlatform == device.platform }
+        let apps = config.appRegistry.apps(for: device.platform)
         guard !apps.isEmpty else {
             throw SideloadError(
                 "PLATFORM_MISMATCH",
@@ -409,8 +411,8 @@ struct RefreshRun {
         return try apps.map { try FreeTarget.resolve(app: $0, alias: alias, config: config) }
     }
 
-    func subject(_ app: ProvisionApp, _ ledger: Ledger, alias: String) -> RefreshPolicy.Subject {
-        let key = "\(alias)/\(app.rawValue)"
+    func subject(_ app: AppDefinition, _ ledger: Ledger, alias: String) -> RefreshPolicy.Subject {
+        let key = "\(alias)/\(app.id)"
         return RefreshPolicy.Subject(
             app: app, install: ledger.installs.first { $0.id == key },
             signed: ledger.freeSigned.first { $0.id == key },
@@ -464,7 +466,7 @@ struct RefreshRun {
         result.steps = Dictionary(
             uniqueKeysWithValues: RefreshStep.allCases.map { ($0, RefreshStepState.skipped) })
         log(
-            "\(app.rawValue): provision=\(plan.provision) sign=\(plan.sign) install=\(plan.install)"
+            "\(app.id): provision=\(plan.provision) sign=\(plan.sign) install=\(plan.install)"
         )
 
         // Auto never falls back to another version: the installed one must be a fetched, approved entry whose file is on disk,
@@ -476,9 +478,9 @@ struct RefreshRun {
                 failure = RefreshFailure(
                     code: RefreshPolicy.versionNotAvailable,
                     message:
-                        "The installed version of \(app.rawValue) is not a fetched, approved version with its file on disk, and the automatic refresh never signs another one.",
+                        "The installed version of \(app.id) is not a fetched, approved version with its file on disk, and the automatic refresh never signs another one.",
                     fix:
-                        "The owner fetches and approves that version again, or updates the app (Update in the menu); a manual `sideload refresh --device \(alias) --app \(app.rawValue) --yes` signs the newest approved version."
+                        "The owner fetches and approves that version again, or updates the app (Update in the menu); a manual `sideload refresh --device \(alias) --app \(app.id) --yes` signs the newest approved version."
                 )
             }
         }
@@ -488,13 +490,13 @@ struct RefreshRun {
         if failure == nil, plan.provision {
             let began = services.clock.now()
             var envelope = await steps.provision(
-                services, ProvisionOptions(app: app.rawValue, device: alias, yes: true))
+                services, ProvisionOptions(app: app.id, device: alias, yes: true))
             if !envelope.ok, envelope.errors.first?.code == "PROFILE_NOT_RENEWED" {
                 result.renewRetried = true
-                log("\(app.rawValue): the profile did not move; retrying once with --renew")
+                log("\(app.id): the profile did not move; retrying once with --renew")
                 envelope = await steps.provision(
                     services,
-                    ProvisionOptions(app: app.rawValue, device: alias, renew: true, yes: true))
+                    ProvisionOptions(app: app.id, device: alias, renew: true, yes: true))
             }
             for key in ProfileCacheRenewal.Outcome.keys {
                 if let value = envelope.data[key] { result.renew[key] = value }
@@ -516,7 +518,7 @@ struct RefreshRun {
             let began = services.clock.now()
             let version = auto != nil ? pinned : installedVersion(target, warnings: &warnings)
             let envelope = await steps.sign(
-                services, SignOptions(app: app.rawValue, device: alias, yes: true, version: version)
+                services, SignOptions(app: app.id, device: alias, yes: true, version: version)
             )
             if envelope.ok {
                 result.steps[.sign] = .done
@@ -534,12 +536,12 @@ struct RefreshRun {
                 failure = RefreshFailure(
                     code: block.code, message: "The install was skipped: \(block.message)",
                     fix:
-                        "Unlock the device and keep it connected (or reconnect it), then rerun `sideload refresh --device \(alias) --app \(app.rawValue) --yes`; the rerun resumes at the install."
+                        "Unlock the device and keep it connected (or reconnect it), then rerun `sideload refresh --device \(alias) --app \(app.id) --yes`; the rerun resumes at the install."
                 )
             } else {
                 let began = services.clock.now()
                 let envelope = await steps.install(
-                    services, InstallOptions(app: app.rawValue, device: alias, yes: true))
+                    services, InstallOptions(app: app.id, device: alias, yes: true))
                 if envelope.ok {
                     result.steps[.install] = .done
                     done += 1
@@ -588,7 +590,7 @@ struct RefreshRun {
                 warnings.append(
                     CanaryCommand.warning(
                         "APP_LENT",
-                        "\(app.rawValue) is lent to the lab, so it was provisioned and signed but not installed.",
+                        "\(app.id) is lent to the lab, so it was provisioned and signed but not installed.",
                         "Nothing to do: `slot return` puts the renewed copy back."
                     ).withApp(app))
             }
@@ -626,7 +628,7 @@ struct RefreshRun {
             warnings.append(
                 CanaryCommand.warning(
                     "REFRESH_STATE_NOT_RECORDED",
-                    "The refresh fields of \(app.rawValue) could not be written to the ledger (\(RefreshFailure(error: error).code)).",
+                    "The refresh fields of \(app.id) could not be written to the ledger (\(RefreshFailure(error: error).code)).",
                     "The renewal itself is not affected; `sideload doctor` shows whether the ledger is writable."
                 ).withApp(app))
         }
@@ -649,7 +651,7 @@ struct RefreshRun {
         guard let newest = approved.max(by: ManifestEntry.older), newest.version != installed else {
             return nil
         }
-        let app = target.app.rawValue
+        let app = target.app.id
         warnings.append(
             CanaryCommand.warning(
                 "RENEW_VERSION_CHANGED",
@@ -677,7 +679,7 @@ struct RefreshRun {
         return (
             store,
             ((try? store.load())?.entries ?? []).filter {
-                $0.app == target.app.rawValue && $0.approved
+                $0.app == target.app.id && $0.approved
             }
         )
     }
@@ -697,7 +699,7 @@ struct RefreshRun {
     ) {
         guard let auto else { return }
         var fields: [String: JSONValue] = [
-            "device": .string(RefreshLog.alias(target.alias)), "app": .string(target.app.rawValue),
+            "device": .string(RefreshLog.alias(target.alias)), "app": .string(target.app.id),
             "step": .string(step.rawValue),
             "ok": .bool(failure == nil),
             "durationMs": RefreshLog.int(
@@ -730,7 +732,7 @@ struct RefreshRun {
             warnings.append(
                 CanaryCommand.warning(
                     "ATTEMPT_CAP_EXCEEDED",
-                    "\(target.app.rawValue) has had \(mine) attempt(s) today (\(device) on the device); the daily caps are \(RefreshPolicy.installDailyCap) per app and \(RefreshPolicy.deviceDailyCap) per device.",
+                    "\(target.app.id) has had \(mine) attempt(s) today (\(device) on the device); the daily caps are \(RefreshPolicy.installDailyCap) per app and \(RefreshPolicy.deviceDailyCap) per device.",
                     "A manual run goes on and counts as an attempt; the caps only hold back the automatic refresh."
                 ).withApp(target.app))
         }
@@ -738,7 +740,7 @@ struct RefreshRun {
             warnings.append(
                 CanaryCommand.warning(
                     "INSTALL_SUSPENDED",
-                    "\(target.app.rawValue) was suspended after \(install.refresh.lastCode ?? "an earlier failure"); this manual run goes on.",
+                    "\(target.app.id) was suspended after \(install.refresh.lastCode ?? "an earlier failure"); this manual run goes on.",
                     "A successful run clears the suspension."
                 ).withApp(target.app))
         }
@@ -748,9 +750,9 @@ struct RefreshRun {
 
 extension JSONValue {
     /// A warning object with the app it is about.
-    fileprivate func withApp(_ app: ProvisionApp) -> JSONValue {
+    fileprivate func withApp(_ app: AppDefinition) -> JSONValue {
         guard case .object(var object) = self else { return self }
-        object["app"] = .string(app.rawValue)
+        object["app"] = .string(app.id)
         return .object(object)
     }
 }

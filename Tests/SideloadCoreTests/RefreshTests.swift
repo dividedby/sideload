@@ -11,11 +11,11 @@ private let utc = TimeZone(identifier: "UTC")!
 /// Seeds one app's records so it expires in `days`: the install (the device copy), the signed copy and the stored profile all
 /// carry that expiry (the state before a renewal). `installed` false leaves no `installs[]` record (installed by hand).
 private func seed(
-    _ ledger: inout Ledger, _ app: ProvisionApp, days: Double, installed: Bool = true,
+    _ ledger: inout Ledger, _ app: AppDefinition, days: Double, installed: Bool = true,
     present: Bool = true,
     refresh: LedgerInstallRefresh = LedgerInstallRefresh()
 ) {
-    let key = "iphone/\(app.rawValue)"
+    let key = "iphone/\(app.id)"
     let expires = daysFromNow(days)
     for i in ledger.freeProfiles.indices where ledger.freeProfiles[i].id == key {
         ledger.freeProfiles[i].expires = expires
@@ -31,11 +31,11 @@ private func seed(
     }
 }
 
-private func bundle(_ app: ProvisionApp) -> String { carrierPrefix + ".free." + app.suffix }
+private func bundle(_ app: AppDefinition) -> String { carrierPrefix + ".free." + app.suffix }
 
 /// A world with `apps` signed on the iPhone, each already on the device unless `onDevice` is false.
 private func withRefreshWorld(
-    _ apps: [ProvisionApp] = [.stremioIOS], onDevice: Bool = true,
+    _ apps: [AppDefinition] = [.stremioIOS], onDevice: Bool = true,
     script base: DeviceScript = DeviceScript(),
     profileDays: Double = 5, ledger tweak: ((inout Ledger) -> Void)? = nil,
     _ body: (InstallWorld) async throws -> Void
@@ -113,8 +113,8 @@ private func results(_ out: Envelope) -> [JSONValue] {
     return []
 }
 
-private func result(_ out: Envelope, _ app: ProvisionApp) -> JSONValue? {
-    results(out).first { $0["app"] == .string(app.rawValue) }
+private func result(_ out: Envelope, _ app: AppDefinition) -> JSONValue? {
+    results(out).first { $0["app"] == .string(app.id) }
 }
 
 private func warnings(_ out: Envelope) -> [String] {
@@ -122,8 +122,8 @@ private func warnings(_ out: Envelope) -> [String] {
     return items.compactMap { if case .string(let code)? = $0["code"] { code } else { nil } }
 }
 
-private func refreshFields(_ w: InstallWorld, _ app: ProvisionApp) throws -> LedgerInstallRefresh {
-    try #require(try w.ledger().installs.first { $0.id == "iphone/\(app.rawValue)" }).refresh
+private func refreshFields(_ w: InstallWorld, _ app: AppDefinition) throws -> LedgerInstallRefresh {
+    try #require(try w.ledger().installs.first { $0.id == "iphone/\(app.id)" }).refresh
 }
 
 private let today = RefreshPolicy.dayKey(testNow, timeZone: utc)
@@ -788,7 +788,7 @@ struct RefreshTests {
                 log.value == [
                     "provision stremio-ios", "sign stremio-ios", "provision apollo", "sign apollo",
                 ])
-            for app in [ProvisionApp.stremioIOS, .apollo] {
+            for app in [AppDefinition.stremioIOS, .apollo] {
                 let item = try #require(result(out, app))
                 #expect(item["status"] == "failed" && item["code"] == "DEVICE_LOCKED")
                 #expect(

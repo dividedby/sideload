@@ -17,7 +17,7 @@ enum SlotCommandKind: Sendable, CaseIterable { case lend, giveBack, remove, inst
 
 extension InstallWorld {
     func bundleId(of app: String) -> String {
-        carrierPrefix + ".free." + (ProvisionApp(rawValue: app)?.suffix ?? "?")
+        carrierPrefix + ".free." + (AppRegistry.builtIn.app(app)?.suffix ?? "?")
     }
     var slots: [LedgerSlot] { (try? ledger().slots) ?? [] }
     func slotRecord(_ app: String = "stremio-ios", device: String = "iphone") -> LedgerSlot? {

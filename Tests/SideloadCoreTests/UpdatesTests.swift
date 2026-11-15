@@ -45,14 +45,15 @@ struct VersionOrderTests {
     @Test("the strings the resolver produces parse")
     func resolverStrings() throws {
         let apollo = try SourceResolver.apollo(
-            app: "apollo", repo: FetchCatalog.apolloRepo,
+            app: "apollo", repo: AppDefinition.apolloRepo,
             json: releaseJSON(
                 tag: "v1.15.11_3.9.0",
                 assets: [ReleaseAsset(name: "Apollo-Reborn-3.9.0-GLASS-NOEXTENSIONS.ipa")]))
         #expect(
             VersionOrder.parse(apollo.version) == VersionOrder.Parsed(parts: [3, 9, 0], build: nil))
         let stremio = try SourceResolver.stremio(
-            app: "stremio-ios", tvos: false, json: stremioIndexJSON(tvos: false))
+            app: "stremio-ios", bundleId: AppDefinition.stremioBundleId,
+            host: AppDefinition.stremioHost, tvos: false, json: stremioIndexJSON(tvos: false))
         #expect(
             VersionOrder.parse(stremio.version)
                 == VersionOrder.Parsed(parts: [1, 9, 6], build: 142))
@@ -314,7 +315,7 @@ private func apolloRelease(_ version: String = "3.10.0") -> Data {
 }
 
 private func install(
-    _ app: ProvisionApp, version: String, alias: String? = nil, present: Bool = true
+    _ app: AppDefinition, version: String, alias: String? = nil, present: Bool = true
 ) -> LedgerInstall {
     var record = installRecord(
         app, alias: alias ?? (app == .stremioTVOS ? "appletv" : "iphone"), present: present)

@@ -228,19 +228,20 @@ enum DeviceRemove {
                 fix: "Set \"bundleIdPrefix\" in $SIDELOAD_HOME/config.json, then retry.",
                 data: ["alias": .string(alias), "reason": "restore_unknown"])
         }
-        for app in ProvisionApp.allCases.sorted(by: { $0.rawValue < $1.rawValue }) {
+        for app in config.appRegistry.apps.sorted(by: { $0.id < $1.id }) {
+            guard let bundleId = app.freeBundleId(prefix: prefix) else { continue }
             let found = AppDataBackup.pending(
-                services, alias: alias, app: app.rawValue, bundleId: prefix + ".free." + app.suffix)
+                services, alias: alias, app: app.id, bundleId: bundleId)
             if case .found = found {
                 return SideloadError(
                     "DEVICE_BUSY",
-                    "Saved app data of \(app.rawValue) on device \"\(name)\" is waiting to be restored.",
+                    "Saved app data of \(app.id) on device \"\(name)\" is waiting to be restored.",
                     fix: config.devices[alias] != nil
-                        ? "The owner runs `sideload slot restore --device \(name) --app \(app.rawValue) --yes`; retry after that."
-                        : "This alias is no longer saved, so `slot restore` cannot run for it. If the data is not wanted, the owner deletes backups/\(name)/\(app.rawValue) by hand; then retry.",
+                        ? "The owner runs `sideload slot restore --device \(name) --app \(app.id) --yes`; retry after that."
+                        : "This alias is no longer saved, so `slot restore` cannot run for it. If the data is not wanted, the owner deletes backups/\(name)/\(app.id) by hand; then retry.",
                     data: [
                         "alias": .string(alias), "reason": "restore_pending",
-                        "app": .string(app.rawValue),
+                        "app": .string(app.id),
                     ])
             }
         }

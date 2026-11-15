@@ -36,7 +36,7 @@ struct SlotBook: Sendable {
     func lentSlot(_ ledger: Ledger) -> LedgerSlot? { slots(ledger).first { $0.lentTo != nil } }
 
     func target(_ appName: String) -> FreeTarget? {
-        ProvisionApp(rawValue: appName).flatMap {
+        config.appRegistry.app(appName).flatMap {
             try? FreeTarget.resolve(app: $0, alias: alias, config: config)
         }
     }
@@ -133,7 +133,7 @@ struct SlotBook: Sendable {
         try await SlotState.write(services, point: point) { ledger in
             var slot =
                 ledger.slots.first { $0.id == target.key }
-                ?? LedgerSlot(device: target.alias, app: target.app.rawValue, presence: presence)
+                ?? LedgerSlot(device: target.alias, app: target.app.id, presence: presence)
             slot.presence = presence
             slot.op = SlotRule.newOp(kind, by: by, at: services.clock.now())
             if lend {
@@ -191,7 +191,7 @@ struct SlotBook: Sendable {
                 }
             }
         }
-        return slot(try services.ledgerStore.load(), app: target.app.rawValue)
+        return slot(try services.ledgerStore.load(), app: target.app.id)
     }
 
     // MARK: counting

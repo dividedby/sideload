@@ -12,7 +12,10 @@ let builtCommands: [JSONValue] = [
 private let helpFlags: Set<String> = ["-h", "--help"]
 
 private func help() -> Envelope {
-    .result(
+    let all = AppRegistry.builtIn.choices(.all)
+    let signed = AppRegistry.builtIn.choices(.signed)
+    let fetchable = AppRegistry.builtIn.choices(.fetchable)
+    return .result(
         "help",
         [
             "commands": .array(allCommands),
@@ -23,24 +26,25 @@ private func help() -> Envelope {
                 "device save|list ...",
                 "device auto-refresh --alias <alias> --on|--off --yes",
                 "device slots --alias <alias> --reserved 0-3 --yes",
-                "device lendable --alias <alias> --app <apollo|stremio-ios|stremio-tvos|filler>|--none --yes",
+                .string("device lendable --alias <alias> --app <\(all)>|--none --yes"),
                 "device remove --alias <alias> --yes",
                 "inspect <path.ipa>",
-                "fetch --app <apollo|stremio-ios|stremio-tvos> [--approve --version <v>]",
-                "updates [--app <apollo|stremio-ios|stremio-tvos>] [--force]",
-                "provision --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> [--register-device] [--renew] --yes",
-                "provision --renew-ack --yes",
-                "sign --app <apollo|stremio-ios|stremio-tvos> --device <alias> [--version <v>] --yes",
-                "install --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> --yes",
+                .string("fetch --app <\(fetchable)> [--approve --version <v>]"),
+                .string("updates [--app <\(fetchable)>] [--force]"),
                 .string(
-                    "refresh --device <alias> [--app <apollo|stremio-ios|stremio-tvos|filler>] [--within 1-\(RefreshCommand.maxWithin) | --force] --yes"
+                    "provision --app <\(all)> --device <alias> [--register-device] [--renew] --yes"),
+                "provision --renew-ack --yes",
+                .string("sign --app <\(signed)> --device <alias> [--version <v>] --yes"),
+                .string("install --app <\(all)> --device <alias> --yes"),
+                .string(
+                    "refresh --device <alias> [--app <\(all)>] [--within 1-\(RefreshCommand.maxWithin) | --force] --yes"
                 ),
                 "refresh --auto",
                 "refresh --print-agent [--binary <absolute path>]",
-                "app remove --app <apollo|stremio-ios|stremio-tvos|filler> --device <alias> --yes",
+                .string("app remove --app <\(all)> --device <alias> --yes"),
                 "slot lend --device <alias>|--udid <id> --to lab",
                 "slot return --device <alias>|--udid <id>",
-                "slot restore --device <alias> [--app <apollo|stremio-ios|stremio-tvos|filler>] --yes",
+                .string("slot restore --device <alias> [--app <\(all)>] --yes"),
                 "clean [--yes]",
                 "ledger [refresh]",
                 "portal [certificates|bundle-ids|devices|profiles] [--show-identifiers]",
