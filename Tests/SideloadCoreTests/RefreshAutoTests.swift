@@ -135,7 +135,7 @@ struct RefreshAutoGateTests {
                 ledger: {
                     ledgerReads.value += 1
                     return ledger
-                }(),
+                }(), now: testNow,
                 lockBusy: {
                     lockProbes.value += 1
                     return busy
@@ -152,6 +152,49 @@ struct RefreshAutoGateTests {
         #expect(run(kill: false, ledger: Ledger(), busy: true) == .operationInProgress)
         #expect(lockProbes.value == 1)
         #expect(run(kill: false, ledger: Ledger(), busy: false) == nil)
+    }
+
+    @Test(
+        "the account pause skips the whole run until nextProbe, before the lock is probed; at nextProbe the run goes on"
+    )
+    func runGateAccountPause() {
+        let lockProbes = Box(0)
+        var paused = Ledger()
+        paused.freeAccountPause = LedgerAccountPause(
+            code: "ACCOUNT_NOT_SIGNED_IN", since: testNow, probes: 0,
+            nextProbe: testNow.addingTimeInterval(3600))
+        func run(_ ledger: Ledger, at now: Date, busy: Bool = true) -> RefreshPolicy.AutoSkip? {
+            RefreshPolicy.runGate(
+                killSwitch: false, ledger: ledger, now: now,
+                lockBusy: {
+                    lockProbes.value += 1
+                    return busy
+                }())
+        }
+        #expect(run(paused, at: testNow) == .accountSignedOut)
+        #expect(run(paused, at: testNow.addingTimeInterval(3599)) == .accountSignedOut)
+        #expect(lockProbes.value == 0)
+        #expect(RefreshPolicy.AutoSkip.accountSignedOut.code == "ACCOUNT_SIGNED_OUT")
+        // At and after nextProbe the pause no longer stops the run: the lock gate is next.
+        #expect(run(paused, at: testNow.addingTimeInterval(3600)) == .operationInProgress)
+        #expect(run(paused, at: testNow.addingTimeInterval(9000), busy: false) == nil)
+        #expect(lockProbes.value == 2)
+        // The certificate suspension still comes first.
+        paused.freeSuspended = LedgerFreeSuspension(code: "FREE_CERT_CHANGED", at: testNow)
+        #expect(run(paused, at: testNow) == .freeCertChanged)
+    }
+
+    @Test(
+        "an install an earlier build suspended for a signed-out Xcode is not suspended; any other suspension still is"
+    )
+    func legacyAccountSuspension() {
+        let legacy = LedgerInstallRefresh(
+            lastResult: "failed", lastCode: "ACCOUNT_NOT_SIGNED_IN", consecutiveFailures: 1,
+            suspended: true)
+        #expect(gate(subject(refresh: legacy)) == nil)
+        var other = legacy
+        other.lastCode = "GUARD_FAILED"
+        #expect(gate(subject(refresh: other)) == .suspended)
     }
 
     @Test(
@@ -1457,5 +1500,202 @@ private func seedManifest(_ w: InstallWorld, _ entries: [ManifestEntry], missing
 extension Envelope {
     fileprivate var warnings: [String] {
         data["warnings"]?.array?.compactMap { $0["code"]?.string } ?? []
+    }
+}
+
+// MARK: the account pause across runs
+
+@Suite("refresh --auto: Xcode signed out")
+struct RefreshAutoAccountTests {
+    /// A scripted `provision` that behaves as the real one does to the ledger: a signed-out Xcode records or bumps the pause,
+    /// a success clears it. `signedOut` is flipped by the test.
+    private func provisionSteps(_ a: AutoWorld, _ log: CallBox, signedOut: Box<Bool>)
+        -> RefreshSteps
+    {
+        let store = a.services.ledgerStore
+        let clock = a.w.clock
+        return autoSteps(
+            log,
+            provision: { options in
+                let now = clock.now()
+                if signedOut.value {
+                    try? await store.update {
+                        $0.freeAccountPause = RefreshPolicy.pausing($0.freeAccountPause, now: now)
+                    }
+                    return failStep("ACCOUNT_NOT_SIGNED_IN")
+                }
+                try? await store.update { $0.freeAccountPause = nil }
+                return okStep("provision", options.app)
+            })
+    }
+
+    @Test(
+        "one notice when the account is found signed out, a quiet skip while paused, nothing for a failed probe, one notice when it resumes"
+    )
+    func lifecycle() async throws {
+        try await withAutoWorld([.stremioIOS, .apollo], profileDays: 2) { a in
+            let log = CallBox([])
+            let signedOut = Box(true)
+            let paused = Notifier.sanitised(Notifier.accountPaused())
+            let resumed = Notifier.sanitised(Notifier.accountResumed())
+
+            // Run 1: the first install fails, the team is paused, the other install is left alone.
+            let first = await auto(a, provisionSteps(a, log, signedOut: signedOut))
+            #expect(!first.ok && first.errors.map(\.code) == ["ACCOUNT_NOT_SIGNED_IN"])
+            #expect(log.value.count == 1 && log.value[0].hasPrefix("provision "))
+            #expect(a.runner.notices == [paused])
+            let results = autoResults(first)
+            #expect(results.filter { $0["status"] == "failed" }.count == 1)
+            #expect(
+                results.filter {
+                    $0["status"] == "skipped" && $0["code"] == "ACCOUNT_NOT_SIGNED_IN"
+                }
+                .count == 1)
+            for app in [AppDefinition.stremioIOS, .apollo] {
+                let refresh = try fields(a, app)
+                #expect(!refresh.suspended && refresh.consecutiveFailures == 0)
+                #expect(refresh.nextEligible == nil && refresh.attemptsByDay.isEmpty)
+            }
+            let tried = try #require(
+                try a.w.ledger().installs.first { $0.refresh.lastCode == "ACCOUNT_NOT_SIGNED_IN" })
+            #expect(tried.refresh.lastResult == "failed")
+            let pause = try #require(try a.w.ledger().freeAccountPause)
+            #expect(pause.since == testNow && pause.probes == 0)
+            #expect(pause.nextProbe == testNow.addingTimeInterval(3600))
+            #expect(try logged(a, "result")[0]["notified"] == true)
+            #expect(try logged(a, "result")[0]["suspended"] == nil)
+
+            // Run 2, inside the hour, with the lock held: skipped before the lock, with no device or build call.
+            a.w.clock.advance(1800)
+            let held = try OperationLock.acquire(paths: a.w.paths)
+            let calls = log.value.count
+            let lists = a.runner.listCalls
+            let second = await auto(a, provisionSteps(a, log, signedOut: signedOut))
+            held.release()
+            #expect(second.ok && second.exitCode == 0)
+            #expect(skippedCount(second, "ACCOUNT_SIGNED_OUT") == 1)
+            #expect(log.value.count == calls && a.runner.listCalls == lists)
+            #expect(a.runner.notices == [paused])
+            #expect(try logged(a, "run").last?["reason"] == "ACCOUNT_SIGNED_OUT")
+            #expect(try a.w.ledger().freeAccountPause == pause)
+
+            // Run 3, at nextProbe: the probe fails; nothing is said and the next one is two hours out.
+            a.w.clock.advance(1800)
+            let third = await auto(a, provisionSteps(a, log, signedOut: signedOut))
+            #expect(!third.ok && log.value.count == calls + 1)
+            #expect(a.runner.notices == [paused])
+            let bumped = try #require(try a.w.ledger().freeAccountPause)
+            #expect(bumped.probes == 1 && bumped.since == pause.since)
+            #expect(bumped.nextProbe == a.w.clock.now().addingTimeInterval(2 * 3600))
+            #expect(try fields(a, .stremioIOS).attemptsByDay.isEmpty)
+            #expect(try fields(a, .apollo).attemptsByDay.isEmpty)
+
+            // Xcode is signed in again; the probe after that succeeds, and the owner hears once.
+            signedOut.value = false
+            a.w.clock.advance(2 * 3600)
+            let fourth = await auto(a, provisionSteps(a, log, signedOut: signedOut))
+            #expect(fourth.ok, "\(fourth.errors)")
+            #expect(try a.w.ledger().freeAccountPause == nil)
+            #expect(autoResult(fourth, .stremioIOS)?["status"] == "renewed")
+            #expect(autoResult(fourth, .apollo)?["status"] == "renewed")
+            let notices = a.runner.notices
+            #expect(notices.filter { $0 == resumed }.count == 1)
+            #expect(notices.filter { $0.contains("refreshed") }.count == 2)
+            #expect(notices.filter { $0 == paused }.count == 1)
+
+            // Run 5 has no pause at start and renews nothing: no second resumed notice.
+            a.w.clock.advance(86_400)
+            _ = await auto(a, provisionSteps(a, log, signedOut: signedOut))
+            #expect(a.runner.notices.filter { $0 == resumed }.count == 1)
+        }
+    }
+
+    @Test(
+        "a probe that renews without provision clearing the pause does not announce a resume"
+    )
+    func noResumeWhilePaused() async throws {
+        try await withAutoWorld(profileDays: 2) { a in
+            try await a.services.ledgerStore.update {
+                $0.freeAccountPause = LedgerAccountPause(
+                    code: "ACCOUNT_NOT_SIGNED_IN", since: daysFromNow(-1), probes: 1,
+                    nextProbe: daysFromNow(-0.1))
+            }
+            let log = CallBox([])
+            let out = await auto(a, autoSteps(log))
+            #expect(out.ok && autoResult(out, .stremioIOS)?["status"] == "renewed")
+            #expect(try a.w.ledger().freeAccountPause != nil)
+            #expect(a.runner.notices == ["stremio-ios @ iphone refreshed, 2 d left"])
+        }
+    }
+
+    @Test(
+        "a probe whose provision clears the pause announces the resume even when install then fails"
+    )
+    func resumeAfterLaterFailure() async throws {
+        try await withAutoWorld(profileDays: 2) { a in
+            try await a.services.ledgerStore.update {
+                $0.freeAccountPause = LedgerAccountPause(
+                    code: "ACCOUNT_NOT_SIGNED_IN", since: daysFromNow(-1), probes: 1,
+                    nextProbe: daysFromNow(-0.1))
+            }
+            let store = a.services.ledgerStore
+            let log = CallBox([])
+            let steps = autoSteps(
+                log,
+                provision: { options in
+                    try? await store.update { $0.freeAccountPause = nil }
+                    return okStep("provision", options.app)
+                },
+                install: { _ in failStep("INSTALL_FAILED") })
+            let out = await auto(a, steps)
+            #expect(!out.ok && out.errors.map(\.code) == ["INSTALL_FAILED"])
+            #expect(try a.w.ledger().freeAccountPause == nil)
+            let notices = a.runner.notices
+            let resumed = Notifier.sanitised(Notifier.accountResumed())
+            #expect(notices.filter { $0 == resumed }.count == 1)
+            #expect(
+                notices.filter { $0.hasPrefix("stremio-ios @ iphone failed INSTALL_FAILED") }.count
+                    == 1)
+            #expect(notices.count == 2)
+        }
+    }
+
+    @Test("an install an earlier build suspended for a signed-out Xcode is tried, and renewed")
+    func legacySuspensionIsTried() async throws {
+        let legacy = LedgerInstallRefresh(
+            lastResult: "failed", lastCode: "ACCOUNT_NOT_SIGNED_IN", consecutiveFailures: 1,
+            suspended: true)
+        try await withAutoWorld(
+            profileDays: 2,
+            ledger: { seedInstall(&$0, .stremioIOS, days: 2, refresh: legacy) }
+        ) { a in
+            let log = CallBox([])
+            let out = await auto(a, autoSteps(log))
+            #expect(out.ok && autoResult(out, .stremioIOS)?["status"] == "renewed")
+            #expect(log.value.first == "provision stremio-ios")
+            let after = try fields(a)
+            #expect(!after.suspended && after.lastCode == nil)
+        }
+    }
+
+    @Test(
+        "a manual run reports the app failed with the code, gives the attempt back, never suspends, and says nothing"
+    )
+    func manualRun() async throws {
+        try await withAutoWorld(profileDays: 2) { a in
+            let log = CallBox([])
+            let steps = autoSteps(log, provision: { _ in failStep("ACCOUNT_NOT_SIGNED_IN") })
+            let out = await RefreshCommand.run(
+                a.services, RefreshOptions(device: "iphone", yes: true), steps: steps,
+                timeZone: utc)
+            #expect(!out.ok && out.errors.map(\.code) == ["ACCOUNT_NOT_SIGNED_IN"])
+            let item = try #require(out.data["results"]?.array?.first)
+            #expect(item["status"] == "failed" && item["code"] == "ACCOUNT_NOT_SIGNED_IN")
+            let refresh = try fields(a)
+            #expect(!refresh.suspended && refresh.consecutiveFailures == 0)
+            #expect(refresh.nextEligible == nil && refresh.attemptsByDay.isEmpty)
+            #expect(refresh.lastCode == "ACCOUNT_NOT_SIGNED_IN")
+            #expect(a.runner.notices.isEmpty)
+        }
     }
 }

@@ -19,6 +19,9 @@ public struct Ledger: Codable, Sendable, Equatable {
     public var freeProfiles: [LedgerFreeProfile]
     /// Set when a free-team hard stop (`FREE_CERT_CHANGED`) suspends auto-refresh; cleared by a manual success.
     public var freeSuspended: LedgerFreeSuspension?
+    /// Set by `provision` when Xcode has no signed-in account for the free team (`ACCOUNT_NOT_SIGNED_IN`): auto-refresh skips
+    /// quietly until `nextProbe`, then one renewal probes. Cleared by the next successful `provision`.
+    public var freeAccountPause: LedgerAccountPause?
     /// Written before an `xcodebuild` that may touch the free team's certificates and cleared once the identity
     /// set was compared and recorded afterwards. A marker found at the start of a free-team command means a run
     /// died in between (a signal, a crash): the next run compares first (`FreeIdentityGuard`).
@@ -49,7 +52,7 @@ public struct Ledger: Codable, Sendable, Equatable {
         profiles: [LedgerProfile] = [],
         exports: [JSONValue] = [], freeAppIds: [LedgerFreeAppId] = [],
         freeProfiles: [LedgerFreeProfile] = [],
-        freeSuspended: LedgerFreeSuspension? = nil,
+        freeSuspended: LedgerFreeSuspension? = nil, freeAccountPause: LedgerAccountPause? = nil,
         freeProvisionInFlight: LedgerFreeInFlight? = nil,
         freeRenewMoves: [LedgerFreeRenewMove] = [], freeSigned: [LedgerFreeSigned] = [],
         installs: [LedgerInstall] = [],
@@ -62,6 +65,7 @@ public struct Ledger: Codable, Sendable, Equatable {
         self.freeAppIds = freeAppIds
         self.freeProfiles = freeProfiles
         self.freeSuspended = freeSuspended
+        self.freeAccountPause = freeAccountPause
         self.freeProvisionInFlight = freeProvisionInFlight
         self.freeRenewMoves = freeRenewMoves
         self.freeSigned = freeSigned
@@ -73,7 +77,7 @@ public struct Ledger: Codable, Sendable, Equatable {
 
     private static let known: Set<String> = [
         "schema", "updated", "certificates", "profiles", "exports", "freeAppIds", "freeProfiles",
-        "freeSuspended",
+        "freeSuspended", "freeAccountPause",
         "freeProvisionInFlight", "freeRenewMoves", "freeSigned", "installs", "lent", "slots",
     ]
 
@@ -93,6 +97,8 @@ public struct Ledger: Codable, Sendable, Equatable {
             try c.decodeIfPresent([LedgerFreeProfile].self, forKey: AnyKey("freeProfiles")) ?? []
         freeSuspended = try c.decodeIfPresent(
             LedgerFreeSuspension.self, forKey: AnyKey("freeSuspended"))
+        freeAccountPause = try c.decodeIfPresent(
+            LedgerAccountPause.self, forKey: AnyKey("freeAccountPause"))
         freeProvisionInFlight = try c.decodeIfPresent(
             LedgerFreeInFlight.self, forKey: AnyKey("freeProvisionInFlight"))
         freeRenewMoves =
@@ -117,6 +123,7 @@ public struct Ledger: Codable, Sendable, Equatable {
         if !freeAppIds.isEmpty { try c.encode(freeAppIds, forKey: AnyKey("freeAppIds")) }
         if !freeProfiles.isEmpty { try c.encode(freeProfiles, forKey: AnyKey("freeProfiles")) }
         try c.encodeIfPresent(freeSuspended, forKey: AnyKey("freeSuspended"))
+        try c.encodeIfPresent(freeAccountPause, forKey: AnyKey("freeAccountPause"))
         try c.encodeIfPresent(freeProvisionInFlight, forKey: AnyKey("freeProvisionInFlight"))
         if !freeRenewMoves.isEmpty {
             try c.encode(freeRenewMoves, forKey: AnyKey("freeRenewMoves"))
@@ -523,6 +530,24 @@ public struct LedgerFreeSuspension: Codable, Sendable, Equatable {
         self.at = at
         self.addedFp8 = addedFp8
         self.removedFp8 = removedFp8
+    }
+}
+
+/// Auto-refresh of the free team is paused because Xcode is signed out (design section 18). Unlike `LedgerFreeSuspension` it
+/// clears itself: the first renewal after `nextProbe` is the probe, and the next successful `provision` removes it.
+public struct LedgerAccountPause: Codable, Sendable, Equatable {
+    /// `ACCOUNT_NOT_SIGNED_IN`.
+    public var code: String
+    public var since: Date
+    /// Failed probes after the first hit.
+    public var probes: Int
+    public var nextProbe: Date
+
+    public init(code: String, since: Date, probes: Int = 0, nextProbe: Date) {
+        self.code = code
+        self.since = since
+        self.probes = probes
+        self.nextProbe = nextProbe
     }
 }
 

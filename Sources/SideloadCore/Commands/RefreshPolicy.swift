@@ -38,13 +38,38 @@ enum RefreshPolicy {
         "UNTRUSTED_DEVELOPER",
         "UNEXPECTED_APP_DELTA", "WRONG_TEAM", "GUARD_FAILED", "BUNDLE_ID_NOT_ALLOWED",
         "PLATFORM_MISMATCH",
-        "ACCOUNT_NOT_SIGNED_IN", "FREE_APP_LIMIT", "FREE_APP_ID_LIMIT",
+        "FREE_APP_LIMIT", "FREE_APP_ID_LIMIT",
     ]
+
+    /// Xcode has no signed-in account: fatal, but not permanent. It is the team's problem, so it pauses the team
+    /// (`pausing`) instead of suspending the install that happened to hit it.
+    static let accountNotSignedIn = "ACCOUNT_NOT_SIGNED_IN"
+
+    static func isAccountSignedOut(_ code: String?) -> Bool { code == accountNotSignedIn }
+
+    /// Wait before the next probe: after the first hit and after each failed probe (1, 2 and 4 hours, then 6 for good).
+    static let accountProbeLadder: [TimeInterval] = [3600, 2 * 3600, 4 * 3600, 6 * 3600]
+
+    static func accountProbeDelay(probes: Int) -> TimeInterval {
+        accountProbeLadder[min(max(probes, 0), accountProbeLadder.count - 1)]
+    }
+
+    /// The pause after one more `ACCOUNT_NOT_SIGNED_IN`: a new one, or the existing one with a failed probe counted.
+    static func pausing(_ pause: LedgerAccountPause?, now: Date) -> LedgerAccountPause {
+        guard var next = pause else {
+            return LedgerAccountPause(
+                code: accountNotSignedIn, since: now, probes: 0,
+                nextProbe: now.addingTimeInterval(accountProbeDelay(probes: 0)))
+        }
+        next.probes += 1
+        next.nextProbe = now.addingTimeInterval(accountProbeDelay(probes: next.probes))
+        return next
+    }
 
     /// A failure with one of these codes stops the run: the rest of the apps are skipped with the same code. Anything else
     /// is that app's own failure and the run goes on.
     static let fatalCodes: Set<String> = [
-        "FREE_CERT_CHANGED", "IDENTITY_CHECK_FAILED", "KEYCHAIN_LOCKED", "ACCOUNT_NOT_SIGNED_IN",
+        "FREE_CERT_CHANGED", "IDENTITY_CHECK_FAILED", "KEYCHAIN_LOCKED", accountNotSignedIn,
         "UNEXPECTED_APP_DELTA",
         "SLOT_PENDING", "RENEW_CROSS_VOLUME", "PROFILE_MOVE_FAILED", "PROFILES_UNREADABLE",
         "DERIVED_DATA_NOT_CLEARED",
@@ -251,10 +276,13 @@ enum RefreshPolicy {
         case busy
         /// The menu's Cancel stopped the run on this app. Like `busy`: the attempt is given back and no failure is recorded.
         case cancelled
+        /// Xcode is signed out. The team is paused (`pausing`), so the install is not at fault: the attempt is given back, the
+        /// failure is shown, and nothing backs off or suspends.
+        case accountSignedOut
     }
 
-    /// The refresh fields after an attempt. `busy` and `cancelled` give the attempt back and record the skip; a failure counts and backs
-    /// off; a permanent failure suspends; a success clears all of it.
+    /// The refresh fields after an attempt. `busy`, `cancelled` and `accountSignedOut` give the attempt back; a failure counts
+    /// and backs off; a permanent failure suspends; a success clears all of it.
     static func applying(
         _ result: Result, to refresh: LedgerInstallRefresh, now: Date, timeZone: TimeZone
     ) -> LedgerInstallRefresh {
@@ -272,18 +300,28 @@ enum RefreshPolicy {
             next.consecutiveFailures += 1
             next.nextEligible = nextEligible(failures: next.consecutiveFailures, now: now)
             if permanentCodes.contains(code) { next.suspended = true }
-        case .busy, .cancelled:
-            let today = dayKey(now, timeZone: timeZone)
-            if let count = next.attemptsByDay[today] {
-                if count <= 1 {
-                    next.attemptsByDay[today] = nil
-                } else {
-                    next.attemptsByDay[today] = count - 1
-                }
-            }
+        case .busy:
+            giveBack(&next, now: now, timeZone: timeZone)
             next.lastResult = "skipped"
-            next.lastCode = result == .busy ? OperationLock.busyCode : interrupted
+            next.lastCode = OperationLock.busyCode
+        case .cancelled:
+            giveBack(&next, now: now, timeZone: timeZone)
+            next.lastResult = "skipped"
+            next.lastCode = interrupted
+        case .accountSignedOut:
+            giveBack(&next, now: now, timeZone: timeZone)
+            next.lastResult = "failed"
+            next.lastCode = accountNotSignedIn
         }
         return next
+    }
+
+    /// One attempt less today: the attempt was not the install's doing.
+    private static func giveBack(
+        _ refresh: inout LedgerInstallRefresh, now: Date, timeZone: TimeZone
+    ) {
+        let today = dayKey(now, timeZone: timeZone)
+        guard let count = refresh.attemptsByDay[today] else { return }
+        refresh.attemptsByDay[today] = count <= 1 ? nil : count - 1
     }
 }

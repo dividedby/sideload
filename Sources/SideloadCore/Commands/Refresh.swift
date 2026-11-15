@@ -165,6 +165,8 @@ struct AppResult {
         var busy = false
         /// The task was cancelled and the failure is the cancellation's own.
         var cancelled = false
+        /// Xcode is signed out: the attempt was given back and the team is paused (`freeAccountPause`).
+        var accountSignedOut = false
         /// This attempt made the install `suspended`.
         var newlySuspended = false
         /// The install's `refresh.nextEligible` after the attempt.
@@ -579,10 +581,17 @@ struct RefreshRun {
                 // A manual run that got part-way and then found the lock busy counts a failure (its rerun resumes); the
                 // automatic run never does: a busy lock is the lab's turn, whenever it comes.
                 let busy = failure.code == OperationLock.busyCode && (done == 0 || auto != nil)
-                outcome = busy ? .busy : .failed(code: failure.code)
+                if busy {
+                    outcome = .busy
+                } else if RefreshPolicy.isAccountSignedOut(failure.code) {
+                    outcome = .accountSignedOut
+                } else {
+                    outcome = .failed(code: failure.code)
+                }
             }
             result.trace.busy = outcome == .busy
             result.trace.cancelled = outcome == .cancelled
+            result.trace.accountSignedOut = outcome == .accountSignedOut
         } else {
             result.status = baseline.lent ? .renewedNotInstalled : .renewed
             outcome = baseline.lent ? .renewedNotInstalled : .refreshed
@@ -623,7 +632,9 @@ struct RefreshRun {
             }
             result.trace.newlySuspended =
                 (change?.now.suspended ?? false) && !(change?.was ?? false)
-            result.trace.nextEligible = change?.now.nextEligible
+            // A signed-out Xcode leaves the install's own backoff alone, so there is no "next try" of its to report.
+            result.trace.nextEligible =
+                result.trace.accountSignedOut ? nil : change?.now.nextEligible
         } catch {
             warnings.append(
                 CanaryCommand.warning(

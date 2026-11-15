@@ -38,6 +38,14 @@ All notable changes to this project are documented here. Format follows
 
 ### Fixed
 
+- A signed-out Xcode no longer suspends the installs one by one (issue 57). `ACCOUNT_NOT_SIGNED_IN` is now one pause for the
+  whole free team (`freeAccountPause` in the ledger, written by `provision`), not a suspension of whichever install tried.
+  While it is set, `refresh --auto` skips quietly (`ACCOUNT_SIGNED_OUT`, no `xcodebuild`) and tries one renewal as a probe
+  after 1, 2, 4 and then every 6 hours; the first `provision` that succeeds clears it, so auto-renew carries on by itself
+  once Xcode is signed in, and it also clears the suspension and backoff of installs an earlier build suspended for this code. The owner gets one
+  notification when it pauses and one when it resumes. `status` warns `ACCOUNT_SIGNED_OUT` and the menu panel shows it. The
+  attempt that hit it is given back and its install is not backed off or suspended, in manual runs too.
+
 - A renewal no longer fails with `UNEXPECTED_APP_DELTA` (and suspends the install) because an App Store app was installed,
   removed or offloaded on the device during the command. The check after `install`, `app remove` and `slot lend|return`
   now compares only the relevant apps: ours, any `builtByDeveloper` app, and any app a free-team profile names. Other

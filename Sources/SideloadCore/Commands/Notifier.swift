@@ -64,6 +64,14 @@ struct Notifier: Sendable {
         "\(app) @ \(alias) suspended after \(code), renew it by hand"
     }
 
+    /// Xcode is signed out: the one notice of a pause, sent by the auto run that found it.
+    static func accountPaused() -> String {
+        "Renewals paused: Xcode is signed out. Sign in at Xcode, Settings, Accounts"
+    }
+
+    /// The pause cleared by itself once Xcode was signed in again.
+    static func accountResumed() -> String { "Renewals resumed: Xcode is signed in again" }
+
     /// "stremio-ios @ iphone 3 d left", "cert ab12cd34 14 d left" (whole days, as `status` counts them); under a day,
     /// "apollo @ iphone under 1 d left".
     static func expiring(_ name: String, daysLeft: Int) -> String {

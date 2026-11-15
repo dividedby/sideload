@@ -570,9 +570,15 @@ private struct ProvisionRun {
 
         var suspensionRecorded = true
         let (now, compared) = (self.now, diff != nil)
+        let signedOut = RefreshPolicy.isAccountSignedOut(failure?.code)
         do {
             try hooks.checkpoint(.afterBuildWrite)
             try await services.ledgerStore.update { ledger in
+                // Xcode being signed out is the team's problem, not one install's: one pause for the whole team, on a ladder.
+                if signedOut {
+                    ledger.freeAccountPause = RefreshPolicy.pausing(
+                        ledger.freeAccountPause, now: now)
+                }
                 if identityBroken {
                     ledger.freeSuspended = LedgerFreeSuspension(
                         code: compared ? "FREE_CERT_CHANGED" : "IDENTITY_CHECK_FAILED", at: now,
@@ -716,10 +722,11 @@ private struct ProvisionRun {
                 strippedExtensions: [], droppedEntitlements: [])
         }
         let signedEntry = signedRecord
-        let cleared: Bool
+        let cleared: (suspension: Bool, accountPause: Bool)
         do {
             try hooks.checkpoint(.finalLedgerWrite)
-            cleared = try await services.ledgerStore.update { ledger -> Bool in
+            cleared = try await services.ledgerStore.update {
+                ledger -> (suspension: Bool, accountPause: Bool) in
                 ledger.freeProfiles.removeAll { $0.id == entryKey }
                 ledger.freeProfiles.append(entry)
                 ledger.freeProfiles.sort { $0.id < $1.id }
@@ -730,7 +737,17 @@ private struct ProvisionRun {
                 }
                 let wasSuspended = ledger.freeSuspended != nil
                 ledger.freeSuspended = nil
-                return wasSuspended
+                let wasPaused = ledger.freeAccountPause != nil
+                ledger.freeAccountPause = nil
+                // What an earlier build recorded against the installs for a signed-out Xcode (a suspension, a failure count, a
+                // backoff): the account is back, so none of it was the app's.
+                for index in ledger.installs.indices
+                where RefreshPolicy.isAccountSignedOut(ledger.installs[index].refresh.lastCode) {
+                    ledger.installs[index].refresh.suspended = false
+                    ledger.installs[index].refresh.consecutiveFailures = 0
+                    ledger.installs[index].refresh.nextEligible = nil
+                }
+                return (suspension: wasSuspended, accountPause: wasPaused)
             }
         } catch {
             if let placed, let filler {
@@ -750,7 +767,8 @@ private struct ProvisionRun {
             "identityChanged": false, "pinnedFp8": .string(identity.fp8),
             "pinnedNow": .bool(pinnedNow),
         ]
-        if cleared { data["suspensionCleared"] = true }
+        if cleared.suspension { data["suspensionCleared"] = true }
+        if cleared.accountPause { data["accountPauseCleared"] = true }
         if signedRecord != nil { data["signed"] = .string(Self.fillerSignedPath(alias: alias)) }
         return .result(ProvisionCommand.command, data)
     }

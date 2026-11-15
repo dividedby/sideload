@@ -49,6 +49,10 @@ extension RefreshRun {
         var runSkips: [String: Int] = [:]
         /// The code that ends the run for every device still to come.
         var runStop: String?
+        /// The ledger had an account pause (`freeAccountPause`) when the run began, so this run is a probe: its failure says
+        /// nothing, and its success says the renewals resumed.
+        var pausedAtStart = false
+        var resumeNotified = false
     }
 
     /// What the gates make of one app.
@@ -108,8 +112,12 @@ extension RefreshRun {
         let killSwitch = lstat(services.home.refreshDisabled, &st) == 0 || errno != ENOENT
         var ledgerError: (any Error)?
         var probeError: (any Error)?
+        var loaded: Ledger?
         func loadLedger() -> Ledger? {
-            do { return try services.ledgerStore.load() } catch {
+            do {
+                loaded = try services.ledgerStore.load()
+                return loaded
+            } catch {
                 ledgerError = error
                 return nil
             }
@@ -128,8 +136,12 @@ extension RefreshRun {
         }
         guard
             let gate = RefreshPolicy.runGate(
-                killSwitch: killSwitch, ledger: loadLedger(), lockBusy: lockBusy())
-        else { return nil }
+                killSwitch: killSwitch, ledger: loadLedger(), now: state.start,
+                lockBusy: lockBusy())
+        else {
+            state.pausedAtStart = loaded?.freeAccountPause != nil
+            return nil
+        }
         log("auto: \(gate.code), nothing to do")
         if gate == .ledgerUnreadable, let ledgerError {
             state.failures.append(RefreshFailure(error: ledgerError))
@@ -400,7 +412,14 @@ extension RefreshRun {
             outcome.failure = nil
             state.runStop = OperationLock.busyCode
         } else {
-            notified = await notify(outcome, target, auto: auto)
+            if outcome.trace.accountSignedOut {
+                // Said once, by the run that found the sign-out; a failed probe says nothing more.
+                if !state.pausedAtStart {
+                    notified = await auto.notifier.notify(Notifier.accountPaused())
+                }
+            } else {
+                notified = await notify(outcome, target, auto: auto)
+            }
             if let failure = outcome.failure {
                 state.failures.append(failure)
                 if RefreshPolicy.stopsWholeRun(failure.code) {
@@ -410,6 +429,8 @@ extension RefreshRun {
                 }
             }
         }
+        // After the app's own notice, and whatever sign and install did: a provision that went through cleared the pause.
+        if !outcome.trace.accountSignedOut { await noteResumed(outcome, &state, auto) }
         record(outcome, target, since: began, notified: notified, auto: auto)
         state.plans[index].results.append(outcome)
     }
@@ -535,6 +556,19 @@ extension RefreshRun {
                     app: app, alias: alias, code: RefreshLog.code(result.code ?? "INTERNAL_ERROR")))
         }
         return delivered
+    }
+
+    /// Once per run, after a probe run's first attempt whose `provision` went through: the pause is gone, so Xcode is signed in
+    /// again, even if sign or install then failed.
+    private func noteResumed(
+        _ result: AppResult, _ state: inout AutoState, _ auto: RefreshAutoContext
+    ) async {
+        guard state.pausedAtStart, !state.resumeNotified,
+            result.steps[.provision] == .done,
+            let ledger = try? services.ledgerStore.load(), ledger.freeAccountPause == nil
+        else { return }
+        state.resumeNotified = true
+        _ = await auto.notifier.notify(Notifier.accountResumed())
     }
 
     /// `14:30`, in the run's time zone.
