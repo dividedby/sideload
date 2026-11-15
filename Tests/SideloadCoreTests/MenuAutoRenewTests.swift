@@ -169,11 +169,13 @@ struct MenuAutoRenewRulesTests {
         let seen = testNow.addingTimeInterval(-3 * 3600)
         let gone: DeviceProbe = .listed([menuListed(link: "unavailable", lastSeen: seen)])
         #expect(
-            menuBuild(probe: gone, autoRefreshAvailable: true).devices[0].offlineNote
-                == "Seen 3 h ago · auto-renew off")
+            menuBuild(probe: gone, autoRefreshAvailable: true).devices[0].reach?.line
+                == "Can't reach it right now · Seen 3 h ago · auto-renew off")
         let onGone = menuBuild(
             config: menuConfig(auto: ["iphone"]), probe: gone, autoRefreshAvailable: true)
-        #expect(onGone.devices[0].offlineNote == "Seen 3 h ago · renews when back on Wi-Fi or USB")
+        #expect(
+            onGone.devices[0].reach?.line
+                == "Can't reach it right now · Seen 3 h ago · renews when back on Wi-Fi or USB")
     }
 }
 

@@ -486,7 +486,7 @@ struct MenuPresenceRingTests {
             ]),
             apps: ["iphone": .failed(code: "DEVICE_LOCKED", takenAt: testNow)])
         #expect(offline.devices[0].appsNote == nil)
-        #expect(offline.devices[0].offlineNote == "Seen 1 h ago")
+        #expect(offline.devices[0].reach?.line == "Can't reach it right now · Seen 1 h ago")
         // No per-row text about it.
         #expect(
             menuBuild(ledger: ledger, apps: ["iphone": .failed(code: "TIMEOUT", takenAt: testNow)])

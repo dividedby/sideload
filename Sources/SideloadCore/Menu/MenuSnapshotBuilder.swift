@@ -404,8 +404,9 @@ public enum MenuSnapshotBuilder {
             alias: alias, presence: presence, connectionLabel: MenuFormat.connection(presence),
             freeSlots: free,
             slotsLabel: known ? MenuFormat.slots(free) : "slots unknown",
-            offlineNote: offlineNote(
-                presence, saved: saved, autoRefreshAvailable: inputs.autoRefreshAvailable, now: now),
+            reach: reach(
+                of: saved, probe: inputs.probe, autoRefreshAvailable: inputs.autoRefreshAvailable,
+                now: now),
             appsNote: appsNote(
                 failedCode: failedCode, rows: rows, readOverRows: read != nil, presence: presence),
             apps: rows, reservedSlots: reservedRows,
@@ -514,18 +515,16 @@ public enum MenuSnapshotBuilder {
         return candidates
     }
 
-    /// The one line an offline device shows ("Seen 3 h ago"); nil for any other.
-    private static func offlineNote(
-        _ presence: MenuPresence, saved: SavedDevice, autoRefreshAvailable: Bool, now: Date
-    ) -> String? {
-        guard case .offline(let lastSeen) = presence else { return nil }
-        let seen = lastSeen.map { "Seen " + MenuFormat.ago(from: $0, now: now) } ?? "Offline"
-        if autoRefreshAvailable {
-            return seen + " · "
-                + (saved.autoRefresh ? "renews when back on Wi-Fi or USB" : "auto-renew off")
-        }
-        // The card header already says "offline"; the state is shown once. Never seen: no line at all.
-        return lastSeen == nil ? nil : seen
+    /// What an offline device shows: the line and fix for how the list reads it. Only a list that answered says anything; a
+    /// failed or pending one is "status unknown" / "checking…", never offline or not paired.
+    private static func reach(
+        of saved: SavedDevice, probe: DeviceProbe, autoRefreshAvailable: Bool, now: Date
+    ) -> MenuDeviceReach? {
+        guard case .listed(let devices) = probe else { return nil }
+        let listed = DeviceList.findSaved(devices, matching: saved)
+        return MenuDeviceReach.of(
+            DeviceList.visibilityOf(listed), platform: saved.platform, autoRenew: saved.autoRefresh,
+            autoRefreshAvailable: autoRefreshAvailable, lastSeen: listed?.lastConnection, now: now)
     }
 
     /// A visible device whose list could not be read says so once, for the whole card; its rows show the ledger's record.

@@ -1,4 +1,5 @@
-/// Each saved iPhone must be visible to devicectl (matched on saved IDs only).
+/// Each saved iPhone must be visible to devicectl (matched on saved IDs only). A device that is not says what the menu card
+/// says (`MenuDeviceReach`).
 public struct DeviceCheck: Check {
     public static let fixSave =
         "sideload device save --alias iphone --match <device name> --platform ios --yes"
@@ -36,16 +37,13 @@ public struct DeviceCheck: Check {
             case .ok:
                 return CheckResult(
                     id: id, severity: .ok, message: "\(d.alias): visible and paired.")
-            case .absent:
+            case .absent, .unpaired, .unavailable:
+                // The menu card's wording (`MenuDeviceReach`): an iPhone, with no auto-renew context.
                 return CheckResult(
-                    id: id, severity: .fail, message: "\(d.alias): not visible to devicectl.",
-                    fix: "Connect the device by USB, unlock it, and tap Trust if asked.")
-            case .unpaired, .unavailable:
-                return CheckResult(
-                    id: id, severity: .warn,
-                    message:
-                        "\(d.alias): known but \(vis == .unpaired ? "not paired" : "unavailable (locked or unplugged)").",
-                    fix: "Connect the device by USB and unlock it.")
+                    id: id, severity: vis == .absent ? .fail : .warn,
+                    message: "\(d.alias): \(MenuDeviceReach.headline(vis) ?? "").",
+                    fix: MenuDeviceReach.fix(
+                        vis, platform: "ios", autoRenew: false, autoRefreshAvailable: false))
             }
         }
     }
