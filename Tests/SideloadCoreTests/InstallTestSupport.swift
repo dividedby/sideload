@@ -699,16 +699,16 @@ struct InstallWorld {
     let store: ConfigStore
     let services: Services
     let runner: DeviceSimRunner
-    let app: ProvisionApp
+    let app: AppDefinition
     let keychain: SequencedKeychain
     let clock: MutableClock
 
     var alias: String { app.devicePlatform == "tvos" ? "appletv" : "iphone" }
     var bundleId: String { carrierPrefix + ".free." + app.suffix }
-    var key: String { "\(alias)/\(app.rawValue)" }
+    var key: String { "\(alias)/\(app.id)" }
     var seed: String { app.devicePlatform == "tvos" ? "2" : "1" }
     var appName: String { app == .apollo ? "Apollo" : app == .filler ? "Carrier" : "Stremio" }
-    var signedApp: String { "\(paths.signedBuilds)/\(app.rawValue)/\(alias)/\(appName).app" }
+    var signedApp: String { "\(paths.signedBuilds)/\(app.id)/\(alias)/\(appName).app" }
 
     func ledger() throws -> Ledger { try services.ledgerStore.load() }
     /// The ledger's `installs[]`, empty when the ledger cannot be read (a test then fails on what it expects).
@@ -720,14 +720,14 @@ struct InstallWorld {
     func install(app: String? = nil, device: String? = nil, yes: Bool = true) async -> Envelope {
         await InstallCommand.run(
             services,
-            InstallOptions(app: app ?? self.app.rawValue, device: device ?? alias, yes: yes))
+            InstallOptions(app: app ?? self.app.id, device: device ?? alias, yes: yes))
     }
 
     func remove(app: String? = nil, device: String? = nil, yes: Bool = true) async -> Envelope {
         await AppCommand.run(
             services,
             AppOptions(
-                sub: "remove", app: app ?? self.app.rawValue, device: device ?? alias, yes: yes))
+                sub: "remove", app: app ?? self.app.id, device: device ?? alias, yes: yes))
     }
 
     func slot(_ sub: String, device: String? = nil, udid: String? = nil, to: String? = nil) async
@@ -753,7 +753,7 @@ struct InstallWorld {
 /// Runs `body` against a temp home with `app` fetched-signed-provisioned: the signed app on disk, `freeSigned` and
 /// `freeProfiles` in the ledger, the identity pinned, and the saved iPhone / Apple TV.
 func withInstallWorld(
-    app: ProvisionApp = .stremioIOS, alsoSigned: [ProvisionApp] = [],
+    app: AppDefinition = .stremioIOS, alsoSigned: [AppDefinition] = [],
     script: DeviceScript = DeviceScript(), reserved: Int = 0,
     lendable: String? = nil, signed: Bool = true, profileDays: Double = 5,
     embeddedDays: Double? = nil,
@@ -782,7 +782,7 @@ func withInstallWorld(
                 let seed = each.devicePlatform == "tvos" ? "2" : "1"
                 let bundleId = carrierPrefix + ".free." + each.suffix
                 let name = each == .apollo ? "Apollo" : each == .filler ? "Carrier" : "Stremio"
-                let dir = "\(paths.signedBuilds)/\(each.rawValue)/\(alias)/\(name).app"
+                let dir = "\(paths.signedBuilds)/\(each.id)/\(alias)/\(name).app"
                 try makeDirectories(dir, mode: 0o700)
                 let info = try PropertyListSerialization.data(
                     fromPropertyList: ["CFBundleIdentifier": bundleId, "CFBundleExecutable": name],
@@ -797,24 +797,24 @@ func withInstallWorld(
                     to: URL(fileURLWithPath: dir + "/embedded.mobileprovision"))
                 signedRecords.append(
                     LedgerFreeSigned(
-                        id: "\(alias)/\(each.rawValue)", device: alias, app: each.rawValue,
+                        id: "\(alias)/\(each.id)", device: alias, app: each.id,
                         bundleId: bundleId, version: "1.2.3",
                         sha256Prefix: "abcd1234", profileUuid: uuid, profileExpires: expires,
                         certFp8: LedgerSync.fp8(free.reference),
                         signedAt: daysFromNow(-1),
-                        path: "builds/signed/\(each.rawValue)/\(alias)/\(name).app",
+                        path: "builds/signed/\(each.id)/\(alias)/\(name).app",
                         strippedExtensions: [
                             LedgerStrippedExtension(path: "PlugIns/W.appex", bundleId: "x.widget")
                         ],
                         droppedEntitlements: ["aps-environment"]))
                 profileRecords.append(
                     LedgerFreeProfile(
-                        id: "\(alias)/\(each.rawValue)", device: alias,
-                        deviceTail: Redactor.tail4(savedUdid(seed)), app: each.rawValue,
+                        id: "\(alias)/\(each.id)", device: alias,
+                        deviceTail: Redactor.tail4(savedUdid(seed)), app: each.id,
                         bundleId: bundleId, profileUuid: uuid, created: daysFromNow(-2),
                         expires: expires,
                         certFp8: LedgerSync.fp8(free.reference),
-                        file: "profiles/free/\(each.rawValue)/\(alias)/\(uuid).mobileprovision"))
+                        file: "profiles/free/\(each.id)/\(alias)/\(uuid).mobileprovision"))
             }
             try await LedgerStore(paths: paths).update { ledger in
                 ledger.freeSigned = signedRecords

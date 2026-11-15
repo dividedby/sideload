@@ -399,11 +399,11 @@ public enum MenuActions {
         guard let signed = row.signedExpires else {
             // The text `install` gives for NOT_SIGNED.
             let sign =
-                ProvisionApp(rawValue: app)?.signStep(device: card.alias) ?? "`sideload sign`"
+                AppRegistry.builtIn.app(app)?.signStep(device: card.alias) ?? "`sideload sign`"
             return .disabled("Not signed yet: the owner runs \(sign) first")
         }
         guard signed > now else {
-            let steps = ProvisionApp.resignSteps(app: app, device: card.alias)
+            let steps = AppDefinition.resignSteps(app: app, device: card.alias)
             return .disabled("The signed build has expired: run \(steps) in a terminal")
         }
         return .enabled
@@ -463,7 +463,7 @@ public enum MenuActions {
         guard let need = minOS, let have = card.osVersion, OSVersion.isAtLeast(have, need) == false
         else { return .enabled }
         return .disabled(
-            "\(MenuFormat.appName(app)) \(version) needs \(ProvisionApp.osName(devicePlatform: card.platform)) \(need) or later; \(card.alias) runs \(have)"
+            "\(MenuFormat.appName(app)) \(version) needs \(AppDefinition.osName(devicePlatform: card.platform)) \(need) or later; \(card.alias) runs \(have)"
         )
     }
 
@@ -632,7 +632,7 @@ public enum MenuActions {
 
     /// The apps that run on the card's platform, in the order `device lendable` names them.
     public static func lendableChoices(_ card: MenuDeviceCard) -> [String] {
-        ProvisionApp.allCases.filter { $0.devicePlatform == card.platform }.map(\.rawValue)
+        AppRegistry.builtIn.apps(for: card.platform).map(\.id)
     }
 
     // MARK: row buttons
@@ -971,7 +971,7 @@ public enum MenuActions {
         if let number = build.build, !facts.hasSuffix(")") { facts += " (build \(number))" }
         facts += " · " + MenuFormat.size(build.size)
         if let minOS = build.minOS {
-            facts += " · \(ProvisionApp.osName(devicePlatform: card.platform)) \(minOS) or later"
+            facts += " · \(AppDefinition.osName(devicePlatform: card.platform)) \(minOS) or later"
         }
         return facts
     }

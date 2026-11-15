@@ -38,13 +38,13 @@ enum SlotRestore {
                     "slot restore needs --app <app>: this device has no lendable app configured.",
                     fix: usage)
             }
-            let app = try FreeTarget.parseApp(appName)
+            let app = try FreeTarget.parseApp(appName, apps: config.appRegistry)
             let target = try FreeTarget.resolve(app: app, alias: alias, config: config)
-            extra["app"] = .string(app.rawValue)
+            extra["app"] = .string(app.id)
             guard options.yes else {
                 throw SideloadError(
                     "CONFIRM_REQUIRED",
-                    "slot restore pushes the saved backup of \(app.rawValue) into the app on the saved device (it overwrites the files the app has there).",
+                    "slot restore pushes the saved backup of \(app.id) into the app on the saved device (it overwrites the files the app has there).",
                     fix:
                         "The owner confirms by re-running with --yes. Agents must not pass --yes on their own.",
                     data: target.identity)
@@ -69,10 +69,10 @@ enum SlotRestore {
         let ledger = try await book.loadMigrated()
         try book.gate(ledger, now: services.clock.now())
         // The lab's slot: while the app is lent (in any phase) its data is not this command's to touch.
-        if let lent = book.lentSlot(ledger), lent.app == target.app.rawValue {
+        if let lent = book.lentSlot(ledger), lent.app == target.app.id {
             throw SideloadError(
                 "ALREADY_LENT",
-                "\(target.app.rawValue) is lent on this device, so there is no app to restore into.",
+                "\(target.app.id) is lent on this device, so there is no app to restore into.",
                 fix: "Return it first: sideload slot return --device \(target.alias)")
         }
         let found: (directory: String, manifest: AppDataBackup.Manifest)
@@ -121,7 +121,7 @@ enum SlotRestore {
         guard snapshot.ids.contains(target.bundleId) else {
             throw SideloadError(
                 "APP_NOT_INSTALLED",
-                "\(target.app.rawValue) is not installed on the device, so there is nowhere to restore to.",
+                "\(target.app.id) is not installed on the device, so there is nowhere to restore to.",
                 fix:
                     "Install it first (`sideload slot return --device \(target.alias)` after a lend, or `sideload install`), then run slot restore again."
             )
@@ -143,7 +143,7 @@ enum SlotRestore {
                 "RESTORE_FAILED",
                 "The app's data was not (or could not be confirmed to be) restored. The backup is kept.",
                 fix:
-                    "Unlock the device, keep it awake and run `sideload slot restore --device \(target.alias) --app \(target.app.rawValue) --yes` again; a push overwrites, so it is safe to repeat.",
+                    "Unlock the device, keep it awake and run `sideload slot restore --device \(target.alias) --app \(target.app.id) --yes` again; a push overwrites, so it is safe to repeat.",
                 data: data)
         }
         if !result.warnings.isEmpty { out["warnings"] = .array(result.warnings) }

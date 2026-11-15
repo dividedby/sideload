@@ -64,7 +64,8 @@ enum UpdateCheck {
         let approvedSources = Dictionary(
             uniqueKeysWithValues: FetchCatalog.approvedSources(config).map { ($0.app, $0) })
         var cancelled = false
-        sources: for catalog in FetchCatalog.sources where named == nil || catalog.app == named {
+        sources: for catalog in config.appRegistry.fetchSources
+        where named == nil || catalog.app == named {
             if Task.isCancelled {
                 cancelled = true
                 break sources

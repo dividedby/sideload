@@ -7,7 +7,7 @@ import Foundation
 /// A saved device and a free-team app, validated: the app is ours (`<prefix>.free.*`), the device is saved, has an ID
 /// and its platform fits the app.
 struct FreeTarget: Sendable {
-    let app: ProvisionApp
+    let app: AppDefinition
     let alias: String
     let config: Config
     let prefix: String
@@ -15,7 +15,7 @@ struct FreeTarget: Sendable {
     let device: ResolvedDevice
     let udid: String
 
-    var key: String { "\(alias)/\(app.rawValue)" }
+    var key: String { "\(alias)/\(app.id)" }
 
     /// Usage, config, then the saved device and its platform, in that order. Throws a `SideloadError`.
     static func resolve(
@@ -25,28 +25,37 @@ struct FreeTarget: Sendable {
             throw SideloadError(
                 "USAGE", "This command needs --app and --device <alias>.", fix: usageFix)
         }
-        let app = try parseApp(appName)
+        let found = AppRegistry.lookup(appName, services: services)
+        let app = try parseApp(appName, found.app, registry: found.registry)
         let config = try services.store.load()
         return try resolve(app: app, alias: alias, config: config)
     }
 
-    static func parseApp(_ appName: String) throws -> ProvisionApp {
-        guard let app = ProvisionApp(rawValue: appName) else {
+    /// The app named `appName` in `apps`, else `USAGE`.
+    static func parseApp(_ appName: String, apps: AppRegistry) throws -> AppDefinition {
+        try parseApp(appName, apps.app(appName), registry: apps)
+    }
+
+    private static func parseApp(_ appName: String, _ app: AppDefinition?, registry: AppRegistry)
+        throws -> AppDefinition
+    {
+        guard let app else {
             throw SideloadError(
                 "USAGE", "Unknown app \"\(printableCut(appName))\".",
-                fix: "Use one of: \(ProvisionApp.names.joined(separator: ", ")).")
+                fix: "Use one of: \(registry.names.joined(separator: ", ")).")
         }
         return app
     }
 
-    static func resolve(app: ProvisionApp, alias: String, config: Config) throws -> FreeTarget {
+    static func resolve(app: AppDefinition, alias: String, config: Config) throws -> FreeTarget {
         guard let prefix = config.bundleIdPrefix, CanaryCommand.isValidPrefix(prefix) else {
             throw SideloadError(
                 "CONFIG_MISSING", "bundleIdPrefix is missing or invalid in config.json.",
                 fix: "Add \"bundleIdPrefix\": \"com.yourname\" to $SIDELOAD_HOME/config.json.")
         }
-        let bundleId = prefix + ".free." + app.suffix
-        guard Config.isFreeBundleId(bundleId, prefix: prefix) else {
+        guard let bundleId = app.freeBundleId(prefix: prefix),
+            Config.isFreeBundleId(bundleId, prefix: prefix)
+        else {
             throw SideloadError(
                 "BUNDLE_ID_NOT_ALLOWED",
                 "The free team may only be used for the configured <prefix>.free. namespace.",
@@ -70,8 +79,8 @@ struct FreeTarget: Sendable {
         guard device.platform == app.devicePlatform else {
             throw SideloadError(
                 "PLATFORM_MISMATCH",
-                "\(app.rawValue) needs a \(app.devicePlatform) device; the saved device is \(device.platform ?? "of unknown platform").",
-                fix: app == .stremioTVOS
+                "\(app.id) needs a \(app.devicePlatform) device; the saved device is \(device.platform ?? "of unknown platform").",
+                fix: app.devicePlatform == "tvos"
                     ? "Use --device with a saved Apple TV (tvos)."
                     : "Use --device with a saved iPhone or iPad (ios).")
         }
@@ -82,7 +91,7 @@ struct FreeTarget: Sendable {
 
     /// The target's identifying fields, merged into every envelope the command prints. Aliases only.
     var identity: [String: JSONValue] {
-        ["app": .string(app.rawValue), "device": .string(alias), "bundleId": .string(bundleId)]
+        ["app": .string(app.id), "device": .string(alias), "bundleId": .string(bundleId)]
     }
 
     /// The device's owner-set reserve (`CONFIG_INVALID` when out of range).

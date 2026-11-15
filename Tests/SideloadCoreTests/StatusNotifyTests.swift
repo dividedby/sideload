@@ -47,7 +47,8 @@ private func profile(days: Double) -> LedgerProfile {
         present: true)
 }
 
-private func install(_ app: ProvisionApp, alias: String = "iphone", days: Double) -> LedgerInstall {
+private func install(_ app: AppDefinition, alias: String = "iphone", days: Double) -> LedgerInstall
+{
     var record = installRecord(app, alias: alias)
     record.profileExpires = daysFromNow(days)
     return record
@@ -858,7 +859,7 @@ private func updateConfig(approved: [JSONValue] = apolloApproved + stremioApprov
 
 /// An install with the given version and a long-lived signing, so it raises no expiry item of its own.
 private func versioned(
-    _ app: ProvisionApp, _ version: String, alias: String = "iphone", present: Bool = true
+    _ app: AppDefinition, _ version: String, alias: String = "iphone", present: Bool = true
 ) -> LedgerInstall {
     var record = installRecord(app, alias: alias, present: present)
     record.version = version

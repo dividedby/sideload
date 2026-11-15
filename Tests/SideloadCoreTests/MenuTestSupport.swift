@@ -9,7 +9,7 @@ let menuPrefix = "io.github.dividedby"
 
 /// The bundle ID `install` gives an app (`<prefix>.free.<suffix>`).
 func menuBundleId(_ app: String) -> String {
-    menuPrefix + ".free." + (ProvisionApp(rawValue: app)?.suffix ?? app)
+    menuPrefix + ".free." + (AppRegistry.builtIn.app(app)?.suffix ?? app)
 }
 
 func menuConfig(

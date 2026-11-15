@@ -81,7 +81,7 @@ public enum AppCommand {
             target = try FreeTarget.resolve(
                 app: options.app, device: options.device, services: services,
                 usageFix:
-                    "sideload app remove --app <\(ProvisionApp.names.joined(separator: "|"))> --device iphone --yes"
+                    "sideload app remove --app <\(AppRegistry.builtIn.names.joined(separator: "|"))> --device iphone --yes"
             )
         } catch {
             return .from(error, command: command)
@@ -90,7 +90,7 @@ public enum AppCommand {
             return .fail(
                 command, code: "CONFIRM_REQUIRED",
                 message:
-                    "app remove uninstalls \(target.app.rawValue) from the saved device (its data goes with it).",
+                    "app remove uninstalls \(target.app.id) from the saved device (its data goes with it).",
                 fix:
                     "The owner confirms by re-running with --yes. Agents must not pass --yes on their own.",
                 data: target.identity)
@@ -216,7 +216,7 @@ public enum AppCommand {
             warnings.append(
                 CanaryCommand.warning(
                     "LAST_FREE_APP_REMOVED",
-                    "No other free-team app is on this device, so removing \(target.app.rawValue) clears the developer trust: the next app needs trusting again.",
+                    "No other free-team app is on this device, so removing \(target.app.id) clears the developer trust: the next app needs trusting again.",
                     "After the next install: Settings › General › VPN & Device Management › trust the developer."
                 ))
         }
@@ -225,7 +225,7 @@ public enum AppCommand {
         data["wasPresent"] = true
         data["warnings"] = .array(warnings)
         let outside = book.usedOutsideSnapshot(
-            (try? services.ledgerStore.load()) ?? ledger, excluding: target.app.rawValue,
+            (try? services.ledgerStore.load()) ?? ledger, excluding: target.app.id,
             snapshot: after)
         data["slots"] = slots(after, target, outside: outside, profiles: profiles)
         return .result(command, data)

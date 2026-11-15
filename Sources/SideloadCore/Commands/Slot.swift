@@ -77,7 +77,7 @@ public enum SlotCommand {
                 // Debug builds only: answer as the lab's failure cases do, with no lock, ledger or device (see `forcedAnswer`).
                 let forcedApp =
                     config.devices[alias]?.lendableApp.flatMap { $0.isEmpty ? nil : $0 }
-                    ?? ProvisionApp.filler.rawValue
+                    ?? AppDefinition.filler.id
                 if let forced = try forcedAnswer(
                     mode: ProcessInfo.processInfo.environment[forceVariable], sub: action,
                     alias: alias, app: forcedApp)
@@ -235,11 +235,14 @@ public enum SlotCommand {
                     "The owner sets one: sideload device lendable --alias \(alias) --app <app> --yes"
             )
         }
-        guard let app = ProvisionApp(rawValue: name) else {
+        // Built-ins only, as `device lendable` allows: a lend backs up the app's data, and a custom entry may later leave
+        // the config while its backup waits.
+        let apps = AppRegistry.builtIn
+        guard let app = apps.app(name) else {
             throw SideloadError(
                 "NO_LENDABLE_APP", "The configured lendable app is not a known app.",
                 fix:
-                    "The owner sets one of \(ProvisionApp.names.joined(separator: ", ")): sideload device lendable --alias \(alias) --app <app> --yes"
+                    "The owner sets one of \(apps.names.joined(separator: ", ")): sideload device lendable --alias \(alias) --app <app> --yes"
             )
         }
         let target = try FreeTarget.resolve(app: app, alias: alias, config: config)
@@ -256,7 +259,7 @@ public enum SlotCommand {
             var data = cause.data
             data.merge([
                 "cause": .string(cause.code), "state": .string(word), "freed": 0, "uncertain": true,
-                "app": .string(app.rawValue),
+                "app": .string(app.id),
             ]) { _, new in new }
             throw SideloadError(
                 "SLOT_STATE_UNKNOWN",
@@ -267,10 +270,10 @@ public enum SlotCommand {
         }
         let settled = try await book.settle(s0, takenAt: s0Read.takenAt, point: "lend.settle")
         var out: [String: JSONValue] = [
-            "action": "lend", "app": .string(app.rawValue), "device": .string(alias),
+            "action": "lend", "app": .string(app.id), "device": .string(alias),
         ]
-        if let was = settled.before(app.rawValue), was.lentTo != nil,
-            let landed = settled.after(app.rawValue), SlotRule.holds(landed)
+        if let was = settled.before(app.id), was.lentTo != nil,
+            let landed = settled.after(app.id), SlotRule.holds(landed)
         {
             // The app is off the device and the lend holds, so its backup is one `slot restore` may push.
             if let since = landed.since {
@@ -296,10 +299,10 @@ public enum SlotCommand {
             }
             return .result(command, out)
         }
-        if settled.after(app.rawValue)?.lentTo == nil, !s0.ids.contains(target.bundleId) {  // L5
+        if settled.after(app.id)?.lentTo == nil, !s0.ids.contains(target.bundleId) {  // L5
             throw SideloadError(
                 "LENDABLE_NOT_INSTALLED",
-                "\(app.rawValue) is not installed on the device, so there is no slot to free.",
+                "\(app.id) is not installed on the device, so there is no slot to free.",
                 fix:
                     "Nothing was freed. Check `sideload status` (slots) before assuming a free slot; the owner may need to free one."
             )
@@ -312,7 +315,7 @@ public enum SlotCommand {
         // The app's data is saved before the intent and the uninstall (read-only, no slot operation, never a failure of the
         // lend). The backup belongs to this lend, whose `since` is what `begin` below keeps: the SETTLED record's (the settle
         // above clears a lend it found undone, and `begin` then starts a new one at `now`), not the one read before it.
-        let lendSince = settled.after(app.rawValue)?.since ?? now
+        let lendSince = settled.after(app.id)?.since ?? now
         var data = AppDataBackup.Result(skipped: true)
         if AppDataBackup.isEnabled(config, app: app) {
             data = AppDataBackup.Result()
@@ -341,7 +344,7 @@ public enum SlotCommand {
             var data = base
             data.merge([
                 "uncertain": true, "state": .string(LedgerLent.lending), "freed": 0,
-                "app": .string(app.rawValue),
+                "app": .string(app.id),
                 "retryAfter": .number(Double(book.retryAfter(slot))),
             ]) { _, new in new }
             return data
@@ -361,7 +364,7 @@ public enum SlotCommand {
                     relevant, expectation: "an uninstall should remove only this app",
                     extra: [
                         "uninstalled": true, "state": .string(LedgerLent.lent), "freed": 1,
-                        "app": .string(app.rawValue),
+                        "app": .string(app.id),
                     ])
             }
             out["freed"] = 1
@@ -450,7 +453,7 @@ public enum SlotCommand {
                     "The return may or may not have landed, and the slot is not free: `sideload slot return --device \(alias)` (or `slot lend`) settles it from a fresh snapshot once the window is over."
             } else if reprovision {
                 fix =
-                    "The owner re-signs \(appName) (\(ProvisionApp.resignSteps(app: appName, device: alias))), then runs `sideload slot return --device \(alias)`. The slot stays lent."
+                    "The owner re-signs \(appName) (\(AppDefinition.resignSteps(app: appName, device: alias, apps: config.appRegistry))), then runs `sideload slot return --device \(alias)`. The slot stays lent."
             } else {
                 fix = error.fix ?? "Retry `sideload slot return --device \(alias)`."
             }
@@ -486,7 +489,7 @@ public enum SlotCommand {
                 ])
         }
         let wasReturning = SlotRule.phase(record) == .returning
-        let app = try await step { try FreeTarget.parseApp(record.app) }
+        let app = try await step { try FreeTarget.parseApp(record.app, apps: config.appRegistry) }
         let target = try await step {
             try FreeTarget.resolve(app: app, alias: alias, config: config)
         }

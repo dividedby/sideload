@@ -151,10 +151,10 @@ enum CleanBackups {
     ) -> String? {
         guard let prefix = config.bundleIdPrefix, CanaryCommand.isValidPrefix(prefix),
             Config.isFreeBundleId(prefix + ".free.x", prefix: prefix),
-            let known = ProvisionApp.allCases.first(where: { $0.rawValue == app })
+            let bundleId = config.appRegistry.app(app)?.freeBundleId(prefix: prefix)
         else { return nil }
         if case .found(let directory, _) = AppDataBackup.pending(
-            services, alias: alias, app: app, bundleId: prefix + ".free." + known.suffix)
+            services, alias: alias, app: app, bundleId: bundleId)
         {
             return directory
         }

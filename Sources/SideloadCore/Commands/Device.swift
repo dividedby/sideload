@@ -359,7 +359,7 @@ public enum DeviceCommand {
     {
         let command = "device lendable"
         let usageFix =
-            "sideload device lendable --alias <alias> --app <\(ProvisionApp.names.joined(separator: "|"))>|--none --yes"
+            "sideload device lendable --alias <alias> --app <\(AppRegistry.builtIn.names.joined(separator: "|"))>|--none --yes"
         if options.on || options.off || options.reserved != nil || options.match != nil
             || options.platform != nil
         {
@@ -375,12 +375,20 @@ public enum DeviceCommand {
                 message: "device lendable needs --alias and exactly one of --app or --none.",
                 fix: usageFix)
         }
-        var chosen: ProvisionApp?
+        var chosen: AppDefinition?
         if let name = nonEmpty(options.app) {
-            guard let app = ProvisionApp(rawValue: name) else {
+            let found = AppRegistry.lookup(name, services: services)
+            guard let app = found.app else {
                 return .fail(
                     command, code: "USAGE", message: "Unknown app \"\(printableCut(name))\".",
-                    fix: "Use one of: \(ProvisionApp.names.joined(separator: ", ")).")
+                    fix: "Use one of: \(found.registry.names.joined(separator: ", ")).")
+            }
+            // Lending backs up the app's data under its ID; only a built-in's ID is sure to stay known to the restore checks.
+            guard app.builtIn else {
+                return .fail(
+                    command, code: "USAGE",
+                    message: "\(app.id) is a custom app; only built-in apps can be lent.",
+                    fix: "Use one of: \(AppRegistry.builtIn.names.joined(separator: ", ")).")
             }
             chosen = app
         }
@@ -398,11 +406,11 @@ public enum DeviceCommand {
                 guard d.platform == chosen.devicePlatform else {
                     throw SideloadError(
                         "PLATFORM_MISMATCH",
-                        "\(chosen.rawValue) needs a \(chosen.devicePlatform) device; the saved device is \(d.platform ?? "of unknown platform").",
+                        "\(chosen.id) needs a \(chosen.devicePlatform) device; the saved device is \(d.platform ?? "of unknown platform").",
                         fix: "Pick an app that fits the device.")
                 }
             }
-            d.lendableApp = chosen?.rawValue
+            d.lendableApp = chosen?.id
             config.devices[alias] = d
             return d
         }

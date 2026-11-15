@@ -8,7 +8,7 @@ import Testing
 // and the expiry warnings, read from the ledger and the config only.
 
 private func install(
-    _ app: ProvisionApp, alias: String = "iphone", days: Double, present: Bool = true,
+    _ app: AppDefinition, alias: String = "iphone", days: Double, present: Bool = true,
     refresh: LedgerInstallRefresh = LedgerInstallRefresh()
 ) -> LedgerInstall {
     var record = installRecord(app, alias: alias, present: present, refresh: refresh)

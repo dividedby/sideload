@@ -128,8 +128,9 @@ public enum MenuSnapshotBuilder {
 
     /// The catalog apps the owner approved in `approvedSources` that "Add app…" can fetch: never the filler, which has no IPA.
     static func addSources(_ config: Config) -> [MenuAddSource] {
-        FetchCatalog.approvedSources(config).compactMap { approved in
-            guard let app = ProvisionApp(rawValue: approved.app), !app.signedByProvision else {
+        let apps = config.appRegistry
+        return FetchCatalog.approvedSources(config).compactMap { approved in
+            guard let app = apps.app(approved.app), !app.signedByProvision else {
                 return nil
             }
             let label: String
@@ -140,7 +141,7 @@ public enum MenuSnapshotBuilder {
                     (approved.downloadHosts.sorted().first ?? "the index") + " (third-party index)"
             }
             return MenuAddSource(
-                app: app.rawValue, name: MenuFormat.appName(app.rawValue), source: label,
+                app: app.id, name: app.displayName, source: label,
                 platform: app.devicePlatform,
                 thirdParty: approved.kind.isThirdParty)
         }
@@ -194,7 +195,7 @@ public enum MenuSnapshotBuilder {
         guard let platform else { return [] }
         return sources.compactMap { source in
             guard source.platform == platform, !rows.contains(where: { $0.app == source.app }),
-                let bundleId = ProvisionApp(rawValue: source.app)?.freeBundleId(
+                let bundleId = inputs.config.appRegistry.app(source.app)?.freeBundleId(
                     prefix: inputs.config.bundleIdPrefix)
             else { return nil }
             let use = appIdUse(bundleId, inputs: inputs)
@@ -234,8 +235,10 @@ public enum MenuSnapshotBuilder {
     }
 
     /// The record's own ID, else the one the prefix and the app name give.
-    private static func bundleId(of app: String, recorded: String?, prefix: String?) -> String? {
-        recorded ?? ProvisionApp(rawValue: app)?.freeBundleId(prefix: prefix)
+    private static func bundleId(
+        of app: String, recorded: String?, prefix: String?, apps: AppRegistry
+    ) -> String? {
+        recorded ?? apps.app(app)?.freeBundleId(prefix: prefix)
     }
 
     /// Whether a snapshot taken at `takenAt` can say anything about this record: not when the ledger has learned something
@@ -269,9 +272,10 @@ public enum MenuSnapshotBuilder {
         }
 
         let slots = projected.slots.filter { $0.device == alias }
+        let apps = inputs.config.appRegistry
         let candidates = gather(
             alias: alias, ledger: ledger, projected: projected, slots: slots, prefix: prefix,
-            read: read)
+            apps: apps, read: read)
 
         var rows: [MenuAppRow] = []
         var expiring: [ExpiryItem] = []
@@ -386,14 +390,16 @@ public enum MenuSnapshotBuilder {
             known
             ? freeSlots(
                 alias: alias, ledger: ledger, projected: projected, slots: slots,
-                reserved: reserved, prefix: prefix, read: read)
+                reserved: reserved, prefix: prefix, apps: apps, read: read)
             : 0
         let reservedRows = (0..<reserved).map { n in
             reserved == 1 ? "Reserved slot" : "Reserved slot (\(n + 1))"
         }
 
         let renewSet = refreshSet(
-            alias: alias, saved: saved, projected: projected, prefix: prefix, read: read, now: now)
+            alias: alias, saved: saved, projected: projected, prefix: prefix, apps: apps,
+            read: read,
+            now: now)
         let card = MenuDeviceCard(
             alias: alias, presence: presence, connectionLabel: MenuFormat.connection(presence),
             freeSlots: free,
@@ -421,12 +427,12 @@ public enum MenuSnapshotBuilder {
     /// The apps `refresh --force` selects for the device, by its own `RefreshPolicy.decide` over the same ledger (migrated)
     /// and, when there is one, the live read; without a read the device's word is unknown, as when `refresh` cannot read it.
     private static func refreshSet(
-        alias: String, saved: SavedDevice, projected: Ledger, prefix: String?, read: AppsRead?,
-        now: Date
+        alias: String, saved: SavedDevice, projected: Ledger, prefix: String?, apps: AppRegistry,
+        read: AppsRead?, now: Date
     ) -> [MenuRefreshTarget] {
         var chosen: [(expires: Date, target: MenuRefreshTarget)] = []
-        for app in ProvisionApp.allCases where app.devicePlatform == saved.platform {
-            let key = "\(alias)/\(app.rawValue)"
+        for app in apps.apps(for: saved.platform) {
+            let key = "\(alias)/\(app.id)"
             let subject = RefreshPolicy.Subject(
                 app: app, install: projected.installs.first { $0.id == key },
                 signed: projected.freeSigned.first { $0.id == key },
@@ -445,7 +451,7 @@ public enum MenuSnapshotBuilder {
                 case .renew(let target) = RefreshPolicy.decide(
                     subject, now: now, within: RefreshPolicy.maxWithin, presence: presence)
             else { continue }
-            chosen.append((target.expires, MenuRefreshTarget(app: app.rawValue, lent: target.lent)))
+            chosen.append((target.expires, MenuRefreshTarget(app: app.id, lent: target.lent)))
         }
         return chosen.sorted { ($0.expires, $0.target.app) < ($1.expires, $1.target.app) }.map(
             \.target)
@@ -466,7 +472,7 @@ public enum MenuSnapshotBuilder {
     /// (installed by hand when the live read shows them, "Signed · not installed" when it confirms they are absent).
     private static func gather(
         alias: String, ledger: Ledger, projected: Ledger, slots: [LedgerSlot], prefix: String?,
-        read: AppsRead?
+        apps: AppRegistry, read: AppsRead?
     ) -> [Candidate] {
         var candidates: [Candidate] = []
         for install in ExpiryItems.presentInstalls(projected, devices: [alias]) {
@@ -483,7 +489,8 @@ public enum MenuSnapshotBuilder {
             candidates.append(
                 Candidate(
                     app: slot.app,
-                    bundleId: bundleId(of: slot.app, recorded: install?.bundleId, prefix: prefix),
+                    bundleId: bundleId(
+                        of: slot.app, recorded: install?.bundleId, prefix: prefix, apps: apps),
                     install: install,
                     slot: slot))
         }
@@ -606,13 +613,14 @@ public enum MenuSnapshotBuilder {
     /// never free.
     private static func freeSlots(
         alias: String, ledger: Ledger, projected: Ledger, slots: [LedgerSlot], reserved: Int,
-        prefix: String?, read: AppsRead?
+        prefix: String?, apps: AppRegistry, read: AppsRead?
     ) -> Int {
         if let read, let prefix, CanaryCommand.isValidPrefix(prefix) {
             var outside = SlotBook.OutsideUse()
             for slot in slots {
                 let install = projected.installs.first { $0.id == slot.id }
-                let id = bundleId(of: slot.app, recorded: install?.bundleId, prefix: prefix)
+                let id = bundleId(
+                    of: slot.app, recorded: install?.bundleId, prefix: prefix, apps: apps)
                 let shown = id.map { read.shows($0) } ?? false
                 let settled =
                     usable(slot, takenAt: read.takenAt)

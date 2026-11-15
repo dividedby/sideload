@@ -85,10 +85,9 @@ enum MenuFormat {
         return "\(Int(seconds / FreeInstallExpiry.secondsPerDay)) d ago"
     }
 
-    /// "apollo" is Apollo; both Stremio builds are Stremio; anything else is capitalised.
+    /// A built-in app's display name ("apollo" is Apollo, both Stremio builds are Stremio); anything else is capitalised.
     static func appName(_ app: String) -> String {
-        if app.hasPrefix("stremio") { return "Stremio" }
-        return capitalised(app)
+        AppRegistry.builtIn.app(app)?.displayName ?? capitalised(app)
     }
 
     static func capitalised(_ text: String) -> String {
