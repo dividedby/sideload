@@ -515,8 +515,8 @@ public enum MenuSnapshotBuilder {
         return candidates
     }
 
-    /// What an offline device shows: the line and fix for how the list reads it. Only a list that answered says anything; a
-    /// failed or pending one is "status unknown" / "checking…", never offline or not paired.
+    /// The line and fix for a saved device the list shows as unlisted, unpaired or unavailable. Only a list that answered
+    /// says anything; a failed or pending one is "status unknown" / "checking…", never offline or not paired.
     private static func reach(
         of saved: SavedDevice, probe: DeviceProbe, autoRefreshAvailable: Bool, now: Date
     ) -> MenuDeviceReach? {

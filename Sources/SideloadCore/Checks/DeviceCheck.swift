@@ -33,18 +33,16 @@ public struct DeviceCheck: Check {
         }
         return saved.map { d in
             let vis = DeviceList.visibilityOf(DeviceList.findSaved(devices, matching: d))
-            switch vis {
-            case .ok:
+            // The menu card's wording (`MenuDeviceReach`): an iPhone, with no auto-renew context. No headline means `.ok`.
+            guard let headline = MenuDeviceReach.headline(vis) else {
                 return CheckResult(
                     id: id, severity: .ok, message: "\(d.alias): visible and paired.")
-            case .absent, .unpaired, .unavailable:
-                // The menu card's wording (`MenuDeviceReach`): an iPhone, with no auto-renew context.
-                return CheckResult(
-                    id: id, severity: vis == .absent ? .fail : .warn,
-                    message: "\(d.alias): \(MenuDeviceReach.headline(vis) ?? "").",
-                    fix: MenuDeviceReach.fix(
-                        vis, platform: "ios", autoRenew: false, autoRefreshAvailable: false))
             }
+            return CheckResult(
+                id: id, severity: vis == .absent ? .fail : .warn,
+                message: "\(d.alias): \(headline).",
+                fix: MenuDeviceReach.fix(
+                    vis, platform: "ios", autoRenew: false, autoRefreshAvailable: false))
         }
     }
 }

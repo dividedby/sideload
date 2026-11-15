@@ -103,11 +103,13 @@ Look inside an IPA before signing it (nothing is installed or sent anywhere):
 ## Menu bar app
 
 `SideloadMenu` is a menu bar app (no Dock icon) that shows the canary state, each saved device's free-account apps (days
-left, a time-left bar, free slots, Wi-Fi/USB/offline, and for a device that cannot be reached one line and a fix, such as "No longer paired" with "Pair it in Xcode.", or "Can't reach it right now" with "Unlock it, or connect it to the Mac or the same Wi-Fi."; read from the ledger's `installs[]` and `slots[]` and checked live against
+left, a time-left bar, free slots, Wi-Fi/USB/offline; read from the ledger's `installs[]` and `slots[]` and checked live against
 the device's app list, so an app that is gone shows "Signed · not installed", a lent one "Lent to lab", and a failed renewal a
 red "Renewal failed · CODE") and a countdown-ring icon: the ring is the time left of the soonest free install
 over its 7 days (label colour; orange when due at 3 days or fewer; red at 1 day or fewer; a dashed red ring with a cross when
-expired; a red "!" when the free certificate changed; a dashed grey "?" with no data; a blue arc while a Renew runs). Check status
+expired; a red "!" when the free certificate changed; a dashed grey "?" with no data; a blue arc while a Renew runs). A device
+that can't be reached says why and what to do, such as "No longer paired" with "Pair it in Xcode.", or "Can't reach it right
+now" with "Unlock it, or connect it to the Mac or the same Wi-Fi.". Check status
 now, Run doctor (shown inline), Settings… (opens `~/.sideload/config.json`), Open ~/.sideload and Quit need no confirm. The
 actions are Renew… (All apps or one app, and Retry on a failed renewal), Install (a signed app the device does not show, or
 Install update for a newer signed build), Add app… (an app from `approvedSources` the device does not have: a fetch confirm,
