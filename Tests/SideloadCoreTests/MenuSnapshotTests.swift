@@ -327,7 +327,8 @@ struct MenuSnapshotTests {
         #expect(gone.apps.allSatisfy { $0.exception == nil })
         let unpaired = build(ledger: ledger, probe: .listed([listed(paired: false)])).devices[0]
         #expect(unpaired.connectionLabel == "offline")
-        #expect(unpaired.reach == MenuDeviceReach(line: "No longer paired", fix: "Pair it in Xcode."))
+        #expect(
+            unpaired.reach == MenuDeviceReach(line: "No longer paired", fix: "Pair it in Xcode."))
     }
 
     @Test("with refresh available, the offline line says whether it renews when back")

@@ -157,7 +157,9 @@ struct DoctorDeviceTests {
         }
     }
 
-    @Test("device fails when absent, warns when unavailable or no longer paired, in the menu card's words")
+    @Test(
+        "device fails when absent, warns when unavailable or no longer paired, in the menu card's words"
+    )
     func absentAndAway() async throws {
         try await run(route: Route(devices: deviceListJSON())) { services, _ in
             let out = try await DeviceCheck().run(services)
