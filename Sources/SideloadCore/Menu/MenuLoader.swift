@@ -60,6 +60,10 @@ public enum MenuLoader {
                 notices.append(MenuIssue(PendingRestores.warning(entry)))
             }
         }
+        if ledgerReadable, let pause = ledger.freeAccountPause {
+            let e = RefreshPolicy.accountPauseWarning(pause)
+            notices.append(MenuIssue(code: e.code, message: e.message, fix: e.fix))
+        }
         return .ready(
             MenuInputs(
                 now: services.clock.now(), canaryStatus: canaryStatus, config: config,

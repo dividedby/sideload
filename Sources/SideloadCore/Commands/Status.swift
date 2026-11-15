@@ -154,6 +154,11 @@ public enum StatusCommand {
                 ))
         }
 
+        if let pause = ledgerRead.freeAccountPause {
+            let e = RefreshPolicy.accountPauseWarning(pause)
+            warnings.append(warning(e.code, e.message, e.fix))
+        }
+
         // Free installs: only with both the ledger and the config read (the config says which devices are still saved).
         var installs: JSONValue = .null
         var pendingRestores: JSONValue = .null

@@ -16,6 +16,8 @@ extension RefreshPolicy {
     /// The first four end the whole run; of them only `ledgerUnreadable` is a failure, the rest are skips.
     enum AutoSkip: Equatable {
         case killSwitch, freeCertChanged, ledgerUnreadable, operationInProgress
+        /// Xcode is signed out and the pause's next probe is not due yet: a quiet whole-run skip.
+        case accountSignedOut
         case notRecorded, lent, notPresent, suspended, slotPending, signedVersionDiffers, notDue
         case backoff, installCap, deviceCap, recentAttempt
         case deviceNotVisible, deadline
@@ -30,6 +32,7 @@ extension RefreshPolicy {
             case .freeCertChanged: "FREE_CERT_CHANGED"
             case .ledgerUnreadable: "LEDGER_INVALID"
             case .operationInProgress: OperationLock.busyCode
+            case .accountSignedOut: "ACCOUNT_SIGNED_OUT"
             case .notRecorded: "NOT_RECORDED"
             case .lent: "LENT"
             case .notPresent: RefreshPolicy.notPresent
@@ -49,15 +52,18 @@ extension RefreshPolicy {
         }
     }
 
-    /// The whole-run gates, cheapest first: the kill switch, then the ledger (unreadable, or the free team's suspension), then
-    /// the operation lock. The later inputs are autoclosures, so nothing is read or probed once an earlier gate has stopped
-    /// the run. Nil means go on.
+    /// The whole-run gates, cheapest first: the kill switch, then the ledger (unreadable, the free team's suspension, or the
+    /// account pause before its next probe), then the operation lock. The later inputs are autoclosures, so nothing is read
+    /// or probed once an earlier gate has stopped the run. Nil means go on; once the pause's `nextProbe` has passed the run
+    /// goes on and its first renewal that reaches `provision` is the probe.
     static func runGate(
-        killSwitch: Bool, ledger: @autoclosure () -> Ledger?, lockBusy: @autoclosure () -> Bool
+        killSwitch: Bool, ledger: @autoclosure () -> Ledger?, now: Date,
+        lockBusy: @autoclosure () -> Bool
     ) -> AutoSkip? {
         if killSwitch { return .killSwitch }
         guard let ledger = ledger() else { return .ledgerUnreadable }
         if ledger.freeSuspended != nil { return .freeCertChanged }
+        if let pause = ledger.freeAccountPause, now < pause.nextProbe { return .accountSignedOut }
         if lockBusy() { return .operationInProgress }
         return nil
     }
@@ -84,7 +90,10 @@ extension RefreshPolicy {
         // A lent slot has `present: false` too; the lend is the better reason.
         if subject.lent { return .lent }
         guard install.present else { return .notPresent }
-        if install.refresh.suspended { return .suspended }
+        // A suspension an earlier build set for a signed-out Xcode is the team's pause now, not the install's.
+        if install.refresh.suspended, install.refresh.lastCode != accountNotSignedIn {
+            return .suspended
+        }
         if slotPending { return .slotPending }
         // The signed build is what goes on the device. A version other than the installed one is an update that is half done,
         // which only the owner finishes (Install update); auto never changes the installed version.
@@ -104,6 +113,17 @@ extension RefreshPolicy {
             return .recentAttempt
         }
         return nil
+    }
+
+    /// What `status` and the menu say while the account pause is set. No device, account or identity name.
+    static func accountPauseWarning(_ pause: LedgerAccountPause) -> (
+        code: String, message: String, fix: String
+    ) {
+        (
+            AutoSkip.accountSignedOut.code,
+            "Xcode has no signed-in account for the free team, so automatic renewals are paused since \(LedgerDates.string(pause.since)).",
+            "Sign in at Xcode > Settings > Accounts, then renew from the menu or with `sideload refresh --device <alias> --yes`. Auto-renew also resumes by itself: it tries again after \(LedgerDates.string(pause.nextProbe))."
+        )
     }
 
     /// The fatal codes that are about one device and not the free team: the run goes on with the next device.
