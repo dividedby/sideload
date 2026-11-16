@@ -65,15 +65,19 @@ enum CleanBackups {
         var plan = Plan()
         let root = services.home.backups
         let cutoff = now.addingTimeInterval(-CleanCommand.retention)
-        let aliases = folders(in: root, root: root, links: &plan.counts.linksSkipped)
+        let aliases = CleanCommand.plainFolders(
+            in: root, root: root, links: &plan.counts.linksSkipped)
         for alias in aliases {
             let aliasDir = root + "/" + alias
             let saved = config.devices[alias] != nil
             let busy = DeviceRemove.refusal(ledger.slots, alias: alias, now: now) != nil
             var found = 0
-            for app in folders(in: aliasDir, root: root, links: &plan.counts.linksSkipped) {
+            for app in CleanCommand.plainFolders(
+                in: aliasDir, root: root, links: &plan.counts.linksSkipped)
+            {
                 let appDir = aliasDir + "/" + app
-                let entries = folders(in: appDir, root: root, links: &plan.counts.linksSkipped)
+                let entries = CleanCommand.plainFolders(
+                    in: appDir, root: root, links: &plan.counts.linksSkipped)
                 found += entries.count
                 if busy {
                     plan.counts.kept += entries.count
@@ -188,26 +192,6 @@ enum CleanBackups {
     }
 
     // MARK: reading
-
-    /// The names of the real, non-hidden folders directly inside `directory`, sorted. Counts a link met (the folder itself or an
-    /// entry) in `links`. Nothing inside is opened.
-    private static func folders(in directory: String, root: String, links: inout Int) -> [String] {
-        if DeviceRemove.isLink(directory) {
-            links += 1
-            return []
-        }
-        guard AppDataBackup.isPlain(directory, root: root, regularFile: false) else { return [] }
-        var found: [String] = []
-        for name in DeviceRemove.names(in: directory) where !name.hasPrefix(".") {
-            let path = directory + "/" + name
-            if DeviceRemove.isRealDirectory(path) {
-                found.append(name)
-            } else if DeviceRemove.isLink(path) {
-                links += 1
-            }
-        }
-        return found
-    }
 
     private static func modified(_ directory: String) -> Date? {
         var st = stat()

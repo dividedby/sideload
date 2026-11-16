@@ -28,7 +28,7 @@ All notable changes to this project are documented here. Format follows
 - `clean` now frees build output under `builds/` as well (issue 49; `CleanBuilds`, same preview and owner-only `--yes`,
   same `.op.lock`, still counts and bytes only). It deletes a signed build `builds/signed/<app>/<alias>` only when the
   ledger shows that exact build installed on that device (present, same profile, version, hash prefix and signing time as
-  the `freeSigned` record) and it was signed more than 14 days ago; its profile has expired by then, so `install` answers
+  the `freeSigned` record) it was signed more than 14 days ago and its recorded profile has expired; `install` then answers
   `PROFILE_EXPIRED` and `refresh` signs again from the kept IPA, and a build that cannot be proven is kept. It also deletes
   orphans (a folder of an app or device neither known nor in the ledger, an empty app folder) and, at any age, the
   `carrier-dd` and `canary` derived-data caches, which `provision` and `canary` rebuild; `builds/carrier` stays. A device

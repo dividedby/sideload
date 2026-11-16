@@ -22,8 +22,8 @@ public struct CleanOptions: Sendable, Equatable {
 /// no file or folder name, nothing from a backup. Progress lines are counts only. It never writes the ledger or the config.
 ///
 /// With `--yes`, in order: the manifest is rewritten once with `prunedAt` on every entry about to lose its folder; then those
-/// folders go; then the backups; then the build output. A crash after the manifest write leaves marked entries whose folder may still exist, and a rerun
-/// finishes them.
+/// folders go; then the backups; then the build output. A crash after the manifest write leaves marked entries whose folder
+/// may still exist, and a rerun finishes them.
 public enum CleanCommand {
     static let command = "clean"
     /// How long a backup is kept after it was restored or superseded (or, for a device that is no longer saved, after its newest
@@ -97,6 +97,26 @@ public enum CleanCommand {
     static func removePlainFolder(_ path: String, root: String) -> Bool {
         guard AppDataBackup.isPlain(path, root: root, regularFile: false) else { return false }
         return (try? FileManager.default.removeItem(atPath: path)) != nil
+    }
+
+    /// The names of the real, non-hidden folders directly inside `directory`, sorted. Counts a link met (the folder itself or an
+    /// entry) in `links`. Nothing inside is opened.
+    static func plainFolders(in directory: String, root: String, links: inout Int) -> [String] {
+        if DeviceRemove.isLink(directory) {
+            links += 1
+            return []
+        }
+        guard AppDataBackup.isPlain(directory, root: root, regularFile: false) else { return [] }
+        var found: [String] = []
+        for name in DeviceRemove.names(in: directory) where !name.hasPrefix(".") {
+            let path = directory + "/" + name
+            if DeviceRemove.isRealDirectory(path) {
+                found.append(name)
+            } else if DeviceRemove.isLink(path) {
+                links += 1
+            }
+        }
+        return found
     }
 
     // MARK: output

@@ -61,9 +61,12 @@ private func installed(
     guard let at = ledger.freeSigned.firstIndex(where: { $0.id == "\(alias)/\(app.id)" }) else {
         return
     }
+    // A free profile lasts 7 days from signing.
     ledger.freeSigned[at].signedAt = daysFromNow(days)
+    ledger.freeSigned[at].profileExpires = daysFromNow(days + 7)
     var record = installRecord(app, alias: alias, present: present)
     record.signedAt = daysFromNow(days)
+    record.profileExpires = daysFromNow(days + 7)
     tweak?(&record)
     ledger.installs.removeAll { $0.id == record.id }
     ledger.installs.append(record)
@@ -178,7 +181,8 @@ struct CleanSignedBuildsTests {
                 let out = w.clean(yes: true)
                 #expect(out.ok, "\(name): \(out.errors)")
                 #expect(treeOf(w.paths.builds) == before, "\(name)")
-                #expect(count(out, "signedKept") == 1 && count(out, "signedDeleted") == 0, "\(name)")
+                #expect(
+                    count(out, "signedKept") == 1 && count(out, "signedDeleted") == 0, "\(name)")
             }
         }
     }
@@ -394,6 +398,46 @@ struct CleanBuildOrphansTests {
         }
     }
 
+    @Test(
+        "one mixed home: the preview's counts equal what --yes then deletes, orphans and caches included"
+    )
+    func previewEqualsApply() async throws {
+        try await withInstallWorld(
+            alsoSigned: [.stremioTVOS],
+            ledger: {
+                installed(&$0)  // old and installed: goes
+                installed(&$0, .stremioTVOS, alias: "appletv", days: -3)  // recent: stays
+            }
+        ) { w in
+            let root = w.paths.signedBuilds
+            try put("x", to: root + "/oldapp/iphone/Old.app/file")
+            try put("yy", to: root + "/stremio-tvos/oldphone/Stremio.app/file")
+            try makeDirectories(root + "/apollo", mode: 0o700)
+            try put("aaaa", to: w.paths.carrierDerivedData + "/Build/x")
+            try put("bb", to: w.paths.canaryDerivedData + "/Build/y")
+            let size = bytesUnder(w.iphoneFolder)
+            let before = treeOf(w.paths.builds)
+            let preview = w.clean()
+            #expect(preview.ok && treeOf(w.paths.builds) == before, "\(preview.errors)")
+            #expect(count(preview, "signedDeleted") == 1 && count(preview, "signedKept") == 1)
+            #expect(
+                count(preview, "orphansDeleted") == 4,
+                "app, alias, empty apollo, emptied stremio-ios")
+            #expect(count(preview, "cachesDeleted") == 2)
+            #expect(count(preview, "bytesFreed") == size + 1 + 2 + 4 + 2)
+
+            let out = w.clean(yes: true)
+            #expect(out.ok, "\(out.errors)")
+            #expect(buildsJSON(out) == buildsJSON(preview))
+            let gone =
+                [
+                    "/oldapp", "/stremio-tvos/oldphone", "/apollo", "/stremio-ios",
+                ].map { root + $0 } + [w.paths.carrierDerivedData, w.paths.canaryDerivedData]
+            for path in gone { #expect(!present(path), "\(path)") }
+            #expect(present(w.appletvFolder))
+        }
+    }
+
     @Test("a home with no builds folder cleans nothing and reports zeros")
     func noBuilds() async throws {
         try await withInstallWorld(signed: false) { w in
@@ -426,7 +470,11 @@ struct CleanBuildsAfterTests {
             #expect(refused.errorCodes == ["NOT_SIGNED"], "\(refused.errors)")
             #expect(w.runner.installCalls.isEmpty)
 
-            // What `sign` leaves again.
+            // What `sign` leaves again: the build, and a new signing and profile in the ledger.
+            try await w.services.ledgerStore.update { ledger in
+                ledger.freeSigned[0].signedAt = testNow
+                ledger.freeSigned[0].profileExpires = daysFromNow(5)
+            }
             try makeDirectories(w.paths.signedBuilds + "/stremio-ios", mode: 0o700)
             try FileManager.default.moveItem(atPath: kept, toPath: w.iphoneFolder)
             let again = await w.install()
@@ -456,6 +504,20 @@ struct CleanBuildsAfterTests {
             let second = await w.run()
             #expect(second.ok && present(w.signedApp), "\(second.errors)")
             #expect(try w.ledger().freeSigned.first?.signedAt == testNow)
+        }
+    }
+
+    @Test("canary builds into a fresh canary folder after a clean removed it")
+    func canaryAfter() async throws {
+        try await withCanaryWorld { w in
+            try put("old", to: w.paths.canaryDerivedData + "/Build/x")
+            let out = CleanCommand.run(w.services, CleanOptions(yes: true))
+            #expect(out.ok && count(out, "cachesDeleted") == 1, "\(out.errors)")
+            #expect(!present(w.paths.canaryDerivedData))
+            _ = await w.run()
+            let build = try #require(w.builds.first)
+            let at = try #require(build.args.firstIndex(of: "-derivedDataPath"))
+            #expect(build.args[at + 1] == w.paths.canaryDerivedData)
         }
     }
 

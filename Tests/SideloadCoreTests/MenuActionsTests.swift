@@ -245,7 +245,8 @@ struct MenuActionAvailabilityTests {
         }
         let gone = menuBuild(ledger: ledger, apps: read([]))
         let install = MenuAction.install(device: "iphone", app: "apollo")
-        #expect(availability(install, gone).reason?.contains("The signed build has expired") == true)
+        #expect(
+            availability(install, gone).reason?.contains("The signed build has expired") == true)
     }
 
     @Test("newerSigned needs a different profile more than a day later that has not expired")
