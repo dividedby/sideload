@@ -8,6 +8,10 @@ enum SourceMetadata {
     static func fetch(_ services: Services, _ source: FetchSource) async throws -> Data {
         let response = try await get(services, source)
         guard response.status == 200 else { throw httpError(response.status) }
+        // The live transport enforces this cap itself; the check guards a stub transport that does not.
+        guard response.body.count <= URLSessionTransport.maxBodyBytes else {
+            throw map(HTTPTransportError.bodyTooLarge)
+        }
         return response.body
     }
 

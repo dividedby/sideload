@@ -17,6 +17,19 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
+- Custom download sources, first of three PRs (issue 47; this part has not been run against a real source or on a device).
+  A hand-edited `customSources` array in `config.json` (kept in the file's unknown keys, so older builds ignore it) gives a
+  `customApps` app a GitHub release source (`githubRelease`: `repo`) or an AltStore index source (`altstoreIndex`: `url`,
+  `bundleId`), each with its exact `metadataHosts` and `downloadHosts`. `fetch`, `updates` and `status --notify
+--check-updates` then treat it like a built-in: it still needs its `approvedSources` entry and the owner's
+  `fetch --approve` per version. Each entry is checked strictly at load; one that breaks a rule is left out with a
+  `CUSTOM_SOURCE_IGNORED` warning (shown by `status`, `updates` and `source list`). A GitHub source takes the latest
+  non-draft, non-prerelease release with exactly one `.ipa` asset and a required SHA-256 digest; the download must be the
+  repository's own release asset on a listed host. New `BUNDLE_ID_MISMATCH`: `fetch` deletes and refuses an IPA whose
+  bundle ID is not the pinned one (the entry's `bundleId`, or for GitHub the first approved version's, now recorded as
+  `bundleId` on the manifest entry). New read-only `sideload source list` (no network, no lock, no write). `source add`,
+  `source remove` and the menu bar app's "Add source…" are the next PRs. A custom source's `repo` matches GitHub's URLs without regard to case, and an AltStore index may leave out `buildVersion`. `AGENTS.md` carries the owner's 2026-11-01 rule
+  for new sources.
 - `scripts/install-local.sh` (owner-run) builds the checkout and installs the CLI at `~/.local/bin/sideload` and the menu
   bar app, then reports the launchd agents' state. It refuses a dirty tree or a branch other than `main` (unless
   `--allow-dirty`), a busy `.op.lock` and a running refresh agent, renames the new CLI into place as a new file (never a
@@ -58,6 +71,8 @@ All notable changes to this project are documented here. Format follows
 
 ### Fixed
 
+- `updates.json` entries of a source that is not built in were dropped on every load, so the 6 hour cadence could not hold
+  for a custom source. The cache now keeps the apps of the config's registry.
 - A signed-out Xcode no longer suspends the installs one by one (issue 57). `ACCOUNT_NOT_SIGNED_IN` is now one pause for the
   whole free team (`freeAccountPause` in the ledger, written by `provision`), not a suspension of whichever install tried.
   While it is set, `refresh --auto` skips quietly (`ACCOUNT_SIGNED_OUT`, no `xcodebuild`) and tries one renewal as a probe

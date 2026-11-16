@@ -288,7 +288,7 @@ extension StatusCommand {
     ) -> [StatusNotify.Current]? {
         guard snapshot.complete,
             let listed = try? UpdateCacheStore(paths: services.home).listings(
-                now: services.clock.now()), !listed.isEmpty
+                now: services.clock.now(), apps: FetchCatalog.appNames(config)), !listed.isEmpty
         else { return nil }
         let approved = Set(FetchCatalog.approvedSources(config).map(\.app))
         let upstream = listed.compactMapValues { $0.upstream?.version }

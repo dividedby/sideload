@@ -46,10 +46,12 @@ public enum FetchCommand {
         _ services: Services, _ options: FetchOptions, registry: ScratchRegistry
     ) async throws -> [String: JSONValue] {
         guard let app = options.app, !app.isEmpty else {
+            let apps =
+                ((try? services.store.load()).map(FetchCatalog.appNames) ?? FetchCatalog.appNames)
             throw SideloadError(
                 "USAGE", "fetch needs --app.",
                 fix:
-                    "sideload fetch --app <\(FetchCatalog.appNames.joined(separator: "|"))> [--approve --version <v>]"
+                    "sideload fetch --app <\(apps.joined(separator: "|"))> [--approve --version <v>]"
             )
         }
         if options.approve, options.version?.isEmpty != false {
@@ -126,6 +128,8 @@ private struct FetchRun {
         try checkNotCancelled()
         services.log("fetch: inspecting the archive")
         let inspected = try await inspect(path: part)
+        try checkBundleId(
+            inspected, manifest: try store.load(), action: "The downloaded file was deleted.")
 
         return try commit(asset, part: part, digest: digest, count: count, inspected: inspected)
     }
@@ -230,7 +234,8 @@ private struct FetchRun {
             fetchedAt: services.clock.now(), approved: keepApproval && prior?.approved == true,
             approvedAt: keepApproval ? prior?.approvedAt : nil,
             build: asset.build ?? inspected.build,
-            declaredSize: asset.size, minOS: asset.minOS, inspectMinOS: inspected.minOS)
+            declaredSize: asset.size, minOS: asset.minOS, inspectMinOS: inspected.minOS,
+            bundleId: source.kind.isCustom ? inspected.bundleId : nil)
         manifest.upsert(entry)
         do {
             try store.save(manifest)
@@ -258,6 +263,8 @@ private struct FetchRun {
         }
         let already = entry.approved
         let inspected = try await verifiedInspection(of: entry)
+        try checkBundleId(
+            inspected, manifest: manifest, excluding: version, action: "Nothing was approved.")
         if !already {
             entry.approved = true
             entry.approvedAt = services.clock.now()
@@ -309,6 +316,8 @@ private struct FetchRun {
     struct Inspected {
         var summary: JSONValue
         var warnings: [JSONValue]
+        /// The app's `CFBundleIdentifier`.
+        var bundleId: String?
         /// The app's `CFBundleVersion` and the Mach-O minimum OS, as `inspect` read them.
         var build: String?
         var minOS: String?
@@ -322,6 +331,7 @@ private struct FetchRun {
         let app = report["app"]?.fields ?? [:]
         return Inspected(
             summary: Self.summarize(report), warnings: report["warnings"]?.list ?? [],
+            bundleId: app["bundleId"]?.text,
             build: app["build"]?.text,
             minOS: app["minOS"]?.text)
     }
@@ -374,6 +384,41 @@ private struct FetchRun {
             )
         }
         return out
+    }
+
+    // MARK: bundle-ID pin
+
+    /// A custom source pins the app's bundle ID so a later upload cannot swap in a different app. An AltStore source pins the
+    /// `bundleId` the owner confirmed. A GitHub source pins the bundle ID of the earliest approved version of the app (recorded
+    /// in the manifest); nothing is pinned until one version is approved. Built-in sources have their own pins. `version` is
+    /// left out of the search when it is the one being approved.
+    private func checkBundleId(
+        _ inspected: Inspected, manifest: Manifest, excluding version: String? = nil, action: String
+    ) throws {
+        let expected: String?
+        switch source.kind {
+        case .customAltstoreIndex(_, let bundleId): expected = bundleId
+        case .customGithubRelease:
+            expected =
+                manifest.entries
+                .filter {
+                    $0.app == source.app && $0.approved && $0.version != version
+                        && $0.bundleId != nil
+                }
+                .min { ($0.approvedAt ?? .distantFuture) < ($1.approvedAt ?? .distantFuture) }?
+                .bundleId
+        case .githubRelease, .altstoreIndex: expected = nil
+        }
+        guard let expected, inspected.bundleId != expected else { return }
+        throw SideloadError(
+            "BUNDLE_ID_MISMATCH",
+            "The IPA's bundle ID (\(printableCut(inspected.bundleId ?? "none"))) is not the one pinned for \(source.app) (\(printableCut(expected))). \(action)",
+            fix:
+                "Treat this as a different app. The owner checks the source before fetching again.",
+            data: [
+                "expected": .string(printableCut(expected)),
+                "actual": .string(printableCut(inspected.bundleId ?? "")),
+            ])
     }
 
     // MARK: errors

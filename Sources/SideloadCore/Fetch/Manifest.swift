@@ -32,6 +32,10 @@ public struct ManifestEntry: Codable, Sendable, Equatable {
     /// gone (or about to be) and the entry stays as the record of what was downloaded. A pruned entry counts as not on disk for
     /// `sign`, `refresh` and `fetch --approve`; a later `fetch` of the same version stores the file again and clears it.
     public var prunedAt: Date?
+    /// The `CFBundleIdentifier` `inspect` read from the IPA, recorded for a custom source only. The first approved version's value
+    /// is the pin every later fetch of that app must match (`BUNDLE_ID_MISMATCH`). Absent from older entries; an older build
+    /// ignores it.
+    public var bundleId: String?
 }
 
 extension ManifestEntry {

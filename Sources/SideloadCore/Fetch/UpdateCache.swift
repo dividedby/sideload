@@ -121,21 +121,25 @@ struct UpdateCacheStore: Sendable {
     /// The entries that hold a good listing (a version), by app: the last good one even when the last attempt failed. An entry
     /// with only an error says nothing and is left out, so an empty result means the file lists no version at all (missing,
     /// corrupt, wrong schema or only errors). Throws as `load` does.
-    func listings(now: Date) throws -> [String: UpdateCacheEntry] {
-        try load(now: now).cache.apps.filter { $0.value.upstream != nil }
+    func listings(now: Date, apps known: [String] = FetchCatalog.appNames) throws -> [String:
+        UpdateCacheEntry]
+    {
+        try load(now: now, apps: known).cache.apps.filter { $0.value.upstream != nil }
     }
 
     /// Never throws for a bad file: a missing, oversized, unparseable, wrong-schema file is an empty cache, and an entry that
     /// is future-dated or carries a value that fails the resolver's own checks is dropped. `repaired` says the file on disk is
     /// not what a clean write would leave, so the caller rewrites it. Only an unreadable file (an I/O error) throws.
-    func load(now: Date) throws -> (cache: UpdateCache, repaired: Bool) {
+    func load(now: Date, apps known: [String] = FetchCatalog.appNames) throws -> (
+        cache: UpdateCache, repaired: Bool
+    ) {
         guard let data = try readFile(paths.updates) else { return (UpdateCache(), false) }
         guard data.count <= Self.maxBytes,
             let raw = try? Self.decoder.decode(UpdateCache.self, from: data),
             raw.schema == UpdateCache.schema
         else { return (UpdateCache(), true) }
         var clean = UpdateCache()
-        for (app, entry) in raw.apps where FetchCatalog.appNames.contains(app) {
+        for (app, entry) in raw.apps where known.contains(app) {
             let kept = Self.sanitized(entry, now: now)
             if !kept.isEmpty { clean.apps[app] = kept }
         }

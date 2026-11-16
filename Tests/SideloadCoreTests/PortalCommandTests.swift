@@ -201,11 +201,11 @@ struct PortalCommandTests {
             out.json["built"] == [
                 "doctor", "device", "canary", "ledger", "portal", "status",
                 "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot",
-                "updates", "clean",
+                "updates", "clean", "source",
             ])
         let usage = out.json["usage"]?.array?.compactMap(\.string) ?? []
         #expect(usage.contains { $0.hasPrefix("portal") && $0.contains("--show-identifiers") })
-        #expect(out.json["commands"]?.array?.count == 16)
+        #expect(out.json["commands"]?.array?.count == 17)
         #expect(out.transport.requests.isEmpty)
     }
 }
