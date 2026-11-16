@@ -157,25 +157,33 @@ struct DoctorDeviceTests {
         }
     }
 
-    @Test("device fails when absent, warns when known but unavailable")
+    @Test(
+        "device fails when absent, warns when unavailable or no longer paired, in the menu card's words"
+    )
     func absentAndAway() async throws {
         try await run(route: Route(devices: deviceListJSON())) { services, _ in
             let out = try await DeviceCheck().run(services)
             #expect(out[0].severity == .fail)
-            #expect(out[0].fix == "Connect the device by USB, unlock it, and tap Trust if asked.")
+            #expect(out[0].message == "iphone: Not seen by this Mac.")
+            #expect(
+                out[0].fix == "Unlock it, or connect it to the Mac or the same Wi-Fi.")
         }
         try await run(route: Route(devices: deviceListJSON(phoneEntryJSON(tunnel: "unavailable"))))
         { services, _ in
             let out = try await DeviceCheck().run(services)
             #expect(out[0].severity == .warn)
-            #expect(out[0].message == "iphone: known but unavailable (locked or unplugged).")
+            #expect(out[0].message == "iphone: Can't reach it right now.")
+            #expect(
+                out[0].fix == "Unlock it, or connect it to the Mac or the same Wi-Fi.")
         }
         let unpaired = deviceEntryJSON(
             name: "Test iPhone", udid: savedUdid("1"), coreId: savedCoreId("1"), pairing: "unpaired"
         )
         try await run(route: Route(devices: deviceListJSON(unpaired))) { services, _ in
-            let value = try await DeviceCheck().run(services)[0].message
-            #expect(value == "iphone: known but not paired.")
+            let out = try await DeviceCheck().run(services)
+            #expect(out[0].severity == .warn)
+            #expect(out[0].message == "iphone: No longer paired.")
+            #expect(out[0].fix == "Pair it in Xcode.")
         }
     }
 

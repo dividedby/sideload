@@ -25,6 +25,14 @@ All notable changes to this project are documented here. Format follows
 
 ### Changed
 
+- Menu bar and `doctor`: a saved device that cannot be reached now says what to do (issue 48; `MenuDeviceReach`, pure). A
+  device that is not paired reads "No longer paired" with "Pair it in Xcode."; one the list calls unavailable reads "Can't
+  reach it right now" with "Unlock it, or connect it to the Mac or the same Wi-Fi." (an Apple TV: "It may just be asleep;
+  renewals will try again."); one the list does not show reads "Not seen by this Mac". "Seen N h ago" and the auto-renew
+  context stay on the line. A device list that failed is still "status unknown", never offline or not paired. The card's
+  `offlineNote` is now `reach` (line and fix), and `doctor`'s device check uses the same words and splits "not paired" from
+  "unavailable". Nothing pairs, polls or writes, and `DeviceCtl`'s allowlist is unchanged. Not run on a device or in the
+  built app.
 - One data-driven app registry (`AppRegistry`, issue 45) replaces the per-app facts that lived in `provision`'s app list,
   the `fetch` catalog, the display names and the usage text. The built-ins (`apollo`, `stremio-ios`, `stremio-tvos`,
   `filler`) keep exactly their bundle IDs, platforms, SDKs and sources, and the bundle ID formula is written once. With no

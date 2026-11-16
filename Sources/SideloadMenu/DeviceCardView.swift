@@ -21,7 +21,15 @@ struct DeviceCardView: View {
                 AddAppMenu(card: device, snapshot: snapshot, model: model)
                 RenewMenu(card: device, snapshot: snapshot, model: model)
             }
-            if let note = device.offlineNote ?? device.appsNote {
+            if let reach = device.reach {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(reach.line)
+                    if let fix = reach.fix { Text(fix) }
+                }
+                .font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, -4)
+            } else if let note = device.appsNote {
                 Text(note).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                     .padding(.top, -4)
             }

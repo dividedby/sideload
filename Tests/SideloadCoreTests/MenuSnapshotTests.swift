@@ -287,7 +287,7 @@ struct MenuSnapshotTests {
         let wifi = build(ledger: ledger, probe: .listed([listed(transport: .network)])).devices[0]
         #expect(wifi.connectionLabel == "Wi-Fi")
         #expect(wifi.dotFilled)
-        #expect(wifi.offlineNote == nil)
+        #expect(wifi.reach == nil)
         #expect(wifi.apps[0].exception == nil)
         let usb = build(ledger: ledger, probe: .listed([listed(transport: .wired)])).devices[0]
         #expect(usb.connectionLabel == "USB")
@@ -317,15 +317,18 @@ struct MenuSnapshotTests {
         let off = build(config: config(auto: ["iphone"]), ledger: ledger, probe: probe).devices[0]
         #expect(!off.dotFilled)
         #expect(off.connectionLabel == "offline")
-        #expect(off.offlineNote == "Seen 3 h ago")
+        #expect(off.reach?.line == "Can't reach it right now · Seen 3 h ago")
+        #expect(off.reach?.fix == "Unlock it, or connect it to the Mac or the same Wi-Fi.")
         #expect(off.apps.allSatisfy { $0.exception == nil })
-        // Never seen: the header already says offline, so there is no line at all.
+        // Not in the list: nothing to say when it was seen.
         let gone = build(ledger: ledger, probe: .listed([])).devices[0]
         #expect(gone.connectionLabel == "offline")
-        #expect(gone.offlineNote == nil)
+        #expect(gone.reach?.line == "Not seen by this Mac")
         #expect(gone.apps.allSatisfy { $0.exception == nil })
         let unpaired = build(ledger: ledger, probe: .listed([listed(paired: false)])).devices[0]
         #expect(unpaired.connectionLabel == "offline")
+        #expect(
+            unpaired.reach == MenuDeviceReach(line: "No longer paired", fix: "Pair it in Xcode."))
     }
 
     @Test("with refresh available, the offline line says whether it renews when back")
@@ -338,9 +341,11 @@ struct MenuSnapshotTests {
             config: config(auto: ["iphone"]), ledger: ledger, probe: probe,
             autoRefreshAvailable: true
         ).devices[0]
-        #expect(opted.offlineNote == "Seen 3 h ago · renews when back on Wi-Fi or USB")
+        #expect(
+            opted.reach?.line
+                == "Can't reach it right now · Seen 3 h ago · renews when back on Wi-Fi or USB")
         let notOpted = build(ledger: ledger, probe: probe, autoRefreshAvailable: true).devices[0]
-        #expect(notOpted.offlineNote == "Seen 3 h ago · auto-renew off")
+        #expect(notOpted.reach?.line == "Can't reach it right now · Seen 3 h ago · auto-renew off")
         #expect(notOpted.apps[0].exception == nil)
     }
 
@@ -350,11 +355,11 @@ struct MenuSnapshotTests {
         let checking = build(ledger: ledger, probe: .checking)
         #expect(checking.checkingDevices)
         #expect(checking.devices[0].connectionLabel == "checking…")
-        #expect(checking.devices[0].offlineNote == nil)
+        #expect(checking.devices[0].reach == nil)
         let failed = build(ledger: ledger, probe: .failed)
         #expect(!failed.checkingDevices)
         #expect(failed.devices[0].connectionLabel == "status unknown")
-        #expect(failed.devices[0].offlineNote == nil)
+        #expect(failed.devices[0].reach == nil)
     }
 
     @Test("ago formatting")
@@ -733,11 +738,12 @@ struct MenuLoaderTests {
         let visible = card(optedOut, .listed([listed(link: "connected")]))
         #expect(
             visible.apps.count == 2 && visible.apps.allSatisfy { $0.exception == "Auto-renew off" })
-        #expect(visible.offlineNote == nil)
+        #expect(visible.reach == nil)
         #expect(
-            card(optedOut, .listed([listed(link: "unavailable", lastSeen: seen)])).offlineNote
-                == "Seen 3 h ago · auto-renew off")
-        #expect(card(optedOut, .listed([])).offlineNote == "Offline · auto-renew off")
+            card(optedOut, .listed([listed(link: "unavailable", lastSeen: seen)])).reach?.line
+                == "Can't reach it right now · Seen 3 h ago · auto-renew off")
+        #expect(
+            card(optedOut, .listed([])).reach?.line == "Not seen by this Mac · auto-renew off")
 
         let optedIn = try await loaded(auto: ["iphone"])
         #expect(
@@ -745,10 +751,11 @@ struct MenuLoaderTests {
                 $0.exception == nil
             })
         #expect(
-            card(optedIn, .listed([listed(link: "unavailable", lastSeen: seen)])).offlineNote
-                == "Seen 3 h ago · renews when back on Wi-Fi or USB")
+            card(optedIn, .listed([listed(link: "unavailable", lastSeen: seen)])).reach?.line
+                == "Can't reach it right now · Seen 3 h ago · renews when back on Wi-Fi or USB")
         #expect(
-            card(optedIn, .listed([])).offlineNote == "Offline · renews when back on Wi-Fi or USB")
+            card(optedIn, .listed([])).reach?.line
+                == "Not seen by this Mac · renews when back on Wi-Fi or USB")
         // An offline device says it once on the card, not under its rows.
         #expect(card(optedOut, .listed([])).apps.allSatisfy { $0.exception == nil })
     }

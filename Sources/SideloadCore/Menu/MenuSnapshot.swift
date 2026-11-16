@@ -404,8 +404,9 @@ public struct MenuDeviceCard: Sendable, Equatable, Identifiable {
     public var freeSlots: Int
     /// "1 free slot", "2 free slots", "no free slots".
     public var slotsLabel: String
-    /// The one line an offline device shows ("Seen 3 h ago · renews when back on Wi-Fi or USB"); nil otherwise.
-    public var offlineNote: String?
+    /// The line and fix an offline device shows ("Can't reach it right now · Seen 3 h ago · renews when back on Wi-Fi or USB",
+    /// "Unlock it, or connect it to the Mac or the same Wi-Fi."); nil for a visible device and while the list is not known.
+    public var reach: MenuDeviceReach?
     /// The one line a visible device shows when its app list could not be read ("Couldn't check apps (device locked) ·
     /// showing last known"); nil otherwise. "Not checked live" is said once per card, never per row.
     public var appsNote: String?
