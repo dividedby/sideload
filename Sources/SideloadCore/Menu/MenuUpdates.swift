@@ -30,8 +30,7 @@ public enum MenuUpdates {
         guard
             let listed = try? UpdateCacheStore(paths: services.home).listings(
                 now: services.clock.now(),
-                apps: (try? services.store.load()).map(FetchCatalog.appNames)
-                    ?? FetchCatalog.appNames)
+                apps: FetchCatalog.appNames(services))
         else { return [:] }
         return listed.compactMapValues {
             upstream(version: $0.upstream, checkedAt: $0.checkedAt, errorCode: $0.errorCode)

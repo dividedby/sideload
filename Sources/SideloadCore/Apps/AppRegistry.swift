@@ -139,8 +139,8 @@ extension AppDefinition {
 // MARK: - Registry
 
 /// Every app sideload knows, by ID: the built-ins, then the valid entries of `customApps` in `config.json`. The registry
-/// only reads `customApps` and `customSources`; nothing in sideload writes it yet. Each custom entry is checked on its own and fails closed: an
-/// invalid one is left out with a warning, and never stops a built-in or another valid entry.
+/// only reads `customApps` and `customSources`; nothing in sideload writes them yet. Each custom entry is checked on its own
+/// and fails closed: an invalid one is left out with a warning, and never stops a built-in or another valid entry.
 public struct AppRegistry: Sendable {
     /// Built-ins first in their fixed order, then custom entries in `customApps` order.
     public let apps: [AppDefinition]
@@ -172,7 +172,7 @@ public struct AppRegistry: Sendable {
     /// entry of `config.customSources` (design section 8) becomes the `fetch` of the custom app it names.
     public init(config: Config) {
         var (custom, warnings) = Self.customApps(config)
-        let sources = CustomSources.parse(config.extra["customSources"], customApps: custom)
+        let sources = CustomSources.load(config.extra["customSources"], customApps: custom)
         custom = custom.map { app in
             guard let fetch = sources.fetches[app.id] else { return app }
             return AppDefinition(

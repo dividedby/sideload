@@ -20,14 +20,16 @@ All notable changes to this project are documented here. Format follows
 - Custom download sources, first of three PRs (issue 47; this part has not been run against a real source or on a device).
   A hand-edited `customSources` array in `config.json` (kept in the file's unknown keys, so older builds ignore it) gives a
   `customApps` app a GitHub release source (`githubRelease`: `repo`) or an AltStore index source (`altstoreIndex`: `url`,
-  `bundleId`), each with its exact `metadataHosts` and `downloadHosts`. `fetch`, `updates` and `status --notify
---check-updates` then treat it like a built-in: it still needs its `approvedSources` entry and the owner's
-  `fetch --approve` per version. Each entry is checked strictly at load; one that breaks a rule is left out with a
+  `bundleId`), each with its exact `metadataHosts` and `downloadHosts`. `fetch`, `updates` and
+  `status --notify --check-updates` then treat it like a built-in: it still needs its `approvedSources` entry and the
+  owner's `fetch --approve` per version. Each entry is checked strictly at load; one that breaks a rule is left out with a
   `CUSTOM_SOURCE_IGNORED` warning (shown by `status`, `updates` and `source list`). A GitHub source takes the latest
   non-draft, non-prerelease release with exactly one `.ipa` asset and a required SHA-256 digest; the download must be the
   repository's own release asset on a listed host. New `BUNDLE_ID_MISMATCH`: `fetch` deletes and refuses an IPA whose
   bundle ID is not the pinned one (the entry's `bundleId`, or for GitHub the first approved version's, now recorded as
-  `bundleId` on the manifest entry). New read-only `sideload source list` (no network, no lock, no write). `source add`,
+  `bundleId` on the manifest entry). It fails closed: an IPA with no bundle ID, or a first approved version with no
+  recorded one, is refused too. `fetch --approve` makes the same check and deletes the stored file and its unapproved
+  manifest entry on a mismatch. New read-only `sideload source list` (no network, no lock, no write). `source add`,
   `source remove` and the menu bar app's "Add source…" are the next PRs. A custom source's `repo` matches GitHub's URLs without regard to case, and an AltStore index may leave out `buildVersion`. `AGENTS.md` carries the owner's 2026-11-01 rule
   for new sources.
 - `scripts/install-local.sh` (owner-run) builds the checkout and installs the CLI at `~/.local/bin/sideload` and the menu

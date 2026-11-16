@@ -84,45 +84,52 @@ enum CustomSources {
     private static let altstoreKeys = commonKeys.union(["url", "bundleId"])
     private static let maxAddedAt = 40
 
-    struct Result {
+    struct Outcome {
         var fetches: [String: AppDefinition.Fetch] = [:]
         var warnings: [JSONValue] = []
     }
 
+    /// One entry that passed every check: the app it names and the source it gives that app.
+    private struct Entry {
+        let app: String
+        let fetch: AppDefinition.Fetch
+    }
+
     /// The valid sources by app, and one warning for every entry left out. `customApps` is the registry's valid custom apps:
     /// a source may only name one of those.
-    static func parse(_ raw: JSONValue?, customApps: [AppDefinition]) -> Result {
-        guard let raw else { return Result() }
+    static func load(_ raw: JSONValue?, customApps: [AppDefinition]) -> Outcome {
+        guard let raw else { return Outcome() }
         guard case .array(let entries) = raw else {
-            return Result(warnings: [
+            return Outcome(warnings: [
                 warning("customSources is not an array, so every custom source is ignored.")
             ])
         }
-        var parsed:
-            [(
-                index: Int, name: String?,
-                outcome: Swift.Result<AppDefinition.Fetch, AppRegistry.Reason>
-            )] = []
-        for (index, entry) in entries.enumerated() {
-            let name = appName(entry)
-            parsed.append((index, name, parse(entry, customApps: customApps)))
-        }
-        let counts = Dictionary(grouping: parsed.compactMap(\.name), by: { $0 }).mapValues(\.count)
-        var out = Result()
-        for item in parsed {
+        let checked = entries.map { (name: appName($0), result: check($0, customApps: customApps)) }
+        let counts = Dictionary(grouping: checked.compactMap(\.name), by: { $0 }).mapValues(\.count)
+        var out = Outcome()
+        for (index, item) in checked.enumerated() {
             if let name = item.name, counts[name, default: 0] > 1 {
                 out.warnings.append(
-                    ignored(item.index, "another customSources entry names the same app", app: name)
+                    ignoredWarning(
+                        index, "another customSources entry names the same app", app: name)
                 )
                 continue
             }
-            switch item.outcome {
-            case .success(let fetch): out.fetches[item.name ?? ""] = fetch
+            switch item.result {
+            case .success(let entry): out.fetches[entry.app] = entry.fetch
             case .failure(let reason):
-                out.warnings.append(ignored(item.index, reason, app: item.name))
+                out.warnings.append(ignoredWarning(index, reason.text, app: item.name))
             }
         }
         return out
+    }
+
+    /// The `CUSTOM_SOURCE_IGNORED` warnings of `registry`, for one `app` or all. The one place that picks them out.
+    static func ignoredWarnings(in registry: AppRegistry, app: String? = nil) -> [JSONValue] {
+        registry.warnings.filter {
+            guard case .object(let o) = $0, o["code"] == .string(warningCode) else { return false }
+            return app == nil || o["app"] == app.map(JSONValue.string)
+        }
     }
 
     /// The entry's `app` when it is a string, however the rest of the entry fares (duplicates count by it).
@@ -133,11 +140,10 @@ enum CustomSources {
         return name
     }
 
-    private static func parse(_ entry: JSONValue, customApps: [AppDefinition])
-        -> Swift.Result<
-            AppDefinition.Fetch, AppRegistry.Reason
-        >
-    {
+    /// The checks every kind shares, then the one sub-parser of its kind.
+    private static func check(_ entry: JSONValue, customApps: [AppDefinition]) -> Result<
+        Entry, AppRegistry.Reason
+    > {
         guard case .object(let fields) = entry else { return .failure("it is not an object") }
         guard case .string(let kind)? = fields["kind"] else {
             return .failure("its kind is missing or not a string")
@@ -176,21 +182,36 @@ enum CustomSources {
         case .success(let list): downloads = list
         case .failure(let reason): return .failure(reason)
         }
+        let fetch: Result<AppDefinition.Fetch, AppRegistry.Reason>
         if kind == "githubRelease" {
-            guard case .string(let repo)? = fields["repo"], isValidRepo(repo) else {
-                return .failure("its repo is not <owner>/<repo> of plain GitHub names")
-            }
-            guard metadata == [githubMetadataHost] else {
-                return .failure("its metadataHosts is not exactly [\"\(githubMetadataHost)\"]")
-            }
-            guard Set(downloads).isSubset(of: githubDownloadHosts) else {
-                return .failure("a downloadHosts entry is not a GitHub release host")
-            }
-            return .success(
-                AppDefinition.Fetch(
-                    kind: .customGithubRelease(repo: repo), metadataHosts: Set(metadata),
-                    downloadHosts: Set(downloads)))
+            fetch = githubFetch(fields, metadata: metadata, downloads: downloads)
+        } else {
+            fetch = altstoreFetch(fields, metadata: metadata, downloads: downloads)
         }
+        return fetch.map { Entry(app: app, fetch: $0) }
+    }
+
+    private static func githubFetch(
+        _ fields: [String: JSONValue], metadata: [String], downloads: [String]
+    ) -> Result<AppDefinition.Fetch, AppRegistry.Reason> {
+        guard case .string(let repo)? = fields["repo"], isValidRepo(repo) else {
+            return .failure("its repo is not <owner>/<repo> of plain GitHub names")
+        }
+        guard metadata == [githubMetadataHost] else {
+            return .failure("its metadataHosts is not exactly [\"\(githubMetadataHost)\"]")
+        }
+        guard Set(downloads).isSubset(of: githubDownloadHosts) else {
+            return .failure("a downloadHosts entry is not a GitHub release host")
+        }
+        return .success(
+            AppDefinition.Fetch(
+                kind: .customGithubRelease(repo: repo), metadataHosts: Set(metadata),
+                downloadHosts: Set(downloads)))
+    }
+
+    private static func altstoreFetch(
+        _ fields: [String: JSONValue], metadata: [String], downloads: [String]
+    ) -> Result<AppDefinition.Fetch, AppRegistry.Reason> {
         guard case .string(let raw)? = fields["url"] else {
             return .failure("its url is missing or not a string")
         }
@@ -213,7 +234,7 @@ enum CustomSources {
 
     /// 1 to 4 distinct valid hosts.
     private static func hosts(_ value: JSONValue?, key: String)
-        -> Swift.Result<
+        -> Result<
             [String], AppRegistry.Reason
         >
     {
@@ -254,13 +275,7 @@ enum CustomSources {
         return fractional.date(from: text) != nil
     }
 
-    private static func ignored(_ index: Int, _ reason: AppRegistry.Reason, app: String?)
-        -> JSONValue
-    {
-        ignored(index, reason.text, app: app)
-    }
-
-    private static func ignored(_ index: Int, _ reason: String, app: String?) -> JSONValue {
+    private static func ignoredWarning(_ index: Int, _ reason: String, app: String?) -> JSONValue {
         var w = warning("customSources entry \(index) is ignored: \(reason).")
         if case .object(var o) = w {
             o["index"] = .number(Double(index))

@@ -44,6 +44,14 @@ struct FetchSource: Sendable, Equatable {
             }
         }
 
+        /// The `kind` a source of this shape has in `customSources` and in `source list`.
+        var configKind: String {
+            switch self {
+            case .githubRelease, .customGithubRelease: "githubRelease"
+            case .altstoreIndex, .customAltstoreIndex: "altstoreIndex"
+            }
+        }
+
         /// Added by the owner in `customSources` rather than defined in code.
         var isCustom: Bool {
             switch self {
@@ -88,15 +96,17 @@ enum FetchCatalog {
         config.appRegistry.fetchSources.map(\.app)
     }
 
+    /// The same for a command that has not read the config: the built-ins' when it cannot be read.
+    static func appNames(_ services: Services) -> [String] {
+        (try? services.store.load()).map(appNames) ?? appNames
+    }
+
     /// The source of `app` in the config's registry, if the owner approved it in `config.approvedSources`. An entry is an
     /// object `{"app": "<key>"}`; an optional `"hosts": [...]` narrows the allowlist (it can never add a host).
     static func approved(app: String, config: Config) throws -> FetchSource {
         let sources = config.appRegistry.fetchSources
         guard let source = sources.first(where: { $0.app == app }) else {
-            let ignored = config.appRegistry.warnings.contains {
-                guard case .object(let o) = $0, o["app"] == .string(app) else { return false }
-                return o["code"] == .string(CustomSources.warningCode)
-            }
+            let ignored = !CustomSources.ignoredWarnings(in: config.appRegistry, app: app).isEmpty
             throw SideloadError(
                 "SOURCE_NOT_ALLOWED", "\"\(printableCut(app))\" is not a source fetch knows.",
                 fix: "Use one of: \(sources.map(\.app).joined(separator: ", "))."

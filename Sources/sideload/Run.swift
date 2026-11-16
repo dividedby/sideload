@@ -77,7 +77,6 @@ private let appSpec = ArgSpec(values: ["app", "device"], flags: ["yes"])
 private let slotSpec = ArgSpec(values: ["device", "udid", "to", "app"], flags: ["yes"])
 private let fetchSpec = ArgSpec(values: ["app", "version"], flags: ["approve"])
 private let updatesSpec = ArgSpec(values: ["app"], flags: ["force"])
-private let sourceSpec = ArgSpec(values: ["url", "app"], flags: ["yes"])
 private let cleanSpec = ArgSpec(flags: ["yes"])
 private let portalSpec = ArgSpec(flags: ["show-identifiers"])
 // Plain `status` takes no option; `--notify` and `--print-agent` are alternatives, `--binary` belongs to `--print-agent` and
@@ -127,7 +126,7 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     case "fetch": spec = fetchSpec
     case "updates": spec = updatesSpec
     case "clean": spec = cleanSpec
-    case "source": spec = sourceSpec
+    case "source": spec = ArgSpec()
     case "provision": spec = provisionSpec
     case "sign": spec = signSpec
     case "install": spec = installSpec
@@ -271,11 +270,7 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
             UpdatesOptions(app: parsed.values["app"], force: parsed.flags.contains("force")))
     }
     if command == "source" {
-        return SourceCommand.run(
-            services,
-            SourceOptions(
-                sub: parsed.positionals.first, url: parsed.values["url"],
-                app: parsed.values["app"], yes: parsed.flags.contains("yes")))
+        return SourceCommand.run(services, SourceOptions(sub: parsed.positionals.first))
     }
     if command == "clean" {
         return CleanCommand.run(services, CleanOptions(yes: parsed.flags.contains("yes")))

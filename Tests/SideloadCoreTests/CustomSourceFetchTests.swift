@@ -506,9 +506,14 @@ struct CustomFetchTests {
             let blocked = await fetch(
                 paths, githubTransport(stremio, tag: "0.3.9"), approve: "0.3.9")
             #expect(blocked.firstCode == "BUNDLE_ID_MISMATCH")
+            // ... and the refused file and its unapproved entry are gone, as a refused download leaves nothing.
+            let afterApprove = try ManifestStore(paths: paths).load()
+            #expect(afterApprove.entry(app: "myapp", version: "0.3.9") == nil)
+            #expect(afterApprove.entry(app: "myapp", version: "0.3.8")?.approved == true)
+            #expect(!FileManager.default.fileExists(atPath: paths.downloads + "/myapp/0.3.9"))
             #expect(
-                try ManifestStore(paths: paths).load().entry(app: "myapp", version: "0.3.9")?
-                    .approved == false)
+                FileManager.default.fileExists(atPath: paths.downloads + "/myapp/0.3.8/App.ipa"))
+            expectLockFree(paths)
             // ... and a later upload with the other bundle ID is refused and deleted.
             let later = await fetch(paths, githubTransport(stremio, tag: "0.4.0"))
             #expect(later.firstCode == "BUNDLE_ID_MISMATCH")
@@ -518,6 +523,45 @@ struct CustomFetchTests {
             #expect(partFiles(paths).isEmpty && scratchFolders(paths).isEmpty)
             // The same app at a newer version is fine.
             #expect(await fetch(paths, githubTransport(apollo, tag: "0.4.1")).ok)
+        }
+    }
+
+    @Test(
+        "GitHub: an earliest approved version with no recorded bundle ID refuses, the pin never moves on"
+    )
+    func githubLegacyPin() async throws {
+        let apollo = try await SampleIPAs.shared.data("plain")
+        let stremio = try await SampleIPAs.shared.data("withExtension")
+        try await withCustom(sources: [githubEntry]) { paths, _ in
+            let store = ManifestStore(paths: paths)
+            #expect(await fetch(paths, githubTransport(apollo, tag: "0.3.8")).ok)
+            #expect(await fetch(paths, githubTransport(apollo, tag: "0.3.8"), approve: "0.3.8").ok)
+            // A later version, fetched and waiting for the owner.
+            #expect(await fetch(paths, githubTransport(apollo, tag: "0.5.0")).ok)
+            // The first approval is as an older build left it: no bundle ID recorded.
+            var manifest = try store.load()
+            var legacy = try #require(manifest.entry(app: "myapp", version: "0.3.8"))
+            legacy.bundleId = nil
+            manifest.upsert(legacy)
+            try store.save(manifest)
+
+            // Approving the waiting version is refused and it is deleted ...
+            let approve = await fetch(
+                paths, githubTransport(apollo, tag: "0.5.0"), approve: "0.5.0")
+            #expect(approve.firstCode == "BUNDLE_ID_MISMATCH")
+            #expect(approve.errors.first?.message.contains("no recorded bundle ID") == true)
+            #expect(try store.load().entry(app: "myapp", version: "0.5.0") == nil)
+            #expect(!FileManager.default.fileExists(atPath: paths.downloads + "/myapp/0.5.0"))
+            // ... and so is any new fetch, of another app or of the same one: there is no pin to check against.
+            for (ipa, tag) in [(stremio, "0.6.0"), (apollo, "0.6.1")] {
+                let out = await fetch(paths, githubTransport(ipa, tag: tag))
+                #expect(out.firstCode == "BUNDLE_ID_MISMATCH", "\(tag)")
+                #expect(out.errors.first?.fix?.contains("manifest.json") == true)
+                #expect(try store.load().entry(app: "myapp", version: tag) == nil)
+                #expect(!FileManager.default.fileExists(atPath: paths.downloads + "/myapp/" + tag))
+            }
+            #expect(partFiles(paths).isEmpty && scratchFolders(paths).isEmpty)
+            expectLockFree(paths)
         }
     }
 

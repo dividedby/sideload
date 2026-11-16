@@ -433,21 +433,20 @@ struct SourceListTests {
         #expect(custom["downloadHosts"] == [] && custom["approved"] == true)
     }
 
-    @Test("it takes no option; add and remove are not built yet; help lists it")
+    @Test("list is the only subcommand and takes no option; help lists it")
     func usage() async throws {
         let config = customConfig(sources: [])
-        let (yes, _, _) = try await invokeSource(["source", "list", "--yes"], config: config)
-        #expect(yes.firstCode == "USAGE")
-        let (bare, _, _) = try await invokeSource(["source"], config: config)
-        #expect(bare.firstCode == "USAGE")
-        let (add, http, _) = try await invokeSource(
-            ["source", "add", "--url", "https://x.example.org/a", "--yes"], config: config)
-        #expect(add.firstCode == "NOT_IMPLEMENTED" && http.callCount == 0)
-        let (remove, _, _) = try await invokeSource(
-            ["source", "remove", "--app", "myapp"], config: config)
-        #expect(remove.firstCode == "NOT_IMPLEMENTED")
+        for argv in [
+            ["source", "list", "--yes"], ["source"], ["source", "add"],
+            ["source", "add", "--url", "https://x.example.org/a", "--yes"],
+            ["source", "remove", "--app", "myapp"], ["source", "list", "extra"],
+        ] {
+            let (out, http, _) = try await invokeSource(argv, config: config)
+            #expect(out.firstCode == "USAGE" && http.callCount == 0, "\(argv)")
+        }
         let (help, _, _) = try await invokeSource(["help"], config: config)
-        #expect(help.data["usage"]?.array?.contains("source list") == true)
+        let usage = help.data["usage"]?.array?.compactMap(\.string) ?? []
+        #expect(usage.filter { $0.hasPrefix("source") } == ["source list"])
         #expect(help.data["built"]?.array?.contains("source") == true)
     }
 }

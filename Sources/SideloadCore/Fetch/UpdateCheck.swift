@@ -46,10 +46,7 @@ enum UpdateCheck {
         let now = services.clock.now()
         var report = Report(checkedAt: now)
         // A custom source that is left out says why, as `status` does.
-        report.warnings += config.appRegistry.warnings.filter {
-            guard case .object(let o) = $0 else { return false }
-            return o["code"] == .string(CustomSources.warningCode)
-        }
+        report.warnings += CustomSources.ignoredWarnings(in: config.appRegistry)
 
         let store = UpdateCacheStore(paths: services.home)
         var cache = UpdateCache()
