@@ -139,7 +139,7 @@ extension AppDefinition {
 // MARK: - Registry
 
 /// Every app sideload knows, by ID: the built-ins, then the valid entries of `customApps` in `config.json`. The registry
-/// only reads `customApps` and `customSources`; nothing in sideload writes them yet. Each custom entry is checked on its own
+/// only reads `customApps` and `customSources`; only `source add` and `source remove` write them. Each custom entry is checked on its own
 /// and fails closed: an invalid one is left out with a warning, and never stops a built-in or another valid entry.
 public struct AppRegistry: Sendable {
     /// Built-ins first in their fixed order, then custom entries in `customApps` order.
@@ -161,6 +161,13 @@ public struct AppRegistry: Sendable {
     static let platforms: Set<String> = ["ios", "tvos"]
     static let entryKeys: Set<String> = ["id", "name", "suffix", "platform"]
     static let maxDisplayName = 64
+
+    /// 1 to 64 printable ASCII characters with no space at either end.
+    static func isValidDisplayName(_ text: String) -> Bool {
+        !text.isEmpty && text.count <= maxDisplayName
+            && text == printableCut(text, to: maxDisplayName)
+            && text.trimmingCharacters(in: .whitespaces) == text
+    }
 
     init(apps: [AppDefinition], warnings: [JSONValue]) {
         self.apps = apps
@@ -291,10 +298,7 @@ public struct AppRegistry: Sendable {
         }
         var name = MenuFormat.capitalised(id)
         if let raw = fields["name"] {
-            guard case .string(let text) = raw, !text.isEmpty, text.count <= maxDisplayName,
-                text == printableCut(text, to: maxDisplayName),
-                text.trimmingCharacters(in: .whitespaces) == text
-            else {
+            guard case .string(let text) = raw, isValidDisplayName(text) else {
                 return .failure(
                     "its name is not 1 to \(maxDisplayName) printable characters with no outer spaces"
                 )

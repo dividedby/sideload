@@ -433,20 +433,25 @@ struct SourceListTests {
         #expect(custom["downloadHosts"] == [] && custom["approved"] == true)
     }
 
-    @Test("list is the only subcommand and takes no option; help lists it")
+    @Test(
+        "list, add and remove are the subcommands; list takes no option and add needs its confirm; help lists them"
+    )
     func usage() async throws {
         let config = customConfig(sources: [])
         for argv in [
             ["source", "list", "--yes"], ["source"], ["source", "add"],
             ["source", "add", "--url", "https://x.example.org/a", "--yes"],
-            ["source", "remove", "--app", "myapp"], ["source", "list", "extra"],
+            ["source", "list", "--url", "https://x.example.org/a"], ["source", "list", "extra"],
         ] {
             let (out, http, _) = try await invokeSource(argv, config: config)
             #expect(out.firstCode == "USAGE" && http.callCount == 0, "\(argv)")
         }
         let (help, _, _) = try await invokeSource(["help"], config: config)
         let usage = help.data["usage"]?.array?.compactMap(\.string) ?? []
-        #expect(usage.filter { $0.hasPrefix("source") } == ["source list"])
+        let sourceUsage = usage.filter { $0.hasPrefix("source") }
+        #expect(sourceUsage.count == 3 && sourceUsage[0] == "source list")
+        #expect(sourceUsage[1].hasPrefix("source add --url <https url>"))
+        #expect(sourceUsage[2] == "source remove --app <id> [--yes]")
         #expect(help.data["built"]?.array?.contains("source") == true)
     }
 }

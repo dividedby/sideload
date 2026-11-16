@@ -27,6 +27,8 @@ struct ActionCardView: View {
             .card()
         case .addingDevice(let picker):
             DevicePickerView(picker: picker, model: model)
+        case .addingSource(let picker):
+            SourcePickerView(picker: picker, model: model)
         case .finished(let outcome):
             ResultView(outcome: outcome, model: model)
         }
@@ -50,6 +52,17 @@ private struct ConfirmView: View {
                     Text(line).font(.callout).foregroundStyle(.secondary).fixedSize(
                         horizontal: false, vertical: true)
                 }
+            }
+            if let choice = prompt.platformChoice {
+                Picker(
+                    "Platform",
+                    selection: Binding(
+                        get: { choice.selected }, set: { model.chooseSourcePlatform($0) })
+                ) {
+                    ForEach(choice.options, id: \.platform) { Text($0.label).tag($0.platform) }
+                }
+                .pickerStyle(.segmented)
+                Text(choice.note).secondaryNote()
             }
             HStack {
                 Spacer()

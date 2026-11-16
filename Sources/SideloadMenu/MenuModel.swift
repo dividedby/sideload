@@ -330,6 +330,74 @@ final class MenuModel {
         request(.saveDevice(alias: MenuAddDevice.trimmedAlias(alias), candidate: candidate))
     }
 
+    // MARK: Add source
+
+    /// Add source… takes a click once the panel has read the config. It needs no device, so it is open on first run too.
+    var canAddSource: Bool { controlsEnabled && actionSnapshot != nil }
+
+    /// Opens the address field. Nothing is read until Continue.
+    func openAddSource() {
+        guard canAddSource else { return }
+        closePicker()
+        actionState = .addingSource(.entering(url: "", problem: nil))
+    }
+
+    /// The field's Continue: the one read-only preview (`MenuSourceAdd.preview`, the same core `source add` runs). It ends at the
+    /// confirm, at the list of an index's apps, or back at the field with why it stopped. Cancel closes it (and the request).
+    func previewSource(url raw: String) {
+        guard case .addingSource = actionState, actionTask == nil else { return }
+        let url = MenuSourceAdd.trimmedURL(raw)
+        guard MenuSourceAdd.urlProblem(url) == nil else { return }
+        pickerTask?.cancel()
+        pickerGeneration += 1
+        let generation = pickerGeneration
+        actionState = .addingSource(.looking(url: url))
+        pickerTask = Task { [services] in
+            let step = await MenuSourceAdd.preview(services, url: url)
+            guard generation == pickerGeneration else { return }
+            pickerTask = nil
+            applySourceStep(step, url: url)
+        }
+    }
+
+    /// The list's Continue: the plan for this app of the index.
+    func chooseSource(_ choices: MenuSourceChoices, _ choice: MenuSourceChoice) {
+        guard case .addingSource(.choosing) = actionState, actionTask == nil else { return }
+        applySourceStep(
+            MenuSourceAdd.choose(choices, choice, services: services), url: choices.url)
+    }
+
+    /// The confirm's platform choice: the plan is made again from the same read (no new GET) and the confirm opens for it, so
+    /// the bundle ID and confirm value shown are the ones the click passes.
+    func chooseSourcePlatform(_ platform: String) {
+        guard actionTask == nil,
+            case .confirming(.addSource(let source), let shown) = actionState,
+            shown.platformChoice?.selected != platform
+        else { return }
+        switch MenuSourceAdd.choosePlatform(source, platform, services: services) {
+        case .confirm(let next):
+            request(.addSource(next))
+        case .failed(let issue):
+            actionState = .finished(MenuActionOutcome.notRun(issue.message))
+        case .choose:
+            break
+        }
+    }
+
+    private func applySourceStep(_ step: MenuSourceStep, url: String) {
+        switch step {
+        case .confirm(let plan):
+            request(.addSource(plan))
+            if case .confirming = actionState { return }
+            actionState = .addingSource(
+                .entering(
+                    url: url,
+                    problem: MenuActionOutcome.notRunIssue(MenuSourceAdd.panelNotReady)))
+        case .choose(let choices): actionState = .addingSource(.choosing(choices))
+        case .failed(let issue): actionState = .addingSource(.entering(url: url, problem: issue))
+        }
+    }
+
     private func closePicker() {
         pickerGeneration += 1
         pickerTask?.cancel()
@@ -356,7 +424,7 @@ final class MenuModel {
     func dismiss() {
         switch actionState {
         case .confirming, .finished: actionState = .idle
-        case .addingDevice:
+        case .addingDevice, .addingSource:
             closePicker()
             actionState = .idle
         case .idle, .running: break
@@ -369,7 +437,7 @@ final class MenuModel {
         case .idle: true
         // A result is replaced by the next action, but not while the command's post-result work still runs.
         case .finished: actionTask == nil
-        case .confirming, .running, .addingDevice: false
+        case .confirming, .running, .addingDevice, .addingSource: false
         }
     }
 

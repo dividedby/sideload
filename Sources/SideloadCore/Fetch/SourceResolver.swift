@@ -47,9 +47,12 @@ enum SourceResolver {
         return text
     }
 
+    /// The code of a source that published no usable SHA-256.
+    static let missingDigestCode = "UPSTREAM_DIGEST_MISSING"
+
     private static var missingDigest: SideloadError {
         SideloadError(
-            "UPSTREAM_DIGEST_MISSING", "The source published no usable SHA-256 for this file.",
+            missingDigestCode, "The source published no usable SHA-256 for this file.",
             fix:
                 "Nothing is downloaded without a digest to check it against. Wait for the publisher to fix the metadata."
         )
@@ -141,7 +144,7 @@ enum SourceResolver {
 
     // MARK: Stremio (gorlev AltStore-style indexes)
 
-    private struct Loose: Decodable {
+    struct Loose: Decodable {
         let text: String?
 
         init(from decoder: any Decoder) throws {
@@ -159,11 +162,14 @@ enum SourceResolver {
         }
     }
 
-    private struct Index: Decodable {
+    struct Index: Decodable {
         var apps: [App]?
 
         struct App: Decodable {
+            var name: Loose?
             var bundleIdentifier: String?
+            /// `tvos` when the index says the app is for the Apple TV; `source add` reads it for its default platform.
+            var platform: Loose?
             var versions: [Version]?
         }
 

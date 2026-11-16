@@ -47,6 +47,8 @@ private func help() -> Envelope {
                 .string("slot restore --device <alias> [--app <\(all)>] --yes"),
                 "clean [--yes]",
                 "source list",
+                "source add --url <https url> [--app <id>] [--bundle <bundle id>] [--platform ios|tvos] [--name <name>] [--confirm <value> --yes]",
+                "source remove --app <id> [--yes]",
                 "ledger [refresh]",
                 "portal [certificates|bundle-ids|devices|profiles] [--show-identifiers]",
                 "status",
@@ -78,6 +80,8 @@ private let slotSpec = ArgSpec(values: ["device", "udid", "to", "app"], flags: [
 private let fetchSpec = ArgSpec(values: ["app", "version"], flags: ["approve"])
 private let updatesSpec = ArgSpec(values: ["app"], flags: ["force"])
 private let cleanSpec = ArgSpec(flags: ["yes"])
+private let sourceSpec = ArgSpec(
+    values: ["url", "app", "bundle", "platform", "name", "confirm"], flags: ["yes"])
 private let portalSpec = ArgSpec(flags: ["show-identifiers"])
 // Plain `status` takes no option; `--notify` and `--print-agent` are alternatives, `--binary` belongs to `--print-agent` and
 // `--check-updates` to `--notify`.
@@ -126,7 +130,7 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     case "fetch": spec = fetchSpec
     case "updates": spec = updatesSpec
     case "clean": spec = cleanSpec
-    case "source": spec = ArgSpec()
+    case "source": spec = sourceSpec
     case "provision": spec = provisionSpec
     case "sign": spec = signSpec
     case "install": spec = installSpec
@@ -270,7 +274,13 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
             UpdatesOptions(app: parsed.values["app"], force: parsed.flags.contains("force")))
     }
     if command == "source" {
-        return SourceCommand.run(services, SourceOptions(sub: parsed.positionals.first))
+        return await SourceCommand.run(
+            services,
+            SourceOptions(
+                sub: parsed.positionals.first, url: parsed.values["url"],
+                app: parsed.values["app"], bundle: parsed.values["bundle"],
+                platform: parsed.values["platform"], name: parsed.values["name"],
+                confirm: parsed.values["confirm"], yes: parsed.flags.contains("yes")))
     }
     if command == "clean" {
         return CleanCommand.run(services, CleanOptions(yes: parsed.flags.contains("yes")))

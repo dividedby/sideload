@@ -17,6 +17,26 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
+- Custom download sources, second and third of three PRs (issue 47, which this completes; not run against a real source, a
+  device or in the built menu bar app). `sideload source add --url <https url> [--app <id>] [--bundle <bundle ID>]
+[--platform ios|tvos] [--name <name>] [--confirm <value> --yes]`: a `https://github.com/<owner>/<repo>` URL is a GitHub
+  release source, any other URL has to answer with an AltStore index, anything else is `SOURCE_KIND_UNKNOWN`. Without
+  `--yes` it is a preview: one bounded metadata GET (4 MiB) through `Services.http`, no lock, no write, no download, with
+  the kind, the metadata host, every download host, the apps found (at most 50), the app ID, platform and
+  `<prefix>.free.<suffix>` it would add, a `confirm` value and the exact command to run. An index of several apps is
+  `SOURCE_AMBIGUOUS` until `--bundle` picks one (there is no add-all); a version with no digest is
+  `UPSTREAM_DIGEST_MISSING`. `--yes` needs `--confirm`: it reads the source again outside the lock, refuses with
+  `SOURCE_CHANGED` if the confirm value (kind, address, bundle ID, app, platform and hosts, not the version or digest)
+  differs, then under `.op.lock` writes the `customApps`, `customSources` and `approvedSources` entries in one config edit,
+  and fetches nothing. `APP_EXISTS` and `SOURCE_EXISTS` refuse a taken ID or suffix; a custom app with no source and the
+  same platform can be given one. `sideload source remove --app <id> [--yes]` previews what stays, and with `--yes` removes
+  only that app's `customSources` and `approvedSources` entries (the custom app, its manifest entries, downloads, ledger and
+  installs stay, so sign and refresh keep working; `SOURCE_BUILT_IN`, `SOURCE_NOT_FOUND`). The menu bar app's "Add
+  source…" (beside "Add device…") takes the address, shows the same preview (a picker when an index lists several apps),
+  and its confirm card (address, hosts, upstream bundle ID and version, app, platform, free bundle ID, a third-party
+  warning) is the owner's `--yes` with that confirm value; the new app then appears under Add app…; a new app's card has an iOS / Apple TV choice (an index that does not label the platform is iOS). Whether the app is new or an existing one given a source is part of the confirm value. `AGENTS.md` says
+  agents never run `source add` or `source remove --yes` against the real home.
+
 - Custom download sources, first of three PRs (issue 47; this part has not been run against a real source or on a device).
   A hand-edited `customSources` array in `config.json` (kept in the file's unknown keys, so older builds ignore it) gives a
   `customApps` app a GitHub release source (`githubRelease`: `repo`) or an AltStore index source (`altstoreIndex`: `url`,
@@ -29,8 +49,7 @@ All notable changes to this project are documented here. Format follows
   bundle ID is not the pinned one (the entry's `bundleId`, or for GitHub the first approved version's, now recorded as
   `bundleId` on the manifest entry). It fails closed: an IPA with no bundle ID, or a first approved version with no
   recorded one, is refused too. `fetch --approve` makes the same check and deletes the stored file and its unapproved
-  manifest entry on a mismatch. New read-only `sideload source list` (no network, no lock, no write). `source add`,
-  `source remove` and the menu bar app's "Add source…" are the next PRs. A custom source's `repo` matches GitHub's URLs without regard to case, and an AltStore index may leave out `buildVersion`. `AGENTS.md` carries the owner's 2026-11-01 rule
+  manifest entry on a mismatch. New read-only `sideload source list` (no network, no lock, no write). A custom source's `repo` matches GitHub's URLs without regard to case, and an AltStore index may leave out `buildVersion`. `AGENTS.md` carries the owner's 2026-11-01 rule
   for new sources.
 - `scripts/install-local.sh` (owner-run) builds the checkout and installs the CLI at `~/.local/bin/sideload` and the menu
   bar app, then reports the launchd agents' state. It refuses a dirty tree or a branch other than `main` (unless

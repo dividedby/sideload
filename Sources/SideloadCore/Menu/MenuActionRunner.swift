@@ -21,6 +21,11 @@ public struct MenuActionSteps: Sendable {
     public var autoRenew: @Sendable (Services, DeviceOptions) async -> Envelope = {
         await DeviceCommand.run($0, $1)
     }
+    /// Add source: `source add --yes`, which reads the source again and refuses with `SOURCE_CHANGED` when it is not what was
+    /// previewed. It takes `.op.lock` itself, around the one config edit.
+    public var addSource: @Sendable (Services, SourceOptions) async -> Envelope = {
+        await SourceCommand.run($0, $1)
+    }
     /// Add app: `fetch` (stage 1, and `--approve --version` in stage 2), then `provision`, `sign` and `install`.
     public var fetch: @Sendable (Services, FetchOptions) async -> Envelope = {
         await FetchCommand.run($0, $1)
@@ -112,6 +117,8 @@ public enum MenuActionRunner {
                 DeviceOptions(
                     sub: "save", alias: alias, match: candidate.match, platform: candidate.platform,
                     yes: true))
+        case .addSource(let source):
+            envelope = await steps.addSource(services, MenuSourceAdd.options(source))
         case .autoRenew(let device, let on):
             // The same config-only command the CLI runs, with the owner's click as `--yes`. It takes no `.op.lock` and reads no
             // ledger: auto-renew does not collide with the lab, and `refresh --auto` reads the setting afresh at each run.
