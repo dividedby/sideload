@@ -100,7 +100,7 @@ team) before changing anything.
 - A new source is allowed only when the owner confirms its URL and exact hosts, by `source add --yes` or the menu bar app's
   confirm click. Agents never pass that flag, never click it and never add a source to `config.json`. Each version from any
   source still needs the owner's approval, with version and SHA-256 recorded. (Owner decision 2026-11-01; issue 47.
-  `source add --yes`, `source remove --yes` and the menu's "Add source…" are built; none has been run against a real source or in the built app.)
+  `source add --yes`, `source remove --yes` and the menu's "Add source…" are built; the owner first added and installed a GitHub source (PhotosBackup) through the menu on 2026-11-16.)
 - `sideload source list` is read-only and safe for an agent to run: no network, no lock, no device, no write. It lists
   every source, built-in and custom, with its exact hosts and whether `approvedSources` approves it. `source add` without
   `--yes` is a preview that writes nothing, but it does one GET to the address it is given, so it is the owner's to run
