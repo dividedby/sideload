@@ -106,6 +106,42 @@ struct MenuAddSourceReadTests {
         }
     }
 
+    @Test("the picker refuses an app with no SHA-256 itself, before the config is read")
+    func blockedPick() async throws {
+        let http = SourceHTTP([sourceIndexURL: indexJSON(manyApps)])
+        try await withSourceHome(config: menuConfig(), http: http) { paths, services in
+            guard
+                case .choose(let choices) = await MenuSourceAdd.preview(
+                    services, url: sourceIndexURL)
+            else {
+                Issue.record("expected the picker")
+                return
+            }
+            // With the config unreadable, only a refusal made before reading it can say what the pick is.
+            try Data("{ not json".utf8).write(to: URL(fileURLWithPath: paths.config))
+            let blocked = try #require(choices.choices.first { $0.blocked != nil })
+            let refused = MenuSourceAdd.choose(choices, blocked, services: services)
+            #expect(failure(refused)?.code == "UPSTREAM_DIGEST_MISSING")
+            #expect(failure(refused)?.message == MenuSourceAdd.noDigest)
+            let other = MenuSourceAdd.choose(choices, choices.choices[0], services: services)
+            #expect(failure(other)?.code == "CONFIG_INVALID", "the config really was unreadable")
+        }
+    }
+
+    @Test("the words the views draw come from here")
+    func wording() {
+        #expect(
+            MenuSourceAdd.entryLabel == "Add source…" && MenuSourceAdd.cardTitle == "Add source")
+        #expect(MenuSourceAdd.addressHint.contains("https://github.com/owner/repo"))
+        #expect(MenuSourceAdd.pickerIntro.contains("Pick the one to add"))
+        #expect(MenuSourceAdd.readingLabel == "Reading the source…")
+        #expect(MenuSourceAdd.confirmLabel == "Add source" && !MenuSourceAdd.entryHelp.isEmpty)
+        #expect(
+            MenuActionOutcome.notRunIssue(MenuSourceAdd.panelNotReady)
+                == MenuIssue(code: "NOT_RUN", message: "The panel is not ready for this yet."))
+        #expect(MenuActionOutcome.notRun("x").issues == [MenuActionOutcome.notRunIssue("x")])
+    }
+
     @Test("a long index is cut to 50 apps and says so")
     func truncated() async throws {
         let many = (0..<60).map { IndexEntry(name: "App \($0)", bundleId: "io.example.app\($0)") }
@@ -216,6 +252,68 @@ struct MenuAddSourceRunTests {
             #expect(
                 MenuActions.reconfirm(.addSource(source), shown: shown, in: snapshot, now: testNow)
                     == .run(shown))
+        }
+    }
+
+    @Test(
+        "the card offers iOS or Apple TV, starting at what the preview inferred; the plan and confirm follow it"
+    )
+    func platform() async throws {
+        let http = SourceHTTP([sourceIndexURL: indexJSON([IndexEntry()])])
+        try await world(http: http, url: sourceIndexURL) { _, services, source in
+            let snapshot = menuBuild()
+            func card(_ plan: MenuSourcePlan) throws -> MenuPrompt {
+                try #require(MenuActions.prompt(for: .addSource(plan), in: snapshot, now: testNow))
+            }
+            let shown = try card(source)
+            #expect(source.plan.platform == "ios")
+            let choice = try #require(shown.platformChoice)
+            #expect(choice.selected == "ios" && choice.options.map(\.platform) == ["ios", "tvos"])
+            #expect(choice.options.map(\.label) == ["iOS", "Apple TV"])
+            #expect(shown.lines.joined().contains("for iOS"))
+
+            let requests = http.getRequests.count
+            let step = MenuSourceAdd.choosePlatform(source, "tvos", services: services)
+            let tv = try #require(plan(step), "\(step)")
+            #expect(http.getRequests.count == requests, "no second GET")
+            #expect(tv.plan.platform == "tvos" && tv.confirm != source.confirm)
+            #expect(tv.appId == source.appId && tv.plan.bundleId == source.plan.bundleId)
+            #expect(tv.plan.freeBundleId == source.plan.freeBundleId)
+            let tvCard = try card(tv)
+            #expect(tvCard.platformChoice?.selected == "tvos")
+            #expect(tvCard.lines.joined().contains("for tvOS"))
+            // Back again is the first plan.
+            let back = try #require(
+                plan(MenuSourceAdd.choosePlatform(tv, "ios", services: services)))
+            #expect(back.confirm == source.confirm)
+
+            // The click passes the chosen platform and the matching confirm value.
+            let options = MenuSourceAdd.options(tv)
+            #expect(options.platform == "tvos" && options.confirm == tv.confirm && options.yes)
+            let cli = await run(
+                argv: ["source"] + addArgs(sourceIndexURL, ["--platform", "tvos"]),
+                services: services)
+            #expect(cli.data["confirm"] == .string(tv.confirm))
+        }
+        // An index that labels the app tvos starts there.
+        let labelled = SourceHTTP([sourceIndexURL: indexJSON([IndexEntry(platform: "tvos")])])
+        try await world(http: labelled, url: sourceIndexURL) { _, _, source in
+            let shown = try #require(
+                MenuActions.prompt(for: .addSource(source), in: menuBuild(), now: testNow))
+            #expect(source.plan.platform == "tvos" && shown.platformChoice?.selected == "tvos")
+        }
+    }
+
+    @Test("an app that is only given a source has no platform choice")
+    func attachedPlatform() async throws {
+        let http = SourceHTTP([widgetAPI: widgetRelease()])
+        var config = menuConfig()
+        config.extra["customApps"] = [["id": "widget", "platform": "tvos"]]
+        try await world(config: config, http: http) { _, _, source in
+            let shown = try #require(
+                MenuActions.prompt(for: .addSource(source), in: menuBuild(), now: testNow))
+            #expect(source.plan.attaches && source.plan.platform == "tvos")
+            #expect(shown.platformChoice == nil)
         }
     }
 
@@ -458,6 +556,37 @@ struct MenuAddSourceModelTests {
             return false
         }
         #expect(w.model.controlsEnabled)
+    }
+
+    @Test(
+        "switching the card to Apple TV makes the confirm again with no second GET; the click adds a tvOS app"
+    )
+    func platformSwitch() async throws {
+        let w = try await world(
+            config: menuConfig(), http: SourceHTTP([sourceIndexURL: indexJSON([IndexEntry()])]))
+        defer { try? FileManager.default.removeItem(at: w.dir) }
+        w.model.openAddSource()
+        w.model.previewSource(url: sourceIndexURL)
+        try await until { confirming(w.model) != nil }
+        let (first, shown) = try #require(confirming(w.model))
+        #expect(shown.platformChoice?.selected == "ios")
+
+        w.model.chooseSourcePlatform("ios")  // already chosen: nothing changes
+        #expect(confirming(w.model)?.0 == first)
+        w.model.chooseSourcePlatform("tvos")
+        let (second, changed) = try #require(confirming(w.model))
+        #expect(second != first && changed.platformChoice?.selected == "tvos")
+        #expect(w.http.getRequests.count == 1)
+
+        w.model.confirm()
+        try await until { !w.model.actionBusy }
+        guard case .finished(let outcome) = w.model.actionState else {
+            Issue.record("expected a result, got \(w.model.actionState)")
+            return
+        }
+        #expect(outcome.kind == .done, "\(outcome.issues)")
+        let config = try w.model.services.store.load()
+        #expect(config.extra["customApps"] == [["id": "widget", "platform": "tvos"]])
     }
 
     @Test("an index of several apps asks which; the pick opens the confirm")

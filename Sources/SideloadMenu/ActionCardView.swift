@@ -53,6 +53,17 @@ private struct ConfirmView: View {
                         horizontal: false, vertical: true)
                 }
             }
+            if let choice = prompt.platformChoice {
+                Picker(
+                    "Platform",
+                    selection: Binding(
+                        get: { choice.selected }, set: { model.chooseSourcePlatform($0) })
+                ) {
+                    ForEach(choice.options, id: \.platform) { Text($0.label).tag($0.platform) }
+                }
+                .pickerStyle(.segmented)
+                Text(choice.note).secondaryNote()
+            }
             HStack {
                 Spacer()
                 Button("Cancel") { model.dismiss() }

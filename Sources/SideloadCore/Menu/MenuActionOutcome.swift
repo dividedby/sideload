@@ -145,8 +145,12 @@ public struct MenuActionOutcome: Sendable, Equatable {
     /// The action was not run because it was no longer available when the owner confirmed.
     public static func notRun(_ reason: String) -> MenuActionOutcome {
         MenuActionOutcome(
-            kind: .failed, headline: "Not run", lines: [],
-            issues: [MenuIssue(code: "NOT_RUN", message: reason)], notes: [])
+            kind: .failed, headline: "Not run", lines: [], issues: [notRunIssue(reason)], notes: [])
+    }
+
+    /// The issue a run that did not start carries (also shown where a card cannot open).
+    public static func notRunIssue(_ reason: String) -> MenuIssue {
+        MenuIssue(code: "NOT_RUN", message: reason)
     }
 
     init(
@@ -312,7 +316,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
         }
         kind = .failed
         issues = envelope.errors.map { MenuIssue(code: $0.code, message: $0.message, fix: $0.fix) }
-        if envelope.errors.first?.code == "SOURCE_CHANGED" {
+        if envelope.errors.first?.code == SourceAdd.changedCode {
             headline = "The source changed since you reviewed it"
             notes = [MenuSourceAdd.changedNote]
         } else {

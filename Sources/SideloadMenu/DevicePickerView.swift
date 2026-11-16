@@ -12,10 +12,10 @@ struct AddDeviceRow: View {
                 .buttonStyle(.plain)
                 .disabled(!model.canAddDevice)
                 .help("Save a device paired with this Mac")
-            Button("Add source…") { model.openAddSource() }
+            Button(MenuSourceAdd.entryLabel) { model.openAddSource() }
                 .buttonStyle(.plain)
                 .disabled(!model.canAddSource)
-                .help("Add a GitHub repository or an AltStore index as a download source")
+                .help(MenuSourceAdd.entryHelp)
             Spacer(minLength: 0)
         }
     }

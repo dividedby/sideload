@@ -129,7 +129,7 @@ Add source… (beside Add device…, also on first run; added 2026-11-15, not ye
 without the terminal. A field takes a GitHub repository or an AltStore index address (the rules of `source add`), then one
 read-only preview runs, the same code as `source add` without `--yes`; an index of several apps asks which one. The inline
 confirm shows the address, the metadata host, every download host, the upstream bundle ID and version, the app ID and
-platform, `<prefix>.free.<id>` and a third-party warning. Its click is the owner's `source add --yes` with the preview's
+platform (an iOS / Apple TV choice for a new app, starting at what the index says, iOS if it says nothing), `<prefix>.free.<id>` and a third-party warning. Its click is the owner's `source add --yes` with the preview's
 confirm value, so a source that changed meanwhile ends as "The source changed since you reviewed it" and nothing is written.
 Nothing is downloaded; the new app then appears under Add app….
 

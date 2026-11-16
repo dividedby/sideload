@@ -117,6 +117,8 @@ enum SourceAdd {
     /// The most apps a preview lists.
     static let maxListed = 50
     static let command = "source add"
+    /// The code of a source that is not what the owner reviewed (`--yes` and the menu's click both end with it).
+    static let changedCode = "SOURCE_CHANGED"
 
     // MARK: arguments
 
@@ -485,8 +487,10 @@ enum SourceAdd {
         kind: String, url: String, repo: String?, bundleId: String?, app: AppTarget,
         metadataHosts: [String], downloadHosts: [String]
     ) -> String {
+        // `attaches` is part of what is confirmed: giving an existing app a source and creating a new app are different writes.
         var fields: [String: JSONValue] = [
             "kind": .string(kind), "id": .string(app.id), "suffix": .string(app.suffix),
+            "attaches": .bool(app.attaches),
             "platform": .string(app.platform),
             "metadataHosts": .array(metadataHosts.sorted().map(JSONValue.string)),
             "downloadHosts": .array(downloadHosts.sorted().map(JSONValue.string)),
@@ -511,8 +515,17 @@ enum SourceAdd {
     /// as it is now, and refuses (writing nothing) unless the result loads as a valid source for the app.
     static func write(_ plan: SourcePlan, into config: inout Config, now: Date) throws -> Written {
         let target = try resolveApp(
-            config, id: plan.appId, platform: plan.platform, detected: nil,
-            name: plan.attaches ? nil : plan.name)
+            config, id: plan.appId, platform: plan.platform, detected: nil, name: nil)
+        // The app must be what the owner confirmed: an existing app given a source, or a new one. A customApps entry that came or
+        // went since the preview would otherwise write something nobody reviewed.
+        guard target.attaches == plan.attaches, target.suffix == plan.suffix else {
+            throw SideloadError(
+                changedCode,
+                "The app changed since the preview: \(plan.attaches ? "the existing app is gone" : "an app with this ID now exists").",
+                fix:
+                    "Nothing was written. Run `sideload source add --url <url>` again and review it."
+            )
+        }
         var written = Written(customApps: false, customSources: true, approvedSources: false)
         var apps = try entries(config, "customApps")
         if !target.attaches {

@@ -157,7 +157,7 @@ public enum SourceCommand {
         let plan = preview.plan
         guard confirm == plan.confirm else {
             throw SideloadError(
-                "SOURCE_CHANGED",
+                SourceAdd.changedCode,
                 "The source is not what the preview showed: its address, app, bundle ID or hosts differ.",
                 fix:
                     "Nothing was written. Run `sideload source add --url <url>` again and review it."

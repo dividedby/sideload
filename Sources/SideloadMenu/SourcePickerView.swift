@@ -9,14 +9,14 @@ struct SourcePickerView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Add source").fontWeight(.semibold)
+            Text(MenuSourceAdd.cardTitle).fontWeight(.semibold)
             switch picker {
             case .entering(let url, let problem):
                 SourceAddressForm(url: url, problem: problem, model: model)
             case .looking:
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text("Reading the source…").foregroundStyle(.secondary)
+                    Text(MenuSourceAdd.readingLabel).foregroundStyle(.secondary)
                 }
                 HStack {
                     Spacer()
@@ -46,24 +46,18 @@ private struct SourceAddressForm: View {
     private var invalid: String? { url.isEmpty ? nil : MenuSourceAdd.urlProblem(url) }
 
     var body: some View {
-        Text(
-            "A GitHub repository (https://github.com/owner/repo) or the address of an AltStore index."
-        )
-        .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-        TextField("https://", text: $url)
+        Text(MenuSourceAdd.addressHint).secondaryNote()
+        TextField(MenuSourceAdd.addressPlaceholder, text: $url)
             .textFieldStyle(.roundedBorder)
             .accessibilityLabel("Source address")
             .onSubmit { model.previewSource(url: url) }
         if let invalid {
-            Text(invalid).font(.caption).foregroundStyle(.secondary).fixedSize(
-                horizontal: false, vertical: true)
+            Text(invalid).secondaryNote(.caption)
         }
         if let problem {
-            Text(problem.message).font(.callout).foregroundStyle(.secondary).fixedSize(
-                horizontal: false, vertical: true)
+            Text(problem.message).secondaryNote()
             if let fix = problem.fix {
-                Text(fix).font(.caption).foregroundStyle(.secondary).fixedSize(
-                    horizontal: false, vertical: true)
+                Text(fix).secondaryNote(.caption)
             }
             Text(problem.code).font(.caption2).foregroundStyle(.tertiary)
         }
@@ -84,8 +78,7 @@ private struct SourceChoiceForm: View {
     @State private var chosen: MenuSourceChoice?
 
     var body: some View {
-        Text("This index lists several apps. Pick the one to add; each source adds one app.")
-            .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        Text(MenuSourceAdd.pickerIntro).secondaryNote()
         ForEach(choices.choices) { choice in
             Button {
                 chosen = choice
@@ -96,8 +89,7 @@ private struct SourceChoiceForm: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(choice.title)
                         if let blocked = choice.blocked {
-                            Text(blocked).font(.caption).foregroundStyle(.secondary).fixedSize(
-                                horizontal: false, vertical: true)
+                            Text(blocked).secondaryNote(.caption)
                         }
                     }
                 }
@@ -107,8 +99,7 @@ private struct SourceChoiceForm: View {
             .disabled(choice.blocked != nil)
         }
         if choices.truncated {
-            Text(MenuSourceAdd.truncatedNote).font(.caption).foregroundStyle(.secondary).fixedSize(
-                horizontal: false, vertical: true)
+            Text(MenuSourceAdd.truncatedNote).secondaryNote(.caption)
         }
         HStack {
             Spacer()
@@ -120,5 +111,12 @@ private struct SourceChoiceForm: View {
             .disabled(chosen == nil)
         }
         .padding(.top, 2)
+    }
+}
+
+extension View {
+    /// Small grey text that wraps instead of being cut: a hint, a reason or a note on a card.
+    func secondaryNote(_ font: Font = .callout) -> some View {
+        self.font(font).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
     }
 }

@@ -367,6 +367,23 @@ final class MenuModel {
             MenuSourceAdd.choose(choices, choice, services: services), url: choices.url)
     }
 
+    /// The confirm's platform choice: the plan is made again from the same read (no new GET) and the confirm opens for it, so
+    /// the bundle ID and confirm value shown are the ones the click passes.
+    func chooseSourcePlatform(_ platform: String) {
+        guard actionTask == nil,
+            case .confirming(.addSource(let source), let shown) = actionState,
+            shown.platformChoice?.selected != platform
+        else { return }
+        switch MenuSourceAdd.choosePlatform(source, platform, services: services) {
+        case .confirm(let next):
+            request(.addSource(next))
+        case .failed(let issue):
+            actionState = .finished(MenuActionOutcome.notRun(issue.message))
+        case .choose:
+            break
+        }
+    }
+
     private func applySourceStep(_ step: MenuSourceStep, url: String) {
         switch step {
         case .confirm(let plan):
@@ -375,8 +392,7 @@ final class MenuModel {
             actionState = .addingSource(
                 .entering(
                     url: url,
-                    problem: MenuIssue(
-                        code: "NOT_RUN", message: "The panel is not ready for this yet.")))
+                    problem: MenuActionOutcome.notRunIssue(MenuSourceAdd.panelNotReady)))
         case .choose(let choices): actionState = .addingSource(.choosing(choices))
         case .failed(let issue): actionState = .addingSource(.entering(url: url, problem: issue))
         }

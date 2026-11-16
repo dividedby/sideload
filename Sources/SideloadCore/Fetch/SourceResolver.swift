@@ -47,9 +47,12 @@ enum SourceResolver {
         return text
     }
 
+    /// The code of a source that published no usable SHA-256.
+    static let missingDigestCode = "UPSTREAM_DIGEST_MISSING"
+
     private static var missingDigest: SideloadError {
         SideloadError(
-            "UPSTREAM_DIGEST_MISSING", "The source published no usable SHA-256 for this file.",
+            missingDigestCode, "The source published no usable SHA-256 for this file.",
             fix:
                 "Nothing is downloaded without a digest to check it against. Wait for the publisher to fix the metadata."
         )

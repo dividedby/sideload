@@ -34,7 +34,7 @@ All notable changes to this project are documented here. Format follows
   installs stay, so sign and refresh keep working; `SOURCE_BUILT_IN`, `SOURCE_NOT_FOUND`). The menu bar app's "Add
   source…" (beside "Add device…") takes the address, shows the same preview (a picker when an index lists several apps),
   and its confirm card (address, hosts, upstream bundle ID and version, app, platform, free bundle ID, a third-party
-  warning) is the owner's `--yes` with that confirm value; the new app then appears under Add app…. `AGENTS.md` says
+  warning) is the owner's `--yes` with that confirm value; the new app then appears under Add app…; a new app's card has an iOS / Apple TV choice (an index that does not label the platform is iOS). Whether the app is new or an existing one given a source is part of the confirm value. `AGENTS.md` says
   agents never run `source add` or `source remove --yes` against the real home.
 
 - Custom download sources, first of three PRs (issue 47; this part has not been run against a real source or on a device).

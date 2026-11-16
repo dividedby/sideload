@@ -713,6 +713,77 @@ struct SourceAddYesTests {
         }
     }
 
+    @Test(
+        "attach versus new is part of the confirm: it changing before --yes is SOURCE_CHANGED, both ways"
+    )
+    func attachRace() async throws {
+        let http = SourceHTTP([widgetAPI: widgetRelease()])
+        let existing: [String: JSONValue] = ["customApps": [["id": "widget", "platform": "ios"]]]
+        // Previewed as an existing app, whose entry then goes.
+        try await withSourceHome(config: sourceBaseConfig(extra: existing), http: http) {
+            paths, services in
+            let preview = await source(addArgs(widgetURL), services)
+            #expect(preview.data["app"]?["exists"] == true)
+            let confirm = try #require(preview.data["confirm"]?.string)
+            try await ConfigStore(paths: paths).update { $0.extra["customApps"] = nil }
+            let before = try configBytes(paths)
+            let out = await source(addArgs(widgetURL, confirm: confirm), services)
+            #expect(code(out) == "SOURCE_CHANGED", "\(out.errors)")
+            #expect(try configBytes(paths) == before)
+        }
+        // Previewed as a new app, which then appears with no source.
+        try await withSourceHome(http: http) { paths, services in
+            let preview = await source(addArgs(widgetURL), services)
+            #expect(preview.data["app"]?["exists"] == false)
+            let confirm = try #require(preview.data["confirm"]?.string)
+            try await ConfigStore(paths: paths).update {
+                $0.extra["customApps"] = [["id": "widget", "platform": "ios"]]
+            }
+            let before = try configBytes(paths)
+            #expect(
+                code(await source(addArgs(widgetURL, confirm: confirm), services))
+                    == "SOURCE_CHANGED")
+            #expect(try configBytes(paths) == before)
+        }
+    }
+
+    @Test("the write itself refuses an app that is not the one confirmed, and changes nothing")
+    func writeGuard() async throws {
+        let http = SourceHTTP([widgetAPI: widgetRelease()])
+        try await withSourceHome(http: http) { _, services in
+            let probe = try await SourceAdd.probe(services, url: widgetURL)
+            let plain = sourceBaseConfig()
+            let existing = sourceBaseConfig(extra: [
+                "customApps": [["id": "widget", "platform": "ios"]]
+            ])
+            let request = SourceAddRequest(url: widgetURL)
+            let attaching = try SourceAdd.preview(probe, request: request, config: existing).plan
+            let creating = try SourceAdd.preview(probe, request: request, config: plain).plan
+            #expect(attaching.attaches && !creating.attaches)
+            #expect(attaching.confirm != creating.confirm)
+
+            var gone = plain
+            #expect(throws: SideloadError.self) {
+                try SourceAdd.write(attaching, into: &gone, now: testNow)
+            }
+            #expect(gone == plain)
+            var appeared = existing
+            do {
+                _ = try SourceAdd.write(creating, into: &appeared, now: testNow)
+                Issue.record("expected a refusal")
+            } catch {
+                #expect((error as? SideloadError)?.code == "SOURCE_CHANGED")
+            }
+            #expect(appeared == existing)
+
+            // The matching pairs write.
+            var ok = existing
+            #expect(try SourceAdd.write(attaching, into: &ok, now: testNow).customApps == false)
+            var fresh = plain
+            #expect(try SourceAdd.write(creating, into: &fresh, now: testNow).customApps == true)
+        }
+    }
+
     @Test("an approval the owner already has (with hosts) is kept, not duplicated")
     func approvalKept() async throws {
         let http = SourceHTTP([widgetAPI: widgetRelease()])

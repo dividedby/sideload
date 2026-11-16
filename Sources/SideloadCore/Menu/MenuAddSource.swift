@@ -11,6 +11,8 @@ public struct MenuSourcePlan: Sendable, Hashable, CustomStringConvertible,
     CustomDebugStringConvertible
 {
     let plan: SourcePlan
+    /// The one read of the source, so a changed platform makes the plan again with no second GET.
+    let probe: SourceProbe
 
     /// The app's display name ("Widget").
     public var name: String { plan.name }
@@ -58,6 +60,20 @@ public enum MenuSourceStep: Sendable, Equatable {
 }
 
 public enum MenuSourceAdd {
+    /// The words the views draw, here so they can be tested.
+    public static let entryLabel = "Add source…"
+    public static let entryHelp =
+        "Add a GitHub repository or an AltStore index as a download source"
+    public static let cardTitle = "Add source"
+    public static let addressPlaceholder = "https://"
+    public static let addressHint =
+        "A GitHub repository (https://github.com/owner/repo) or the address of an AltStore index."
+    public static let pickerIntro =
+        "This index lists several apps. Pick the one to add; each source adds one app."
+    public static let readingLabel = "Reading the source…"
+    public static let confirmLabel = "Add source"
+    public static let panelNotReady = "The panel is not ready for this yet."
+    static let noDigest = "It publishes no SHA-256, so it cannot be fetched"
     public static let truncatedNote =
         "Only the first \(SourceAdd.maxListed) apps are listed. To add another, use `sideload source add --bundle` in a terminal."
     public static let thirdPartyWarning =
@@ -103,6 +119,10 @@ public enum MenuSourceAdd {
     public static func choose(
         _ choices: MenuSourceChoices, _ choice: MenuSourceChoice, services: Services
     ) -> MenuSourceStep {
+        // An app that published no digest is refused here, before the config is read.
+        if let blocked = choice.blocked {
+            return .failed(MenuIssue(code: SourceResolver.missingDigestCode, message: blocked))
+        }
         do {
             return try plan(choices.probe, bundle: choice.bundleId, services: services)
         } catch {
@@ -110,13 +130,29 @@ public enum MenuSourceAdd {
         }
     }
 
-    private static func plan(_ probe: SourceProbe, bundle: String?, services: Services) throws
-        -> MenuSourceStep
-    {
+    /// The same source for the other platform: the plan made again from the held read, so its confirm value and bundle ID are the
+    /// ones `source add --platform` would print. Reads only the config. Nothing changes for an app that is only given a source.
+    public static func choosePlatform(
+        _ source: MenuSourcePlan, _ platform: String, services: Services
+    ) -> MenuSourceStep {
+        do {
+            return try plan(
+                source.probe, bundle: source.plan.bundleId, app: source.appId, platform: platform,
+                services: services)
+        } catch {
+            return .failed(MenuIssue(error))
+        }
+    }
+
+    private static func plan(
+        _ probe: SourceProbe, bundle: String?, app: String? = nil, platform: String? = nil,
+        services: Services
+    ) throws -> MenuSourceStep {
         let preview = try SourceAdd.preview(
-            probe, request: SourceAddRequest(url: probe.url, bundle: bundle),
+            probe,
+            request: SourceAddRequest(url: probe.url, app: app, bundle: bundle, platform: platform),
             config: try services.store.load())
-        return .confirm(MenuSourcePlan(plan: preview.plan))
+        return .confirm(MenuSourcePlan(plan: preview.plan, probe: probe))
     }
 
     private static func choices(
@@ -126,7 +162,7 @@ public enum MenuSourceAdd {
             guard let bundleId = app.bundleId else { return nil }
             return MenuSourceChoice(
                 id: index, title: "\(app.name) · \(app.version) · \(bundleId)", bundleId: bundleId,
-                blocked: app.hasDigest ? nil : "It publishes no SHA-256, so it cannot be fetched")
+                blocked: app.hasDigest ? nil : noDigest)
         }
         return MenuSourceChoices(
             url: probe.url, choices: choices, truncated: listed.truncated, probe: probe)
@@ -158,8 +194,19 @@ public enum MenuSourceAdd {
                 "Bundle ID \(plan.freeBundleId)",
                 "Saves the source in config.json and approves it. Nothing is downloaded: Add app… fetches it, and you approve each version.",
             ],
-            confirmLabel: "Add source", destructive: false, runningLabel: "Adding the source…",
-            apps: [], monospacedLines: [1])
+            confirmLabel: confirmLabel, destructive: false, runningLabel: "Adding the source…",
+            apps: [], monospacedLines: [1], platformChoice: platformChoice(plan))
+    }
+
+    /// iOS or Apple TV for a new app, starting at what the preview inferred; none for an app that is only given a source (its
+    /// platform is its own).
+    private static func platformChoice(_ plan: SourcePlan) -> MenuPlatformChoice? {
+        guard !plan.attaches else { return nil }
+        return MenuPlatformChoice(
+            options: [
+                .init(platform: "ios", label: "iOS"), .init(platform: "tvos", label: "Apple TV"),
+            ], selected: plan.platform,
+            note: "The index does not always say; pick Apple TV for a tvOS app.")
     }
 
     /// What the click runs: `source add --yes` with the preview's confirm value, every choice spelled out as in the command

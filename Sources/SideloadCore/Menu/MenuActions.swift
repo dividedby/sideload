@@ -65,9 +65,10 @@ public enum MenuAction: Hashable, Sendable {
     }
 
     /// The action changes nothing the panel's last read of the device or the ledger shows, so the model neither cancels a running
-    /// load for it nor forgets the device's app read: the fetch stages (a download) and the auto-renew setting (`device
-    /// auto-refresh` writes `config.json` only) and a new source (`source add` writes `config.json` only). `lendable` and `saveDevice` also write only config but stay false on purpose:
-    /// the lab may change the ledger around a lend setting, and a saved device has no read yet, so both read the device again.
+    /// load for it nor forgets the device's app read: the fetch stages (a download), the auto-renew setting (`device
+    /// auto-refresh` writes `config.json` only) and a new source (`source add` writes `config.json` only). `lendable` and
+    /// `saveDevice` also write only config but stay false on purpose: the lab may change the ledger around a lend setting, and a
+    /// saved device has no read yet, so both read the device again.
     /// What the model does when the action ends still differs (a fetch redraws nothing; the setting redraws the config).
     public var leavesDeviceReadAlone: Bool {
         switch self {
@@ -80,7 +81,6 @@ public enum MenuAction: Hashable, Sendable {
     public var device: String {
         switch self {
         case .addSource: ""
-
         case .renew(let device, _), .install(let device, _), .remove(let device, _),
             .lendable(let device, _),
             .autoRenew(let device, _), .addFetch(let device, _), .addApprove(let device, _, _),
@@ -227,6 +227,21 @@ public struct MenuPrompt: Sendable, Equatable {
     public var apps: [String]
     /// Indexes into `lines` drawn monospaced and selectable (a SHA-256 to compare by eye).
     public var monospacedLines: Set<Int> = []
+    /// A choice the owner may change before the click (Add source: the platform); nil for every other confirm.
+    public var platformChoice: MenuPlatformChoice?
+}
+
+/// A platform to pick on a confirm. Changing it makes the confirm again, so what is shown and what runs agree.
+public struct MenuPlatformChoice: Sendable, Equatable {
+    public struct Option: Sendable, Equatable {
+        public var platform: String
+        public var label: String
+    }
+
+    public var options: [Option]
+    /// The platform the confirm is for now.
+    public var selected: String
+    public var note: String
 }
 
 public enum MenuOfferKind: Sendable, Equatable {
