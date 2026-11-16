@@ -57,8 +57,12 @@ public struct AppSnapshot: Sendable, Equatable {
         /// Installed apps that are not ours and not the lab's with a free-team profile (SideStore, ...); nil like `labApps`.
         public let otherNonLab: Int?
         /// WebDriverAgent apps the app list alone identifies (label plus `builtByDeveloper`), whether or not the profiles were
-        /// read. It is what stands in for `labApps` when the profile read is missing (the menu card never reads profiles).
-        let labListed: Int
+        /// read: a subset of `labApps` when they were. It is what stands in for `labApps` when the profile read is missing
+        /// (the menu card never reads profiles).
+        let labFromAppList: Int
+        /// The lab's apps on the device by the best evidence there is: `labApps` when the profiles were read, else the app
+        /// list's. The one rule for "the lab's app is installed" (the preflight, `slot return`'s warning, the card's note).
+        public var labCount: Int { labApps ?? labFromAppList }
         /// The owner's `freeSlotsReserved`.
         public let reserved: Int
         /// Records with `lentTo` set that the snapshot does not show: the app is gone and the lab holds the room, so the
@@ -76,15 +80,12 @@ public struct AppSnapshot: Sendable, Equatable {
 
         /// The formula, stated once (design section 18). A lent slot and the lab's WebDriverAgent count once; the reserve is
         /// a floor for the unmanaged part, not added to it. Without a profile read only the app list's WebDriverAgent is known
-        /// (`labListed`, in place of `labApps`; `otherNonLab` is unknown and counts for nothing, the reserve covers it), and
+        /// (`labFromAppList`, in place of `labApps`; `otherNonLab` is unknown and counts for nothing, the reserve covers it), and
         /// installd's refusal is the backstop.
-        ///   unmanaged = max(reserved, otherNonLab + max(lent, labApps) - lent)
+        ///   unmanaged = max(reserved, otherNonLab + max(lent, labCount) - lent)
         ///   used      = managed + unmanaged + lent + pending
         public var unmanaged: Int {
-            guard let lab = labApps, let rest = otherNonLab else {
-                return max(reserved, max(lent, labListed) - lent)
-            }
-            return max(reserved, rest + max(lent, lab) - lent)
+            max(reserved, (otherNonLab ?? 0) + max(lent, labCount) - lent)
         }
         public var used: Int { managed + unmanaged + lent + pending }
         public var free: Int { max(0, FreeSlots.limit - used) }
@@ -134,22 +135,27 @@ public struct AppSnapshot: Sendable, Equatable {
                 managed += 1
             } else {
                 if developer { other += 1 }
-                // The lab's app is known by its label from the app list, not only by a profile: installd counts an installed
-                // app whose profile is expired, purged or not listed. The developer flag keeps a look-alike App Store app out.
-                // Any other app still needs a listed free-team profile (TestFlight betas look the same in the app list).
-                let wda = FreeTeamSigner.label(of: id) == .webDriverAgent
-                if wda && developer { listed += 1 }
-                if wda && (developer || profiles?.bundleIds.contains(id) == true) {
+                let inProfiles = profiles?.bundleIds.contains(id) == true
+                if Self.countsAsLab(id: id, developer: developer, inProfiles: inProfiles) {
                     lab += 1
-                } else if profiles?.bundleIds.contains(id) == true {
+                } else if inProfiles {
                     rest += 1
                 }
+                if Self.countsAsLab(id: id, developer: developer, inProfiles: false) { listed += 1 }
             }
         }
         return Usage(
             managed: managed, otherDeveloperApps: other, labApps: profiles == nil ? nil : lab,
-            otherNonLab: profiles == nil ? nil : rest, labListed: listed, reserved: reserved,
+            otherNonLab: profiles == nil ? nil : rest, labFromAppList: listed, reserved: reserved,
             lent: outside.lent, pending: outside.pending)
+    }
+
+    /// Whether a non-managed installed app is the lab's WebDriverAgent. It is known by its label from the app list, not only
+    /// by a profile: installd counts an installed app whose profile is expired, purged or not listed. The developer flag keeps
+    /// a look-alike App Store app out when no profile lists it. Any other app needs a listed free-team profile instead
+    /// (TestFlight betas look the same in the app list).
+    private static func countsAsLab(id: String, developer: Bool, inProfiles: Bool) -> Bool {
+        FreeTeamSigner.label(of: id) == .webDriverAgent && (developer || inProfiles)
     }
 
     /// The managed installs (free allowlist) in the snapshot, sorted.

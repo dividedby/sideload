@@ -104,8 +104,9 @@ Look inside an IPA before signing it (nothing is installed or sent anywhere):
 
 `SideloadMenu` is a menu bar app (no Dock icon) that shows the canary state, each saved device's free-account apps (days
 left, a time-left bar, free slots, Wi-Fi/USB/offline; read from the ledger's `installs[]` and `slots[]` and checked live against
-the device's app list, so an app that is gone shows "Signed · not installed", a lent one "Lent to lab", the lab's WebDriverAgent left installed with no lend active a "Lab app still installed · uses a free slot" note (it uses a free slot), and a failed renewal a
-red "Renewal failed · CODE") and a countdown-ring icon: the ring is the time left of the soonest free install
+the device's app list, so an app that is gone shows "Signed · not installed", a lent one "Lent to lab", and a failed renewal a
+red "Renewal failed · CODE"; with no lend active, the lab's WebDriverAgent left installed adds the note "Lab app still
+installed · uses a free slot") and a countdown-ring icon: the ring is the time left of the soonest free install
 over its 7 days (label colour; orange when due at 3 days or fewer; red at 1 day or fewer; a dashed red ring with a cross when
 expired; a red "!" when the free certificate changed; a dashed grey "?" with no data; a blue arc while a Renew runs). A device
 that can't be reached says why and what to do, such as "No longer paired" with "Pair it in Xcode.", or "Can't reach it right

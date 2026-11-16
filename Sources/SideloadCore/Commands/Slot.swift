@@ -579,7 +579,7 @@ public enum SlotCommand {
             ]
             var warnings: [JSONValue] = []
             if let other = relevant.otherAppsWarning { warnings.append(other) }
-            if (usage.labApps ?? usage.labListed) > 0 { warnings.append(labAppLeftWarning) }
+            if usage.labCount > 0 { warnings.append(labAppLeftWarning) }
             if outcome.result != .success, let failure = outcome.opFailure {
                 warnings.append(
                     CanaryCommand.warning(

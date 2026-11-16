@@ -175,7 +175,7 @@ struct FreeInstallRun: Sendable {
                 : "the reserve and the lab's WebDriverAgent in the app list (the device's profile list could not be read)"
             throw SideloadError(
                 "FREE_APP_LIMIT",
-                "Our apps, \(basis) and the slots lent to the lab fill \(usage.used) of \(FreeSlots.limit) free-team slots (\(usage.managed) managed, \(usage.unmanaged) other, \(reserved) reserved, \(usage.lent) lent to the lab, \(usage.pending) pending). TestFlight and other developer-built apps are not counted. Nothing was installed.",
+                "Our apps, \(basis) and the slots lent to the lab fill \(usage.used) of \(FreeSlots.limit) free-team slots (\(usage.managed) managed, \(usage.unmanaged) other, \(reserved) reserved, \(usage.lent) lent to the lab, \(usage.pending) pending). TestFlight and other developer-built apps are not counted, except the lab's WebDriverAgent. Nothing was installed.",
                 fix:
                     "The owner frees a slot with `sideload app remove`, or lowers `device slots --reserved` if it is higher than the free-profile apps that are not ours. A WebDriverAgent left installed is the lab's to uninstall.",
                 data: ["slots": usage.json(), "reinstall": false])
