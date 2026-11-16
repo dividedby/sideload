@@ -165,9 +165,9 @@ struct CLITests {
                 out.json["built"] == [
                     "doctor", "device", "canary", "ledger", "portal", "status",
                     "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot",
-                    "updates", "clean",
+                    "updates", "clean", "source",
                 ])
-            #expect(out.json["commands"]?.array?.count == 16)
+            #expect(out.json["commands"]?.array?.count == 17)
             #expect(out.runner.calls.isEmpty)
         }
     }

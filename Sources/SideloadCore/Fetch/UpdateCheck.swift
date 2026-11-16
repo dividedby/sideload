@@ -45,12 +45,14 @@ enum UpdateCheck {
         let ledger = try services.ledgerStore.load()
         let now = services.clock.now()
         var report = Report(checkedAt: now)
+        // A custom source that is left out says why, as `status` does.
+        report.warnings += CustomSources.ignoredWarnings(in: config.appRegistry)
 
         let store = UpdateCacheStore(paths: services.home)
         var cache = UpdateCache()
         var rewrite = false
         do {
-            (cache, rewrite) = try store.load(now: now)
+            (cache, rewrite) = try store.load(now: now, apps: FetchCatalog.appNames(config))
         } catch {
             rewrite = true
             report.warnings.append(

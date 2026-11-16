@@ -247,11 +247,128 @@ enum SourceResolver {
         }
     }
 
+    // MARK: custom sources (design section 8, custom sources)
+
+    /// An owner-added GitHub repository: the latest release (never a draft or pre-release) with exactly one asset named
+    /// `*.ipa`, whatever its name; other assets (checksum files, dSYMs) are ignored. The version is the tag without one leading
+    /// `v`, and the asset's download URL must be exactly the repository's `releases/download/<tag>/<name>`.
+    static func customGithub(app: String, repo: String, json: Data) throws -> ResolvedAsset {
+        let release: Release
+        do { release = try JSONDecoder().decode(Release.self, from: json) } catch {
+            throw invalid("the release is not valid JSON")
+        }
+        if release.draft == true || release.prerelease == true {
+            throw notAllowed("the latest release is a draft or pre-release")
+        }
+        guard let tag = release.tag_name, isSafeToken(tag) else {
+            throw notAllowed("the tag has unexpected characters")
+        }
+        let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+        guard isSafeToken(version) else { throw notAllowed("the tag is not a plain version") }
+        let ipas = (release.assets ?? []).filter { $0.name?.lowercased().hasSuffix(".ipa") == true }
+        guard ipas.count == 1, let asset = ipas.first, let name = asset.name else {
+            throw notAllowed(
+                ipas.isEmpty
+                    ? "the release has no .ipa asset" : "the release has more than one .ipa asset")
+        }
+        guard isSafeToken(name) else {
+            throw notAllowed("the asset's name has unexpected characters")
+        }
+        if let state = asset.state, state != "uploaded" {
+            throw notAllowed("the asset is not fully uploaded")
+        }
+        let digest = try parseDigest(asset.digest, prefixed: true)
+        let size = try checkSize(asset.size)
+        guard let link = asset.browser_download_url, let url = URL(string: link),
+            url.absoluteString == link,
+            isReleaseAssetURL(link, repo: repo, tag: tag, name: name)
+        else { throw notAllowed("the asset's download URL is not the repository's release URL") }
+        return ResolvedAsset(
+            app: app, version: version, fileName: name, url: url, upstreamDigest: digest,
+            size: size, build: nil, minOS: nil)
+    }
+
+    /// `https://github.com/<repo>/releases/download/<tag>/<name>`, where only the owner and repository segments compare without
+    /// regard to case (GitHub names are case-insensitive and its API returns the canonical case); the rest is exact.
+    private static func isReleaseAssetURL(_ link: String, repo: String, tag: String, name: String)
+        -> Bool
+    {
+        let parts = link.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        let named = repo.split(separator: "/").map { $0.lowercased() }
+        return parts.count == 9 && named.count == 2
+            && Array(parts[0..<3]) == ["https:", "", "github.com"]
+            && [parts[3].lowercased(), parts[4].lowercased()] == named
+            && Array(parts[5...]) == ["releases", "download", tag, name]
+    }
+
+    /// An owner-added AltStore index: the one app with `bundleId`, its first (latest) version, downloaded over https from one
+    /// of `hosts`. Like the Stremio index, with no pin on the path beyond a plain `.ipa` name.
+    static func customAltstore(app: String, bundleId: String, hosts: Set<String>, json: Data) throws
+        -> ResolvedAsset
+    {
+        let index: Index
+        do { index = try JSONDecoder().decode(Index.self, from: json) } catch {
+            throw invalid("the index is not valid JSON")
+        }
+        let candidates = (index.apps ?? []).filter { $0.bundleIdentifier == bundleId }
+        guard candidates.count == 1 else {
+            throw notAllowed("the index has \(candidates.count) apps with the pinned bundle ID")
+        }
+        guard let latest = candidates[0].versions?.first else {
+            throw invalid("the app has no versions")
+        }
+        guard let ver = latest.version?.text, isSafeToken(ver) else {
+            throw invalid("the version is missing or has unexpected characters")
+        }
+        // Unlike Stremio's index, a source may leave the build out; the version then stands alone.
+        var build: String?
+        if let declared = latest.buildVersion {
+            guard let text = declared.text, isSafeToken(text) else {
+                throw invalid("the build has unexpected characters")
+            }
+            build = text
+        }
+        let digest = try parseDigest(latest.sha256, prefixed: false)
+        let size = try checkSize(latest.size)
+        var minOS: String?
+        if let declared = latest.minOSVersion {
+            guard let text = declared.text,
+                text.range(of: #"^[0-9]{1,3}(\.[0-9]{1,3}){0,2}$"#, options: .regularExpression)
+                    != nil
+            else {
+                throw invalid("minOSVersion is not a version number")
+            }
+            minOS = text
+        }
+        let versionKey = build.map { "\(ver)b\($0)" } ?? ver
+        guard isSafeToken(versionKey), let link = latest.downloadURL, let url = URL(string: link),
+            let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
+            parts.scheme == "https", let host = parts.host, hosts.contains(host),
+            parts.port == nil, parts.user == nil, parts.password == nil, parts.query == nil,
+            parts.fragment == nil
+        else { throw notAllowed("the download URL is not https on an allowed host") }
+        let components = parts.percentEncodedPath.split(
+            separator: "/", omittingEmptySubsequences: false)
+        guard components.count >= 2, components[0].isEmpty,
+            let last = components.last.map(String.init), last.hasSuffix(".ipa"),
+            isSafeToken(last),
+            !components.dropFirst().contains(where: { $0.isEmpty || $0 == "." || $0 == ".." })
+        else { throw notAllowed("the download path is not a plain .ipa path") }
+        return ResolvedAsset(
+            app: app, version: versionKey, fileName: last, url: url, upstreamDigest: digest,
+            size: size, build: build, minOS: minOS)
+    }
+
     static func resolve(_ source: FetchSource, json: Data) throws -> ResolvedAsset {
         switch source.kind {
         case .githubRelease(let repo): try apollo(app: source.app, repo: repo, json: json)
         case .altstoreIndex(_, let bundleId, let host, let tvos):
             try stremio(app: source.app, bundleId: bundleId, host: host, tvos: tvos, json: json)
+        case .customGithubRelease(let repo):
+            try customGithub(app: source.app, repo: repo, json: json)
+        case .customAltstoreIndex(_, let bundleId):
+            try customAltstore(
+                app: source.app, bundleId: bundleId, hosts: source.downloadHosts, json: json)
         }
     }
 }

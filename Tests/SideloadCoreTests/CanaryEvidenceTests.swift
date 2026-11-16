@@ -2145,7 +2145,7 @@ struct CanaryEvidenceCLITests {
                 out.json["built"] == [
                     "doctor", "device", "canary", "ledger", "portal", "status",
                     "inspect", "fetch", "provision", "sign", "install", "refresh", "app", "slot",
-                    "updates", "clean",
+                    "updates", "clean", "source",
                 ])
         }
     }

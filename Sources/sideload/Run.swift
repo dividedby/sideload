@@ -2,11 +2,11 @@ import SideloadCore
 
 let allCommands: [JSONValue] = [
     "doctor", "device", "canary", "portal", "fetch", "sign", "install", "status",
-    "ledger", "inspect", "provision", "app", "slot", "refresh", "updates", "clean",
+    "ledger", "inspect", "provision", "app", "slot", "refresh", "updates", "clean", "source",
 ]
 let builtCommands: [JSONValue] = [
     "doctor", "device", "canary", "ledger", "portal", "status", "inspect", "fetch",
-    "provision", "sign", "install", "refresh", "app", "slot", "updates", "clean",
+    "provision", "sign", "install", "refresh", "app", "slot", "updates", "clean", "source",
 ]
 
 private let helpFlags: Set<String> = ["-h", "--help"]
@@ -46,6 +46,7 @@ private func help() -> Envelope {
                 "slot return --device <alias>|--udid <id>",
                 .string("slot restore --device <alias> [--app <\(all)>] --yes"),
                 "clean [--yes]",
+                "source list",
                 "ledger [refresh]",
                 "portal [certificates|bundle-ids|devices|profiles] [--show-identifiers]",
                 "status",
@@ -125,6 +126,7 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     case "fetch": spec = fetchSpec
     case "updates": spec = updatesSpec
     case "clean": spec = cleanSpec
+    case "source": spec = ArgSpec()
     case "provision": spec = provisionSpec
     case "sign": spec = signSpec
     case "install": spec = installSpec
@@ -154,7 +156,8 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
 
     // `device` takes one subcommand, `canary` only `history`, `ledger` only `refresh`, `portal` one list name, `inspect` one path; `doctor` and `status` take none.
     let maxPositionals =
-        ["device", "canary", "ledger", "portal", "inspect", "app", "slot"].contains(command) ? 1 : 0
+        ["device", "canary", "ledger", "portal", "inspect", "app", "slot", "source"].contains(
+            command) ? 1 : 0
     if parsed.positionals.count > maxPositionals { return unexpectedPositionals(command) }
     if command == "canary", let sub = parsed.positionals.first, sub != "history" {
         return unexpectedPositionals(command)
@@ -265,6 +268,9 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
         return await UpdatesCommand.run(
             services,
             UpdatesOptions(app: parsed.values["app"], force: parsed.flags.contains("force")))
+    }
+    if command == "source" {
+        return SourceCommand.run(services, SourceOptions(sub: parsed.positionals.first))
     }
     if command == "clean" {
         return CleanCommand.run(services, CleanOptions(yes: parsed.flags.contains("yes")))

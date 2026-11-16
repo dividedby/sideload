@@ -29,7 +29,8 @@ public enum MenuUpdates {
     public static func cached(_ services: Services) -> [String: MenuUpstream] {
         guard
             let listed = try? UpdateCacheStore(paths: services.home).listings(
-                now: services.clock.now())
+                now: services.clock.now(),
+                apps: FetchCatalog.appNames(services))
         else { return [:] }
         return listed.compactMapValues {
             upstream(version: $0.upstream, checkedAt: $0.checkedAt, errorCode: $0.errorCode)

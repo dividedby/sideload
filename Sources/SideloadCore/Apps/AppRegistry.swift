@@ -139,12 +139,13 @@ extension AppDefinition {
 // MARK: - Registry
 
 /// Every app sideload knows, by ID: the built-ins, then the valid entries of `customApps` in `config.json`. The registry
-/// only reads `customApps`; nothing in sideload writes it yet. Each custom entry is checked on its own and fails closed: an
-/// invalid one is left out with a warning, and never stops a built-in or another valid entry.
+/// only reads `customApps` and `customSources`; nothing in sideload writes them yet. Each custom entry is checked on its own
+/// and fails closed: an invalid one is left out with a warning, and never stops a built-in or another valid entry.
 public struct AppRegistry: Sendable {
     /// Built-ins first in their fixed order, then custom entries in `customApps` order.
     public let apps: [AppDefinition]
-    /// One `{code, message, fix}` per custom entry left out (or one for a `customApps` that is not an array).
+    /// One `{code, message, fix}` per custom app or custom source entry left out (or one for a `customApps` or `customSources`
+    /// that is not an array).
     public let warnings: [JSONValue]
 
     static let builtIns: [AppDefinition] = [.stremioIOS, .stremioTVOS, .apollo, .filler]
@@ -167,19 +168,28 @@ public struct AppRegistry: Sendable {
     }
 
     /// The built-ins plus the valid entries of `config.customApps`. `customApps` is an optional array of
-    /// `{"id", "platform", "suffix"?, "name"?}` objects; `suffix` defaults to the ID and `name` to the ID capitalised.
+    /// `{"id", "platform", "suffix"?, "name"?}` objects; `suffix` defaults to the ID and `name` to the ID capitalised. A valid
+    /// entry of `config.customSources` (design section 8) becomes the `fetch` of the custom app it names.
     public init(config: Config) {
-        guard let raw = config.extra["customApps"] else {
-            self.init(apps: Self.builtIns, warnings: [])
-            return
+        var (custom, warnings) = Self.customApps(config)
+        let sources = CustomSources.load(config.extra["customSources"], customApps: custom)
+        custom = custom.map { app in
+            guard let fetch = sources.fetches[app.id] else { return app }
+            return AppDefinition(
+                id: app.id, displayName: app.displayName, suffix: app.suffix,
+                devicePlatform: app.devicePlatform, signer: app.signer, fetch: fetch,
+                builtIn: false)
         }
+        self.init(apps: Self.builtIns + custom, warnings: warnings + sources.warnings)
+    }
+
+    /// The valid `customApps` entries, without a source, and a warning for each one left out.
+    private static func customApps(_ config: Config) -> (
+        apps: [AppDefinition], warnings: [JSONValue]
+    ) {
+        guard let raw = config.extra["customApps"] else { return ([], []) }
         guard case .array(let entries) = raw else {
-            self.init(
-                apps: Self.builtIns,
-                warnings: [
-                    Self.warning("customApps is not an array, so every custom app is ignored.")
-                ])
-            return
+            return ([], [warning("customApps is not an array, so every custom app is ignored.")])
         }
         var warnings: [JSONValue] = []
         var parsed: [(index: Int, app: AppDefinition)] = []
@@ -204,7 +214,7 @@ public struct AppRegistry: Sendable {
             }
         }
         warnings.sort { (Self.index(of: $0) ?? -1) < (Self.index(of: $1) ?? -1) }
-        self.init(apps: Self.builtIns + custom, warnings: warnings)
+        return (custom, warnings)
     }
 
     /// The app with this ID.

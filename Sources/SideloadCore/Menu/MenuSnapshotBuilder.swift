@@ -136,9 +136,10 @@ public enum MenuSnapshotBuilder {
             let label: String
             switch approved.kind {
             case .githubRelease: label = "github.com"
-            case .altstoreIndex:
+            case .altstoreIndex, .customAltstoreIndex:
                 label =
                     (approved.downloadHosts.sorted().first ?? "the index") + " (third-party index)"
+            case .customGithubRelease: label = "github.com (third-party repository)"
             }
             return MenuAddSource(
                 app: app.id, name: app.displayName, source: label,

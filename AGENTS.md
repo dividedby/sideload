@@ -58,7 +58,8 @@ team) before changing anything.
 
 - Deleting anything from the keychain or the developer portal.
 - Installing anything system-wide, or anything that needs root/elevated privileges.
-- Pairing changes and any new download source.
+- Pairing changes and any new download source (`source add --yes`, `source remove --yes` and the menu bar app's "Add
+  source…" confirm are the owner's; not built yet).
 - Running `canary`, `provision`, `sign`, `install` or `refresh` (any mode) on a real device, from the CLI or from the menu
   bar app's buttons (they change the portal and/or the device), and `app remove` (it uninstalls one managed install to free a slot; owner-only, allowlisted
   to `io.github.dividedby.free.*`, `--yes` is the owner's), and `slot restore` (the owner's retry of an app-data restore: it
@@ -94,6 +95,13 @@ team) before changing anything.
 - `sideload updates` is read-only and safe for an agent to run: one metadata GET per approved source, no IPA download,
   no lock, no device, and it writes only `$SIDELOAD_HOME/updates.json`. It never approves, fetches, signs or installs
   anything; a newer version it reports is still `fetch`, the owner's `--approve`, `sign` and `install`.
+- A new source is allowed only when the owner confirms its URL and exact hosts, by `source add --yes` or the menu bar app's
+  confirm click. Agents never pass that flag, never click it and never add a source to `config.json`. Each version from any
+  source still needs the owner's approval, with version and SHA-256 recorded. (Owner decision 2026-11-01; issue 47. This
+  build reads a hand-edited `customSources` entry, and `source add`, `source remove` and the menu's "Add source…" come in
+  later PRs of the issue.)
+- `sideload source list` is read-only and safe for an agent to run: no network, no lock, no device, no write. It lists
+  every source, built-in and custom, with its exact hosts and whether `approvedSources` approves it.
 
 ## Code
 

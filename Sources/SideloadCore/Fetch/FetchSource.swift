@@ -31,9 +31,33 @@ struct FetchSource: Sendable, Equatable {
         /// A gorlev AltStore-style index: the one app with `bundleId`, downloaded from `host`; `tvos` pins the exact CDN
         /// path shape (design section 8).
         case altstoreIndex(url: String, bundleId: String, host: String, tvos: Bool)
+        /// An owner-added GitHub repository (`customSources`, design section 8): the latest release with exactly one `.ipa`
+        /// asset, pinned from the first approved version by bundle ID.
+        case customGithubRelease(repo: String)
+        /// An owner-added AltStore index: the one app with `bundleId`, which every fetched IPA must carry.
+        case customAltstoreIndex(url: String, bundleId: String)
 
         var isThirdParty: Bool {
-            if case .altstoreIndex = self { true } else { false }
+            switch self {
+            case .githubRelease: false
+            case .altstoreIndex, .customGithubRelease, .customAltstoreIndex: true
+            }
+        }
+
+        /// The `kind` a source of this shape has in `customSources` and in `source list`.
+        var configKind: String {
+            switch self {
+            case .githubRelease, .customGithubRelease: "githubRelease"
+            case .altstoreIndex, .customAltstoreIndex: "altstoreIndex"
+            }
+        }
+
+        /// Added by the owner in `customSources` rather than defined in code.
+        var isCustom: Bool {
+            switch self {
+            case .customGithubRelease, .customAltstoreIndex: true
+            case .githubRelease, .altstoreIndex: false
+            }
         }
     }
 
@@ -46,9 +70,10 @@ struct FetchSource: Sendable, Equatable {
 
     var metadataURL: URL {
         switch kind {
-        case .githubRelease(let repo):
+        case .githubRelease(let repo), .customGithubRelease(let repo):
             URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
-        case .altstoreIndex(let url, _, _, _): URL(string: url)!
+        case .altstoreIndex(let url, _, _, _), .customAltstoreIndex(let url, _):
+            URL(string: url)!
         }
     }
 
@@ -66,14 +91,28 @@ enum FetchCatalog {
 
     static var appNames: [String] { sources.map(\.app) }
 
+    /// The apps with a source in `config`'s registry: the built-ins' and the valid `customSources`.
+    static func appNames(_ config: Config) -> [String] {
+        config.appRegistry.fetchSources.map(\.app)
+    }
+
+    /// The same for a command that has not read the config: the built-ins' when it cannot be read.
+    static func appNames(_ services: Services) -> [String] {
+        (try? services.store.load()).map(appNames) ?? appNames
+    }
+
     /// The source of `app` in the config's registry, if the owner approved it in `config.approvedSources`. An entry is an
     /// object `{"app": "<key>"}`; an optional `"hosts": [...]` narrows the allowlist (it can never add a host).
     static func approved(app: String, config: Config) throws -> FetchSource {
         let sources = config.appRegistry.fetchSources
         guard let source = sources.first(where: { $0.app == app }) else {
+            let ignored = !CustomSources.ignoredWarnings(in: config.appRegistry, app: app).isEmpty
             throw SideloadError(
                 "SOURCE_NOT_ALLOWED", "\"\(printableCut(app))\" is not a source fetch knows.",
-                fix: "Use one of: \(sources.map(\.app).joined(separator: ", ")).")
+                fix: "Use one of: \(sources.map(\.app).joined(separator: ", "))."
+                    + (ignored
+                        ? " Its customSources entry in config.json was ignored; `sideload status` says why."
+                        : ""))
         }
         let entries = config.approvedSources.compactMap { value -> [String: JSONValue]? in
             guard case .object(let o) = value, case .string(let name)? = o["app"], name == app
