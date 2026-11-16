@@ -25,6 +25,18 @@ All notable changes to this project are documented here. Format follows
 
 ### Changed
 
+- `clean` now frees build output under `builds/` as well (issue 49; `CleanBuilds`, same preview and owner-only `--yes`,
+  same `.op.lock`, still counts and bytes only). It deletes a signed build `builds/signed/<app>/<alias>` only when the
+  ledger shows that exact build installed on that device (present, same profile, version, hash prefix and signing time as
+  the `freeSigned` record) and it was signed more than 14 days ago; its profile has expired by then, so `install` answers
+  `PROFILE_EXPIRED` and `refresh` signs again from the kept IPA, and a build that cannot be proven is kept. It also deletes
+  orphans (a folder of an app or device neither known nor in the ledger, an empty app folder) and, at any age, the
+  `carrier-dd` and `canary` derived-data caches, which `provision` and `canary` rebuild; `builds/carrier` stays. A device
+  the lab holds or with an operation in flight is skipped, and a link keeps its folder. The output gains
+  `builds{signedDeleted,signedKept,orphansDeleted,cachesDeleted,bytesFreed,failed,devicesSkippedBusy,linksSkipped}`; the
+  backup and download behaviour and output are unchanged. `DEVICE_BUSY_SKIPPED` and `LINKS_SKIPPED` now cover builds too.
+  Never run on the owner's real home: the owner's check is `sideload clean`, then `clean --yes`, then watching the next
+  renewal.
 - Menu bar and `doctor`: a saved device that cannot be reached now says what to do (issue 48; `MenuDeviceReach`, pure). A
   device that is not paired reads "No longer paired" with "Pair it in Xcode."; one the list calls unavailable reads "Can't
   reach it right now" with "Unlock it, or connect it to the Mac or the same Wi-Fi." (an Apple TV: "It may just be asleep;

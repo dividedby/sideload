@@ -537,7 +537,7 @@ struct CleanDownloadsTests {
         }
     }
 
-    @Test("builds, tmp, profiles and secrets are out of scope")
+    @Test("tmp, profiles and secrets are out of scope (builds is CleanBuildsTests)")
     func outOfScope() async throws {
         try await withInstallWorld { w in
             try w.downloads([
@@ -548,14 +548,13 @@ struct CleanDownloadsTests {
             let renewed = w.paths.tmp + "/renewed-profile-1/old.mobileprovision"
             try write("p", to: renewed)
             try write("s", to: w.paths.secrets + "/p12/x.p12")
-            try write("b", to: w.paths.builds + "/signed/old/thing")
             try write("p", to: w.paths.freeProfiles + "/apollo/iphone/x.mobileprovision")
-            let before = ["tmp", "secrets", "builds", "profiles"].map {
+            let before = ["tmp", "secrets", "profiles"].map {
                 fileTree(w.paths.home + "/" + $0)
             }
             _ = w.clean(yes: true)
             #expect(
-                ["tmp", "secrets", "builds", "profiles"].map { fileTree(w.paths.home + "/" + $0) }
+                ["tmp", "secrets", "profiles"].map { fileTree(w.paths.home + "/" + $0) }
                     == before)
         }
     }

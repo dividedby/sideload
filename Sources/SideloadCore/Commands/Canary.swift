@@ -248,7 +248,7 @@ private struct CanaryRun {
 
         // 3. Build.
         log("canary: building (up to 10 minutes)")
-        let derived = services.home.builds + "/canary"
+        let derived = services.home.canaryDerivedData
         let build = await services.runner.run(
             CommandSpec(
                 executable: "xcodebuild",
