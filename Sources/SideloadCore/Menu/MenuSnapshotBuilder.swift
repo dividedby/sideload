@@ -410,6 +410,11 @@ public enum MenuSnapshotBuilder {
                 now: now),
             appsNote: appsNote(
                 failedCode: failedCode, rows: rows, readOverRows: read != nil, presence: presence),
+            labAppNote: labAppNote(
+                known: known,
+                outside: outsideUse(
+                    projected: projected, slots: slots, prefix: prefix, apps: apps, read: read),
+                prefix: prefix, read: read),
             apps: rows, reservedSlots: reservedRows,
             renew: MenuRenewMenu(
                 items: [
@@ -606,28 +611,50 @@ public enum MenuSnapshotBuilder {
         return row
     }
 
+    /// The slot records a read does not show: a lent slot or an operation that may still land (the same settling `install`
+    /// applies). Nil without a read or a usable prefix.
+    private static func outsideUse(
+        projected: Ledger, slots: [LedgerSlot], prefix: String?, apps: AppRegistry, read: AppsRead?
+    ) -> SlotBook.OutsideUse? {
+        guard let read, let prefix, CanaryCommand.isValidPrefix(prefix) else { return nil }
+        var outside = SlotBook.OutsideUse()
+        for slot in slots {
+            let install = projected.installs.first { $0.id == slot.id }
+            let id = bundleId(of: slot.app, recorded: install?.bundleId, prefix: prefix, apps: apps)
+            let shown = id.map { read.shows($0) } ?? false
+            let settled =
+                usable(slot, takenAt: read.takenAt)
+                ? SlotRule.settle(slot, present: shown, takenAt: read.takenAt) : slot
+            guard SlotRule.used(settled), !shown else { continue }
+            if settled.lentTo != nil { outside.lent += 1 } else { outside.pending += 1 }
+        }
+        return outside
+    }
+
+    /// The note of a visible device whose live read shows the lab's WebDriverAgent while no slot is lent to the lab: the lab
+    /// left it installed, and it uses a free-team slot (design section 18). Nil otherwise, and when the slots are unknown.
+    private static func labAppNote(
+        known: Bool, outside: SlotBook.OutsideUse?, prefix: String?, read: AppsRead?
+    ) -> String? {
+        guard known, let read, let outside, outside.lent == 0,
+            read.snapshot.usage(prefix: prefix, reserved: 0).labListed > 0
+        else { return nil }
+        return "Lab app still installed · uses a free slot"
+    }
+
     /// Free slots on a device. With a live read this is what `install` computes without a profile read: the snapshot's
-    /// managed apps, the owner's reserve, and the records the snapshot does not show (a lent slot, an operation that may
-    /// still land). Without one, the ledger alone: the slot records, plus a signed app that has no slot record at all (a
-    /// slot record, even an absent one, is newer than `freeSigned` and decides). Either way a pending or lent slot is
-    /// never free.
+    /// managed apps, the lab's WebDriverAgent when the app list shows it, the owner's reserve, and the records the snapshot
+    /// does not show (a lent slot, an operation that may still land). Without one, the ledger alone: the slot records, plus
+    /// a signed app that has no slot record at all (a slot record, even an absent one, is newer than `freeSigned` and
+    /// decides). Either way a pending or lent slot is never free.
     private static func freeSlots(
         alias: String, ledger: Ledger, projected: Ledger, slots: [LedgerSlot], reserved: Int,
         prefix: String?, apps: AppRegistry, read: AppsRead?
     ) -> Int {
-        if let read, let prefix, CanaryCommand.isValidPrefix(prefix) {
-            var outside = SlotBook.OutsideUse()
-            for slot in slots {
-                let install = projected.installs.first { $0.id == slot.id }
-                let id = bundleId(
-                    of: slot.app, recorded: install?.bundleId, prefix: prefix, apps: apps)
-                let shown = id.map { read.shows($0) } ?? false
-                let settled =
-                    usable(slot, takenAt: read.takenAt)
-                    ? SlotRule.settle(slot, present: shown, takenAt: read.takenAt) : slot
-                guard SlotRule.used(settled), !shown else { continue }
-                if settled.lentTo != nil { outside.lent += 1 } else { outside.pending += 1 }
-            }
+        if let read,
+            let outside = outsideUse(
+                projected: projected, slots: slots, prefix: prefix, apps: apps, read: read)
+        {
             return read.snapshot.usage(
                 prefix: prefix, reserved: reserved, outside: outside, profiles: nil
             ).free

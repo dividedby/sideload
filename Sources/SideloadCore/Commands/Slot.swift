@@ -426,6 +426,13 @@ public enum SlotCommand {
 
     // MARK: return
 
+    /// The lab's WebDriverAgent is still on the device after the return: it keeps a free-team slot the lent one no longer
+    /// covers (design section 18). sideload never removes it; the return stays a success.
+    static let labAppLeftWarning = CanaryCommand.warning(
+        "LAB_APP_LEFT_INSTALLED",
+        "The lab's WebDriverAgent is still installed and uses a free-team slot.",
+        "The lab uninstalls it when its session ends; until then a new app may not fit.")
+
     /// Rows T0 to T10 (docs/design.md section 18, `SlotMatrixTests`). A return is complete only when a snapshot lists our
     /// ID; the `install` op is written before the install and stays when the table says `keep`.
     private static func giveBack(_ services: Services, config: Config, alias: String) async throws
@@ -563,16 +570,16 @@ public enum SlotCommand {
                         "installed": true, "recorded": true,
                     ])
             }
+            let usage = after.usage(
+                prefix: target.prefix, reserved: planned.reserved, outside: planned.usedOutside,
+                profiles: planned.profiles)
             var out: [String: JSONValue] = [
                 "action": "return", "app": .string(record.app), "device": .string(alias),
-                "reinstalled": true,
-                "slots": after.usage(
-                    prefix: target.prefix, reserved: planned.reserved, outside: planned.usedOutside,
-                    profiles: planned.profiles
-                ).json(),
+                "reinstalled": true, "slots": usage.json(),
             ]
             var warnings: [JSONValue] = []
             if let other = relevant.otherAppsWarning { warnings.append(other) }
+            if (usage.labApps ?? usage.labListed) > 0 { warnings.append(labAppLeftWarning) }
             if outcome.result != .success, let failure = outcome.opFailure {
                 warnings.append(
                     CanaryCommand.warning(
