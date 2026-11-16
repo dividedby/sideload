@@ -5,6 +5,18 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-16
+
+Apps from your own sources, and renewals that recover by themselves. The menu bar app's Add source… (and `source add`) adds a
+GitHub release or AltStore source behind the same approval, host, digest and size checks as the built-ins; on 2026-11-16 the
+owner added PhotosBackup that way and installed it on the iPhone, and a lab lend and return then ran with it as the third app.
+A signed-out Xcode now pauses renewals for the whole free team and resumes them once Xcode is signed in, and an App Store change
+during a renewal no longer suspends it. `clean` also frees build output, an unreachable device says what to do, and the slot
+count sees a WebDriverAgent left installed. Removed: `export-cert` and the Feather route. CLI changes in behaviour: new
+`source list|add|remove`; `export-cert` answers `UNKNOWN_COMMAND`; `clean` gains `builds{...}`; `doctor`'s device check
+splits "not paired" from "unavailable"; `slot return` may warn `LAB_APP_LEFT_INSTALLED`; `ACCOUNT_NOT_SIGNED_IN` no longer
+suspends an install.
+
 ### Removed
 
 - The `export-cert` command and the Feather route (issue 44; owner decision 2026-11-01). Gone with it: the Feather kit
@@ -17,8 +29,9 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
-- Custom download sources, second and third of three PRs (issue 47, which this completes; not run against a real source, a
-  device or in the built menu bar app). `sideload source add --url <https url> [--app <id>] [--bundle <bundle ID>]
+- Custom download sources, second and third of three PRs (issue 47, which this completes). On 2026-11-16, in a build of
+  e067f81, the owner added a GitHub source (PhotosBackup) with the menu's Add source…, then approved and installed it on the
+  iPhone with Add app…; `source remove` and an AltStore source have not been run for real. `sideload source add --url <https url> [--app <id>] [--bundle <bundle ID>]
 [--platform ios|tvos] [--name <name>] [--confirm <value> --yes]`: a `https://github.com/<owner>/<repo>` URL is a GitHub
   release source, any other URL has to answer with an AltStore index, anything else is `SOURCE_KIND_UNKNOWN`. Without
   `--yes` it is a preview: one bounded metadata GET (4 MiB) through `Services.http`, no lock, no write, no download, with
@@ -37,7 +50,7 @@ All notable changes to this project are documented here. Format follows
   warning) is the owner's `--yes` with that confirm value; the new app then appears under Add app…; a new app's card has an iOS / Apple TV choice (an index that does not label the platform is iOS). Whether the app is new or an existing one given a source is part of the confirm value. `AGENTS.md` says
   agents never run `source add` or `source remove --yes` against the real home.
 
-- Custom download sources, first of three PRs (issue 47; this part has not been run against a real source or on a device).
+- Custom download sources, first of three PRs (issue 47; run for real through the menu on 2026-11-16, see above).
   A hand-edited `customSources` array in `config.json` (kept in the file's unknown keys, so older builds ignore it) gives a
   `customApps` app a GitHub release source (`githubRelease`: `repo`) or an AltStore index source (`altstoreIndex`: `url`,
   `bundleId`), each with its exact `metadataHosts` and `downloadHosts`. `fetch`, `updates` and
@@ -69,8 +82,9 @@ All notable changes to this project are documented here. Format follows
   the lab holds or with an operation in flight is skipped, and a link keeps its folder. The output gains
   `builds{signedDeleted,signedKept,orphansDeleted,cachesDeleted,bytesFreed,failed,devicesSkippedBusy,linksSkipped}`; the
   backup and download behaviour and output are unchanged. `DEVICE_BUSY_SKIPPED` and `LINKS_SKIPPED` now cover builds too.
-  Never run on the owner's real home: the owner's check is `sideload clean`, then `clean --yes`, then watching the next
-  renewal.
+  The owner ran `sideload clean` and `clean --yes` on 2026-11-15 in a build of 22f01a8: about 199 MB freed (one old IPA,
+  both caches and an empty filler folder), the 5 live signed builds kept, nothing failed. `provision` has since rebuilt
+  `carrier-dd` for a new app; the first renewal after the clean is due about 2026-11-17.
 - Menu bar and `doctor`: a saved device that cannot be reached now says what to do (issue 48; `MenuDeviceReach`, pure). A
   device that is not paired reads "No longer paired" with "Pair it in Xcode."; one the list calls unavailable reads "Can't
   reach it right now" with "Unlock it, or connect it to the Mac or the same Wi-Fi." (an Apple TV: "It may just be asleep;
@@ -1180,7 +1194,8 @@ max(lent, labApps) - lent)`, `used = managed + unmanaged + lent + pending`. If t
 - The CLI no longer crashes with an `EPIPE` stack trace when its stdout reader closes early
   (e.g. `sideload doctor | head`).
 
-[Unreleased]: https://github.com/dividedby/sideload/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/dividedby/sideload/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/dividedby/sideload/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dividedby/sideload/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dividedby/sideload/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/dividedby/sideload/compare/v0.3.0...v0.4.0

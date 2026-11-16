@@ -126,7 +126,7 @@ in-process command as the CLI. A running action shows Cancel; the result lists e
 Retry, or says the lock was busy. A disabled control says why ("Connect iphone over Wi-Fi or USB", "renewable at 6 d left",
 "No free slot: remove an app first"). A pending app-data restore shows as an orange notice with the owner's `slot restore` command. Light and dark follow the system.
 
-Add source… (beside Add device…, also on first run; added 2026-11-15, not yet run in the built app) adds a download source
+Add source… (beside Add device…, also on first run; added 2026-11-15; first used by the owner on 2026-11-16 for PhotosBackup) adds a download source
 without the terminal. A field takes a GitHub repository or an AltStore index address (the rules of `source add`), then one
 read-only preview runs, the same code as `source add` without `--yes`; an index of several apps asks which one. The inline
 confirm shows the address, the metadata host, every download host, the upstream bundle ID and version, the app ID and
@@ -331,7 +331,7 @@ capitalised, not its `name`), but does not offer to add it. None of this has bee
 ## Custom download sources (`customSources`)
 
 Issue 47: **`source add`, `source remove` and the menu bar app's "Add source…" write the `customSources` array (below) for
-you, or you can edit it by hand.** None of it has been run against a real source, on a device or in the built app. Per the
+you, or you can edit it by hand.** The owner added and installed a GitHub source (PhotosBackup) through the menu on 2026-11-16; `source remove` and an AltStore source have not been run for real. Per the
 owner's rule (2026-11-01) a source is the owner's to add: an agent never adds one to `config.json`.
 
 Adding one from the terminal (owner-run; the preview makes one GET to the address, so an agent does not run it either):
