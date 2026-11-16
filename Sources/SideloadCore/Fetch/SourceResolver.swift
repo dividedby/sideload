@@ -141,7 +141,7 @@ enum SourceResolver {
 
     // MARK: Stremio (gorlev AltStore-style indexes)
 
-    private struct Loose: Decodable {
+    struct Loose: Decodable {
         let text: String?
 
         init(from decoder: any Decoder) throws {
@@ -159,11 +159,14 @@ enum SourceResolver {
         }
     }
 
-    private struct Index: Decodable {
+    struct Index: Decodable {
         var apps: [App]?
 
         struct App: Decodable {
+            var name: Loose?
             var bundleIdentifier: String?
+            /// `tvos` when the index says the app is for the Apple TV; `source add` reads it for its default platform.
+            var platform: Loose?
             var versions: [Version]?
         }
 

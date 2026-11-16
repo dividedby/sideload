@@ -98,6 +98,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
             readFetch(
                 app, alias: alias, envelope: envelope, action: action, cancelled: cancelled,
                 chain: .update(from: from))
+        case .addSource(let source): readAddSource(source, envelope: envelope, action: action)
         case .saveDevice(let alias, _):
             readSingle(
                 envelope, action: action, app: "", done: "Saved \(alias)",
@@ -133,6 +134,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
                 if !steps.done.isEmpty, let chain = action.chainKind {
                     notes.append(chain.keptNote)
                 }
+            case .addSource: notes = ["Nothing was added."]
             case .renew, .lendable, .autoRenew, .saveDevice: break
             }
             // What finished before the stop stays visible; what was cut short is not a failure to retry.
@@ -288,6 +290,33 @@ public struct MenuActionOutcome: Sendable, Equatable {
         case RefreshPolicy.interrupted: "Stopped"
         case let code?: "Skipped · \(code)"
         case nil: "Skipped"
+        }
+    }
+
+    // MARK: add source
+
+    /// `source add --yes`: done, busy, or failed with the command's errors. A changed source has no Retry: the same confirm
+    /// would only fail again, so the owner reviews it afresh.
+    private mutating func readAddSource(
+        _ source: MenuSourcePlan, envelope: Envelope, action: MenuAction
+    ) {
+        if envelope.ok {
+            kind = .done
+            headline = "Added the source for \(source.name)"
+            notes = [MenuSourceAdd.addedNote]
+            return
+        }
+        if envelope.errors.first?.code == OperationLock.busyCode {
+            becomeBusy(action)
+            return
+        }
+        kind = .failed
+        issues = envelope.errors.map { MenuIssue(code: $0.code, message: $0.message, fix: $0.fix) }
+        if envelope.errors.first?.code == "SOURCE_CHANGED" {
+            headline = "The source changed since you reviewed it"
+            notes = [MenuSourceAdd.changedNote]
+        } else {
+            headline = "Source not added"
         }
     }
 
@@ -568,6 +597,8 @@ public enum MenuActionState: Sendable, Equatable {
     case running(label: String, cancellable: Bool, cancelling: Bool)
     /// Add device: looking for devices, or the list to pick from. Read-only; the save goes through `confirming`.
     case addingDevice(MenuDevicePicker)
+    /// Add source: the address field, the read, or the list of an index's apps. Read-only; the write goes through `confirming`.
+    case addingSource(MenuSourcePicker)
     case finished(MenuActionOutcome)
 }
 

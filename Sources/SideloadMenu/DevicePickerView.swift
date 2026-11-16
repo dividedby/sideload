@@ -1,16 +1,21 @@
 import SideloadCore
 import SwiftUI
 
-/// "Add device…", under the panel's content. Opening it only lists devices.
+/// "Add device…" and "Add source…", under the panel's content. Opening either only reads: a device list, or nothing until an
+/// address is given.
 struct AddDeviceRow: View {
     var model: MenuModel
 
     var body: some View {
-        HStack {
+        HStack(spacing: 16) {
             Button("Add device…") { model.openAddDevice() }
                 .buttonStyle(.plain)
                 .disabled(!model.canAddDevice)
                 .help("Save a device paired with this Mac")
+            Button("Add source…") { model.openAddSource() }
+                .buttonStyle(.plain)
+                .disabled(!model.canAddSource)
+                .help("Add a GitHub repository or an AltStore index as a download source")
             Spacer(minLength: 0)
         }
     }

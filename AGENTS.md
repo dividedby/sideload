@@ -59,7 +59,9 @@ team) before changing anything.
 - Deleting anything from the keychain or the developer portal.
 - Installing anything system-wide, or anything that needs root/elevated privileges.
 - Pairing changes and any new download source (`source add --yes`, `source remove --yes` and the menu bar app's "Add
-  source…" confirm are the owner's; not built yet).
+  source…" confirm click are built and are the owner's). Agents never run `source add`, with or without `--yes` (its
+  preview makes a network GET to an arbitrary address), and never run `source remove --yes`, against the real
+  `$SIDELOAD_HOME`; they never click "Add source…" in the app. Tests run them against a temp home and fake HTTP.
 - Running `canary`, `provision`, `sign`, `install` or `refresh` (any mode) on a real device, from the CLI or from the menu
   bar app's buttons (they change the portal and/or the device), and `app remove` (it uninstalls one managed install to free a slot; owner-only, allowlisted
   to `io.github.dividedby.free.*`, `--yes` is the owner's), and `slot restore` (the owner's retry of an app-data restore: it
@@ -97,11 +99,13 @@ team) before changing anything.
   anything; a newer version it reports is still `fetch`, the owner's `--approve`, `sign` and `install`.
 - A new source is allowed only when the owner confirms its URL and exact hosts, by `source add --yes` or the menu bar app's
   confirm click. Agents never pass that flag, never click it and never add a source to `config.json`. Each version from any
-  source still needs the owner's approval, with version and SHA-256 recorded. (Owner decision 2026-11-01; issue 47. This
-  build reads a hand-edited `customSources` entry, and `source add`, `source remove` and the menu's "Add source…" come in
-  later PRs of the issue.)
+  source still needs the owner's approval, with version and SHA-256 recorded. (Owner decision 2026-11-01; issue 47. `source
+add --yes`, `source remove --yes` and the menu's "Add source…" are built; none has been run against a real source or
+  in the built app.)
 - `sideload source list` is read-only and safe for an agent to run: no network, no lock, no device, no write. It lists
-  every source, built-in and custom, with its exact hosts and whether `approvedSources` approves it.
+  every source, built-in and custom, with its exact hosts and whether `approvedSources` approves it. `source add` without
+  `--yes` is a preview that writes nothing, but it does one GET to the address it is given, so it is the owner's to run
+  too (see "Ask the owner first").
 
 ## Code
 

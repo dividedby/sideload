@@ -5,8 +5,10 @@ import Foundation
 /// followed and no token is sent.
 enum SourceMetadata {
     /// The body of a 200 answer; anything else is a `SideloadError`.
-    static func fetch(_ services: Services, _ source: FetchSource) async throws -> Data {
-        let response = try await get(services, source)
+    static func fetch(_ services: Services, _ source: FetchSource, command: String = "fetch")
+        async throws -> Data
+    {
+        let response = try await get(services, source, command: command)
         guard response.status == 200 else { throw httpError(response.status) }
         // The live transport enforces this cap itself; the check guards a stub transport that does not.
         guard response.body.count <= URLSessionTransport.maxBodyBytes else {

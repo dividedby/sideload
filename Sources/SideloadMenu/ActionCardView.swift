@@ -27,6 +27,8 @@ struct ActionCardView: View {
             .card()
         case .addingDevice(let picker):
             DevicePickerView(picker: picker, model: model)
+        case .addingSource(let picker):
+            SourcePickerView(picker: picker, model: model)
         case .finished(let outcome):
             ResultView(outcome: outcome, model: model)
         }
