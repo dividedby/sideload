@@ -95,6 +95,8 @@ struct DeviceScript: Sendable {
     var otherTeamApps: Set<String> = []
     /// Free-team profiles whose app is not on the device (profiles outlive their app).
     var staleFreeProfiles: [String] = []
+    /// Installed developer-built apps the derived profile list leaves out (a profile purged after it expired).
+    var unlistedProfiles: Set<String> = []
     /// The data container every app on the device starts with: relative path to content (`DataFaults` breaks it).
     var container: [String: Data] = [:]
     var dataFaults = DataFaults()
@@ -383,7 +385,8 @@ final class DeviceSimRunner: Runner {
                 }
                 var rows: [JSONValue] = [profile("TFTEAM0001", "com.example.testflight.beta")]
                 let current = deviceApps
-                for (id, developer) in current.sorted(by: { $0.key < $1.key }) where developer {
+                for (id, developer) in current.sorted(by: { $0.key < $1.key })
+                where developer && !script.unlistedProfiles.contains(id) {
                     rows.append(
                         profile(script.otherTeamApps.contains(id) ? "TFTEAM0002" : Team.free, id))
                 }

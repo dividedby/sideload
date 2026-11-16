@@ -238,8 +238,9 @@ struct FreeSlotsStatusTests {
         #expect(snapshot?.ids == [stremioId, wdaId, "com.example.user"])
         let usage = snapshot?.usage(prefix: carrierPrefix, reserved: 0)
         #expect(
-            usage?.managed == 1 && usage?.otherDeveloperApps == 1 && usage?.unmanaged == 0
-                && usage?.used == 1 && usage?.free == 2)
+            usage?.managed == 1 && usage?.otherDeveloperApps == 1 && usage?.unmanaged == 1
+                && usage?.used == 2 && usage?.free == 1,
+            "the developer-built WebDriverAgent counts from the app list alone")
         #expect(AppSnapshot.parse(nil) == nil)
         #expect(AppSnapshot.parse(["result": "oops"]) == nil)
         #expect(AppSnapshot.parse(["info": ["outcome": "success"]]) == nil)

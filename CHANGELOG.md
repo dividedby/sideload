@@ -92,6 +92,15 @@ All notable changes to this project are documented here. Format follows
 
 ### Fixed
 
+- The lab's WebDriverAgent left installed filled the iPhone without warning (issue 64: on 2026-11-15 a third app passed
+  the install preflight, spent an App ID, and installd refused it). The slot count now finds WebDriverAgent from the
+  device's app list too (a developer-built app labelled WebDriverAgent counts even with no listed profile, and once
+  inside a lent slot), also when the profile list could not be read, so `install` refuses with `FREE_APP_LIMIT` before
+  provision, sign and install; other apps still need a listed free-team profile, so TestFlight betas stay uncounted. `slot
+return` stays `ok` but warns `LAB_APP_LEFT_INSTALLED` when the device still shows WebDriverAgent afterwards, and the menu
+  bar app's device card says "Lab app still installed · uses a free slot" when it does with no lend active, with that app
+  counted in the card's free slots. sideload never removes the app: the lab uninstalls it. Tested with fakes only; not run
+  on a device or in the built menu bar app.
 - `updates.json` entries of a source that is not built in were dropped on every load, so the 6 hour cadence could not hold
   for a custom source. The cache now keeps the apps of the config's registry.
 - A signed-out Xcode no longer suspends the installs one by one (issue 57). `ACCOUNT_NOT_SIGNED_IN` is now one pause for the

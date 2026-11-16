@@ -29,7 +29,7 @@ struct DeviceCardView: View {
                 .font(.callout).foregroundStyle(.secondary).lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, -4)
-            } else if let note = device.appsNote {
+            } else if let note = device.appsNote ?? device.labAppNote {
                 Text(note).font(.callout).foregroundStyle(.secondary).lineLimit(1)
                     .padding(.top, -4)
             }

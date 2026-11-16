@@ -75,8 +75,12 @@ struct SlotCountTests {
             profiles: freeProfiles([wdaId, sideStoreId]))
         #expect(usage.used == 3, "apollo + SideStore + (lent slot holding WebDriverAgent)")
         let none = one.usage(
-            prefix: carrierPrefix, reserved: 0, outside: .init(lent: 1), profiles: freeProfiles([]))
-        #expect(none.otherFreeTeamApps == 0 && none.used == 2)
+            prefix: carrierPrefix, reserved: 0, outside: .init(lent: 1),
+            profiles: freeProfiles([sideStoreId]))
+        #expect(
+            none.labApps == 1 && none.used == 3,
+            "a developer-built WebDriverAgent counts with no listed profile, once, inside the lent slot"
+        )
     }
 
     @Test(
@@ -250,9 +254,10 @@ struct SlotCountTests {
             ProfileListBehaviour.fail, .malformed,
         ])
     func fallbackToReserve(behaviour: ProfileListBehaviour) async throws {
-        // WebDriverAgent is there but unseen: the preflight lets the install through, installd refuses it.
+        // A free-team app (SideStore) is there but unseen without the profiles: the preflight lets the install through,
+        // installd refuses it. (WebDriverAgent is seen from the app list, `labAppCountedWithoutProfiles`.)
         let script = DeviceScript(
-            initial: apps([apolloId, stremioId, wdaId]), install: installdLimit,
+            initial: apps([apolloId, stremioId, sideStoreId]), install: installdLimit,
             profileList: behaviour)
         try await withInstallWorld(app: .filler, script: script) { w in
             let out = await w.install()
@@ -372,9 +377,10 @@ struct SlotCountTests {
         "installd's limit refusal on a return: RETURN_FAILED/FREE_APP_LIMIT, not uncertain, the op closed, lent kept, no window"
     )
     func returnInstalldRefusal() async throws {
-        // The profile read fails, so the preflight cannot see WebDriverAgent and installd decides.
+        // The profile read fails, so the preflight cannot see SideStore and installd decides.
         let script = DeviceScript(
-            initial: apps([apolloId, fillerId, wdaId]), install: installdLimit, profileList: .fail)
+            initial: apps([apolloId, fillerId, sideStoreId]), install: installdLimit,
+            profileList: .fail)
         try await withInstallWorld(
             script: script, lendable: "stremio-ios", ledger: { $0.lent = [lentStremio] }
         ) { w in
@@ -395,6 +401,112 @@ struct SlotCountTests {
             let lend = await w.slot("lend", device: "iphone", to: "lab")
             #expect(lend.errorCodes != ["SLOT_PENDING"], "\(lend.errors)")
             try expectSlotModel(w)
+        }
+    }
+
+    // MARK: the lab's app left installed (#64)
+
+    private func warningCodes(_ out: Envelope) -> [String] {
+        json(out)["warnings"]?.array?.compactMap { $0["code"]?.string } ?? []
+    }
+
+    @Test(
+        "WebDriverAgent counts from the app list with or without its profile; look-alikes and betas do not"
+    )
+    func labAppCountedWithoutProfiles() {
+        let listed = AppSnapshot(apps: apps([apolloId, wdaId]))
+        let withProfile = listed.usage(
+            prefix: carrierPrefix, reserved: 0, profiles: freeProfiles([wdaId]))
+        let without = listed.usage(prefix: carrierPrefix, reserved: 0, profiles: freeProfiles([]))
+        #expect(withProfile.labApps == 1 && without.labApps == 1)
+        #expect(without.otherNonLab == 0 && without.used == 2 && without.profilesRead)
+
+        // No profile read at all: the app list still identifies it; labApps stays nil (profilesRead false).
+        let unread = listed.usage(prefix: carrierPrefix, reserved: 0)
+        #expect(unread.labApps == nil && !unread.profilesRead)
+        #expect(unread.unmanaged == 1 && unread.used == 2)
+
+        // A TestFlight-like developer app with no profile is not counted.
+        let beta = AppSnapshot(apps: apps([apolloId] + testFlight))
+        let betaUsage = beta.usage(prefix: carrierPrefix, reserved: 0, profiles: freeProfiles([]))
+        #expect(betaUsage.labApps == 0 && betaUsage.otherNonLab == 0 && betaUsage.used == 1)
+
+        // A WebDriverAgent-named app that is not developer-built and has no profile is not counted; with a profile it is.
+        let plain = AppSnapshot(apps: [apolloId: true, wdaId: false])
+        #expect(
+            plain.usage(prefix: carrierPrefix, reserved: 0, profiles: freeProfiles([])).labApps
+                == 0)
+        #expect(plain.usage(prefix: carrierPrefix, reserved: 0).unmanaged == 0)
+        #expect(
+            plain.usage(prefix: carrierPrefix, reserved: 0, profiles: freeProfiles([wdaId]))
+                .labApps == 1)
+
+        // The lent slot and the app count once, in either mode.
+        for profiles in [nil, freeProfiles([])] {
+            let lent = listed.usage(
+                prefix: carrierPrefix, reserved: 0, outside: .init(lent: 1), profiles: profiles)
+            #expect(lent.unmanaged == 0 && lent.used == 2, "apollo + the lent slot")
+        }
+    }
+
+    @Test(
+        "an unprofiled WebDriverAgent fills the device: a new app is refused before any provision, sign or install call"
+    )
+    func newAppRefusedWithUnprofiledWda() async throws {
+        let script = DeviceScript(
+            initial: apps([apolloId, stremioId, wdaId]), unlistedProfiles: [wdaId])
+        try await withInstallWorld(app: .filler, script: script) { w in
+            let out = await w.install()
+            #expect(out.errorCodes == ["FREE_APP_LIMIT"])
+            #expect(
+                slots(out)["used"] == 3 && slots(out)["labApps"] == 1
+                    && slots(out)["profilesRead"] == true)
+            #expect(w.runner.installCalls.isEmpty && w.installs.isEmpty)
+            try w.expectClean(out)
+        }
+        // Without the profile read at all the app list still stops it.
+        let unread = DeviceScript(initial: apps([apolloId, stremioId, wdaId]), profileList: .fail)
+        try await withInstallWorld(app: .filler, script: unread) { w in
+            let out = await w.install()
+            #expect(out.errorCodes == ["FREE_APP_LIMIT"])
+            #expect(slots(out)["profilesRead"] == false && slots(out)["unmanaged"] == 1)
+            #expect(w.runner.installCalls.isEmpty)
+        }
+    }
+
+    @Test(
+        "slot return with WebDriverAgent left installed succeeds and warns LAB_APP_LEFT_INSTALLED")
+    func returnWarnsWhenLabAppLeft() async throws {
+        for unlisted: Set<String> in [[], [wdaId]] {
+            let script = DeviceScript(initial: apps([apolloId, wdaId]), unlistedProfiles: unlisted)
+            try await withInstallWorld(
+                script: script, lendable: "stremio-ios", ledger: { $0.lent = [lentStremio] }
+            ) { w in
+                let out = await w.slot("return", device: "iphone")
+                #expect(out.ok, "\(out.errors)")
+                #expect(json(out)["reinstalled"] == true && w.lent.isEmpty)
+                #expect(warningCodes(out) == ["LAB_APP_LEFT_INSTALLED"])
+                let warning = try #require(json(out)["warnings"]?.array?.first)
+                #expect(
+                    warning["message"]?.string?.contains("WebDriverAgent") == true
+                        && warning["fix"]?.string?.contains("lab") == true)
+                #expect(slots(out)["used"] == 3 && slots(out)["unmanaged"] == 1)
+                #expect(!(try out.printed().text).contains(wdaId))
+                try expectSlotModel(w, eventually: true)
+            }
+        }
+    }
+
+    @Test("slot return without a WebDriverAgent has no such warning")
+    func returnQuietWithoutLabApp() async throws {
+        try await withInstallWorld(
+            script: DeviceScript(
+                initial: apps([apolloId] + testFlight), otherTeamApps: Set(testFlight)),
+            lendable: "stremio-ios", ledger: { $0.lent = [lentStremio] }
+        ) { w in
+            let out = await w.slot("return", device: "iphone")
+            #expect(out.ok, "\(out.errors)")
+            #expect(!warningCodes(out).contains("LAB_APP_LEFT_INSTALLED"))
         }
     }
 

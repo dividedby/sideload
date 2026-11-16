@@ -386,12 +386,18 @@ public enum MenuSnapshotBuilder {
         // An out-of-range stored reserve (a hand-edited config) says nothing about the slots, like an unreadable ledger.
         let known = inputs.ledgerReadable && saved.freeSlotsReserved != nil
         let reserved = saved.freeSlotsReserved ?? 0
+        // The live count, once per card: the slot book's settled records plus the snapshot (nil without a usable read or
+        // while the slots are unknown). The free count and the lab-app note both read it.
+        let usage =
+            known
+            ? liveUsage(
+                projected: projected, slots: slots, reserved: reserved, prefix: prefix, apps: apps,
+                read: read) : nil
         // Unknown slots: none is shown free.
         let free =
             known
             ? freeSlots(
-                alias: alias, ledger: ledger, projected: projected, slots: slots,
-                reserved: reserved, prefix: prefix, apps: apps, read: read)
+                alias: alias, ledger: ledger, slots: slots, reserved: reserved, usage: usage)
             : 0
         let reservedRows = (0..<reserved).map { n in
             reserved == 1 ? "Reserved slot" : "Reserved slot (\(n + 1))"
@@ -410,6 +416,7 @@ public enum MenuSnapshotBuilder {
                 now: now),
             appsNote: appsNote(
                 failedCode: failedCode, rows: rows, readOverRows: read != nil, presence: presence),
+            labAppNote: labAppNote(usage),
             apps: rows, reservedSlots: reservedRows,
             renew: MenuRenewMenu(
                 items: [
@@ -606,32 +613,46 @@ public enum MenuSnapshotBuilder {
         return row
     }
 
-    /// Free slots on a device. With a live read this is what `install` computes without a profile read: the snapshot's
-    /// managed apps, the owner's reserve, and the records the snapshot does not show (a lent slot, an operation that may
-    /// still land). Without one, the ledger alone: the slot records, plus a signed app that has no slot record at all (a
-    /// slot record, even an absent one, is newer than `freeSigned` and decides). Either way a pending or lent slot is
-    /// never free.
-    private static func freeSlots(
-        alias: String, ledger: Ledger, projected: Ledger, slots: [LedgerSlot], reserved: Int,
-        prefix: String?, apps: AppRegistry, read: AppsRead?
-    ) -> Int {
-        if let read, let prefix, CanaryCommand.isValidPrefix(prefix) {
-            var outside = SlotBook.OutsideUse()
-            for slot in slots {
-                let install = projected.installs.first { $0.id == slot.id }
-                let id = bundleId(
-                    of: slot.app, recorded: install?.bundleId, prefix: prefix, apps: apps)
-                let shown = id.map { read.shows($0) } ?? false
-                let settled =
-                    usable(slot, takenAt: read.takenAt)
-                    ? SlotRule.settle(slot, present: shown, takenAt: read.takenAt) : slot
-                guard SlotRule.used(settled), !shown else { continue }
-                if settled.lentTo != nil { outside.lent += 1 } else { outside.pending += 1 }
-            }
-            return read.snapshot.usage(
-                prefix: prefix, reserved: reserved, outside: outside, profiles: nil
-            ).free
+    /// `AppSnapshot.usage` for a card with a live read: the slot records the read does not show (a lent slot or an operation
+    /// that may still land, settled the way `install` settles them) around the snapshot. Nil without a read or a usable
+    /// prefix. No profile read, so the lab's app comes from the app list.
+    private static func liveUsage(
+        projected: Ledger, slots: [LedgerSlot], reserved: Int, prefix: String?, apps: AppRegistry,
+        read: AppsRead?
+    ) -> AppSnapshot.Usage? {
+        guard let read, let prefix, CanaryCommand.isValidPrefix(prefix) else { return nil }
+        var outside = SlotBook.OutsideUse()
+        for slot in slots {
+            let install = projected.installs.first { $0.id == slot.id }
+            let id = bundleId(of: slot.app, recorded: install?.bundleId, prefix: prefix, apps: apps)
+            let shown = id.map { read.shows($0) } ?? false
+            let settled =
+                usable(slot, takenAt: read.takenAt)
+                ? SlotRule.settle(slot, present: shown, takenAt: read.takenAt) : slot
+            guard SlotRule.used(settled), !shown else { continue }
+            if settled.lentTo != nil { outside.lent += 1 } else { outside.pending += 1 }
         }
+        return read.snapshot.usage(
+            prefix: prefix, reserved: reserved, outside: outside, profiles: nil)
+    }
+
+    /// The note of a visible device whose live read shows the lab's WebDriverAgent while no slot is lent to the lab: the lab
+    /// left it installed, and it uses a free-team slot (design section 18). Nil otherwise (no read, unknown slots, a lend).
+    private static func labAppNote(_ usage: AppSnapshot.Usage?) -> String? {
+        guard let usage, usage.lent == 0, usage.labCount > 0 else { return nil }
+        return "Lab app still installed · uses a free slot"
+    }
+
+    /// Free slots on a device. With a live read this is what `install` computes without a profile read: the snapshot's
+    /// managed apps, the lab's WebDriverAgent when the app list shows it, the owner's reserve, and the records the snapshot
+    /// does not show (a lent slot, an operation that may still land). Without one, the ledger alone: the slot records, plus
+    /// a signed app that has no slot record at all (a slot record, even an absent one, is newer than `freeSigned` and
+    /// decides). Either way a pending or lent slot is never free.
+    private static func freeSlots(
+        alias: String, ledger: Ledger, slots: [LedgerSlot], reserved: Int,
+        usage: AppSnapshot.Usage?
+    ) -> Int {
+        if let usage { return usage.free }
         let withSlot = Set(slots.map(\.app))
         let signed = Set(
             ledger.freeSigned.filter { $0.device == alias && !withSlot.contains($0.app) }.map(\.app)

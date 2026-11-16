@@ -410,6 +410,9 @@ public struct MenuDeviceCard: Sendable, Equatable, Identifiable {
     /// The one line a visible device shows when its app list could not be read ("Couldn't check apps (device locked) ·
     /// showing last known"); nil otherwise. "Not checked live" is said once per card, never per row.
     public var appsNote: String?
+    /// "Lab app still installed · uses a free slot": a visible device whose live read shows the lab's WebDriverAgent while no
+    /// slot is lent to the lab; nil otherwise. It never replaces the reach line (an unreachable device has no live read).
+    public var labAppNote: String?
     public var apps: [MenuAppRow]
     /// Grey rows for slots the owner reserved for apps sideload does not manage.
     public var reservedSlots: [String]
