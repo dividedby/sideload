@@ -72,7 +72,7 @@ team) before changing anything.
 - `scripts/install-local.sh` (it replaces the installed CLI the launchd agents run and the menu bar app, and restarts the app;
   `--kick` starts a `refresh --auto` run on the real devices). Its `--check` only reads the agents' state and the log, so an
   agent may run that.
-- `clean --yes` (it deletes app-data backups past 14 days and downloaded IPAs no longer needed; `--yes` is the owner's). `clean` without `--yes` is a preview that deletes
+- `clean --yes` (it deletes app-data backups past 14 days, downloaded IPAs no longer needed and stale build output under `builds/`: signed builds the ledger shows installed and past 14 days, orphans, the `carrier-dd` and `canary` caches; `--yes` is the owner's). `clean` without `--yes` is a preview that deletes
   nothing and prints counts only; agents may run it. It takes `.op.lock`, so a busy lock is `OPERATION_IN_PROGRESS`.
 - `device remove --yes` (it retires a saved device: drops its config entry, ledger records, cached profiles and signed
   builds; it touches no device).

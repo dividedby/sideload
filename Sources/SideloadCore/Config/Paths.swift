@@ -31,6 +31,8 @@ public struct Paths: Sendable, Equatable {
     /// The runtime-generated profile-carrier project (`CarrierProject`) and its derived data, both under `builds/`.
     public var carrierProject: String { builds + "/carrier" }
     public var carrierDerivedData: String { builds + "/carrier-dd" }
+    /// The paid canary's derived data (`canary` builds into it each run).
+    public var canaryDerivedData: String { builds + "/canary" }
     /// Free-team re-signed apps `sign` leaves for `install` (`builds/signed/<app>/<device>/<Name>.app`, folders 0700).
     /// Created lazily, not part of `subdirectories`.
     public var signedBuilds: String { builds + "/signed" }

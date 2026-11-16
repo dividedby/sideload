@@ -10,18 +10,20 @@ public struct CleanOptions: Sendable, Equatable {
 }
 
 /// `clean [--yes]` (design section 9, "Clean"; section 18, "App data", retention). Owner-only with `--yes`; without it a preview
-/// that deletes nothing, which an agent may run. It deletes two kinds of file under `$SIDELOAD_HOME` and nothing else:
+/// that deletes nothing, which an agent may run. It deletes three kinds of file under `$SIDELOAD_HOME` and nothing else:
 ///
-/// - app-data backups past their retention (`CleanBackups`), and
-/// - downloaded IPAs no longer needed (`CleanDownloads`), whose manifest entries stay, marked `prunedAt`.
+/// - app-data backups past their retention (`CleanBackups`),
+/// - downloaded IPAs no longer needed (`CleanDownloads`), whose manifest entries stay, marked `prunedAt`, and
+/// - build output under `builds/` (`CleanBuilds`): signed builds proven installed and past retention, orphans, and the two
+///   derived-data caches.
 ///
 /// It takes `.op.lock` for the whole run (a busy lock is `OPERATION_IN_PROGRESS`, never waited on), and touches no device, no
-/// network, no keychain, no portal and no subprocess. The output is counts and the app aliases of the downloads; no path, no
-/// file or folder name, nothing from a backup. Progress lines are counts only.
+/// network, no keychain, no portal and no subprocess. The output is counts, bytes and the app aliases of the downloads; no path,
+/// no file or folder name, nothing from a backup. Progress lines are counts only. It never writes the ledger or the config.
 ///
 /// With `--yes`, in order: the manifest is rewritten once with `prunedAt` on every entry about to lose its folder; then those
-/// folders go; then the backups. A crash after the manifest write leaves marked entries whose folder may still exist, and a rerun
-/// finishes them.
+/// folders go; then the backups; then the build output. A crash after the manifest write leaves marked entries whose folder
+/// may still exist, and a rerun finishes them.
 public enum CleanCommand {
     static let command = "clean"
     /// How long a backup is kept after it was restored or superseded (or, for a device that is no longer saved, after its newest
@@ -59,6 +61,7 @@ public enum CleanCommand {
 
         let backupPlan = CleanBackups.plan(services, config: config, ledger: migrated, now: now)
         let downloadPlan = CleanDownloads.plan(services, manifest: manifest, ledger: ledger)
+        let buildPlan = CleanBuilds.plan(services, config: config, ledger: migrated, now: now)
         let verb = options.yes ? "deleting" : "would delete"
         services.log(
             "clean: backups: \(verb) \(backupPlan.counts.deleted), keeping \(backupPlan.counts.kept), unreadable \(backupPlan.counts.unreadable)"
@@ -66,9 +69,13 @@ public enum CleanCommand {
         services.log(
             "clean: downloads: \(verb) \(downloadPlan.deleted) version(s), keeping \(downloadPlan.kept)"
         )
+        services.log(
+            "clean: builds: \(verb) \(buildPlan.counts.deleted) folder(s), keeping \(buildPlan.counts.signedKept) signed"
+        )
 
         var backups = backupPlan.counts
         var downloads = downloadPlan
+        var builds = buildPlan.counts
         if options.yes {
             if !downloadPlan.marks.isEmpty {
                 try store.save(CleanDownloads.marked(manifest, plan: downloadPlan, at: now))
@@ -76,9 +83,11 @@ public enum CleanCommand {
             try afterMarked?()
             downloads = CleanDownloads.apply(downloadPlan, services: services)
             backups = CleanBackups.apply(backupPlan, services: services)
+            builds = CleanBuilds.apply(buildPlan, services: services)
             services.log("clean: done")
         }
-        return envelope(dryRun: !options.yes, backups: backups, downloads: downloads)
+        return envelope(
+            dryRun: !options.yes, backups: backups, downloads: downloads, builds: builds)
     }
 
     // MARK: deleting
@@ -90,10 +99,31 @@ public enum CleanCommand {
         return (try? FileManager.default.removeItem(atPath: path)) != nil
     }
 
+    /// The names of the real, non-hidden folders directly inside `directory`, sorted. Counts a link met (the folder itself or an
+    /// entry) in `links`. Nothing inside is opened.
+    static func plainFolders(in directory: String, root: String, links: inout Int) -> [String] {
+        if DeviceRemove.isLink(directory) {
+            links += 1
+            return []
+        }
+        guard AppDataBackup.isPlain(directory, root: root, regularFile: false) else { return [] }
+        var found: [String] = []
+        for name in DeviceRemove.names(in: directory) where !name.hasPrefix(".") {
+            let path = directory + "/" + name
+            if DeviceRemove.isRealDirectory(path) {
+                found.append(name)
+            } else if DeviceRemove.isLink(path) {
+                links += 1
+            }
+        }
+        return found
+    }
+
     // MARK: output
 
     private static func envelope(
-        dryRun: Bool, backups: CleanBackups.Counts, downloads: CleanDownloads.Plan
+        dryRun: Bool, backups: CleanBackups.Counts, downloads: CleanDownloads.Plan,
+        builds: CleanBuilds.Counts
     ) -> Envelope {
         var warnings: [JSONValue] = []
         if backups.unreadable > 0 {
@@ -103,31 +133,35 @@ public enum CleanCommand {
                     "\(backups.unreadable) backup folder(s) have a missing or unreadable manifest and were kept.",
                     "Look at backups/ under $SIDELOAD_HOME yourself; they hold session tokens."))
         }
-        if backups.devicesSkippedBusy > 0 {
+        // The two counts can name the same device; the larger is the least that is certain.
+        let busy = max(backups.devicesSkippedBusy, builds.devicesSkippedBusy)
+        if busy > 0 {
             warnings.append(
                 CanaryCommand.warning(
                     "DEVICE_BUSY_SKIPPED",
-                    "\(backups.devicesSkippedBusy) device(s) hold a slot for the lab or have an operation in flight; their backups were skipped.",
+                    "\(busy) device(s) hold a slot for the lab or have an operation in flight; their backups and signed builds were skipped.",
                     "Run clean again after the lab returns the slot."))
         }
-        if backups.linksSkipped + downloads.skipped > 0 {
+        let links = backups.linksSkipped + downloads.skipped + builds.linksSkipped
+        if links > 0 {
             warnings.append(
                 CanaryCommand.warning(
                     "LINKS_SKIPPED",
-                    "\(backups.linksSkipped + downloads.skipped) folder(s) under backups/ or downloads/ sit behind a link (or have an unusable manifest path) and were left alone.",
-                    "Check backups/ and downloads/ under $SIDELOAD_HOME."))
+                    "\(links) folder(s) under backups/, downloads/ or builds/ sit behind a link or hold one (or have an unusable manifest path) and were left alone.",
+                    "Check backups/, downloads/ and builds/ under $SIDELOAD_HOME."))
         }
         var data: [String: JSONValue] = [
             "dryRun": .bool(dryRun), "retentionDays": .number(Double(retentionDays)),
             "backups": .object(backups.json),
-            "downloads": .object(downloads.json), "warnings": .array(warnings),
+            "downloads": .object(downloads.json), "builds": .object(builds.json),
+            "warnings": .array(warnings),
         ]
         if dryRun {
             data["next"] = .string(
                 "Nothing was deleted. The owner deletes with: sideload clean --yes")
         }
 
-        let failed = backups.failed + downloads.failed
+        let failed = backups.failed + downloads.failed + builds.failed
         guard failed > 0 else { return .result(command, data) }
         return Envelope(
             ok: false, command: command, data: data,

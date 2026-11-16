@@ -227,6 +227,28 @@ struct MenuActionAvailabilityTests {
         #expect(menuBuild(ledger: ledger).devices[0].apps.isEmpty)
     }
 
+    @Test(
+        "a signed build whose profile has expired, which is what `clean` leaves behind an old installed build, offers no Install and no Install update"
+    )
+    func expiredSignedOffersNoInstall() throws {
+        var ledger = menuLedger([("iphone", "apollo", -10)])
+        ledger.freeSigned = [menuSigned("iphone", "apollo", days: -10)]
+        for probe in [read([apolloBid]), read([])] {
+            let snapshot = menuBuild(ledger: ledger, apps: probe)
+            let card = snapshot.devices[0]
+            let row = try #require(card.apps.first)
+            #expect(!row.newerSigned)
+            let offers = MenuActions.rowOffers(row, card: card, snapshot: snapshot, now: testNow)
+            for offer in offers where offer.kind == .install || offer.kind == .installUpdate {
+                #expect(offer.availability != .enabled, "\(offer.label)")
+            }
+        }
+        let gone = menuBuild(ledger: ledger, apps: read([]))
+        let install = MenuAction.install(device: "iphone", app: "apollo")
+        #expect(
+            availability(install, gone).reason?.contains("The signed build has expired") == true)
+    }
+
     @Test("newerSigned needs a different profile more than a day later that has not expired")
     func newerSigned() {
         func newer(_ days: Double, uuid: String) -> Bool {
