@@ -5,6 +5,14 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Docs: `AGENTS.md` is now a short index (about 115 lines) and stays the single source of truth; a new `CLAUDE.md` is just
+  `@AGENTS.md`. The long "Ask the owner first" and "Secrets" detail moved to path-scoped `.claude/rules/owner-only.md` and
+  `.claude/rules/secrets.md` (the hard rules and the owner-only command list stay in `AGENTS.md`); lines that only restated the
+  global Claude preferences, the README command list, `docs/design.md` or this changelog were dropped. `AGENTS.md` gains a
+  Commands section. `docs/agents/idea-inbox.md` names the `idea-intake` skill.
+
 ## [0.7.0] - 2026-11-16
 
 Apps from your own sources, and renewals that recover by themselves. The menu bar app's Add source… (and `source add`) adds a
