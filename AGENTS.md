@@ -5,6 +5,18 @@ team, and (owner decision 2026-10-23) in a narrow way with the owner's free team
 paid install block stands. Read `README.md` (account status) and `docs/design.md` (section 18 for the free
 team) before changing anything.
 
+This file is the single source of truth for every agent. Claude Code reaches it through `CLAUDE.md` (`@AGENTS.md`)
+and also loads the path-scoped detail in `.claude/rules/`; other agents should read the files linked below.
+
+## Commands
+
+- `pnpm test` (the secrets scanner's `node --test` suite), `pnpm check-secrets:all`, `pnpm format:check` (Prettier;
+  CI also runs `shfmt` and `swift-format`, see `.github/workflows/format.yml`; files format on edit through the post-edit hook).
+- `swift build` and `swift test` (no third-party packages, so no network; the tests use fakes, temp homes and fake HTTP).
+- `scripts/check.sh` is the local gate: `swift build`, `swift test`, a release build of the CLI that proves the debug-only
+  `SIDELOAD_TEST_FORCE_SLOT` hook is compiled out, `pnpm test`, `check-secrets --all`. Run it before opening a PR.
+  Real-device runs are manual and owner-initiated.
+
 ## Account and tools
 
 - Paid team: **7AGMPUPP64**. Every development install from it currently fails on device with
@@ -20,19 +32,19 @@ team) before changing anything.
   or launches any bundle ID outside `io.github.dividedby.free.*` (WebDriverAgent and atvloadly's apps included),
   and never touches mobile-safari-lab. `canary`, `portal` and the
   ledger's certificate/profile lists stay paid-only. Signing code matches identities by certificate OU, never by
-  name. `provision`, `sign`, `install`, `refresh` (manual), `refresh --auto`, `app remove`, `slot restore` and `slot lend|return` are built (owner-run, or run by the lab for `slot lend|return`; `refresh --auto` is the command the owner's launchd agent runs, and agents never run it on a real device; `refresh --print-agent` is built and pure (no lock, subprocess or write), so an agent may run it, but only the owner runs the `launchctl` commands it prints, see `docs/design.md` section 18). `refresh` runs `provision`, `sign` and `install`, each taking `.op.lock` itself, and spends no new App ID on a renewal.
+  name. Detail: `docs/design.md` section 18.
 - **One lock for the free team.** `$SIDELOAD_HOME/.op.lock` is the shared operation lock for any signing with
-  6ZU5Z6ZKK7. mobile-safari-lab takes it too (`dividedby/mobile-safari-lab-archive` issue 63, the lab's private repo from before it went public on 2026-10-31, sideload #2), so a sideload run
+  6ZU5Z6ZKK7. mobile-safari-lab takes it too (`dividedby/mobile-safari-lab-archive` issue 63, sideload #2), so a sideload run
   and a lab run never sign at the same time. Take it before touching that team's identity or profiles. A busy
   lock means a manual run reports `OPERATION_IN_PROGRESS` and auto-refresh logs a skip; never wait on it or
   delete the file. The lock is a BSD `flock` (`LOCK_EX|LOCK_NB`) and
-  the only ordering mechanism with the lab: don't probe for its processes (no `pgrep`). `fetch` downloads without it; it takes it to record a verified file and for `--approve`.
+  the only ordering mechanism with the lab: don't probe for its processes (no `pgrep`). Detail: `docs/design.md`
+  sections 9 and 18.
 
 ## Apple TV
 
-- sideload has served the Apple TV (`io.github.dividedby.free.stremio`, free team) since 2026-10-24. atvloadly (Docker
-  in the OrbStack VM `atv`) is retired: stopped and its Stremio copy removed from the Apple TV on 2026-10-24, the
-  `atv` VM deleted by the owner on 2026-10-30. Never set atvloadly up again or run it with the owner's Apple ID, and
+- sideload serves the Apple TV (`io.github.dividedby.free.stremio`, free team). atvloadly (Docker in the OrbStack VM
+  `atv`) is retired: never set atvloadly up again or run it with the owner's Apple ID, and
   leave OrbStack itself alone (other projects use its Docker).
 - The route is Xcode pairing on the Mac + `xcrun devicectl`, with the free team, or the paid team once the canary
   reports `working`. The owner pairs the Apple TV in Xcode; agents never pair or unpair devices.
@@ -44,74 +56,42 @@ team) before changing anything.
   macOS keychain.
 - Never print secrets in output or logs. UDIDs are redacted to their last 4 characters. Identity common names
   are never printed (one contains an email address).
-- `ledger.json` holds no secrets.
-- `$SIDELOAD_HOME/asc/` (the App Store Connect API key `.p8` and `key.json`) is never read, opened, printed or
-  copied by an agent. Tests generate throwaway P-256 keys at runtime.
-- App-data backups under `$SIDELOAD_HOME/backups/` (`slot lend` saves the lent app's data container) are secrets-class: they hold
-  session tokens. Directories 0700, files 0600; never print, log, put in JSON, the ledger or the repo, and agents never open,
-  read or copy them. Output carries counts and booleans only. `copy to` (the restore, in `slot return` and in `slot restore`) was
-  first checked live on 2026-10-25 (mobile-safari-lab-archive issue 63, Stage 2: an iPhone on Wi-Fi, stremio-ios, a backup of 11 of 13 files; after the return the app was still signed in with its library and add-ons); `slot restore` itself has not been run on a device.
+- `$SIDELOAD_HOME/asc/` (the App Store Connect API key `.p8` and `key.json`) and the app-data backups under
+  `$SIDELOAD_HOME/backups/` are never read, opened, printed or copied by an agent.
 - The pre-commit hook (`.githooks/pre-commit` → `scripts/check-secrets.mjs --staged`) must stay enabled.
   `pnpm install` sets `core.hooksPath`. Never bypass it with `--no-verify`.
+- Detail: `.claude/rules/secrets.md`.
 
 ## Ask the owner first
 
-- Deleting anything from the keychain or the developer portal.
-- Installing anything system-wide, or anything that needs root/elevated privileges.
-- Pairing changes and any new download source (`source add --yes`, `source remove --yes` and the menu bar app's "Add
-  source…" confirm click are built and are the owner's). Agents never run `source add`, with or without `--yes` (its
-  preview makes a network GET to an arbitrary address), and never run `source remove --yes`, against the real
-  `$SIDELOAD_HOME`; they never click "Add source…" in the app. Tests run them against a temp home and fake HTTP.
-- Running `canary`, `provision`, `sign`, `install` or `refresh` (any mode) on a real device, from the CLI or from the menu
-  bar app's buttons (they change the portal and/or the device), and `app remove` (it uninstalls one managed install to free a slot; owner-only, allowlisted
-  to `io.github.dividedby.free.*`, `--yes` is the owner's), and `slot restore` (the owner's retry of an app-data restore: it
-  pushes a saved backup into the app on the device; owner-only, `--yes` is the owner's, and it takes `--device <alias>`, never
-  `--udid`).
-- The menu bar app's action buttons (Renew…, Add app…, Update…, Reinstall previous version…, Install, Remove, Lendable, Turn auto-renew on…/off…, Add device…, Register and retry… and the confirm that follows them). They are owner
-  clicks: the confirm click is the owner's `--yes` (Add device…'s is `device save --yes`, which turns auto-renew on for a new device; Turn auto-renew on…/off…'s is `device auto-refresh --on|--off --yes`, config only; Register and retry…'s also is `--register-device`), Add app… and Update… run fetch, approve, provision, sign and install on a real device
-  (their second confirm is the owner's approval of that exact version and file; Update… goes over an installed app; Reinstall previous version… has one confirm and
-  signs and installs an older, already approved build over the installed app, and `sign --version` is owner-run like `sign`), and agents never click them, never run the built app and never drive it
-  (no computer-use clicks, no UI scripting), exactly as for the commands behind them.
-- `scripts/install-local.sh` (it replaces the installed CLI the launchd agents run and the menu bar app, and restarts the app;
-  `--kick` starts a `refresh --auto` run on the real devices). Its `--check` only reads the agents' state and the log, so an
-  agent may run that.
-- `clean --yes` (it deletes app-data backups past 14 days, downloaded IPAs no longer needed and stale build output under `builds/`: signed builds the ledger shows installed and past 14 days, orphans, the `carrier-dd` and `canary` caches; `--yes` is the owner's). `clean` without `--yes` is a preview that deletes
-  nothing and prints counts only; agents may run it. It takes `.op.lock`, so a busy lock is `OPERATION_IN_PROGRESS`.
-- `device remove --yes` (it retires a saved device: drops its config entry, ledger records, cached profiles and signed
-  builds; it touches no device).
-- `device lendable` (it chooses which app the lab may borrow the slot of). `slot lend` and `slot return` are run by
-  mobile-safari-lab with no `--yes`; agents never run them against a real device, and they take `.op.lock`, accept
-  `--udid` only for a saved device and never print it.
-- `--register-device` (registers a device on the free team), `device auto-refresh`, and bootstrapping launchd
-  agents (`launchctl`). `status --notify [--check-updates]` against the real `$SIDELOAD_HOME` (it posts a notification and
-  writes `lastNotified` in `config.json`; with `--check-updates` it also does one metadata GET per approved source, no
-  download, and writes `updates.json`; the owner's status agent runs it). `status` and `status --print-agent` are read-only
-  and safe for an agent to run.
-- Changing `freeSlotsReserved` or `reservedAppIds` (the free team's slot and App ID budgets).
-- Running `portal` live (it uses the team's API key; owner-initiated).
+These are the owner's to run or click. An agent prepares and explains them; it never runs them on a real device or
+the real `$SIDELOAD_HOME`. Full list with the exceptions: `.claude/rules/owner-only.md`.
+
+- `canary`, `provision`, `sign`, `install`, `refresh` (any mode, `--auto` included), `app remove`, `slot restore`,
+  `slot lend|return` (run by the lab), `device remove|lendable|auto-refresh|slots`, `--register-device`, `fetch --approve`,
+  `clean --yes`, `source add` (any form) and `source remove --yes`, `status --notify`, a live `portal` run, `scripts/install-local.sh`
+  (except `--check`) and `launchctl`.
+- Every action button in the menu bar app: agents never click them, never run the built app, never drive it.
+- Pairing changes, any new download source, deleting anything from the keychain or the developer portal, anything
+  system-wide or needing root, and changing `freeSlotsReserved` or `reservedAppIds`.
+- Read-only and fine for an agent: `status`, `status --print-agent`, `refresh --print-agent`, `updates`, `source list`,
+  `clean` without `--yes`, `scripts/install-local.sh --check`.
 
 ## Downloads
 
 - IPAs and source only from upstream releases the owner approved (`approvedSources` in config). Record
   version + SHA-256 of everything downloaded; verify before signing.
-- `sideload updates` is read-only and safe for an agent to run: one metadata GET per approved source, no IPA download,
-  no lock, no device, and it writes only `$SIDELOAD_HOME/updates.json`. It never approves, fetches, signs or installs
-  anything; a newer version it reports is still `fetch`, the owner's `--approve`, `sign` and `install`.
 - A new source is allowed only when the owner confirms its URL and exact hosts, by `source add --yes` or the menu bar app's
   confirm click. Agents never pass that flag, never click it and never add a source to `config.json`. Each version from any
-  source still needs the owner's approval, with version and SHA-256 recorded. (Owner decision 2026-11-01; issue 47.
-  `source add --yes`, `source remove --yes` and the menu's "Add source…" are built; the owner first added and installed a GitHub source (PhotosBackup) through the menu on 2026-11-16.)
-- `sideload source list` is read-only and safe for an agent to run: no network, no lock, no device, no write. It lists
-  every source, built-in and custom, with its exact hosts and whether `approvedSources` approves it. `source add` without
-  `--yes` is a preview that writes nothing, but it does one GET to the address it is given, so it is the owner's to run
-  too (see "Ask the owner first").
+  source still needs the owner's approval, with version and SHA-256 recorded (issue 47).
 
 ## Code
 
 - Swift is the implementation (`docs/design.md`): Swift 6 language mode, macOS 27 / arm64, zero third-party
-  packages, `SideloadCore` and the `sideload` CLI target import no AppKit/SwiftUI (the `SideloadMenu` target is the only UI target and holds views, the view model and the app delegate's OS wiring (signals, terminate) only; the logic, timings included, lives in `Sources/SideloadCore/Menu/`). Tests use Swift Testing (`import Testing`), not XCTest.
+  packages, `SideloadCore` and the `sideload` CLI target import no AppKit/SwiftUI (`ImportBoundaryTests`). The `SideloadMenu`
+  target is the only UI target and holds views, the view model and the app delegate's OS wiring (signals, terminate) only;
+  the logic, timings included, lives in `Sources/SideloadCore/Menu/`. Tests use Swift Testing (`import Testing`), not XCTest.
 - Node remains only for `scripts/check-secrets.mjs` and its test (plain ESM, zero dependencies).
-  **pnpm only** (never npm or yarn).
 - `portal` is GET-only: no code path may send a mutating HTTP method or a request body (a test scans `Sources/`).
   Network access goes through `Services.http`, whose default throws; tests never touch the network.
 - Subprocesses via the Swift `Runner` (`Sources/SideloadCore/Exec/`) only: argument arrays, never a shell
@@ -119,31 +99,18 @@ team) before changing anything.
 - Every command prints exactly one JSON object: `{ ok, command, ..., errors: [{ code, message, fix }] }`,
   exit 0 iff `ok`. Progress goes to stderr.
 - Target saved device IDs only (`sideload device save`), never "whatever is connected".
-- Tests: `scripts/check.sh` is the local gate (`swift build`, `swift test`, a release build of the CLI that proves the debug-only
-  `SIDELOAD_TEST_FORCE_SLOT` hook is compiled out, `pnpm test` for the secrets suite, `check-secrets --all`); run it before opening a PR. Real-device runs are manual and owner-initiated.
-
-## Git
-
-- Identity: `dividedby <64715420+dividedby@users.noreply.github.com>` (set in the repo's local config).
-- Feature branches off `main` → PR → merge commit only. CI must be green. Update README/CHANGELOG/docs in
-  the same PR.
 
 ## Issues
 
-- **Tracker:** GitHub issues in `dividedby/sideload` via `gh`. See `docs/agents/issue-tracker.md`.
-- **Labels:** state `needs-triage`, `ready-for-agent`, `ready-for-human`, `blocked`, `wontfix`; category `bug`,
-  `enhancement`, `chore`, `epic`; size `size:S/M/L/XL`. See `docs/agents/triage-labels.md`.
-- **"file an idea"** or an unqualified **"file an issue"**: add an enriched row (the idea plus the context and
-  links available now) to the top of `## Ideas` in the [Idea Inbox](https://github.com/dividedby/sideload/issues/1)
-  (label `idea-inbox`, one per repo). Don't scope it yet. Capture and drain protocol:
-  `docs/agents/idea-inbox.md`.
-- **"file a _tracked_ issue"** or a plainly scoped bug: skip the Inbox and file a `needs-triage` issue directly.
+- Tracker, labels and the Idea Inbox: `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`.
+- Ideas: Idea Inbox is issue #1 (label `idea-inbox`); protocol in `docs/agents/idea-inbox.md`.
 - Issue text follows the Secrets rules: no UDIDs, identity names, device names or credentials.
 
-## Code style
+## Where things live
 
-Formatting uses each tool's standard defaults, the same across all `dividedby` repos. Don't add style options or format by hand. Files format on edit through the post-edit hook. CI checks it in `.github/workflows/format.yml`.
-
-- **JS, TS, HTML, CSS, JSON, Markdown, YAML:** Prettier defaults. Run `pnpm format`, or `pnpm format:check` to check.
-- **Shell:** `shfmt` with 2-space indentation, per Google's Shell Style Guide. Set in `.editorconfig`.
-- **Swift:** `swift-format` defaults, with the 4-space indentation Xcode uses. Set in `.swift-format`.
+| Topic                                                                | File                                                                |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| "Ask the owner first" (full list, read-only exceptions, menu app)    | `.claude/rules/owner-only.md`                                       |
+| "Secrets" (backups, `asc/`, ledger, redaction, hook)                 | `.claude/rules/secrets.md`                                          |
+| Free team, shared lock, refresh, `refresh --auto`, takeover, history | `docs/design.md` sections 9, 18; `CHANGELOG.md` for dated history   |
+| Issue tracker, labels, Idea Inbox                                    | `docs/agents/issue-tracker.md`, `triage-labels.md`, `idea-inbox.md` |
