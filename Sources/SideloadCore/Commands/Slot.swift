@@ -249,7 +249,7 @@ public enum SlotCommand {
 
         // S0 is also the settle snapshot. L2: when it fails the ledger stays as it is.
         let calls = FreeDeviceCalls(services: services, alias: alias, bundleId: target.bundleId)
-        let s0Read = await calls.trySnapshot()
+        let s0Read = await calls.trySnapshot(expecting: book.expectedPresent(ledger))
         guard let s0 = s0Read.snapshot else {
             let cause =
                 s0Read.error
@@ -267,6 +267,11 @@ public enum SlotCommand {
                 fix:
                     "Unlock the device and retry `sideload slot lend --device \(alias) --to lab`; the slot is not free meanwhile.",
                 data: data)
+        }
+        // A list that omits every app the ledger expects is not evidence of anything: the lend takes an app off the device, so it
+        // stops here, before any ledger write or device call.
+        if s0Read.contradictsLedger {
+            throw s0Read.contradictionError(extra: ["freed": 0, "app": .string(app.id)])
         }
         let settled = try await book.settle(s0, takenAt: s0Read.takenAt, point: "lend.settle")
         var out: [String: JSONValue] = [
@@ -332,7 +337,9 @@ public enum SlotCommand {
 
         // L7: the intent is durable before the uninstall.
         let removal = FreeRemoval(services: services, target: target)
-        let outcome = try await removal.perform {
+        let outcome = try await removal.perform(
+            expecting: book.expectedAfter(ledger, before: s0, excluding: target.bundleId)
+        ) {
             try await book.begin(
                 target, kind: .uninstall, by: .lend, presence: .present, lend: true, since: now,
                 point: "lend.intent")
@@ -502,7 +509,8 @@ public enum SlotCommand {
         }
         let calls = FreeDeviceCalls(services: services, alias: alias, bundleId: target.bundleId)
 
-        let s0Read = await calls.trySnapshot()  // T2
+        let expectedPresent = book.expectedPresent(ledger)
+        let s0Read = await calls.trySnapshot(expecting: expectedPresent)  // T2
         guard let s0 = s0Read.snapshot else {
             throw failed(
                 s0Read.error
@@ -510,8 +518,12 @@ public enum SlotCommand {
                 uncertain: record.op != nil)
         }
         let settled = try await step {
-            try await book.settle(s0, takenAt: s0Read.takenAt, point: "return.settle")
+            try await book.settle(
+                s0, takenAt: s0Read.takenAt, point: "return.settle",
+                trusted: !s0Read.contradictsLedger)
         }
+        // Only evidence that an app IS there counts from an untrusted list; what it omits is not counted as new afterwards.
+        let ledgerPresent = s0Read.contradictsLedger ? expectedPresent : []
         if settled.after(record.app)?.lentTo == nil {  // T3: our ID is on the device
             var out: [String: JSONValue] = [
                 "action": "return", "app": .string(record.app), "device": .string(alias),
@@ -538,7 +550,10 @@ public enum SlotCommand {
             let used = book.usedOutsideSnapshot(
                 try services.ledgerStore.load(), excluding: record.app, snapshot: s0)
             let profiles = await calls.freeProfiles()
-            return try run.plan(checked, before: s0, usedOutside: used, profiles: profiles)
+            var plan = try run.plan(checked, before: s0, usedOutside: used, profiles: profiles)
+            plan.expectedAfter = book.expectedAfter(
+                ledger, before: s0, excluding: target.bundleId)
+            return plan
         }
         // T6: the intent, then the install.
         let outcome = try await run.perform(planned) {
@@ -560,7 +575,7 @@ public enum SlotCommand {
             let after = outcome.after ?? s0
             let relevant = AppSnapshot.delta(
                 from: s0, to: after, relevantTo: target.bundleId, prefix: target.prefix,
-                profiles: planned.profiles)
+                profiles: planned.profiles, ledgerPresent: ledgerPresent)
             let delta = relevant.delta
             if delta.added != [target.bundleId] || !delta.removed.isEmpty {
                 throw unexpectedDelta(
@@ -579,6 +594,7 @@ public enum SlotCommand {
             ]
             var warnings: [JSONValue] = []
             if let other = relevant.otherAppsWarning { warnings.append(other) }
+            if let disagreed = relevant.ledgerDisagreedWarning { warnings.append(disagreed) }
             if usage.labCount > 0 { warnings.append(labAppLeftWarning) }
             if outcome.result != .success, let failure = outcome.opFailure {
                 warnings.append(

@@ -75,7 +75,9 @@ private func scripted(
     install: @escaping @Sendable (InstallOptions) async -> Envelope = {
         okEnvelope("install", $0.app ?? "")
     },
-    snapshot: (@Sendable (Services, String, String) async -> FreeDeviceCalls.SnapshotRead)? = nil
+    snapshot: (
+        @Sendable (Services, String, String, Set<String>) async -> FreeDeviceCalls.SnapshotRead
+    )? = nil
 ) -> RefreshSteps {
     var steps = RefreshSteps()
     steps.provision = { _, options in
@@ -255,9 +257,15 @@ struct RefreshTests {
 
     @Test("an app the device does not show is NOT_PRESENT: refresh does not put it back")
     func absentFromDevice() async throws {
+        // Apollo is recorded, not due and listed, so the list is believed: one app really missing is not a contradiction.
         try await withRefreshWorld(
-            onDevice: false, profileDays: 2, ledger: { seed(&$0, .stremioIOS, days: 2) }
+            [.stremioIOS, .apollo], profileDays: 2,
+            ledger: {
+                seed(&$0, .stremioIOS, days: 2)
+                seed(&$0, .apollo, days: 30)
+            }
         ) { w in
+            w.runner.setApp(bundle(.stremioIOS), nil)
             let log = CallLog([])
             let out = await refresh(w, scripted(log))
             #expect(out.ok, "\(out.errors)")
@@ -266,6 +274,26 @@ struct RefreshTests {
                 result(out, .stremioIOS)?["status"] == "skipped"
                     && result(out, .stremioIOS)?["code"] == "NOT_PRESENT")
             #expect(w.runner.installCalls.isEmpty)
+        }
+    }
+
+    @Test(
+        "a list that twice omits every recorded app is not NOT_PRESENT for all of them: presence stays unknown"
+    )
+    func contradictedListIsNotAbsence() async throws {
+        try await withRefreshWorld(
+            [.stremioIOS, .apollo], script: DeviceScript(snapshotEmpty: [1, 2]), profileDays: 2,
+            ledger: {
+                seed(&$0, .stremioIOS, days: 2)
+                seed(&$0, .apollo, days: 2)
+            }
+        ) { w in
+            let log = CallLog([])
+            let out = await refresh(w, scripted(log))
+            #expect(out.ok, "\(out.errors)")
+            #expect(results(out).allSatisfy { $0["code"] != "NOT_PRESENT" })
+            #expect(
+                log.value.contains("install stremio-ios") && log.value.contains("install apollo"))
         }
     }
 
@@ -776,7 +804,7 @@ struct RefreshTests {
             let log = CallLog([])
             let steps = scripted(
                 log,
-                snapshot: { _, _, _ in
+                snapshot: { _, _, _, _ in
                     FreeDeviceCalls.SnapshotRead(
                         snapshot: nil,
                         error: SideloadError("DEVICE_LOCKED", "locked", fix: "unlock"),
@@ -866,7 +894,7 @@ struct RefreshTests {
             let log = CallLog([])
             let steps = scripted(
                 log,
-                snapshot: { _, _, _ in
+                snapshot: { _, _, _, _ in
                     FreeDeviceCalls.SnapshotRead(
                         snapshot: nil, error: SideloadError("DEVICE_NOT_CONNECTED", "gone"),
                         takenAt: testNow)
@@ -887,7 +915,7 @@ struct RefreshTests {
             let log = CallLog([])
             let steps = scripted(
                 log,
-                snapshot: { _, _, _ in
+                snapshot: { _, _, _, _ in
                     FreeDeviceCalls.SnapshotRead(
                         snapshot: nil, error: SideloadError("DEVICE_LOCKED", "locked"),
                         takenAt: testNow)
@@ -910,12 +938,13 @@ struct RefreshTests {
         ) { w in
             let log = CallLog([])
             let unreachable:
-                @Sendable (Services, String, String) async -> FreeDeviceCalls.SnapshotRead = {
-                    _, _, _ in
-                    FreeDeviceCalls.SnapshotRead(
-                        snapshot: nil, error: SideloadError("DEVICE_NOT_CONNECTED", "gone"),
-                        takenAt: testNow)
-                }
+                @Sendable (Services, String, String, Set<String>) async ->
+                    FreeDeviceCalls.SnapshotRead = {
+                        _, _, _, _ in
+                        FreeDeviceCalls.SnapshotRead(
+                            snapshot: nil, error: SideloadError("DEVICE_NOT_CONNECTED", "gone"),
+                            takenAt: testNow)
+                    }
             // What real provision and sign leave behind: a new profile and a signed copy that carries it, six days out.
             let provision: @Sendable (ProvisionOptions) async -> Envelope = { options in
                 _ = try? await w.services.ledgerStore.update { ledger in

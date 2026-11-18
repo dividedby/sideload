@@ -31,22 +31,27 @@ struct FreeRemoval: Sendable {
         var result: SlotRule.Result
         var read: FreeDeviceCalls.SnapshotRead
 
-        var after: AppSnapshot? { read.snapshot }
-        var afterError: SideloadError? { read.error }
+        /// A list that still contradicts the ledger after the re-read is no list at all: unreadable, so the table keeps the op.
+        var after: AppSnapshot? { read.contradictsLedger ? nil : read.snapshot }
+        var afterError: SideloadError? {
+            read.contradictsLedger ? read.contradictionError() : read.error
+        }
         var afterTakenAt: Date { read.takenAt }
-        var reading: SlotRule.Reading { SlotRule.Reading(read.snapshot, bundleId: bundleId) }
+        var reading: SlotRule.Reading { SlotRule.Reading(after, bundleId: bundleId) }
         let bundleId: String
     }
 
     /// Runs `beforeOp` (the durable intent; if it throws the device is untouched), uninstalls, and takes the snapshot
-    /// after. The only throw is `beforeOp`'s.
-    func perform(beforeOp: (() async throws -> Void)? = nil) async throws -> Outcome {
+    /// after (read again once when it omits every app in `expecting`). The only throw is `beforeOp`'s.
+    func perform(expecting: Set<String> = [], beforeOp: (() async throws -> Void)? = nil)
+        async throws -> Outcome
+    {
         let calls = FreeDeviceCalls(
             services: services, alias: target.alias, bundleId: target.bundleId)
         try await beforeOp?()
         services.log("uninstalling")
         let (failure, result) = await calls.uninstall()
-        let read = await calls.trySnapshot()
+        let read = await calls.trySnapshot(expecting: expecting)
         return Outcome(opFailure: failure, result: result, read: read, bundleId: target.bundleId)
     }
 
@@ -123,10 +128,14 @@ public enum AppCommand {
             services: services, alias: target.alias, bundleId: target.bundleId)
         let removal = FreeRemoval(services: services, target: target)
 
-        let s0 = await calls.trySnapshot()
+        let s0 = await calls.trySnapshot(expecting: book.expectedPresent(ledger))
         guard let before = s0.snapshot else {
             throw s0.error
                 ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read.")
+        }
+        // A list that omits every app the ledger expects must not decide "the app is not there" (or what to uninstall).
+        if s0.contradictsLedger {
+            throw s0.contradictionError(extra: ["removed": false])
         }
         // Rule (i) on every record on the device, so the ledger reads what S0 shows before the uninstall can change anything.
         _ = try await book.settle(before, takenAt: s0.takenAt, point: "remove.settle")
@@ -139,7 +148,9 @@ public enum AppCommand {
         }
 
         let profiles = await calls.freeProfiles()
-        let outcome = try await removal.perform {
+        let outcome = try await removal.perform(
+            expecting: book.expectedAfter(ledger, before: before, excluding: target.bundleId)
+        ) {
             try await book.begin(
                 target, kind: .uninstall, by: .remove, presence: .present, since: now,
                 point: "remove.intent")

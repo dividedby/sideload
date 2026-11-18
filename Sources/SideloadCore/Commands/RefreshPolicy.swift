@@ -191,7 +191,9 @@ enum RefreshPolicy {
             )
         }
         if let install = subject.install {
-            guard install.present else {
+            // A record that reads absent while the live list shows the app is a stale record (a bad earlier read, or the app put
+            // back by hand): it is renewed, and the install settles the record to present.
+            guard install.present || presence == .present else {
                 return .skip(code: notPresent, expires: install.profileExpires)
             }
             guard isDue(expires: install.profileExpires, now: now, within: within) else {

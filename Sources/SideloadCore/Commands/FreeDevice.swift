@@ -308,6 +308,25 @@ struct FreeDeviceCalls: Sendable {
             ], timeoutSec: timeoutSec)
     }
 
+    /// What a read that omitted every app the ledger expects looked like, and whether the one re-read settled it. Counts only:
+    /// no bundle ID of any app goes in it.
+    struct SnapshotCheck: Sendable, Equatable {
+        /// Apps the first read listed.
+        let listed: Int
+        /// Apps the ledger says are installed and idle on the device, and how many of them the first read omitted.
+        let expected: Int
+        let missing: Int
+        /// The re-read shows at least one expected app, so it is the read used.
+        let resolved: Bool
+
+        var json: JSONValue {
+            [
+                "listed": .number(Double(listed)), "expected": .number(Double(expected)),
+                "missing": .number(Double(missing)), "reread": true, "resolved": .bool(resolved),
+            ]
+        }
+    }
+
     /// One snapshot read as data: the callers that already changed (or may have changed) the device need the failure as data,
     /// not as a throw that skips their durable bookkeeping. `takenAt` is the clock read BEFORE `device info apps` starts
     /// (the evidence rule of `SlotRule` compares it with an op's window).
@@ -315,7 +334,26 @@ struct FreeDeviceCalls: Sendable {
         let snapshot: AppSnapshot?
         let error: SideloadError?
         let takenAt: Date
+        /// Set only by `trySnapshot(expecting:)` when the first read omitted all of what the ledger expects.
+        var check: SnapshotCheck? = nil
+
+        /// The list is valid but still disagrees with the ledger after the re-read: it is not evidence that an app is gone.
+        var contradictsLedger: Bool { check.map { !$0.resolved } ?? false }
+
+        /// The `SNAPSHOT_FAILED` a command stops with when it must not act on `contradictsLedger`.
+        func contradictionError(extra: [String: JSONValue] = [:]) -> SideloadError {
+            var data = extra
+            if let check { data["snapshotCheck"] = check.json }
+            return SideloadError(
+                "SNAPSHOT_FAILED",
+                "The device's app list does not show any app this Mac recorded as installed, so it is not trusted. Nothing was changed on the device.",
+                fix: "Unlock the device, keep it awake and retry.", data: data)
+        }
     }
+
+    /// How long a re-read waits, and the first read's duration past which it does not wait (the read was itself the pause).
+    static let rereadPause = Duration.seconds(2)
+    static let rereadSkipPauseAfter: TimeInterval = 10
 
     func trySnapshot(timeoutSec: Int = 60) async -> SnapshotRead {
         let takenAt = services.clock.now()
@@ -329,6 +367,32 @@ struct FreeDeviceCalls: Sendable {
                     ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read."),
                 takenAt: takenAt)
         }
+    }
+
+    /// `trySnapshot`, except that a valid list omitting ALL of `expected` (the apps the ledger says are installed and idle,
+    /// `SlotBook.expectedPresent`) is read once more, after a short pause unless the first read was slow (at most two reads).
+    /// A re-read that shows any expected app is used. Otherwise the read keeps its list and carries a `check` that says
+    /// it contradicts the ledger, and the caller does not let it mark anything gone.
+    func trySnapshot(timeoutSec: Int = 60, expecting expected: Set<String>) async -> SnapshotRead {
+        let first = await trySnapshot(timeoutSec: timeoutSec)
+        guard let listed = first.snapshot, listed.contradicts(expected: expected) else {
+            return first
+        }
+        var check = SnapshotCheck(
+            listed: listed.ids.count, expected: expected.count,
+            missing: expected.subtracting(listed.ids).count, resolved: false)
+        var unresolved = first
+        unresolved.check = check
+        if services.clock.now().timeIntervalSince(first.takenAt) <= Self.rereadSkipPauseAfter {
+            do { try await services.sleep(Self.rereadPause) } catch { return unresolved }
+        }
+        var second = await trySnapshot(timeoutSec: timeoutSec)
+        guard let again = second.snapshot else { return unresolved }
+        check = SnapshotCheck(
+            listed: check.listed, expected: check.expected, missing: check.missing,
+            resolved: !again.contradicts(expected: expected))
+        second.check = check
+        return second
     }
 
     /// What a device call reported, as the table of `SlotRule` reads it.
@@ -376,6 +440,19 @@ func unexpectedDelta(
 }
 
 extension AppSnapshot.RelevantDelta {
+    /// The `LEDGER_SNAPSHOT_DISAGREED` warning when an untrusted `before` omitted apps the ledger records and `after` lists
+    /// them (counts only), else nil.
+    var ledgerDisagreedWarning: JSONValue? {
+        guard reappeared > 0 else { return nil }
+        return [
+            "code": "LEDGER_SNAPSHOT_DISAGREED",
+            "message":
+                "The app list read before this command left out apps this Mac recorded as installed; the read after lists them again, so they were not counted as new.",
+            "fix": "No action needed.",
+            "data": ["reappearedCount": .number(Double(reappeared))],
+        ]
+    }
+
     /// The `OTHER_APPS_CHANGED` warning when apps outside the relevant set changed (counts only), else nil.
     var otherAppsWarning: JSONValue? {
         guard hasOtherChanges else { return nil }

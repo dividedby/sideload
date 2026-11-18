@@ -61,6 +61,9 @@ struct DeviceScript: Sendable {
     var snapshotFailures: Set<Int> = []
     /// 1-based snapshot call numbers that exit 0 but print a document that is not a complete listing.
     var snapshotShapes: [Int: SnapshotFault] = [:]
+    /// 1-based snapshot call numbers that exit 0 and print a complete listing of a device with no apps at all (a read that
+    /// omits apps which are plainly there).
+    var snapshotEmpty: Set<Int> = []
     var install = InstallBehaviour.succeed
     /// Apps that also appear (or vanish) when the install runs.
     var alsoAdded: [String: Bool] = [:]
@@ -365,7 +368,7 @@ final class DeviceSimRunner: Runner {
                 write(fault.json, spec)
                 return RunResult()
             }
-            write(appsJSON(deviceApps), spec)
+            write(appsJSON(script.snapshotEmpty.contains(n) ? [:] : deviceApps), spec)
             return RunResult()
         case "device profile list":
             switch script.profileList {
@@ -832,7 +835,7 @@ func withInstallWorld(
         let keychain = SequencedKeychain(reads ?? [[free]])
         let services = Services(
             runner: runner, fs: FakeFileSystem.free(gb: 50), clock: clock, keychain: keychain,
-            home: paths)
+            home: paths, sleep: { _ in })  // the re-read pause of `trySnapshot(expecting:)` never waits in a test
         try await body(
             InstallWorld(
                 paths: paths, store: store, services: services, runner: runner, app: app,

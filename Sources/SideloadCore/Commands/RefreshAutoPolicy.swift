@@ -85,12 +85,14 @@ extension RefreshPolicy {
     /// still has to be visible). `slotPending` is the device's (`SlotBook.pending`); `deviceAttempts` is
     /// `deviceAttempts(_:device:today:)` as of now.
     static func autoGate(
-        _ subject: Subject, slotPending: Bool, deviceAttempts: Int, now: Date, timeZone: TimeZone
+        _ subject: Subject, slotPending: Bool, deviceAttempts: Int, now: Date, timeZone: TimeZone,
+        presence: Presence = .unknown
     ) -> AutoSkip? {
         guard let install = subject.install else { return .notRecorded }
         // A lent slot has `present: false` too; the lend is the better reason.
         if subject.lent { return .lent }
-        guard install.present else { return .notPresent }
+        // A record that reads absent passes when the live app list shows the app (`decide` explains).
+        guard install.present || presence == .present else { return .notPresent }
         // A suspension an earlier build set for a signed-out Xcode is the team's pause now, not the install's.
         if install.refresh.suspended, !isAccountSignedOut(install.refresh.lastCode) {
             return .suspended

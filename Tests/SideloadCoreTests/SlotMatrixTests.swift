@@ -200,7 +200,9 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
     case .L5:
         return [
             lend("nothing recorded and the app is not installed") {
-                $0.script = deviceHolding([wdaId: true])
+                // Apollo is recorded and listed, so the list is believed: one app really missing is not a contradiction.
+                $0.installs = [installRecord(.stremioIOS), installRecord(.apollo)]
+                $0.script = deviceHolding([wdaId: true, apolloId: true])
                 $0.code = "LENDABLE_NOT_INSTALLED"
                 $0.installPresent = false
                 $0.calls = [infoApps]
@@ -590,6 +592,9 @@ private func cases(_ row: SlotRow) throws -> [RowCase] {
                 $0.calls = [infoApps]
             },
             remove("no record, not on the device") {
+                // Apollo is recorded and listed, so the list is believed: one app really missing is not a contradiction.
+                $0.installs = [installRecord(.stremioIOS), installRecord(.apollo)]
+                $0.script = deviceHolding([apolloId: true])
                 $0.ok = true
                 $0.fields = ["removed": false, "wasPresent": false]
                 $0.installPresent = false

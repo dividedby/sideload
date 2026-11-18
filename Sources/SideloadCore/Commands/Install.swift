@@ -87,6 +87,13 @@ struct FreeInstallRun: Sendable {
         let usedOutside: SlotBook.OutsideUse
         /// The free-team profile read of this command (nil: not read), so the slots printed after the install use it too.
         let profiles: FreeTeamProfiles?
+        /// The IDs an untrusted `before` omitted that the ledger says are installed (empty for a trusted read): what the
+        /// delta after the install may not count as new.
+        var ledgerPresent: Set<String> = []
+        /// The re-read's counts when the first read contradicted the ledger (resolved or not).
+        var snapshotCheck: FreeDeviceCalls.SnapshotCheck?
+        /// What the list after the install must show at least one of (`SlotBook.expectedAfter`); empty: no check.
+        var expectedAfter: Set<String> = []
     }
 
     /// What the install did, as data: the device outcome never throws.
@@ -101,10 +108,13 @@ struct FreeInstallRun: Sendable {
         var read: FreeDeviceCalls.SnapshotRead
         let bundleId: String
 
-        var after: AppSnapshot? { read.snapshot }
-        var afterError: SideloadError? { read.error }
+        /// A list that still contradicts the ledger after the re-read is no list at all: unreadable, so the table keeps the op.
+        var after: AppSnapshot? { read.contradictsLedger ? nil : read.snapshot }
+        var afterError: SideloadError? {
+            read.contradictsLedger ? read.contradictionError() : read.error
+        }
         var afterTakenAt: Date { read.takenAt }
-        var reading: SlotRule.Reading { SlotRule.Reading(read.snapshot, bundleId: bundleId) }
+        var reading: SlotRule.Reading { SlotRule.Reading(after, bundleId: bundleId) }
     }
 
     /// The pinned identity, then what `sign` left (the record, the app, the profile's expiry) and the free guard on exactly
@@ -160,12 +170,17 @@ struct FreeInstallRun: Sendable {
     /// the ledger (an app installed by hand is a reinstall here). `usedOutside` is the other used records on this device
     /// that the snapshot does not show (`SlotBook.usedOutsideSnapshot`); the app being installed or returned is never in
     /// it, because a return is that slot coming back. The count itself is `AppSnapshot.Usage`.
+    ///
+    /// `ledgerPresent` is what an untrusted `before` omitted (see `SlotBook.settle(trusted:)`): when it holds the target, the
+    /// ledger says the app is installed, so this is a reinstall, not a first install.
     func plan(
         _ checked: Checked, before: AppSnapshot, usedOutside: SlotBook.OutsideUse,
-        profiles: FreeTeamProfiles?
+        profiles: FreeTeamProfiles?, read: FreeDeviceCalls.SnapshotRead? = nil,
+        ledgerPresent: Set<String> = []
     ) throws -> Plan {
         let reserved = try target.reserved()
-        let reinstall = before.ids.contains(target.bundleId)
+        let reinstall =
+            before.ids.contains(target.bundleId) || ledgerPresent.contains(target.bundleId)
         let usage = before.usage(
             prefix: target.prefix, reserved: reserved, outside: usedOutside, profiles: profiles)
         if !reinstall, usage.used >= FreeSlots.limit {
@@ -183,7 +198,7 @@ struct FreeInstallRun: Sendable {
         return Plan(
             checked: checked, reserved: reserved, before: before, reinstall: reinstall,
             usage: usage, usedOutside: usedOutside,
-            profiles: profiles)
+            profiles: profiles, ledgerPresent: ledgerPresent, snapshotCheck: read?.check)
     }
 
     /// `beforeOp` is the durable intent (W2: the op record); if it throws, the device is untouched. After that nothing
@@ -218,7 +233,7 @@ struct FreeInstallRun: Sendable {
             result = .unknown  // a throw (cancellation included) says nothing about whether the install landed
         }
         log("install: snapshot after")
-        let read = await calls.trySnapshot()
+        let read = await calls.trySnapshot(expecting: plan.expectedAfter)
         return Outcome(
             opFailure: failure, result: result, unnamed: unnamed, read: read,
             bundleId: target.bundleId)
@@ -243,19 +258,28 @@ struct FreeInstallRun: Sendable {
         let checked = try await checks(identities: identities, allowLent: false)
 
         log("install: snapshot before")
-        let s0 = await calls.trySnapshot()
+        let expectedPresent = book.expectedPresent(ledger)
+        let s0 = await calls.trySnapshot(expecting: expectedPresent)
         guard let before = s0.snapshot else {
             throw s0.error
                 ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read.")
         }
+        // A list that still omits everything the ledger expects is not evidence that those apps are gone: they stay present in
+        // the ledger, and the ones it expected are not "new" when the list after shows them.
+        let untrusted = s0.contradictsLedger
+        if untrusted { log("install: the app list does not show the apps recorded as installed") }
         // Rule (i) on every record on the device with this snapshot, before slots are counted.
-        _ = try await book.settle(before, takenAt: s0.takenAt, point: "install.settle")
+        _ = try await book.settle(
+            before, takenAt: s0.takenAt, point: "install.settle", trusted: !untrusted)
         let settledLedger = try services.ledgerStore.load()
         let usedOutside = book.usedOutsideSnapshot(
             settledLedger, excluding: app.id, snapshot: before)
         let profiles = await calls.freeProfiles()
-        let planned = try plan(
-            checked, before: before, usedOutside: usedOutside, profiles: profiles)
+        var planned = try plan(
+            checked, before: before, usedOutside: usedOutside, profiles: profiles, read: s0,
+            ledgerPresent: untrusted ? expectedPresent : [])
+        planned.expectedAfter = book.expectedAfter(
+            ledger, before: before, excluding: target.bundleId)
 
         let signed = checked.signed
         let kind: SlotRule.Kind = planned.reinstall ? .reinstall : .install
@@ -293,7 +317,8 @@ struct FreeInstallRun: Sendable {
                 throw unexpectedDelta(
                     AppSnapshot.delta(
                         from: before, to: outcome.after ?? before, relevantTo: target.bundleId,
-                        prefix: target.prefix, profiles: planned.profiles),
+                        prefix: target.prefix, profiles: planned.profiles,
+                        ledgerPresent: planned.ledgerPresent),
                     expectation: "the app is gone after a failed reinstall",
                     extra: [
                         "installed": false, "reinstall": true,
@@ -314,7 +339,8 @@ struct FreeInstallRun: Sendable {
                 throw unexpectedDelta(
                     AppSnapshot.delta(
                         from: before, to: outcome.after ?? before, relevantTo: target.bundleId,
-                        prefix: target.prefix, profiles: planned.profiles),
+                        prefix: target.prefix, profiles: planned.profiles,
+                        ledgerPresent: planned.ledgerPresent),
                     expectation: "the app is gone after its reinstall reported success",
                     extra: pendingData(["reinstall": true]))
             }
@@ -328,11 +354,12 @@ struct FreeInstallRun: Sendable {
             throw SideloadError(
                 outcome.after == nil ? "SNAPSHOT_FAILED" : "INSTALL_UNCONFIRMED",
                 outcome.after == nil
-                    ? "The install's result is not known and the device's app list could not be read afterwards."
+                    ? "The install's result is not known and the device's app list could not be read afterwards (or did not show any app this Mac recorded as installed)."
                     : "devicectl exited 0 without naming the app and the install is not confirmed.",
                 fix:
                     "Unlock the device and retry in \(book.retryAfter(slot)) seconds; the slot reads used meanwhile.",
-                data: pendingData())
+                data: pendingData(
+                    outcome.read.check.map { ["snapshotCheck": $0.json] } ?? [:]))
         case .present:
             // A reinstall that failed definitively while the old copy stays listed is a failure, not a renewal: the slot stays
             // used (P) and the entry keeps the old copy's profile and expiry, so the next refresh still sees it expiring.
@@ -366,7 +393,7 @@ struct FreeInstallRun: Sendable {
         }
         let relevant = AppSnapshot.delta(
             from: before, to: after, relevantTo: target.bundleId, prefix: target.prefix,
-            profiles: planned.profiles)
+            profiles: planned.profiles, ledgerPresent: planned.ledgerPresent)
         let delta = relevant.delta
         let expected =
             planned.reinstall
@@ -381,9 +408,10 @@ struct FreeInstallRun: Sendable {
         }
 
         if let other = relevant.otherAppsWarning { warnings.append(other) }
+        if let disagreed = relevant.ledgerDisagreedWarning { warnings.append(disagreed) }
 
         let daysLeft = Int((signed.profileExpires.timeIntervalSince(now) / 86_400).rounded(.down))
-        return [
+        var result: [String: JSONValue] = [
             "app": .string(app.id), "device": .string(alias),
             "bundleId": .string(target.bundleId),
             "version": .string(signed.version), "sha256Prefix": .string(signed.sha256Prefix),
@@ -403,6 +431,8 @@ struct FreeInstallRun: Sendable {
             ],
             "warnings": .array(warnings),
         ]
+        if let check = planned.snapshotCheck { result["snapshotCheck"] = check.json }
+        return result
     }
 
     // MARK: pieces

@@ -35,6 +35,30 @@ struct SlotBook: Sendable {
     /// The device's lend record (any state): at most one per device.
     func lentSlot(_ ledger: Ledger) -> LedgerSlot? { slots(ledger).first { $0.lentTo != nil } }
 
+    /// The bundle IDs a trustworthy app list must show: this device's records that are present, idle (no op) and not lent.
+    /// A list that omits all of them contradicts the ledger (`AppSnapshot.contradicts`).
+    func expectedPresent(_ ledger: Ledger) -> Set<String> {
+        Set(
+            slots(ledger).compactMap { slot -> String? in
+                guard slot.presence == .present, slot.op == nil, slot.lentTo == nil else {
+                    return nil
+                }
+                return target(slot.app)?.bundleId
+            })
+    }
+
+    /// What the list read after an operation must show at least one of, or it contradicts the ledger: the apps expected before
+    /// (`expectedPresent`) and the managed apps the trusted read before listed, other than `excluding` (the app the operation
+    /// acts on: whether it is there afterwards is what the table decides, and an app that vanished alone stays a hard stop).
+    /// Empty when there is nothing to compare.
+    func expectedAfter(_ ledger: Ledger, before: AppSnapshot, excluding app: String? = nil) -> Set<
+        String
+    > {
+        var ids = expectedPresent(ledger).union(before.managedIds(prefix: config.bundleIdPrefix))
+        if let app { ids.remove(app) }
+        return ids
+    }
+
     func target(_ appName: String) -> FreeTarget? {
         config.appRegistry.app(appName).flatMap {
             try? FreeTarget.resolve(app: $0, alias: alias, config: config)
@@ -92,7 +116,13 @@ struct SlotBook: Sendable {
     /// presence to the records that have no op; writes once, atomically, only when something changes. A record whose op is
     /// still inside its window is untouched (the gate has already refused such a device, so this only matters for a clock
     /// that moved). A return that landed is recorded in `installs[]` as `install` records its own.
-    func settle(_ snapshot: AppSnapshot, takenAt: Date, point: String) async throws -> Settlement {
+    ///
+    /// `trusted` false (the read contradicts the ledger, `FreeDeviceCalls.SnapshotRead.contradictsLedger`) never lets an
+    /// omission move a record off present: a record the list does not show keeps what it had. Evidence that an app IS there
+    /// still settles as usual.
+    func settle(_ snapshot: AppSnapshot, takenAt: Date, point: String, trusted: Bool = true)
+        async throws -> Settlement
+    {
         let ledger = try services.ledgerStore.load()
         let before = slots(ledger)
         var after: [LedgerSlot] = []
@@ -101,9 +131,12 @@ struct SlotBook: Sendable {
                 after.append(slot)
                 continue
             }
-            after.append(
-                SlotRule.settle(
-                    slot, present: snapshot.ids.contains(target.bundleId), takenAt: takenAt))
+            let shown = snapshot.ids.contains(target.bundleId)
+            if !trusted, !shown, slot.presence != .absent {
+                after.append(slot)
+                continue
+            }
+            after.append(SlotRule.settle(slot, present: shown, takenAt: takenAt))
         }
         guard after != before else { return Settlement(before: before, after: after) }
         let changes = zip(before, after).filter { $0.0 != $0.1 }

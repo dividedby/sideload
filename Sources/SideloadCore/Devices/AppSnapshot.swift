@@ -15,6 +15,14 @@ public struct AppSnapshot: Sendable, Equatable {
 
     public var ids: Set<String> { Set(apps.keys) }
 
+    /// A read that omits every app the ledger says is installed (and idle) is not trusted: devicectl has returned a list
+    /// without the apps that are plainly there, and one such read must not mark them gone. An empty `expected` never
+    /// contradicts (nothing to compare), and a read that shows any one of them does not either, so a partial omission
+    /// (one app really removed by hand) is believed.
+    func contradicts(expected: Set<String>) -> Bool {
+        !expected.isEmpty && expected.isDisjoint(with: apps.keys)
+    }
+
     public init(apps: [String: Bool]) {
         self.apps = apps
     }
@@ -184,6 +192,17 @@ public struct AppSnapshot: Sendable, Equatable {
         public let otherRemoved: Int
         /// The developer flag could not be trusted for this read, so every ID is relevant (the full-list comparison).
         public let strict: Bool
+        /// Apps the ledger says were installed that an untrusted `before` (`contradicts`) omitted and `after` lists again: not
+        /// a change, counted only. Always 0 for a trusted read.
+        let reappeared: Int
+
+        init(delta: Delta, otherAdded: Int, otherRemoved: Int, strict: Bool, reappeared: Int = 0) {
+            self.delta = delta
+            self.otherAdded = otherAdded
+            self.otherRemoved = otherRemoved
+            self.strict = strict
+            self.reappeared = reappeared
+        }
 
         public var hasOtherChanges: Bool { otherAdded + otherRemoved > 0 }
     }
@@ -195,14 +214,24 @@ public struct AppSnapshot: Sendable, Equatable {
     /// Strict fallback: our app is free-signed, so devicectl flags it. If `target` is listed in a snapshot without the flag, or
     /// is in neither, there is no evidence the flag works (a devicectl format change may have dropped it) and the check is not
     /// weakened: every ID is relevant.
+    ///
+    /// `ledgerPresent` is only given when `before` is untrusted: the IDs it omitted that the ledger says are installed are not
+    /// "added" when `after` lists them, they are counted in `reappeared`. Anything else new (an unknown `free.*`, a developer
+    /// app) still counts, and so does every removal.
     public static func delta(
         from before: AppSnapshot, to after: AppSnapshot, relevantTo target: String, prefix: String?,
-        profiles: FreeTeamProfiles?
+        profiles: FreeTeamProfiles?, ledgerPresent: Set<String> = []
     ) -> RelevantDelta {
-        let full = delta(from: before, to: after)
+        var full = delta(from: before, to: after)
+        let reappeared = full.added.filter { ledgerPresent.contains($0) }.count
+        if reappeared > 0 {
+            full = Delta(
+                added: full.added.filter { !ledgerPresent.contains($0) }, removed: full.removed)
+        }
         let flagged = [before, after].compactMap { $0.apps[target] }
         guard !flagged.isEmpty, !flagged.contains(false) else {
-            return RelevantDelta(delta: full, otherAdded: 0, otherRemoved: 0, strict: true)
+            return RelevantDelta(
+                delta: full, otherAdded: 0, otherRemoved: 0, strict: true, reappeared: reappeared)
         }
         func relevant(_ id: String) -> Bool {
             Config.isFreeBundleId(id, prefix: prefix) || before.apps[id] == true
@@ -213,7 +242,8 @@ public struct AppSnapshot: Sendable, Equatable {
         return RelevantDelta(
             delta: Delta(added: added, removed: removed),
             otherAdded: full.added.count - added.count,
-            otherRemoved: full.removed.count - removed.count, strict: false)
+            otherRemoved: full.removed.count - removed.count, strict: false,
+            reappeared: reappeared)
     }
 }
 

@@ -34,13 +34,14 @@ struct RefreshSteps: Sendable {
     var install: @Sendable (Services, InstallOptions) async -> Envelope = {
         await InstallCommand.run($0, $1)
     }
-    /// The device's app list (read-only), for the apps that need the device's word that they are there.
+    /// The device's app list (read-only), for the apps that need the device's word that they are there. It is read again once
+    /// when the list omits every app in `expecting` (the apps the ledger says are installed and idle on the device).
     var snapshot:
-        @Sendable (Services, _ alias: String, _ bundleId: String) async ->
+        @Sendable (Services, _ alias: String, _ bundleId: String, _ expecting: Set<String>) async ->
             FreeDeviceCalls.SnapshotRead = {
-                services, alias, bundleId in
+                services, alias, bundleId, expecting in
                 await FreeDeviceCalls(services: services, alias: alias, bundleId: bundleId)
-                    .trySnapshot()
+                    .trySnapshot(expecting: expecting)
             }
 }
 
@@ -287,13 +288,21 @@ struct RefreshRun {
         }
         if needsSnapshot, let first = targets.first {
             log("reading the device's app list")
-            let read = await steps.snapshot(services, alias, first.bundleId)
-            if let snapshot = read.snapshot {
+            let expected = book.expectedPresent(migrated)
+            let read = await steps.snapshot(services, alias, first.bundleId, expected)
+            if let check = read.check {
+                log(
+                    "app list contradicts the ledger: listed \(check.listed), expected \(check.expected), missing \(check.missing), re-read \(check.resolved ? "resolved it" : "did not")"
+                )
+            }
+            // A list that omits every app recorded as installed, twice, says nothing about any app (not NOT_PRESENT for all of
+            // them): presence stays unknown and the install step reads and judges the list itself.
+            if !read.contradictsLedger, let snapshot = read.snapshot {
                 for target in targets {
                     presence[target.app] =
                         snapshot.ids.contains(target.bundleId) ? .present : .absent
                 }
-            } else {
+            } else if read.snapshot == nil {
                 snapshotFailure =
                     read.error
                     ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read.")

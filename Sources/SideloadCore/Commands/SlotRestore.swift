@@ -113,11 +113,13 @@ enum SlotRestore {
 
         let calls = FreeDeviceCalls(
             services: services, alias: target.alias, bundleId: target.bundleId)
-        let read = await calls.trySnapshot()
+        let read = await calls.trySnapshot(expecting: book.expectedPresent(ledger))
         guard let snapshot = read.snapshot else {
             throw read.error
                 ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read.")
         }
+        // A list that omits every app the ledger expects says nothing about this app: not "not installed", and no push.
+        if read.contradictsLedger { throw read.contradictionError() }
         guard snapshot.ids.contains(target.bundleId) else {
             throw SideloadError(
                 "APP_NOT_INSTALLED",
