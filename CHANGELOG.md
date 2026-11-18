@@ -5,6 +5,18 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-17
+
+An app list that leaves out every installed app no longer suspends auto-renew or marks apps gone. On 2026-11-17 one slow
+`devicectl` read on the iPad did both; such a read is now read again, and if it still disagrees with the ledger it never
+marks an app absent, an install treats the app as a reinstall, and lend, remove and restore stop before changing anything. A
+stale absent record heals on the next read that shows the app. The menu bar app no longer shows an old auto-renew setting
+when the toggle lands during a load. Neither fix has run on a device or in the built app yet. CLI changes in behaviour: new
+warning `LEDGER_SNAPSHOT_DISAGREED`; new `snapshotCheck` data in `install`, `refresh` and the `SNAPSHOT_FAILED` of
+`slot lend`, `app remove` and `slot restore`; a contradicted read gives `SNAPSHOT_FAILED` (or `UNINSTALL_RESULT_UNCERTAIN` after
+an uninstall) instead of `UNEXPECTED_APP_DELTA`; `slot restore` answers `SNAPSHOT_FAILED` instead of `APP_NOT_INSTALLED` on
+such a read.
+
 ### Fixed
 
 - An app list that omits every app the ledger says is installed is no longer trusted (found when `refresh --auto` renewed
@@ -1230,7 +1242,8 @@ max(lent, labApps) - lent)`, `used = managed + unmanaged + lent + pending`. If t
 - The CLI no longer crashes with an `EPIPE` stack trace when its stdout reader closes early
   (e.g. `sideload doctor | head`).
 
-[Unreleased]: https://github.com/dividedby/sideload/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/dividedby/sideload/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/dividedby/sideload/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/dividedby/sideload/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dividedby/sideload/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/dividedby/sideload/compare/v0.4.0...v0.5.0
