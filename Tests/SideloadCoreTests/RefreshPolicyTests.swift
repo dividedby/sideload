@@ -98,11 +98,17 @@ struct RefreshPolicyTests {
             RefreshPolicy.decide(
                 subject(installDays: 2), now: testNow, within: 5, presence: .absent)
                 == .skip(code: "NOT_PRESENT", expires: daysFromNow(2)))
+        // A record that reads absent while the live list shows the app is stale: it is renewed (the install settles it).
         #expect(
             RefreshPolicy.decide(
                 subject(installDays: 2, present: false), now: testNow, within: 5, presence: .present
-            )
-                == .skip(code: "NOT_PRESENT", expires: daysFromNow(2)))
+            ) == .renew(.init(expires: daysFromNow(2), lent: false, recorded: true)))
+        for presence in [RefreshPolicy.Presence.absent, .unknown] {
+            #expect(
+                RefreshPolicy.decide(
+                    subject(installDays: 2, present: false), now: testNow, within: 5,
+                    presence: presence) == .skip(code: "NOT_PRESENT", expires: daysFromNow(2)))
+        }
         if case .renew = RefreshPolicy.decide(
             subject(installDays: 2), now: testNow, within: 5, presence: .unknown)
         {

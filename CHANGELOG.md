@@ -5,6 +5,33 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- An app list that omits every app the ledger says is installed is no longer trusted (found when `refresh --auto` renewed
+  stremio on an iPad and one 19 s `devicectl device info apps` read left out both managed apps: install planned a first
+  install, the delta after saw two "new" apps, `UNEXPECTED_APP_DELTA` suspended auto-renew, and the same read marked the other
+  app absent, so auto skipped it as `NOT_PRESENT` for good). Such a read is repeated once; if it still contradicts the ledger,
+  no record moves from present to absent on it, `install` plans a reinstall and does not count the omitted apps as new (an
+  unknown `free.*` app still stops it), `slot lend` and `app remove` stop with `SNAPSHOT_FAILED` before changing anything,
+  and `refresh --auto` skips that device's apps as `SNAPSHOT_FAILED` without counting an attempt or suspending. A manual
+  `refresh` now renews an install recorded absent when the live list shows the app, and so does `refresh --auto` when it reads
+  the device anyway for another app of it (an absent-recorded install alone never causes a read). The list read after an
+  install, uninstall, lend or return gets the same re-read; if it still omits every other recorded app the operation stays
+  pending as `SNAPSHOT_FAILED` or `UNINSTALL_RESULT_UNCERTAIN` (no `UNEXPECTED_APP_DELTA`, no suspension, nothing marked
+  absent), and manual `refresh` no longer reports every app `NOT_PRESENT` on such a list. `slot restore` stops with
+  `SNAPSHOT_FAILED` on such a list instead of `APP_NOT_INSTALLED`. A device with a single recorded app that the owner deleted
+  by hand is flagged the same way until a trusted read (design section 18, "Snapshot trust").
+- Menu bar app: a panel load whose read of the local files began before an auto-renew toggle's config write, but finished
+  after the toggle's redraw, no longer repaints the old setting (the card showed the old value until the load's last read,
+  and the load probed devices from the older config). A load now goes on from the newest read.
+
+### Added
+
+- `LEDGER_SNAPSHOT_DISAGREED` warning (install and `slot return`: apps the first read omitted, listed again afterwards, counts
+  only), a `snapshotCheck` object (`listed`, `expected`, `missing`, `reread`, `resolved`) in `install`'s data and in the
+  `SNAPSHOT_FAILED` of `slot lend` and `app remove`, and a `snapshot` line in `logs/refresh.jsonl` for `refresh --auto`. Counts
+  only, never a bundle ID.
+
 ### Changed
 
 - Docs: `docs/agents/idea-inbox.md` names the domain glossary `GLOSSARY.md` (was `CONTEXT.md`), the name the upstream `grilling`, `domain-modeling`, `tdd`, `to-spec` and `to-tickets` skills now read.

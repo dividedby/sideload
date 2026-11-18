@@ -33,6 +33,9 @@ extension RefreshRun {
         let alias: String
         let saved: SavedDevice
         var candidates: [Candidate] = []
+        /// Installs the ledger records as absent that pass every other gate: they are renewed only if the device's app list,
+        /// read for this device's other candidates anyway, shows them (a stale absent record heals). Never a reason to read.
+        var deferred: [Candidate] = []
         var results: [AppResult] = []
     }
 
@@ -176,11 +179,23 @@ extension RefreshRun {
                     switch verdict(target, ledger, config, presence: .unknown, now: state.start) {
                     case .unlisted: break
                     case .skip(let code, let expires):
-                        plan.results.append(skipped(target, code, expires, now: state.start, auto))
+                        // Recorded absent: would the install be renewed if the live list showed it?
+                        if code == RefreshPolicy.AutoSkip.notPresent.code,
+                            case .renew(let baseline) = verdict(
+                                target, ledger, config, presence: .present, now: state.start)
+                        {
+                            plan.deferred.append(
+                                Candidate(target: target, expires: baseline.expires))
+                        } else {
+                            plan.results.append(
+                                skipped(target, code, expires, now: state.start, auto))
+                        }
                     case .renew(let baseline):
                         plan.candidates.append(Candidate(target: target, expires: baseline.expires))
                     }
                 }
+                // Nothing else is due, so the device is not read: the record stands, as it always did.
+                if plan.candidates.isEmpty { dropDeferred(&plan, auto, now: state.start) }
             } catch {
                 var failure = RefreshFailure(error: error)
                 failure.message = "\(RefreshLog.alias(alias)): \(failure.message)"
@@ -194,6 +209,17 @@ extension RefreshRun {
             state.plans.append(plan)
         }
         return nil
+    }
+
+    /// The deferred installs of a device that gets no usable app list are skipped `NOT_PRESENT`, as the ledger says.
+    private func dropDeferred(_ plan: inout DevicePlan, _ auto: RefreshAutoContext, now: Date) {
+        for entry in plan.deferred {
+            plan.results.append(
+                skipped(
+                    entry.target, RefreshPolicy.AutoSkip.notPresent.code, entry.expires, now: now,
+                    auto))
+        }
+        plan.deferred = []
     }
 
     /// A device left out as a whole: counted by code and logged, no app of it is listed.
@@ -227,7 +253,8 @@ extension RefreshRun {
             ledger.installs, device: target.alias,
             today: RefreshPolicy.dayKey(now, timeZone: timeZone))
         if let skip = RefreshPolicy.autoGate(
-            subject, slotPending: pending, deviceAttempts: attempts, now: now, timeZone: timeZone)
+            subject, slotPending: pending, deviceAttempts: attempts, now: now, timeZone: timeZone,
+            presence: presence)
         {
             return .skip(code: skip.code, expires: expires)
         }
@@ -249,12 +276,13 @@ extension RefreshRun {
     ) async -> String? {
         let alias = state.plans[index].alias
         let saved = state.plans[index].saved
-        let candidates = state.plans[index].candidates
+        var candidates = state.plans[index].candidates
         state.plans[index].candidates = []
         if let stop = state.runStop {
             for candidate in candidates {
                 state.plans[index].results.append(stopped(candidate, stop, state.start, auto))
             }
+            dropDeferred(&state.plans[index], auto, now: state.start)
             return nil
         }
         guard
@@ -262,6 +290,7 @@ extension RefreshRun {
                 saved, listed: DeviceList.findSaved(listed, matching: saved))
         else {
             notVisible(candidates, index, &state, probe: nil, auto)
+            dropDeferred(&state.plans[index], auto, now: state.start)
             return nil
         }
 
@@ -269,11 +298,49 @@ extension RefreshRun {
         var presence: [AppDefinition: RefreshPolicy.Presence] = [:]
         var installBlock: RefreshFailure?
         log("auto: reading the app list of \(RefreshLog.alias(alias))")
-        let read = await steps.snapshot(services, alias, candidates[0].target.bundleId)
+        // An unreadable ledger leaves nothing to compare with; the gates below stop on it.
+        let expected =
+            (try? freshLedger(now: state.start)).map {
+                SlotBook(services: services, config: config, alias: alias).expectedPresent($0)
+            } ?? []
+        let read = await steps.snapshot(
+            services, alias, candidates[0].target.bundleId, expected)
         let readError =
             read.error
             ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read.")
+        if let check = read.check {
+            // The same counts the commands print as `snapshotCheck` (`SnapshotCheck.json`): listed, expected, missing, reread, resolved.
+            var fields = check.fields
+            fields["device"] = .string(alias)
+            auto.log.record("snapshot", fields)
+        }
+        if read.contradictsLedger {
+            // Valid, but it omits every app the ledger says is there, twice: not evidence of anything. Nothing is renewed on it
+            // and no record is touched; the next run reads again. A skip, never a failure, so nothing backs off or suspends.
+            for candidate in candidates {
+                state.plans[index].results.append(
+                    skipped(
+                        candidate.target, "SNAPSHOT_FAILED", candidate.expires, now: state.start,
+                        auto))
+            }
+            dropDeferred(&state.plans[index], auto, now: state.start)
+            return nil
+        }
         if let snapshot = read.snapshot {
+            // A trusted list that shows an install recorded as absent: it is there after all, so it is renewed with the rest.
+            var shown: [Candidate] = []
+            for entry in state.plans[index].deferred {
+                if snapshot.ids.contains(entry.target.bundleId) {
+                    shown.append(entry)
+                } else {
+                    state.plans[index].results.append(
+                        skipped(
+                            entry.target, RefreshPolicy.AutoSkip.notPresent.code, entry.expires,
+                            now: state.start, auto))
+                }
+            }
+            state.plans[index].deferred = []
+            candidates += shown
             for candidate in candidates {
                 presence[candidate.target.app] =
                     snapshot.ids.contains(candidate.target.bundleId) ? .present : .absent
@@ -282,9 +349,11 @@ extension RefreshRun {
             // No live connection, and the call that would open one got no answer (locked, asleep, off the network): the
             // device is not there for this run. Not an attempt, nothing provisioned; the code is logged for the owner.
             notVisible(candidates, index, &state, probe: readError.code, auto)
+            dropDeferred(&state.plans[index], auto, now: state.start)
             return nil
         } else {
             installBlock = RefreshFailure(error: readError)
+            dropDeferred(&state.plans[index], auto, now: state.start)
         }
 
         var entries: [Candidate] = []

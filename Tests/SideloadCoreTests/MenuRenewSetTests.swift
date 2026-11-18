@@ -144,7 +144,7 @@ struct MenuRenewSetTests {
             steps.sign = { _, o in .result("sign", ["app": .string(o.app ?? "")]) }
             steps.install = { _, o in .result("install", ["app": .string(o.app ?? "")]) }
             let ids = fixture.device
-            steps.snapshot = { _, _, _ in
+            steps.snapshot = { _, _, _, _ in
                 if let ids {
                     return FreeDeviceCalls.SnapshotRead(
                         snapshot: menuSnapshot(ids), error: nil, takenAt: testNow)

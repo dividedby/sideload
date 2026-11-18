@@ -162,7 +162,11 @@ struct AppRemoveTests {
 
     @Test("an app that is not on the device is an ok no-op that still marks the ledger")
     func notPresent() async throws {
-        try await withInstallWorld(ledger: { $0.installs = [installRecord(.stremioIOS)] }) { w in
+        // Apollo is recorded and listed, so the list is believed: one app really missing is not a contradiction.
+        try await withInstallWorld(
+            script: DeviceScript(initial: [apolloId: true]),
+            ledger: { $0.installs = [installRecord(.stremioIOS), installRecord(.apollo)] }
+        ) { w in
             let out = await w.remove()
             #expect(out.ok)
             #expect(json(out)["removed"] == false && json(out)["wasPresent"] == false)

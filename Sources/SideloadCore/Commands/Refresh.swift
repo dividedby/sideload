@@ -34,13 +34,14 @@ struct RefreshSteps: Sendable {
     var install: @Sendable (Services, InstallOptions) async -> Envelope = {
         await InstallCommand.run($0, $1)
     }
-    /// The device's app list (read-only), for the apps that need the device's word that they are there.
+    /// The device's app list (read-only), for the apps that need the device's word that they are there. It is read again once
+    /// when the list omits every app in `expecting` (the apps the ledger says are installed and idle on the device).
     var snapshot:
-        @Sendable (Services, _ alias: String, _ bundleId: String) async ->
+        @Sendable (Services, _ alias: String, _ bundleId: String, _ expecting: Set<String>) async ->
             FreeDeviceCalls.SnapshotRead = {
-                services, alias, bundleId in
+                services, alias, bundleId, expecting in
                 await FreeDeviceCalls(services: services, alias: alias, bundleId: bundleId)
-                    .trySnapshot()
+                    .trySnapshot(expecting: expecting)
             }
 }
 
@@ -282,18 +283,24 @@ struct RefreshRun {
         }
         var presence: [AppDefinition: RefreshPolicy.Presence] = [:]
         var snapshotFailure: SideloadError?
+        var snapshotCheck: FreeDeviceCalls.SnapshotCheck?
         let needsSnapshot = optimistic.contains {
             if case .renew(let t) = $0 { return !t.lent } else { return false }
         }
         if needsSnapshot, let first = targets.first {
             log("reading the device's app list")
-            let read = await steps.snapshot(services, alias, first.bundleId)
-            if let snapshot = read.snapshot {
+            let expected = book.expectedPresent(migrated)
+            let read = await steps.snapshot(services, alias, first.bundleId, expected)
+            snapshotCheck = read.check
+            if read.check != nil { log("the app list contradicted the ledger (see snapshotCheck)") }
+            // A list that omits every app recorded as installed, twice, says nothing about any app (not NOT_PRESENT for all of
+            // them): presence stays unknown and the install step reads and judges the list itself.
+            if !read.contradictsLedger, let snapshot = read.snapshot {
                 for target in targets {
                     presence[target.app] =
                         snapshot.ids.contains(target.bundleId) ? .present : .absent
                 }
-            } else {
+            } else if read.snapshot == nil {
                 snapshotFailure =
                     read.error
                     ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read.")
@@ -374,6 +381,7 @@ struct RefreshRun {
             "skipped": .number(Double(skipped)), "warnings": .array(warnings),
         ]
         if let live { data["appIdsLast7Days"] = .number(Double(live)) }
+        if let snapshotCheck { data["snapshotCheck"] = snapshotCheck.json }
         // The cached profiles an earlier `provision --renew` run left in tmp/ (this run's own are in each app's `renew`).
         data.merge(record.json) { _, new in new }
         return Envelope(

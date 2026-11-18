@@ -478,11 +478,12 @@ private func withAutoWorld(
     _ apps: [AppDefinition] = [.stremioIOS], profileDays: Double = 2, optIn: [String] = ["iphone"],
     listing: JSONValue? = phoneAndTV, manifest seedVersions: Bool = true,
     ledger tweak: ((inout Ledger) -> Void)? = nil,
-    snapshotFailures: Set<Int> = [], alsoAdded: [String: Bool] = [:],
+    snapshotFailures: Set<Int> = [], snapshotEmpty: Set<Int> = [], alsoAdded: [String: Bool] = [:],
     _ body: (AutoWorld) async throws -> Void
 ) async throws {
     var script = DeviceScript()
     script.snapshotFailures = snapshotFailures
+    script.snapshotEmpty = snapshotEmpty
     script.alsoAdded = alsoAdded
     for app in apps { script.initial[bundleId(app)] = true }
     try await withInstallWorld(
@@ -941,9 +942,105 @@ struct RefreshAutoTests {
         }
     }
 
+    @Test(
+        "an app list that twice omits every recorded app skips the device's candidates as SNAPSHOT_FAILED: nothing renewed, nothing backed off, the ledger untouched, one counts-only log line"
+    )
+    func contradictedReadSkips() async throws {
+        try await withAutoWorld(
+            [.stremioIOS, .apollo], profileDays: 2, ledger: { seedInstall(&$0, .apollo, days: 30) },
+            snapshotEmpty: [1, 2]
+        ) { a in
+            let before = try a.w.ledger()
+            let log = CallBox([])
+            let out = await auto(a, autoSteps(log))
+            #expect(out.ok && out.exitCode == 0, "\(out.errors)")
+            #expect(autoResult(out, .stremioIOS)?["status"] == "skipped")
+            #expect(autoResult(out, .stremioIOS)?["code"] == "SNAPSHOT_FAILED")
+            #expect(log.value.isEmpty && a.w.runner.installCalls.isEmpty)
+            #expect(a.w.runner.deviceCalls == ["device info apps", "device info apps"])
+            #expect(try a.w.ledger().installs == before.installs)
+            #expect(try a.w.ledger().slots == before.slots)
+            #expect(try fields(a).suspended == false && fields(a).consecutiveFailures == 0)
+            let lines = try logged(a, "snapshot")
+            #expect(lines.count == 1)
+            #expect(lines[0]["listed"] == 0 && lines[0]["expected"] == 2)
+            #expect(lines[0]["missing"] == 2 && lines[0]["resolved"] == false)
+            #expect(lines[0]["reread"] == true)
+            let text = try String(contentsOfFile: a.w.paths.refreshLog, encoding: .utf8)
+            #expect(!text.contains(bundleId(.apollo)) && !text.contains(bundleId(.stremioIOS)))
+        }
+    }
+
+    @Test(
+        "an empty first read that the re-read corrects renews as usual, and the log says it resolved"
+    )
+    func rereadResolves() async throws {
+        try await withAutoWorld(
+            [.stremioIOS, .apollo], profileDays: 2, ledger: { seedInstall(&$0, .apollo, days: 30) },
+            snapshotEmpty: [1]
+        ) { a in
+            let log = CallBox([])
+            let out = await auto(a, autoSteps(log))
+            #expect(out.ok, "\(out.errors)")
+            #expect(log.value.contains("install stremio-ios"))
+            #expect(a.w.runner.deviceCalls == ["device info apps", "device info apps"])
+            let lines = try logged(a, "snapshot")
+            #expect(lines.count == 1 && lines[0]["resolved"] == true)
+        }
+    }
+
+    @Test(
+        "an install recorded as absent that the live list shows is renewed with the device's other candidates, on the one read they cause"
+    )
+    func staleAbsentRecordHeals() async throws {
+        try await withAutoWorld(
+            [.stremioIOS, .apollo], profileDays: 2,
+            ledger: { seedInstall(&$0, .apollo, days: 2, present: false) }
+        ) { a in
+            let log = CallBox([])
+            let out = await auto(a, autoSteps(log))
+            #expect(out.ok, "\(out.errors)")
+            #expect(autoResult(out, .apollo)?["status"] == "renewed")
+            #expect(autoResult(out, .stremioIOS)?["status"] == "renewed")
+            #expect(
+                log.value.contains("install apollo") && log.value.contains("install stremio-ios"))
+            #expect(a.w.runner.deviceCalls == ["device info apps"])
+        }
+    }
+
+    @Test(
+        "an install recorded as absent that the live list does not show stays NOT_PRESENT, and is not a reason to read"
+    )
+    func absentRecordNotShown() async throws {
+        try await withAutoWorld(
+            [.stremioIOS, .apollo], profileDays: 2,
+            ledger: { seedInstall(&$0, .apollo, days: 2, present: false) }
+        ) { a in
+            a.w.runner.setApp(bundleId(.apollo), nil)
+            let log = CallBox([])
+            let out = await auto(a, autoSteps(log))
+            #expect(out.ok, "\(out.errors)")
+            #expect(autoResult(out, .apollo)?["code"] == "NOT_PRESENT")
+            #expect(autoResult(out, .stremioIOS)?["status"] == "renewed")
+            #expect(!log.value.contains("install apollo"))
+        }
+        // Nothing else due: no read at all, the record stands.
+        try await withAutoWorld(
+            [.apollo], profileDays: 2,
+            ledger: { seedInstall(&$0, .apollo, days: 2, present: false) }
+        ) { a in
+            let out = await auto(a, autoSteps(CallBox([])))
+            #expect(autoResult(out, .apollo)?["code"] == "NOT_PRESENT")
+            #expect(a.w.runner.deviceCalls.isEmpty)
+        }
+    }
+
     @Test("an app the device does not show is NOT_PRESENT and is not put back")
     func absentOnDevice() async throws {
-        try await withAutoWorld(profileDays: 2) { a in
+        // Apollo is recorded, not due and listed, so the list is believed: one app really missing is not a contradiction.
+        try await withAutoWorld(
+            [.stremioIOS, .apollo], profileDays: 2, ledger: { seedInstall(&$0, .apollo, days: 30) }
+        ) { a in
             a.w.runner.setApp(bundleId(.stremioIOS), nil)
             let log = CallBox([])
             let out = await auto(a, autoSteps(log))

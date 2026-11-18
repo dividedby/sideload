@@ -137,6 +137,32 @@ struct SlotRestoreTests {
         }
     }
 
+    @Test(
+        "a list that twice omits every recorded app is SNAPSHOT_FAILED, not APP_NOT_INSTALLED: nothing is pushed, nothing written"
+    )
+    func contradictedList() async throws {
+        var both = script()
+        both.initial[apolloId] = true
+        try await withInstallWorld(
+            script: both, lendable: "stremio-ios",
+            ledger: { $0.installs = [installRecord(.stremioIOS), installRecord(.apollo)] }
+        ) { w in
+            try await w.lendAndFailedReturn()
+            let ledgerBefore = try w.ledgerBytes()
+            let pushes = w.pushes.count
+            var empty = script()
+            empty.snapshotEmpty = [1, 2]
+            w.runner.arm(empty)
+            let out = await w.restore()
+            #expect(out.errorCodes == ["SNAPSHOT_FAILED"], "\(out.errors)")
+            #expect(json(out)["snapshotCheck"]?["resolved"] == false)
+            #expect(w.pushes.count == pushes)
+            #expect(try w.ledgerBytes() == ledgerBefore)
+            let name = try #require(w.finishedBackups.last)
+            #expect(try w.manifest(name).restoredAt == nil, "the backup is still waiting")
+        }
+    }
+
     // MARK: success and retry
 
     @Test(
