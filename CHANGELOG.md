@@ -21,6 +21,9 @@ All notable changes to this project are documented here. Format follows
   absent), and manual `refresh` no longer reports every app `NOT_PRESENT` on such a list. `slot restore` stops with
   `SNAPSHOT_FAILED` on such a list instead of `APP_NOT_INSTALLED`. A device with a single recorded app that the owner deleted
   by hand is flagged the same way until a trusted read (design section 18, "Snapshot trust").
+- Menu bar app: a panel load whose read of the local files began before an auto-renew toggle's config write, but finished
+  after the toggle's redraw, no longer repaints the old setting (the card showed the old value until the load's last read,
+  and the load probed devices from the older config). A load now goes on from the newest read.
 
 ### Added
 

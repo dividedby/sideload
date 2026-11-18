@@ -53,13 +53,40 @@ final class MenuModel {
     private var loadGeneration = 0
     /// The last local read, so the icon can be redrawn (`renewing`) without reading again.
     private var lastLocal: MenuLoader.Local?
+    /// Local reads started, and the number of the one `lastLocal` came from: a read that started earlier than the stored one
+    /// is stale and never replaces it, however late it resumes.
+    private var localReads = 0
+    private var localStored = 0
+    /// How the files are read off the main actor; tests swap it to order two reads.
+    private let readLocal: @Sendable (Services) async -> MenuLoader.Local
 
     /// Panel-open events can arrive in bursts; a load that finished this recently is not repeated.
     private static let openDebounce: TimeInterval = 2
 
-    init(services: Services = .live(), steps: MenuActionSteps = MenuActionSteps()) {
+    init(
+        services: Services = .live(), steps: MenuActionSteps = MenuActionSteps(),
+        readLocal: @escaping @Sendable (Services) async -> MenuLoader.Local = { services in
+            await Task.detached { MenuLoader.loadLocal(services) }.value
+        }
+    ) {
         self.services = services
         self.steps = steps
+        self.readLocal = readLocal
+    }
+
+    /// Takes the number of a local read about to start (start order, not finish order, says which read is newer).
+    private func beginLocalRead() -> Int {
+        localReads += 1
+        return localReads
+    }
+
+    /// Stores a finished read unless a later-started one is already stored, and returns the newest read either way.
+    private func storeLocal(_ read: MenuLoader.Local, number: Int) -> MenuLoader.Local {
+        if number > localStored {
+            localStored = number
+            lastLocal = read
+        }
+        return lastLocal ?? read
     }
 
     /// An action's command is running (until its post-result work is done too).
@@ -84,9 +111,12 @@ final class MenuModel {
         }
         let generation = loadGeneration
         loadTask = Task { [services] in
-            let local = await Task.detached { MenuLoader.loadLocal(services) }.value
+            let number = beginLocalRead()
+            let read = await readLocal(services)
             guard generation == loadGeneration else { return }
-            lastLocal = local
+            // A redraw after a config write may have stored a newer read while this one was on its way: the load goes on
+            // from the newest, so its paints and the `config` it probes with never carry the older files.
+            let local = storeLocal(read, number: number)
             panel = MenuLoader.firstPaint(local, cache: apps, checked: checked)
             if case .ready(let inputs) = local {
                 let probe = await MenuLoader.probeDevices(services, saved: inputs.config)
@@ -111,9 +141,10 @@ final class MenuModel {
                         lastLocal ?? local, probe: probe, apps: apps.entries, checked: checked)
                 }
                 // A lend or return by the lab can land while the reads run: draw once more from the ledger as it is now.
-                let fresh = await Task.detached { MenuLoader.loadLocal(services) }.value
+                let freshNumber = beginLocalRead()
+                let freshRead = await readLocal(services)
                 guard generation == loadGeneration else { return }
-                lastLocal = fresh
+                let fresh = storeLocal(freshRead, number: freshNumber)
                 panel = MenuLoader.panel(fresh, probe: probe, apps: apps.entries, checked: checked)
             }
             lastLoadFinished = services.clock.now()
@@ -260,10 +291,11 @@ final class MenuModel {
     /// is still running paints from `lastLocal` too, so its later repaints carry the new setting; there is nothing to defer.
     private func redrawConfig() {
         Task { [services] in
-            let local = await Task.detached { MenuLoader.loadLocal(services) }.value
+            let number = beginLocalRead()
+            let read = await readLocal(services)
             // An action that started meanwhile reads the files itself when it ends.
             guard actionTask == nil else { return }
-            lastLocal = local
+            _ = storeLocal(read, number: number)
             repaint(renewing: false)
         }
     }

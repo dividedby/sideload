@@ -368,6 +368,33 @@ private final class Hold: Sendable {
     }
 }
 
+/// The model's local read, with one read that can be parked after it has read the files: the files it returns are the ones as
+/// they were then, however long it waits, so a later read can finish and be stored first.
+private final class GatedReads: Sendable {
+    private struct State {
+        var gateNext = false
+        var parked = false
+        var open = false
+    }
+    private let state = Mutex(State())
+    var parked: Bool { state.withLock { $0.parked } }
+    /// The next read is parked once it has read the files.
+    func gateNext() { state.withLock { $0.gateNext = true } }
+    func release() { state.withLock { $0.open = true } }
+    func read(_ services: Services) async -> MenuLoader.Local {
+        let local = MenuLoader.loadLocal(services)
+        let gated = state.withLock { st -> Bool in
+            defer { st.gateNext = false }
+            if st.gateNext { st.parked = true }
+            return st.gateNext
+        }
+        if gated {
+            while state.withLock({ !$0.open }) { try? await Task.sleep(for: .milliseconds(5)) }
+        }
+        return local
+    }
+}
+
 @MainActor
 @Suite("menu auto-renew: view model")
 struct MenuAutoRenewModelTests {
@@ -382,7 +409,7 @@ struct MenuAutoRenewModelTests {
 
     /// One reachable device, auto-renew off, Apollo recorded. `refresh` waits for `hold`; the auto-renew step is the real
     /// command over the temp home (it logs through a wrapper).
-    private func loadedWorld() async throws -> World {
+    private func loadedWorld(reads: GatedReads = GatedReads()) async throws -> World {
         let dir = try makeTempDir()
         let paths = Paths(home: dir.path)
         try paths.ensureHome()
@@ -405,7 +432,7 @@ struct MenuAutoRenewModelTests {
             await hold.wait()
             return .result("refresh", ["results": []])
         }
-        let model = MenuModel(services: services, steps: steps)
+        let model = MenuModel(services: services, steps: steps, readLocal: { await reads.read($0) })
         model.reload(force: true)
         await model.loadTask?.value
         return World(model: model, runner: runner, log: log, hold: hold, paths: paths, dir: dir)
@@ -470,8 +497,10 @@ struct MenuAutoRenewModelTests {
         let reads = w.runner.infoApps.count
         w.runner.holdList(true)
         w.runner.holdApps(true)
+        let lists = w.runner.lists
         w.model.reload(force: true)
-        try await until { w.model.loadTask != nil }
+        // The load has read the files and is parked in the device list, so the toggle lands while it runs.
+        try await until { w.runner.lists > lists }
         w.model.request(turnOn)
         w.model.confirm()
         try await until { !w.model.actionBusy }
@@ -487,10 +516,44 @@ struct MenuAutoRenewModelTests {
         await w.model.loadTask?.value
         #expect(card(w.model)?.autoRenew == true && card(w.model)?.liveRead == .read)
         // Nothing is left over to redraw later: a quiet moment changes nothing and starts no load.
-        let lists = w.runner.lists
+        let settledLists = w.runner.lists
         try await Task.sleep(for: .milliseconds(100))
         #expect(
-            w.model.loadTask == nil && w.runner.lists == lists && card(w.model)?.autoRenew == true)
+            w.model.loadTask == nil && w.runner.lists == settledLists
+                && card(w.model)?.autoRenew == true)
+    }
+
+    @Test(
+        "a load whose read of the files is older than the toggle's redraw does not paint the old setting"
+    )
+    func staleLoadRead() async throws {
+        let reads = GatedReads()
+        let w = try await loadedWorld(reads: reads)
+        defer { try? FileManager.default.removeItem(at: w.dir) }
+        // The load reads the files (auto-renew off), then is parked before it resumes.
+        reads.gateNext()
+        w.runner.holdList(true)
+        w.runner.holdApps(true)
+        let (lists, appReads) = (w.runner.lists, w.runner.infoApps.count)
+        w.model.reload(force: true)
+        try await until { reads.parked }
+        // The toggle writes the config and its redraw reads and stores the new files while the load's read is still parked.
+        w.model.request(turnOn)
+        w.model.confirm()
+        try await until { !w.model.actionBusy }
+        try await until { self.card(w.model)?.autoRenew == true }
+        #expect(w.model.loadTask != nil, "the load was not cancelled")
+        // The load resumes with its older read: its first paint is before it asks the device list.
+        reads.release()
+        try await until { w.runner.lists > lists }
+        #expect(card(w.model)?.autoRenew == true, "the older read must not repaint the old setting")
+        #expect(card(w.model)?.apps.first?.exception == nil)
+        w.runner.holdList(false)
+        try await until { w.runner.infoApps.count > appReads }
+        #expect(card(w.model)?.autoRenew == true)
+        w.runner.holdApps(false)
+        await w.model.loadTask?.value
+        #expect(card(w.model)?.autoRenew == true && card(w.model)?.liveRead == .read)
     }
 
     @Test("turning it off from the card, then the offer flips back")
