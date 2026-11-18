@@ -7,6 +7,7 @@ All notable changes to this project are documented here. Format follows
 
 ### Changed
 
+- Docs: `docs/agents/idea-inbox.md` names the domain glossary `GLOSSARY.md` (was `CONTEXT.md`), the name the upstream `grilling`, `domain-modeling`, `tdd`, `to-spec` and `to-tickets` skills now read.
 - Docs: `AGENTS.md` is now a short index (about 115 lines) and stays the single source of truth; a new `CLAUDE.md` is just
   `@AGENTS.md`. The long "Ask the owner first" and "Secrets" detail moved to path-scoped `.claude/rules/owner-only.md` and
   `.claude/rules/secrets.md` (the hard rules and the owner-only command list stay in `AGENTS.md`); lines that only restated the
