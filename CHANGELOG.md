@@ -10,12 +10,12 @@ All notable changes to this project are documented here. Format follows
 An app list that leaves out every installed app no longer suspends auto-renew or marks apps gone. On 2026-11-17 one slow
 `devicectl` read on the iPad did both; such a read is now read again, and if it still disagrees with the ledger it never
 marks an app absent, an install treats the app as a reinstall, and lend, remove and restore stop before changing anything. A
-stale absent record heals on the next read that shows the app. The menu bar app no longer shows an old auto-renew setting
-when the toggle lands during a load. Neither fix has run on a device or in the built app yet. CLI changes in behaviour: new
-warning `LEDGER_SNAPSHOT_DISAGREED`; new `snapshotCheck` data in `install`, `refresh` and the `SNAPSHOT_FAILED` of
-`slot lend`, `app remove` and `slot restore`; a contradicted read gives `SNAPSHOT_FAILED` (or `UNINSTALL_RESULT_UNCERTAIN` after
-an uninstall) instead of `UNEXPECTED_APP_DELTA`; `slot restore` answers `SNAPSHOT_FAILED` instead of `APP_NOT_INSTALLED` on
-such a read.
+stale absent record heals on the next manual `refresh`, or when `refresh --auto` reads the device for another app and the
+list shows it. The menu bar app no longer shows an old auto-renew setting when the toggle lands during a load. Neither fix
+has run on a device or in the built app yet. CLI changes in behaviour: new warning `LEDGER_SNAPSHOT_DISAGREED`; new
+`snapshotCheck` data in `install`, `refresh` and the `SNAPSHOT_FAILED` of `slot lend`, `app remove` and `slot restore`; a
+contradicted read gives `SNAPSHOT_FAILED` (or `UNINSTALL_RESULT_UNCERTAIN` after an uninstall) instead of
+`UNEXPECTED_APP_DELTA`; `slot restore` answers `SNAPSHOT_FAILED` instead of `APP_NOT_INSTALLED` on such a read.
 
 ### Fixed
 
@@ -39,10 +39,10 @@ such a read.
 
 ### Added
 
-- `LEDGER_SNAPSHOT_DISAGREED` warning (install and `slot return`: apps the first read omitted, listed again afterwards, counts
-  only), a `snapshotCheck` object (`listed`, `expected`, `missing`, `reread`, `resolved`) in `install`'s data and in the
-  `SNAPSHOT_FAILED` of `slot lend` and `app remove`, and a `snapshot` line in `logs/refresh.jsonl` for `refresh --auto`. Counts
-  only, never a bundle ID.
+- `LEDGER_SNAPSHOT_DISAGREED` warning (install and `slot return`: apps the first read omitted, listed again afterwards,
+  counts only), a `snapshotCheck` object (`listed`, `expected`, `missing`, `reread`, `resolved`) in the data of `install` and
+  manual `refresh` and in the `SNAPSHOT_FAILED` of `slot lend`, `app remove` and `slot restore`, and a `snapshot` line in
+  `logs/refresh.jsonl` for `refresh --auto`. Counts only, never a bundle ID.
 
 ### Changed
 
