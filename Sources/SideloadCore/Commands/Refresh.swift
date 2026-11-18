@@ -283,6 +283,7 @@ struct RefreshRun {
         }
         var presence: [AppDefinition: RefreshPolicy.Presence] = [:]
         var snapshotFailure: SideloadError?
+        var snapshotCheck: FreeDeviceCalls.SnapshotCheck?
         let needsSnapshot = optimistic.contains {
             if case .renew(let t) = $0 { return !t.lent } else { return false }
         }
@@ -290,11 +291,8 @@ struct RefreshRun {
             log("reading the device's app list")
             let expected = book.expectedPresent(migrated)
             let read = await steps.snapshot(services, alias, first.bundleId, expected)
-            if let check = read.check {
-                log(
-                    "app list contradicts the ledger: listed \(check.listed), expected \(check.expected), missing \(check.missing), re-read \(check.resolved ? "resolved it" : "did not")"
-                )
-            }
+            snapshotCheck = read.check
+            if read.check != nil { log("the app list contradicted the ledger (see snapshotCheck)") }
             // A list that omits every app recorded as installed, twice, says nothing about any app (not NOT_PRESENT for all of
             // them): presence stays unknown and the install step reads and judges the list itself.
             if !read.contradictsLedger, let snapshot = read.snapshot {
@@ -383,6 +381,7 @@ struct RefreshRun {
             "skipped": .number(Double(skipped)), "warnings": .array(warnings),
         ]
         if let live { data["appIdsLast7Days"] = .number(Double(live)) }
+        if let snapshotCheck { data["snapshotCheck"] = snapshotCheck.json }
         // The cached profiles an earlier `provision --renew` run left in tmp/ (this run's own are in each app's `renew`).
         data.merge(record.json) { _, new in new }
         return Envelope(

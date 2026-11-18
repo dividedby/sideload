@@ -294,6 +294,11 @@ struct RefreshTests {
             #expect(results(out).allSatisfy { $0["code"] != "NOT_PRESENT" })
             #expect(
                 log.value.contains("install stremio-ios") && log.value.contains("install apollo"))
+            let check = out.data["snapshotCheck"]
+            #expect(check?["listed"] == 0 && check?["expected"] == 2 && check?["missing"] == 2)
+            #expect(check?["reread"] == true && check?["resolved"] == false)
+            let text = try out.printed().text
+            #expect(!text.contains(stremioId) && !text.contains(apolloId), "counts only")
         }
     }
 

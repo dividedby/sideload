@@ -309,14 +309,10 @@ extension RefreshRun {
             read.error
             ?? SideloadError("SNAPSHOT_FAILED", "The device's app list could not be read.")
         if let check = read.check {
-            auto.log.record(
-                "snapshot",
-                [
-                    "device": .string(alias), "listed": RefreshLog.int(check.listed),
-                    "expected": RefreshLog.int(check.expected),
-                    "missing": RefreshLog.int(check.missing), "reread": true,
-                    "resolved": .bool(check.resolved),
-                ])
+            // The same counts the commands print as `snapshotCheck` (`SnapshotCheck.json`): listed, expected, missing, reread, resolved.
+            var fields = check.fields
+            fields["device"] = .string(alias)
+            auto.log.record("snapshot", fields)
         }
         if read.contradictsLedger {
             // Valid, but it omits every app the ledger says is there, twice: not evidence of anything. Nothing is renewed on it

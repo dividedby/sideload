@@ -319,12 +319,15 @@ struct FreeDeviceCalls: Sendable {
         /// The re-read shows at least one expected app, so it is the read used.
         let resolved: Bool
 
-        var json: JSONValue {
+        /// The one rendering: command output (`snapshotCheck`) and the `refresh --auto` log line both use it.
+        var fields: [String: JSONValue] {
             [
                 "listed": .number(Double(listed)), "expected": .number(Double(expected)),
                 "missing": .number(Double(missing)), "reread": true, "resolved": .bool(resolved),
             ]
         }
+
+        var json: JSONValue { .object(fields) }
     }
 
     /// One snapshot read as data: the callers that already changed (or may have changed) the device need the failure as data,
