@@ -230,7 +230,8 @@ final class CanaryWorld: Sendable {
             return RunResult()
         case isSub("device", "install", "app"):
             if s.installOverflow {
-                box.withLock { $0.installed = true }  // the canary lands even though the output flooded
+                // the canary lands even though the output flooded
+                box.withLock { $0.installed = true }
                 return RunResult(code: nil, overflow: true)
             }
             if let payload = install.payload { write(payload, to: spec) }

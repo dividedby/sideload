@@ -6,7 +6,8 @@ import Testing
 private func cert(_ pem: String) throws -> KeychainCertificate {
     let der = try #require(Data(base64Encoded: pem, options: .ignoreUnknownCharacters))
     var read = try #require(CertificateReader.read(der: der))
-    read.isValidForCodeSigning = true  // what `SecurityKeychain` reports for a trusted, unexpired identity
+    // what `SecurityKeychain` reports for a trusted, unexpired identity
+    read.isValidForCodeSigning = true
     return read
 }
 

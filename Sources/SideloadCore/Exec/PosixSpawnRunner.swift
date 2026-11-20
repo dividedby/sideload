@@ -162,15 +162,15 @@ private struct Execution: Sendable {
         // A closed registry means an interrupt is under way and the process is about to exit: don't spawn.
         // Otherwise the spawn is tracked as in flight, so the handler waits for it (or `endSpawn` kills it).
         guard children.beginSpawn() else {
-            (parentFds + childFds).forEach { close($0) }
+            for fd in parentFds + childFds { close(fd) }
             return spawnFailure("INTERRUPTED")
         }
         let (pid, spawnErrno) = spawn(
             path: path, stdin: stdinPipe.read, stdout: outPipe.write, stderr: errPipe.write)
-        childFds.forEach { close($0) }
+        for fd in childFds { close(fd) }
         guard spawnErrno == 0 else {
             children.endSpawn(pgid: nil)
-            parentFds.forEach { close($0) }
+            for fd in parentFds { close(fd) }
             return spawnFailure(errnoName(spawnErrno))
         }
         afterSpawn()
@@ -208,7 +208,8 @@ private struct Execution: Sendable {
         let deadline = now() &+ spec.timeout.nanoseconds
 
         func send(_ sig: Int32) {
-            if signalGroup(pid, sig) != 0 { _ = kill(pid, sig) }  // child left its group: hit the pid itself
+            // child left its group: hit the pid itself
+            if signalGroup(pid, sig) != 0 { _ = kill(pid, sig) }
         }
         func escalate() {
             guard !termSent else { return }
@@ -220,7 +221,8 @@ private struct Execution: Sendable {
             guard !killSent else { return }
             killSent = true
             send(SIGKILL)
-            _ = kill(pid, SIGKILL)  // not yet reaped, so the pid is still ours; covers a child that left its group
+            // not yet reaped, so the pid is still ours; covers a child that left its group
+            _ = kill(pid, SIGKILL)
             hardStop = now() &+ Self.drainAfterKill
         }
         func closeOutputs() {
@@ -281,7 +283,8 @@ private struct Execution: Sendable {
                     sendKill()
                 } else {
                     _ = kill(pid, SIGKILL)
-                    closeOutputs()  // a grandchild outside the group still holds the pipes; stop waiting for it
+                    // a grandchild outside the group still holds the pipes; stop waiting for it
+                    closeOutputs()
                     // A child stuck in an uninterruptible state may never die; poll instead of blocking so the
                     // run still returns. Giving up leaves it unreaped and the exit status unknown.
                     let reapDeadline = now() &+ reapTimeout
@@ -316,7 +319,8 @@ private struct Execution: Sendable {
             let ready = poll(&fds, nfds_t(fds.count), waitMs)
             if ready < 0 {
                 if errno == EINTR { continue }
-                closeOutputs()  // unexpected poll failure: stop and take the kill path rather than spin
+                // unexpected poll failure: stop and take the kill path rather than spin
+                closeOutputs()
                 closeInput()
                 wakeActive = false
                 escalate()
@@ -326,13 +330,15 @@ private struct Execution: Sendable {
 
             let readable = Int16(POLLIN | POLLHUP | POLLERR)
             if fds[3].revents != 0 {
-                wakeActive = false  // cancellation: escalate now instead of waiting for the deadline
+                // cancellation: escalate now instead of waiting for the deadline
+                wakeActive = false
                 cancelled = true
                 escalate()
             }
             if fds[0].revents & readable != 0 && outFd >= 0 { readOutput(stdout: true) }
             if fds[1].revents & readable != 0 && errFd >= 0 { readOutput(stdout: false) }
-            if overflow { closeOutputs() }  // stop reading; the child gets EPIPE and the group is being killed
+            // stop reading; the child gets EPIPE and the group is being killed
+            if overflow { closeOutputs() }
             if inFd >= 0 && fds[2].revents != 0 {
                 if fds[2].revents & Int16(POLLERR | POLLHUP | POLLNVAL) != 0 {
                     closeInput()
@@ -418,14 +424,14 @@ private struct Execution: Sendable {
             strdup($0)
         }
         argv.append(nil)
-        defer { argv.forEach { free($0) } }
+        defer { for arg in argv { free(arg) } }
 
         // The environment is passed through unchanged.
         var envp: [UnsafeMutablePointer<CChar>?] = ProcessInfo.processInfo.environment.map {
             strdup("\($0.key)=\($0.value)")
         }
         envp.append(nil)
-        defer { envp.forEach { free($0) } }
+        defer { for entry in envp { free(entry) } }
 
         var pid: pid_t = 0
         let rc = posix_spawn(&pid, path, &actions, &attr, argv, envp)

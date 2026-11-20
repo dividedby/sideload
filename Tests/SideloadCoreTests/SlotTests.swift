@@ -437,7 +437,8 @@ struct SlotTests {
             let status = StatusCommand.run(w.services)
             #expect(json(status)["lent"]?.array?.first?["state"] == "lending")
 
-            w.clock.advance(TimeInterval(SlotRule.window(.install)) + 1)  // a timed-out operation is left alone for the window
+            // a timed-out operation is left alone for the window
+            w.clock.advance(TimeInterval(SlotRule.window(.install)) + 1)
             let back = await w.slot("return", device: "iphone")
             #expect(back.ok, "\(back.errors)")
             #expect(w.lent.isEmpty)

@@ -328,7 +328,8 @@ struct CanaryEvidenceBundleTests {
     @Test("a failed write is a warning only: status, ok and the log line are untouched")
     func writeFails() async throws {
         try await withCanaryWorld(try blocked()) { w in
-            FileManager.default.createFile(atPath: w.paths.evidence, contents: Data())  // a file where the folder goes
+            // a file where the folder goes
+            FileManager.default.createFile(atPath: w.paths.evidence, contents: Data())
             let out = await w.run(evidenceOptions)
             #expect(out.ok && out.exitCode == 0 && out.data["status"] == "blocked")
             #expect(warningCodes(out) == ["EVIDENCE_WRITE_FAILED"])
@@ -378,7 +379,8 @@ struct CanaryEvidenceBundleTests {
         var midway: [String] = []
         let outcome = EvidenceWriter.write(
             ["schema": 2], stamp: "t", home: paths, tokens: SubjectTokens(), bundleId: canaryBundle,
-            afterFirstFile: { _ in midway = listing(paths.evidence) })  // what a kill here would leave
+            // what a kill here would leave
+            afterFirstFile: { _ in midway = listing(paths.evidence) })
         #expect(
             outcome == .written(dir: "evidence/canary-t", files: ["evidence.json", "evidence.txt"]))
         #expect(
