@@ -257,10 +257,10 @@ final class DeviceSimRunner: Runner {
 
     /// An operation that is already running (its process was killed, say) and finishes `seconds` from now.
     func scheduleLanding(_ id: String, install: Bool, after seconds: TimeInterval) {
-        defer_(seconds, id: id, install: install)
+        deferLanding(seconds, id: id, install: install)
     }
 
-    private func defer_(_ seconds: TimeInterval?, id: String, install: Bool) {
+    private func deferLanding(_ seconds: TimeInterval?, id: String, install: Bool) {
         guard let seconds, let clock else { return }
         deferred.withLock {
             $0.append((clock.now().addingTimeInterval(seconds), id, install, buildExpiry))
@@ -273,7 +273,8 @@ final class DeviceSimRunner: Runner {
     func arm(_ script: DeviceScript) {
         armed.withLock { current in
             var next = script
-            if next.leaf == nil { next.leaf = current.leaf }  // the signing certificate the guard compares against
+            // the signing certificate the guard compares against
+            if next.leaf == nil { next.leaf = current.leaf }
             current = next
         }
         snapshots.withLock { $0 = 0 }
@@ -621,7 +622,7 @@ final class DeviceSimRunner: Runner {
                 apps.withLock { $0[id] = true }
                 copies.withLock { $0[id] = buildExpiry }
             } else {
-                defer_(script.installLandsAfter, id: id, install: true)
+                deferLanding(script.installLandsAfter, id: id, install: true)
             }
         } else {
             if script.timeoutsTakeTime {
@@ -630,7 +631,7 @@ final class DeviceSimRunner: Runner {
             if script.uninstallTimeoutRemoves == true {
                 apps.withLock { $0[id] = nil }
             } else {
-                defer_(script.uninstallLandsAfter, id: id, install: false)
+                deferLanding(script.uninstallLandsAfter, id: id, install: false)
             }
         }
     }
@@ -829,13 +830,15 @@ func withInstallWorld(
         }
         if let tweak { try await LedgerStore(paths: paths).update { tweak(&$0) } }
         let runner = DeviceSimRunner(script)
-        runner.buildExpiry = expires  // what an install puts on the device; the apps it starts with carry the first build's (+5 d)
+        // what an install puts on the device; the apps it starts with carry the first build's (+5 d)
+        runner.buildExpiry = expires
         let clock = MutableClock(testNow)
         runner.clock = clock
         let keychain = SequencedKeychain(reads ?? [[free]])
         let services = Services(
             runner: runner, fs: FakeFileSystem.free(gb: 50), clock: clock, keychain: keychain,
-            home: paths, sleep: { _ in })  // the re-read pause of `trySnapshot(expecting:)` never waits in a test
+            // the re-read pause of `trySnapshot(expecting:)` never waits in a test
+            home: paths, sleep: { _ in })
         try await body(
             InstallWorld(
                 paths: paths, store: store, services: services, runner: runner, app: app,

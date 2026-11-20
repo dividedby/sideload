@@ -233,7 +233,10 @@ public enum ProfileCacheRenewal {
         progress: RenewProgress, fs: RenewFS,
         journal: RenewJournal
     ) async -> SideloadError? {
-        enum Step { case moved, putBack, stray, failed(Int32) }
+        enum Step {
+            case moved, putBack, stray
+            case failed(Int32)
+        }
         for attempt in 0..<maxNameTries {
             let destName = "renewed-profile-\(randomHex(bytes: 6)).mobileprovision"
             let relative = "tmp/" + destName

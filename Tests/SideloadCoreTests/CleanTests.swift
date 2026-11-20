@@ -143,12 +143,18 @@ struct CleanBackupsTests {
             try w.backup(stamp: "20260101T000002Z", restored: -15)  // deleted
             try w.backup(stamp: "20260101T000003Z", superseded: -13)  // kept
             try w.backup(stamp: "20260101T000004Z", superseded: -15)  // deleted
-            try w.backup(stamp: "20260101T000005Z", restored: -14)  // exactly 14 days: not "more than"
-            try w.backup(stamp: "20260101T000010Z", restored: -14 - 1.0 / 86_400)  // 14 days and a second: deleted
-            try w.backup(stamp: "20260101T000006Z", created: -60, restored: -1)  // old backup, recent restore: kept
-            try w.backup(stamp: "20260101T000007Z", created: -1, restored: -15)  // new backup, old marker: deleted
-            try w.backup(stamp: "20260101T000008Z", restored: -20, superseded: -2)  // the later marker counts: kept
-            try w.backup(stamp: "20260101T000009Z", created: -90, uninstalled: -90)  // neither marker: kept
+            // exactly 14 days: not "more than"
+            try w.backup(stamp: "20260101T000005Z", restored: -14)
+            // 14 days and a second: deleted
+            try w.backup(stamp: "20260101T000010Z", restored: -14 - 1.0 / 86_400)
+            // old backup, recent restore: kept
+            try w.backup(stamp: "20260101T000006Z", created: -60, restored: -1)
+            // new backup, old marker: deleted
+            try w.backup(stamp: "20260101T000007Z", created: -1, restored: -15)
+            // the later marker counts: kept
+            try w.backup(stamp: "20260101T000008Z", restored: -20, superseded: -2)
+            // neither marker: kept
+            try w.backup(stamp: "20260101T000009Z", created: -90, uninstalled: -90)
             let out = w.clean(yes: true)
             #expect(out.ok && out.exitCode == 0, "\(out.errors)")
             #expect(w.names() == [1, 3, 5, 6, 8, 9].map { "20260101T00000\($0)Z" })
@@ -240,10 +246,13 @@ struct CleanBackupsTests {
         try await withInstallWorld { w in
             try w.backup("oldphone", stamp: "20260101T000001Z", created: -13)  // kept
             try w.backup("oldphone", stamp: "20260101T000002Z", created: -15)  // deleted
-            try w.backup("oldphone", stamp: "20260101T000003Z", created: -20, uninstalled: -20)  // waiting for a restore that cannot run: deleted
-            try w.backup("oldphone", stamp: "20260101T000004Z", created: -40, superseded: -2)  // kept
+            // waiting for a restore that cannot run: deleted
+            try w.backup("oldphone", stamp: "20260101T000003Z", created: -20, uninstalled: -20)
+            // kept
+            try w.backup("oldphone", stamp: "20260101T000004Z", created: -40, superseded: -2)
             try w.backup("oldphone", stamp: "20260101T000005Z", created: -40, restored: -3)  // kept
-            try w.backup("oldphone", stamp: "20260101T000006Z", created: -40, uninstalled: -2)  // uninstalledAt counts: kept
+            // uninstalledAt counts: kept
+            try w.backup("oldphone", stamp: "20260101T000006Z", created: -40, uninstalled: -2)
             try w.backup("gone", stamp: "20260101T000000Z", created: -30)
             let out = w.clean(yes: true)
             #expect(out.ok, "\(out.errors)")
@@ -387,12 +396,17 @@ struct CleanDownloadsTests {
             entry("apollo", "0.5", approved: false, days: -60),  // older unapproved: pruned
             entry("apollo", "1.0", approved: true, days: -50),  // pruned
             entry("apollo", "2.0", approved: true, days: -40),  // pruned
-            entry("apollo", "3.0", approved: true, days: -30),  // the approved one before the newest: kept
+            // the approved one before the newest: kept
+            entry("apollo", "3.0", approved: true, days: -30),
             entry("apollo", "4.0", approved: true, days: -20),  // newest approved: kept
-            entry("apollo", "5.0", approved: false, days: -5),  // newer than the newest approved, waiting: kept
-            entry("apollo", "1.2.3", approved: true, days: -70),  // installed on another device: kept
-            entry("stremio-ios", "s1", approved: false, days: -10),  // superseded unapproved: pruned
-            entry("stremio-ios", "s2", approved: false, days: -5),  // nothing approved, the newest unapproved: kept
+            // newer than the newest approved, waiting: kept
+            entry("apollo", "5.0", approved: false, days: -5),
+            // installed on another device: kept
+            entry("apollo", "1.2.3", approved: true, days: -70),
+            // superseded unapproved: pruned
+            entry("stremio-ios", "s1", approved: false, days: -10),
+            // nothing approved, the newest unapproved: kept
+            entry("stremio-ios", "s2", approved: false, days: -5),
         ]
     }
 

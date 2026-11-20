@@ -107,7 +107,8 @@ struct SlotWalkTests {
                 // I3: a record whose op was inside its window before the command is untouched by it.
                 expectPendingUntouched(before: before, after: after, at: nowBefore, label: label)
                 try expectSlotModel(w, label: label)
-                try expectSlotModel(w, label: label, eventually: true)  // a late landing must not contradict the ledger either
+                // a late landing must not contradict the ledger either
+                try expectSlotModel(w, label: label, eventually: true)
                 try expectStatusNeverOptimistic(w, label: label)
                 try w.expectClean(out)
                 // I7: a slot becomes lent only in a run where the signed build was valid.

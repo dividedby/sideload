@@ -96,7 +96,8 @@ struct FreeInstallExpiryTests {
             FreeInstallExpiry.label(expires: daysFromNow(days), now: testNow)
         }
         #expect(label(7) == "7 d")
-        #expect(label(6.2) == "7 d")  // rounded up: fresh profiles read 7 d until they are renewable
+        // rounded up: fresh profiles read 7 d until they are renewable
+        #expect(label(6.2) == "7 d")
         #expect(label(6.0) == "6 d")
         #expect(label(3.9) == "4 d")  // still ok
         #expect(label(3.0) == "3 d · due")

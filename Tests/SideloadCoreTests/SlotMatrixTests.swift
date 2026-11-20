@@ -21,6 +21,8 @@ private func record(_ state: String, app: String = "stremio-ios", to: String = "
         opAt: state == "lent" ? nil : daysFromNow(-1))
 }
 
+// Case names are the matrix row IDs from the design doc, and the raw value is the row's label in test output.
+// swift-format-ignore: AlwaysUseLowerCamelCase
 enum SlotRow: String, CaseIterable, Sendable {
     case L0, L1, L2, L3, L4, L5, L6, L7, L8, L9, L10, L11
     case T0, T1, T2, T3, T4, T5, T6, T7, T8, T9, T10

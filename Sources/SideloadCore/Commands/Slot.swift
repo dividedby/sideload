@@ -616,7 +616,8 @@ public enum SlotCommand {
                     ?? SideloadError(
                         "INSTALL_FAILED", "The install did not finish.",
                         fix: "Run `sideload slot return` again."))
-        case .keep:  // T8 (success claimed, app not listed), T9, T10: nothing is claimed; the op stays pending
+        // T8 (success claimed, app not listed), T9, T10: nothing is claimed; the op stays pending
+        case .keep:
             var error =
                 outcome.opFailure
                 ?? (outcome.after == nil

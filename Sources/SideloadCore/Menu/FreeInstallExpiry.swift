@@ -63,7 +63,9 @@ public enum FreeInstallExpiry {
     }
 
     enum TimeLeft: Equatable {
-        case days(Int), hours(Int), underAnHour
+        case days(Int)
+        case hours(Int)
+        case underAnHour
     }
 
     /// The time left as the menu shows it, rounded up: whole days above a day, whole hours at a day or less, then under an

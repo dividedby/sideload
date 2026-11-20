@@ -1,2 +1,2 @@
 #!/bin/sh
-echo done
+echo "done"

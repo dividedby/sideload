@@ -297,7 +297,8 @@ public enum MenuActions {
             return .disabled("Device not found")
         }
         switch action {
-        case .saveDevice: return .disabled("Already saved")  // Answered above: a saved device has a card.
+        // Answered above: a saved device has a card.
+        case .saveDevice: return .disabled("Already saved")
         case .addSource: return .enabled  // Answered above.
         case .lendable(_, let app): return lendable(app, card: card, snapshot: snapshot)
         case .autoRenew(_, let on): return autoRenew(on, card: card)

@@ -218,7 +218,8 @@ public struct DeviceCtl: Sendable {
             return
         }
         try requireReadOnlyProfileCall(normalized, positional: positional)
-        guard let mutation = try appMutation(normalized) else { return }  // list, info and the like name no app
+        // list, info and the like name no app
+        guard let mutation = try appMutation(normalized) else { return }
         // Exactly one positional: the bundle ID (uninstall, launch) or the app path (install).
         guard positional.count == 1 else {
             throw notAllowed(
