@@ -42,3 +42,13 @@ jobs:
           git diff --exit-code
       # Serial: a parallel run starves the small runner enough to trip timing checks.
       - run: swift test -j 2 --no-parallel
+
+  # Merge gate: the one CI check the default-branch ruleset requires. Always
+  # runs; fails only when a needed job failed or was cancelled (skipped passes).
+  ci-ok:
+    if: always()
+    needs: [test, swift]
+    runs-on: ubuntu-latest
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
