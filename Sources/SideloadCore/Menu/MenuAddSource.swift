@@ -25,23 +25,43 @@ public struct MenuSourcePlan: Sendable, Hashable, CustomStringConvertible,
     public var debugDescription: String { description }
 }
 
-/// One app of an index, as the picker lists it.
+/// One app of an index, or one IPA of a GitHub release, as the picker lists it.
 public struct MenuSourceChoice: Sendable, Hashable, Identifiable {
     public var id: Int
-    /// "Widget · 1.2.0 · io.example.widget", upstream strings cut to printable ASCII.
+    /// "Widget · 1.2.0 · io.example.widget" for an index app, "Widget.ipa · 1.2.0" for a release asset, upstream strings cut to
+    /// printable ASCII.
     public var title: String
-    var bundleId: String
+    /// The upstream bundle ID of an index app; nil for a release asset.
+    var bundleId: String?
+    /// The exact file name of a release asset, which the source is then pinned to; nil for an index app.
+    var asset: String?
     /// Why it cannot be added (no SHA-256); nil when it can.
     public var blocked: String?
 }
 
-/// An index that lists several apps: the one read of it, held so a pick needs no second request.
+/// An index that lists several apps, or a GitHub release that has several IPAs: the one read of it, held so a pick needs no
+/// second request.
 public struct MenuSourceChoices: Sendable, Equatable {
     public var url: String
     public var choices: [MenuSourceChoice]
     /// The index lists more apps than the picker shows.
     public var truncated: Bool
     let probe: SourceProbe
+
+    private var isRelease: Bool {
+        if case .github = probe.kind { return true }
+        return false
+    }
+
+    /// What the picker says above the list.
+    public var intro: String {
+        isRelease ? MenuSourceAdd.releaseIntro : MenuSourceAdd.pickerIntro
+    }
+
+    /// What the picker says when it shows only the first of a long list.
+    public var truncatedNote: String {
+        isRelease ? MenuSourceAdd.releaseTruncatedNote : MenuSourceAdd.truncatedNote
+    }
 }
 
 /// The Add source card before the confirm.
@@ -70,6 +90,10 @@ public enum MenuSourceAdd {
         "A GitHub repository (https://github.com/owner/repo) or the address of an AltStore index."
     public static let pickerIntro =
         "This index lists several apps. Pick the one to add; each source adds one app."
+    public static let releaseIntro =
+        "This release has several IPAs. Pick the one to add; the source is pinned to that exact file name, and each source adds one app."
+    public static let releaseTruncatedNote =
+        "Only the first \(SourceAdd.maxListed) files are listed. To pin another, use `sideload source add --asset` in a terminal."
     public static let readingLabel = "Reading the source…"
     public static let confirmLabel = "Add source"
     public static let panelNotReady = "The panel is not ready for this yet."
@@ -103,11 +127,10 @@ public enum MenuSourceAdd {
     public static func preview(_ services: Services, url raw: String) async -> MenuSourceStep {
         do {
             let probe = try await SourceAdd.probe(services, url: trimmedURL(raw))
-            if case .altstore = probe.kind {
-                let listed = try SourceAdd.listing(probe)
-                if listed.apps.count > 1 {
-                    return .choose(choices(probe, listed))
-                }
+            // An index with several apps, or a release with several IPAs, asks which; `listing` leaves one app otherwise.
+            let listed = try SourceAdd.listing(probe)
+            if listed.apps.count > 1 {
+                return .choose(choices(probe, listed))
             }
             return try plan(probe, bundle: nil, services: services)
         } catch {
@@ -124,7 +147,8 @@ public enum MenuSourceAdd {
             return .failed(MenuIssue(code: SourceResolver.missingDigestCode, message: blocked))
         }
         do {
-            return try plan(choices.probe, bundle: choice.bundleId, services: services)
+            return try plan(
+                choices.probe, bundle: choice.bundleId, asset: choice.asset, services: services)
         } catch {
             return .failed(MenuIssue(error))
         }
@@ -137,20 +161,21 @@ public enum MenuSourceAdd {
     ) -> MenuSourceStep {
         do {
             return try plan(
-                source.probe, bundle: source.plan.bundleId, app: source.appId, platform: platform,
-                services: services)
+                source.probe, bundle: source.plan.bundleId, asset: source.plan.asset,
+                app: source.appId, platform: platform, services: services)
         } catch {
             return .failed(MenuIssue(error))
         }
     }
 
     private static func plan(
-        _ probe: SourceProbe, bundle: String?, app: String? = nil, platform: String? = nil,
-        services: Services
+        _ probe: SourceProbe, bundle: String?, asset: String? = nil, app: String? = nil,
+        platform: String? = nil, services: Services
     ) throws -> MenuSourceStep {
         let preview = try SourceAdd.preview(
             probe,
-            request: SourceAddRequest(url: probe.url, app: app, bundle: bundle, platform: platform),
+            request: SourceAddRequest(
+                url: probe.url, app: app, bundle: bundle, platform: platform, asset: asset),
             config: try services.store.load())
         return .confirm(MenuSourcePlan(plan: preview.plan, probe: probe))
     }
@@ -158,10 +183,12 @@ public enum MenuSourceAdd {
     private static func choices(
         _ probe: SourceProbe, _ listed: (apps: [SourceCandidate], truncated: Bool)
     ) -> MenuSourceChoices {
-        let choices = listed.apps.enumerated().compactMap { index, app -> MenuSourceChoice? in
-            guard let bundleId = app.bundleId else { return nil }
-            return MenuSourceChoice(
-                id: index, title: "\(app.name) · \(app.version) · \(bundleId)", bundleId: bundleId,
+        let choices = listed.apps.enumerated().map { index, app in
+            MenuSourceChoice(
+                id: index,
+                title: app.bundleId.map { "\(app.name) · \(app.version) · \($0)" }
+                    ?? "\(app.name) · \(app.version)",
+                bundleId: app.bundleId, asset: app.bundleId == nil ? app.name : nil,
                 blocked: app.hasDigest ? nil : noDigest)
         }
         return MenuSourceChoices(
@@ -190,6 +217,7 @@ public enum MenuSourceAdd {
                 "Metadata from \(plan.metadataHost)",
                 "Downloads from \(plan.downloadHosts.joined(separator: ", "))",
                 upstream,
+            ] + (plan.asset.map { ["Asset \($0)"] } ?? []) + [
                 app,
                 "Bundle ID \(plan.freeBundleId)",
                 "Saves the source in config.json and approves it. Nothing is downloaded: Add app… fetches it, and you approve each version.",
@@ -215,7 +243,7 @@ public enum MenuSourceAdd {
         let plan = source.plan
         return SourceOptions(
             sub: "add", url: plan.url, app: plan.appId, bundle: plan.bundleId,
-            platform: plan.platform, name: plan.attaches ? nil : plan.name, confirm: plan.confirm,
-            yes: true)
+            platform: plan.platform, name: plan.attaches ? nil : plan.name, asset: plan.asset,
+            confirm: plan.confirm, yes: true)
     }
 }

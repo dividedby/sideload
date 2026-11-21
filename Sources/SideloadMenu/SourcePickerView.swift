@@ -78,7 +78,7 @@ private struct SourceChoiceForm: View {
     @State private var chosen: MenuSourceChoice?
 
     var body: some View {
-        Text(MenuSourceAdd.pickerIntro).secondaryNote()
+        Text(choices.intro).secondaryNote()
         ForEach(choices.choices) { choice in
             Button {
                 chosen = choice
@@ -99,7 +99,7 @@ private struct SourceChoiceForm: View {
             .disabled(choice.blocked != nil)
         }
         if choices.truncated {
-            Text(MenuSourceAdd.truncatedNote).secondaryNote(.caption)
+            Text(choices.truncatedNote).secondaryNote(.caption)
         }
         HStack {
             Spacer()

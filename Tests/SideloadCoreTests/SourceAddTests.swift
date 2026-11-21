@@ -315,7 +315,9 @@ struct SourceAddPreviewTests {
         }
     }
 
-    @Test("a release with no .ipa or several is SOURCE_NOT_ALLOWED")
+    @Test(
+        "a release with no .ipa is SOURCE_NOT_ALLOWED; several without --asset are SOURCE_AMBIGUOUS"
+    )
     func ipaCount() async throws {
         func asset(_ name: String) -> ReleaseAsset {
             ReleaseAsset(
@@ -328,7 +330,7 @@ struct SourceAddPreviewTests {
         }
         let two = SourceHTTP([widgetAPI: widgetRelease(assets: [asset("A.ipa"), asset("B.ipa")])])
         try await withSourceHome(http: two) { _, services in
-            #expect(code(await source(addArgs(widgetURL), services)) == "SOURCE_NOT_ALLOWED")
+            #expect(code(await source(addArgs(widgetURL), services)) == "SOURCE_AMBIGUOUS")
         }
     }
 

@@ -66,11 +66,11 @@ enum SourceResolver {
         )
     }
 
-    private static func notAllowed(_ what: String) -> SideloadError {
+    private static func notAllowed(_ what: String, fix: String? = nil) -> SideloadError {
         SideloadError(
             "SOURCE_NOT_ALLOWED", "The source offered nothing fetch accepts: \(what).",
-            fix:
-                "Fetch only takes the pinned asset shape (docs/design.md section 8, approved sources)."
+            fix: fix
+                ?? "Fetch only takes the pinned asset shape (docs/design.md section 8, approved sources)."
         )
     }
 
@@ -255,10 +255,14 @@ enum SourceResolver {
 
     // MARK: custom sources (design section 8, custom sources)
 
-    /// An owner-added GitHub repository: the latest release (never a draft or pre-release) with exactly one asset named
-    /// `*.ipa`, whatever its name; other assets (checksum files, dSYMs) are ignored. The version is the tag without one leading
-    /// `v`, and the asset's download URL must be exactly the repository's `releases/download/<tag>/<name>`.
-    static func customGithub(app: String, repo: String, json: Data) throws -> ResolvedAsset {
+    /// An owner-added GitHub repository: the latest release (never a draft or pre-release). Without `asset` it must have exactly
+    /// one asset named `*.ipa`, whatever its name; with `asset` (the owner's pin) the one asset of exactly that name, compared
+    /// case-sensitively and in full. Other assets (checksum files, dSYMs, the other platform's IPA) are ignored. The version is
+    /// the tag without one leading `v`, and the asset's download URL must be exactly the repository's
+    /// `releases/download/<tag>/<name>`.
+    static func customGithub(app: String, repo: String, asset pin: String? = nil, json: Data) throws
+        -> ResolvedAsset
+    {
         let release: Release
         do { release = try JSONDecoder().decode(Release.self, from: json) } catch {
             throw invalid("the release is not valid JSON")
@@ -271,11 +275,30 @@ enum SourceResolver {
         }
         let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
         guard isSafeToken(version) else { throw notAllowed("the tag is not a plain version") }
-        let ipas = (release.assets ?? []).filter { $0.name?.lowercased().hasSuffix(".ipa") == true }
-        guard ipas.count == 1, let asset = ipas.first, let name = asset.name else {
-            throw notAllowed(
-                ipas.isEmpty
-                    ? "the release has no .ipa asset" : "the release has more than one .ipa asset")
+        let assets = release.assets ?? []
+        let ipas: [Release.Asset]
+        if let pin {
+            ipas = assets.filter { $0.name == pin }
+            guard !ipas.isEmpty else {
+                throw notAllowed(
+                    "the release has no asset named \(printableCut(pin))",
+                    fix: pinMissingFix(names: ipaNames(assets)))
+            }
+            guard ipas.count == 1 else {
+                throw notAllowed("the release has more than one asset named \(printableCut(pin))")
+            }
+        } else {
+            ipas = assets.filter { $0.name?.lowercased().hasSuffix(".ipa") == true }
+            guard ipas.count == 1 else {
+                throw notAllowed(
+                    ipas.isEmpty
+                        ? "the release has no .ipa asset"
+                        : "the release has more than one .ipa asset",
+                    fix: ipas.isEmpty ? nil : ambiguousFix(names: ipaNames(assets)))
+            }
+        }
+        guard let asset = ipas.first, let name = asset.name else {
+            throw notAllowed("the release has no .ipa asset")
         }
         guard isSafeToken(name) else {
             throw notAllowed("the asset's name has unexpected characters")
@@ -292,6 +315,54 @@ enum SourceResolver {
         return ResolvedAsset(
             app: app, version: version, fileName: name, url: url, upstreamDigest: digest,
             size: size, build: nil, minOS: nil)
+    }
+
+    /// One `.ipa` asset of a GitHub release, as `source add` lists it.
+    struct GithubIpa: Equatable {
+        let name: String
+        let size: Int64?
+        let hasDigest: Bool
+    }
+
+    /// The `.ipa` assets of the release in `json` whose names are plain file names, in the release's order, and the release's
+    /// version. Empty for a draft, a pre-release or a document that is not a release: those are the resolver's refusals.
+    static func githubIpas(json: Data) -> (version: String, ipas: [GithubIpa]) {
+        guard let release = try? JSONDecoder().decode(Release.self, from: json),
+            release.draft != true, release.prerelease != true
+        else { return ("?", []) }
+        let tag = release.tag_name.flatMap { isSafeToken($0) ? $0 : nil } ?? "?"
+        let ipas = (release.assets ?? []).compactMap { asset -> GithubIpa? in
+            guard let name = asset.name, name.lowercased().hasSuffix(".ipa"), isSafeToken(name)
+            else { return nil }
+            return GithubIpa(
+                name: name, size: asset.size,
+                hasDigest: (try? parseDigest(asset.digest, prefixed: true)) != nil)
+        }
+        return (tag.hasPrefix("v") ? String(tag.dropFirst()) : tag, ipas)
+    }
+
+    /// The most asset names a refusal's `fix` lists.
+    private static let maxListedNames = 10
+
+    private static func ipaNames(_ assets: [Release.Asset]) -> [String] {
+        assets.compactMap { $0.name }
+            .filter { $0.lowercased().hasSuffix(".ipa") && isSafeToken($0) }
+    }
+
+    private static func nameList(_ names: [String]) -> String {
+        let shown = names.prefix(maxListedNames).map { printableCut($0) }
+        return shown.joined(separator: ", ") + (names.count > shown.count ? ", ..." : "")
+    }
+
+    private static func ambiguousFix(names: [String]) -> String {
+        names.isEmpty
+            ? "Pin one with --asset <file name> when adding the source."
+            : "Its .ipa assets: \(nameList(names)). Pin one: `sideload source remove --app <id> --yes`, then `sideload source add ... --asset <file name>`."
+    }
+
+    private static func pinMissingFix(names: [String]) -> String {
+        (names.isEmpty ? "The release has no .ipa asset." : "Its .ipa assets: \(nameList(names)).")
+            + " The publisher may have renamed the file: the owner removes the source and adds it again with the new --asset."
     }
 
     /// `https://github.com/<repo>/releases/download/<tag>/<name>`, where only the owner and repository segments compare without
@@ -370,8 +441,8 @@ enum SourceResolver {
         case .githubRelease(let repo): try apollo(app: source.app, repo: repo, json: json)
         case .altstoreIndex(_, let bundleId, let host, let tvos):
             try stremio(app: source.app, bundleId: bundleId, host: host, tvos: tvos, json: json)
-        case .customGithubRelease(let repo):
-            try customGithub(app: source.app, repo: repo, json: json)
+        case .customGithubRelease(let repo, let asset):
+            try customGithub(app: source.app, repo: repo, asset: asset, json: json)
         case .customAltstoreIndex(_, let bundleId):
             try customAltstore(
                 app: source.app, bundleId: bundleId, hosts: source.downloadHosts, json: json)

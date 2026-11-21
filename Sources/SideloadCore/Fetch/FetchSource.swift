@@ -31,9 +31,10 @@ struct FetchSource: Sendable, Equatable {
         /// A gorlev AltStore-style index: the one app with `bundleId`, downloaded from `host`; `tvos` pins the exact CDN
         /// path shape (design section 8).
         case altstoreIndex(url: String, bundleId: String, host: String, tvos: Bool)
-        /// An owner-added GitHub repository (`customSources`, design section 8): the latest release with exactly one `.ipa`
-        /// asset, pinned from the first approved version by bundle ID.
-        case customGithubRelease(repo: String)
+        /// An owner-added GitHub repository (`customSources`, design section 8): the latest release's `.ipa` asset, pinned from
+        /// the first approved version by bundle ID. With `asset` the one asset of exactly that name; without it the release must
+        /// have exactly one `.ipa`.
+        case customGithubRelease(repo: String, asset: String?)
         /// An owner-added AltStore index: the one app with `bundleId`, which every fetched IPA must carry.
         case customAltstoreIndex(url: String, bundleId: String)
 
@@ -50,6 +51,12 @@ struct FetchSource: Sendable, Equatable {
             case .githubRelease, .customGithubRelease: "githubRelease"
             case .altstoreIndex, .customAltstoreIndex: "altstoreIndex"
             }
+        }
+
+        /// The exact asset name a custom GitHub source is pinned to, if any.
+        var pinnedAsset: String? {
+            if case .customGithubRelease(_, let asset) = self { return asset }
+            return nil
         }
 
         /// Added by the owner in `customSources` rather than defined in code.
@@ -70,7 +77,7 @@ struct FetchSource: Sendable, Equatable {
 
     var metadataURL: URL {
         switch kind {
-        case .githubRelease(let repo), .customGithubRelease(let repo):
+        case .githubRelease(let repo), .customGithubRelease(let repo, _):
             URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
         case .altstoreIndex(let url, _, _, _), .customAltstoreIndex(let url, _):
             URL(string: url)!

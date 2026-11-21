@@ -5,6 +5,21 @@ All notable changes to this project are documented here. Format follows
 
 ## [Unreleased]
 
+### Added
+
+- A custom GitHub source can be pinned to one exact release asset, so a repository that publishes an iOS and a tvOS IPA
+  can be added (once per app: two apps from one repository are two sources). `source add --url <repo> --asset <file.ipa>`
+  takes the exact, case-sensitive file name (its `.ipa` suffix may be any case, `.ipa` or `.IPA`; no globs, no version in the name; a renamed file fails closed and the owner
+  removes the source and adds it again). The pin is written as `asset` in the `customSources` entry, is part of the
+  `confirm` value, is shown by `source list` and the add-source confirm card, and is what `fetch` and `updates` resolve.
+  A pinned name containing `tvos` makes `tvos` the default platform (`--platform` and the menu's iOS / Apple TV toggle
+  override it; an existing app keeps its own platform). A release with several IPAs and no `--asset` is
+  `SOURCE_AMBIGUOUS` with the file names in `data.candidates`, and the menu's Add source… shows a picker of the files.
+  `fetch` and `updates` of an unpinned several-IPA source keep `SOURCE_NOT_ALLOWED` and now list the files in `fix`.
+  A repository with one IPA and no pin behaves, and confirms, exactly as before. A build older than this one ignores a
+  pinned entry with `CUSTOM_SOURCE_IGNORED` rather than fetching a different file. Not run against a real repository or in
+  the built app.
+
 ## [0.7.1] - 2026-11-17
 
 An app list that leaves out every installed app no longer suspends auto-renew or marks apps gone. On 2026-11-17 one slow

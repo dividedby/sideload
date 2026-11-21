@@ -11,7 +11,7 @@ and also loads the path-scoped detail in `.claude/rules/`; other agents should r
 ## Commands
 
 - `pnpm test` (the secrets scanner's `node --test` suite), `pnpm check-secrets:all`, `pnpm format:check` (Prettier;
-  CI also runs `shfmt` and `swift-format`, see `.github/workflows/format.yml`; files format on edit through the post-edit hook).
+  CI also runs `shfmt` (`.github/workflows/format.yml`) and `swift-format` (`.github/workflows/ci.yml`); files format on edit through the post-edit hook).
 - `swift build` and `swift test` (no third-party packages, so no network; the tests use fakes, temp homes and fake HTTP).
 - `scripts/check.sh` is the local gate: `swift build`, `swift test`, a release build of the CLI that proves the debug-only
   `SIDELOAD_TEST_FORCE_SLOT` hook is compiled out, `pnpm test`, `check-secrets --all`. Run it before opening a PR.
