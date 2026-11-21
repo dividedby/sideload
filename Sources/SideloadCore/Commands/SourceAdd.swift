@@ -10,16 +10,19 @@ struct SourceAddRequest: Sendable, Equatable {
     var bundle: String?
     var platform: String?
     var name: String?
+    /// The exact file name of the release asset to pin, for a GitHub repository that publishes several IPAs.
+    var asset: String?
 
     init(
         url: String, app: String? = nil, bundle: String? = nil, platform: String? = nil,
-        name: String? = nil
+        name: String? = nil, asset: String? = nil
     ) {
         self.url = url
         self.app = app
         self.bundle = bundle
         self.platform = platform
         self.name = name
+        self.asset = asset
     }
 }
 
@@ -66,6 +69,8 @@ struct SourcePlan: Sendable, Hashable {
     let url: String
     /// `<owner>/<repo>` of a GitHub source.
     let repo: String?
+    /// The exact IPA file name a GitHub source is pinned to; nil when the release must have exactly one IPA.
+    let asset: String?
     /// The upstream bundle ID of an index app.
     let bundleId: String?
     /// The latest version the source offers now.
@@ -103,6 +108,7 @@ struct SourcePlan: Sendable, Hashable {
             "sideload source add --url \(SourceAdd.shellQuote(url))", "--app \(appId)",
         ]
         if let bundleId { parts.append("--bundle \(bundleId)") }
+        if let asset { parts.append("--asset \(SourceAdd.shellQuote(asset))") }
         parts.append("--platform \(platform)")
         if let explicitName { parts.append("--name \(SourceAdd.shellQuote(explicitName))") }
         parts.append("--confirm \(confirm) --yes")
@@ -122,7 +128,7 @@ enum SourceAdd {
 
     // MARK: arguments
 
-    /// A malformed `--app`, `--bundle`, `--platform` or `--name`, before anything is read.
+    /// A malformed `--app`, `--bundle`, `--platform`, `--name` or `--asset`, before anything is read.
     static func validate(_ request: SourceAddRequest) throws {
         if let app = request.app, !AppRegistry.isValidName(app) {
             throw invalidArgument(
@@ -130,6 +136,11 @@ enum SourceAdd {
         }
         if let bundle = request.bundle, !CustomSources.isValidBundleId(bundle) {
             throw invalidArgument("--bundle is not a reverse-DNS bundle ID.")
+        }
+        if let asset = request.asset, !CustomSources.isValidAssetName(asset) {
+            throw invalidArgument(
+                "--asset is not a plain .ipa file name (letters, digits, `.`, `_` and `-`, at most 64 characters, ending in .ipa or .IPA in any case; the name itself is matched exactly)."
+            )
         }
         if let platform = request.platform, !AppRegistry.platforms.contains(platform) {
             throw invalidArgument("--platform is not ios or tvos.")
@@ -169,7 +180,7 @@ enum SourceAdd {
         if let repo = githubRepo(parsed) {
             kind = .github(repo: repo)
             source = FetchSource(
-                app: "source", kind: .customGithubRelease(repo: repo),
+                app: "source", kind: .customGithubRelease(repo: repo, asset: nil),
                 metadataHosts: [CustomSources.githubMetadataHost],
                 downloadHosts: CustomSources.githubDownloadHosts)
         } else {
@@ -240,12 +251,28 @@ enum SourceAdd {
             hasDigest: (try? SourceResolver.parseDigest(app.latest.sha256, prefixed: false)) != nil)
     }
 
-    /// The apps of an index, at most `maxListed`, and whether more were left out. A GitHub release is its one asset.
-    static func listing(_ probe: SourceProbe) throws -> (apps: [SourceCandidate], truncated: Bool) {
+    /// The apps of an index, at most `maxListed`, and whether more were left out. A GitHub release is its one asset: the pinned
+    /// one, or the only `.ipa`. A release with several IPAs and no pin lists them all (`preview` refuses it as
+    /// `SOURCE_AMBIGUOUS`; the menu asks which).
+    static func listing(_ probe: SourceProbe, asset: String? = nil) throws -> (
+        apps: [SourceCandidate], truncated: Bool
+    ) {
         switch probe.kind {
         case .github(let repo):
-            let asset = try SourceResolver.customGithub(app: "source", repo: repo, json: probe.body)
-            return ([githubCandidate(asset, repo: repo)], false)
+            if asset == nil {
+                let release = SourceResolver.githubIpas(json: probe.body)
+                if release.ipas.count > 1 {
+                    let candidates = release.ipas.prefix(maxListed).map {
+                        SourceCandidate(
+                            bundleId: nil, name: printableCut($0.name), version: release.version,
+                            size: $0.size, hasDigest: $0.hasDigest)
+                    }
+                    return (candidates, release.ipas.count > maxListed)
+                }
+            }
+            let resolved = try SourceResolver.customGithub(
+                app: "source", repo: repo, asset: asset, json: probe.body)
+            return ([githubCandidate(resolved, repo: repo)], false)
         case .altstore:
             let all = try indexApps(probe.body)
             return (all.prefix(maxListed).map(candidate), all.count > maxListed)
@@ -273,7 +300,7 @@ enum SourceAdd {
         -> Preview
     {
         try validate(request)
-        let listed = try listing(probe)
+        let listed = try listing(probe, asset: request.asset)
         let kind: String
         let repo: String?
         let bundleId: String?
@@ -290,10 +317,23 @@ enum SourceAdd {
             kind = "githubRelease"
             repo = named
             bundleId = nil
-            asset = try SourceResolver.customGithub(app: "source", repo: named, json: probe.body)
+            if request.asset == nil, listed.apps.count > 1 {
+                throw githubAmbiguous(listed)
+            }
+            asset = try SourceResolver.customGithub(
+                app: "source", repo: named, asset: request.asset, json: probe.body)
+            // Only a pin is read for a default platform: an unpinned single IPA keeps today's plan and confirm value.
+            if let pinned = request.asset, pinned.lowercased().contains("tvos") {
+                detectedPlatform = "tvos"
+            }
             downloadHosts = CustomSources.githubDownloadHosts.sorted()
             nameSource = String(named.split(separator: "/")[1])
         case .altstore:
+            if request.asset != nil {
+                throw invalidArgument(
+                    "--asset picks a release asset of a GitHub repository, not an app of an index; use --bundle."
+                )
+            }
             kind = "altstoreIndex"
             repo = nil
             let app = try pick(probe, bundle: request.bundle, listed: listed)
@@ -324,14 +364,30 @@ enum SourceAdd {
         let free = prefix + ".free." + target.suffix
         let metadataHost = probe.metadataHost
         let confirm = confirmValue(
-            kind: kind, url: probe.url, repo: repo, bundleId: bundleId, app: target,
-            metadataHosts: [metadataHost], downloadHosts: downloadHosts)
+            kind: kind, url: probe.url, repo: repo, asset: request.asset, bundleId: bundleId,
+            app: target, metadataHosts: [metadataHost], downloadHosts: downloadHosts)
         let plan = SourcePlan(
-            kind: kind, url: probe.url, repo: repo, bundleId: bundleId, version: asset.version,
+            kind: kind, url: probe.url, repo: repo, asset: request.asset, bundleId: bundleId,
+            version: asset.version,
             size: asset.size, metadataHost: metadataHost, downloadHosts: downloadHosts,
             appId: target.id, suffix: target.suffix, platform: target.platform, name: target.name,
             attaches: target.attaches, freeBundleId: free, confirm: confirm)
         return Preview(plan: plan, apps: listed.apps, truncated: listed.truncated)
+    }
+
+    /// A release with several `.ipa` assets and no `--asset`: there is no add-all and no guessing, so the names are listed.
+    private static func githubAmbiguous(_ listed: (apps: [SourceCandidate], truncated: Bool))
+        -> SideloadError
+    {
+        let names = listed.apps.prefix(10).map(\.name).joined(separator: ", ")
+        return SideloadError(
+            "SOURCE_AMBIGUOUS",
+            "The release has \(listed.apps.count)\(listed.truncated ? " or more" : "") .ipa assets; there is no add-all.",
+            fix:
+                "Re-run with --asset <file name>, one of those in `candidates` (\(names)\(listed.apps.count > 10 ? ", ..." : "")).",
+            data: [
+                "candidates": .array(listed.apps.map(\.json)), "truncated": .bool(listed.truncated),
+            ])
     }
 
     /// The index app the request names, or the only one.
@@ -484,8 +540,8 @@ enum SourceAdd {
     /// The first 16 hex characters of SHA-256 over the sorted-key JSON of what the owner trusts. Version and digest are left
     /// out on purpose: a new release is not a change of trust.
     static func confirmValue(
-        kind: String, url: String, repo: String?, bundleId: String?, app: AppTarget,
-        metadataHosts: [String], downloadHosts: [String]
+        kind: String, url: String, repo: String?, asset: String? = nil, bundleId: String?,
+        app: AppTarget, metadataHosts: [String], downloadHosts: [String]
     ) -> String {
         // `attaches` is part of what is confirmed: giving an existing app a source and creating a new app are different writes.
         var fields: [String: JSONValue] = [
@@ -497,6 +553,8 @@ enum SourceAdd {
         ]
         if let repo { fields["repo"] = .string(repo) } else { fields["url"] = .string(url) }
         if let bundleId { fields["bundleId"] = .string(bundleId) }
+        // Which IPA is trusted is part of the trust; an unpinned source leaves the key out, so its value is what it always was.
+        if let asset { fields["asset"] = .string(asset) }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let data = (try? encoder.encode(JSONValue.object(fields))) ?? Data()
@@ -546,6 +604,7 @@ enum SourceAdd {
             "addedAt": .string(ISO8601DateFormatter().string(from: now)),
         ]
         if let repo = plan.repo { source["repo"] = .string(repo) }
+        if let asset = plan.asset { source["asset"] = .string(asset) }
         if let bundleId = plan.bundleId {
             source["url"] = .string(plan.url)
             source["bundleId"] = .string(bundleId)
@@ -585,6 +644,7 @@ enum SourceAdd {
                 "Nothing was written. The owner adds this source with: \(plan.command)"),
         ]
         if let repo = plan.repo { out["repo"] = .string(repo) }
+        if let asset = plan.asset { out["asset"] = .string(asset) }
         if let bundleId = plan.bundleId { out["bundleId"] = .string(bundleId) }
         return out
     }

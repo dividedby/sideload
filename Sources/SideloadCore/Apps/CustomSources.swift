@@ -66,8 +66,8 @@ enum SourceURL {
 /// entry is checked on its own, strictly and fail-closed; one that is not exactly the shape below is left out with a
 /// `CUSTOM_SOURCE_IGNORED` warning, and never stops a built-in source or another valid entry.
 ///
-///     {"app", "kind": "githubRelease", "repo": "<owner>/<repo>", "metadataHosts": ["api.github.com"],
-///      "downloadHosts": [...], "addedAt"?}
+///     {"app", "kind": "githubRelease", "repo": "<owner>/<repo>", "asset"?: "<file>.ipa",
+///      "metadataHosts": ["api.github.com"], "downloadHosts": [...], "addedAt"?}
 ///     {"app", "kind": "altstoreIndex", "url", "bundleId", "metadataHosts": [<url host>], "downloadHosts": [...],
 ///      "addedAt"?}
 enum CustomSources {
@@ -80,7 +80,7 @@ enum CustomSources {
     private static let commonKeys: Set<String> = [
         "app", "kind", "metadataHosts", "downloadHosts", "addedAt",
     ]
-    private static let githubKeys = commonKeys.union(["repo"])
+    private static let githubKeys = commonKeys.union(["repo", "asset"])
     private static let altstoreKeys = commonKeys.union(["url", "bundleId"])
     private static let maxAddedAt = 40
 
@@ -197,6 +197,15 @@ enum CustomSources {
         guard case .string(let repo)? = fields["repo"], isValidRepo(repo) else {
             return .failure("its repo is not <owner>/<repo> of plain GitHub names")
         }
+        var asset: String?
+        if let declared = fields["asset"] {
+            guard case .string(let name) = declared, isValidAssetName(name) else {
+                return .failure(
+                    "its asset is not a plain file name ending in .ipa or .IPA (the name itself is matched exactly)"
+                )
+            }
+            asset = name
+        }
         guard metadata == [githubMetadataHost] else {
             return .failure("its metadataHosts is not exactly [\"\(githubMetadataHost)\"]")
         }
@@ -205,7 +214,7 @@ enum CustomSources {
         }
         return .success(
             AppDefinition.Fetch(
-                kind: .customGithubRelease(repo: repo), metadataHosts: Set(metadata),
+                kind: .customGithubRelease(repo: repo, asset: asset), metadataHosts: Set(metadata),
                 downloadHosts: Set(downloads)))
     }
 
@@ -261,6 +270,13 @@ enum CustomSources {
             !repo.contains("..")
         else { return false }
         return repo.split(separator: "/")[1].contains { $0 != "." }
+    }
+
+    /// A pinned release asset: a plain file name that ends in `.ipa` (any case, as the unpinned rule reads it) and passes the resolver's safe token (so no path
+    /// character, and at most 64 characters, the same ceiling a resolved asset's name has). The name is matched case-sensitively and in
+    /// full; there are no globs and no version placeholder.
+    static func isValidAssetName(_ name: String) -> Bool {
+        name.lowercased().hasSuffix(".ipa") && SourceResolver.isSafeToken(name)
     }
 
     static func isValidBundleId(_ text: String) -> Bool {

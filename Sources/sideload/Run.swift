@@ -47,7 +47,7 @@ private func help() -> Envelope {
                 .string("slot restore --device <alias> [--app <\(all)>] --yes"),
                 "clean [--yes]",
                 "source list",
-                "source add --url <https url> [--app <id>] [--bundle <bundle id>] [--platform ios|tvos] [--name <name>] [--confirm <value> --yes]",
+                "source add --url <https url> [--app <id>] [--bundle <bundle id>] [--asset <file.ipa>] [--platform ios|tvos] [--name <name>] [--confirm <value> --yes]",
                 "source remove --app <id> [--yes]",
                 "ledger [refresh]",
                 "portal [certificates|bundle-ids|devices|profiles] [--show-identifiers]",
@@ -81,7 +81,7 @@ private let fetchSpec = ArgSpec(values: ["app", "version"], flags: ["approve"])
 private let updatesSpec = ArgSpec(values: ["app"], flags: ["force"])
 private let cleanSpec = ArgSpec(flags: ["yes"])
 private let sourceSpec = ArgSpec(
-    values: ["url", "app", "bundle", "platform", "name", "confirm"], flags: ["yes"])
+    values: ["url", "app", "bundle", "asset", "platform", "name", "confirm"], flags: ["yes"])
 private let portalSpec = ArgSpec(flags: ["show-identifiers"])
 // Plain `status` takes no option; `--notify` and `--print-agent` are alternatives, `--binary` belongs to `--print-agent` and
 // `--check-updates` to `--notify`.
@@ -280,6 +280,7 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
                 sub: parsed.positionals.first, url: parsed.values["url"],
                 app: parsed.values["app"], bundle: parsed.values["bundle"],
                 platform: parsed.values["platform"], name: parsed.values["name"],
+                asset: parsed.values["asset"],
                 confirm: parsed.values["confirm"], yes: parsed.flags.contains("yes")))
     }
     if command == "clean" {

@@ -7,12 +7,14 @@ public struct SourceOptions: Sendable, Equatable {
     public var bundle: String?
     public var platform: String?
     public var name: String?
+    public var asset: String?
     public var confirm: String?
     public var yes: Bool
 
     public init(
         sub: String? = nil, url: String? = nil, app: String? = nil, bundle: String? = nil,
-        platform: String? = nil, name: String? = nil, confirm: String? = nil, yes: Bool = false
+        platform: String? = nil, name: String? = nil, asset: String? = nil,
+        confirm: String? = nil, yes: Bool = false
     ) {
         self.sub = sub
         self.url = url
@@ -20,13 +22,15 @@ public struct SourceOptions: Sendable, Equatable {
         self.bundle = bundle
         self.platform = platform
         self.name = name
+        self.asset = asset
         self.confirm = confirm
         self.yes = yes
     }
 
     var request: SourceAddRequest? {
         url.map {
-            SourceAddRequest(url: $0, app: app, bundle: bundle, platform: platform, name: name)
+            SourceAddRequest(
+                url: $0, app: app, bundle: bundle, platform: platform, name: name, asset: asset)
         }
     }
 }
@@ -81,7 +85,8 @@ public enum SourceCommand {
         let given: [(String, Bool)] = [
             ("url", options.url != nil), ("app", options.app != nil),
             ("bundle", options.bundle != nil), ("platform", options.platform != nil),
-            ("name", options.name != nil), ("confirm", options.confirm != nil),
+            ("name", options.name != nil), ("asset", options.asset != nil),
+            ("confirm", options.confirm != nil),
             ("yes", options.yes),
         ]
         guard let option = given.first(where: { $0.1 && !allowed.contains($0.0) })?.0 else {
@@ -103,14 +108,16 @@ public enum SourceCommand {
             let approved = try? FetchCatalog.approved(app: declared.app, config: config)
             let source = approved ?? declared
             let builtIn = registry.app(declared.app)?.builtIn ?? false
-            return .object([
+            var entry: [String: JSONValue] = [
                 "app": .string(source.app), "builtIn": .bool(builtIn),
                 "kind": .string(source.kind.configKind),
                 "url": .string(source.metadataURL.absoluteString),
                 "metadataHosts": .array(source.metadataHosts.sorted().map(JSONValue.string)),
                 "downloadHosts": .array(source.downloadHosts.sorted().map(JSONValue.string)),
                 "approved": .bool(approved != nil),
-            ])
+            ]
+            if let asset = source.kind.pinnedAsset { entry["asset"] = .string(asset) }
+            return .object(entry)
         }
         return ["sources": .array(sources), "warnings": .array(registry.warnings)]
     }
@@ -120,7 +127,8 @@ public enum SourceCommand {
     private static func add(_ services: Services, _ options: SourceOptions) async throws
         -> Envelope
     {
-        let usage = "sideload source add --url <https url> [--app <id>] [--confirm <value> --yes]"
+        let usage =
+            "sideload source add --url <https url> [--app <id>] [--asset <file.ipa>] [--confirm <value> --yes]"
         if options.sub == "add", options.url == nil {
             return .fail(
                 SourceAdd.command, code: "USAGE", message: "source add needs --url.", fix: usage)
@@ -158,7 +166,7 @@ public enum SourceCommand {
         guard confirm == plan.confirm else {
             throw SideloadError(
                 SourceAdd.changedCode,
-                "The source is not what the preview showed: its address, app, bundle ID or hosts differ.",
+                "The source is not what the preview showed: its address, app, bundle ID, pinned asset or hosts differ.",
                 fix:
                     "Nothing was written. Run `sideload source add --url <url>` again and review it."
             )

@@ -11,7 +11,8 @@ and also loads the path-scoped detail in `.claude/rules/`; other agents should r
 ## Commands
 
 - `pnpm test` (the secrets scanner's `node --test` suite), `pnpm check-secrets:all`, `pnpm format:check` (Prettier;
-  CI also runs `shfmt` and `swift-format`, see `.github/workflows/format.yml`; files format on edit through the post-edit hook).
+  CI also runs `shfmt` (`.github/workflows/format.yml`) and `swift-format` (formatting in `.github/workflows/ci.yml`, lint in
+  `format.yml`); files format on edit through the post-edit hook).
 - Lint (CI `lint` job and `format.yml`): `pnpm lint` (oxlint), `shellcheck $(git ls-files '*.sh' '*.bash') .githooks/pre-commit`, and
   `swift format lint --strict --recursive .` (honours `.swift-format`, which turns `OnlyOneTrailingClosureArgument` off). The one in-code
   exception is the `swift-format-ignore` on the test matrix's `SlotRow` row IDs.

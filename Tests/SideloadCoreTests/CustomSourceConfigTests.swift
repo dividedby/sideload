@@ -187,7 +187,7 @@ struct CustomSourceValidationTests {
         let github = customConfig(sources: [githubEntry]).appRegistry
         #expect(github.warnings.isEmpty)
         let ghFetch = try #require(github.app("myapp")?.fetch)
-        #expect(ghFetch.kind == .customGithubRelease(repo: "acme/widget"))
+        #expect(ghFetch.kind == .customGithubRelease(repo: "acme/widget", asset: nil))
         #expect(ghFetch.metadataHosts == ["api.github.com"])
         #expect(
             ghFetch.downloadHosts == [
@@ -293,7 +293,7 @@ struct CustomSourceValidationTests {
 
         let approved = customConfig(sources: [githubEntry])
         let source = try FetchCatalog.approved(app: "myapp", config: approved)
-        #expect(source.kind == .customGithubRelease(repo: "acme/widget"))
+        #expect(source.kind == .customGithubRelease(repo: "acme/widget", asset: nil))
         #expect(FetchCatalog.approvedSources(approved).map(\.app).contains("myapp"))
     }
 
