@@ -88,17 +88,27 @@ enum SourceResolver {
     // MARK: Apollo Reborn (GitHub releases)
 
     private struct Release: Decodable {
-        var tag_name: String?
+        var tagName: String?
         var draft: Bool?
         var prerelease: Bool?
         var assets: [Asset]?
+
+        enum CodingKeys: String, CodingKey {
+            case tagName = "tag_name"
+            case draft, prerelease, assets
+        }
 
         struct Asset: Decodable {
             var name: String?
             var size: Int64?
             var digest: String?
-            var browser_download_url: String?
+            var browserDownloadURL: String?
             var state: String?
+
+            enum CodingKeys: String, CodingKey {
+                case name, size, digest, state
+                case browserDownloadURL = "browser_download_url"
+            }
         }
     }
 
@@ -113,7 +123,7 @@ enum SourceResolver {
         if release.draft == true || release.prerelease == true {
             throw notAllowed("the latest release is a draft or pre-release")
         }
-        guard let tag = release.tag_name else { throw invalid("no tag") }
+        guard let tag = release.tagName else { throw invalid("no tag") }
         let parts = tag.split(separator: "_", omittingEmptySubsequences: false)
         guard parts.count == 2, parts[0].hasPrefix("v"), isSafeToken(String(parts[0].dropFirst())),
             isSafeToken(String(parts[1]))
@@ -134,7 +144,7 @@ enum SourceResolver {
         }
         let digest = try parseDigest(asset.digest, prefixed: true)
         let size = try checkSize(asset.size)
-        guard let link = asset.browser_download_url, let url = URL(string: link),
+        guard let link = asset.browserDownloadURL, let url = URL(string: link),
             url.absoluteString == "https://github.com/\(repo)/releases/download/\(tag)/\(name)"
         else { throw notAllowed("the asset's download URL is not the repository's release URL") }
         return ResolvedAsset(
@@ -270,7 +280,7 @@ enum SourceResolver {
         if release.draft == true || release.prerelease == true {
             throw notAllowed("the latest release is a draft or pre-release")
         }
-        guard let tag = release.tag_name, isSafeToken(tag) else {
+        guard let tag = release.tagName, isSafeToken(tag) else {
             throw notAllowed("the tag has unexpected characters")
         }
         let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
@@ -308,7 +318,7 @@ enum SourceResolver {
         }
         let digest = try parseDigest(asset.digest, prefixed: true)
         let size = try checkSize(asset.size)
-        guard let link = asset.browser_download_url, let url = URL(string: link),
+        guard let link = asset.browserDownloadURL, let url = URL(string: link),
             url.absoluteString == link,
             isReleaseAssetURL(link, repo: repo, tag: tag, name: name)
         else { throw notAllowed("the asset's download URL is not the repository's release URL") }
@@ -330,7 +340,7 @@ enum SourceResolver {
         guard let release = try? JSONDecoder().decode(Release.self, from: json),
             release.draft != true, release.prerelease != true
         else { return ("?", []) }
-        let tag = release.tag_name.flatMap { isSafeToken($0) ? $0 : nil } ?? "?"
+        let tag = release.tagName.flatMap { isSafeToken($0) ? $0 : nil } ?? "?"
         let ipas = (release.assets ?? []).compactMap { asset -> GithubIpa? in
             guard let name = asset.name, name.lowercased().hasSuffix(".ipa"), isSafeToken(name)
             else { return nil }

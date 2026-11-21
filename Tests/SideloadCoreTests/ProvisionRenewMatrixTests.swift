@@ -543,7 +543,8 @@ struct ProvisionRenewDurabilityTests {
                 FileManager.default.fileExists(atPath: w.cacheDirs[0] + "/mine1.mobileprovision"),
                 "never renamed")
 
-            for _ in 0..<2 {  // kept until the owner clears it, success or not (the second run is PROFILE_NOT_RENEWED)
+            // kept until the owner clears it, success or not (the second run is PROFILE_NOT_RENEWED)
+            for _ in 0..<2 {
                 let next = await w.run()
                 let reported = try #require(next.data["cachedProfilesFromEarlierRun"]?.array)
                 #expect(reported.count == 1)

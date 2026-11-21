@@ -11,7 +11,11 @@ and also loads the path-scoped detail in `.claude/rules/`; other agents should r
 ## Commands
 
 - `pnpm test` (the secrets scanner's `node --test` suite), `pnpm check-secrets:all`, `pnpm format:check` (Prettier;
-  CI also runs `shfmt` (`.github/workflows/format.yml`) and `swift-format` (`.github/workflows/ci.yml`); files format on edit through the post-edit hook).
+  CI also runs `shfmt` (`.github/workflows/format.yml`) and `swift-format` (formatting in `.github/workflows/ci.yml`, lint in
+  `format.yml`); files format on edit through the post-edit hook).
+- Lint (CI `lint` job and `format.yml`): `pnpm lint` (oxlint), `shellcheck $(git ls-files '*.sh' '*.bash') .githooks/pre-commit`, and
+  `swift format lint --strict --recursive .` (honours `.swift-format`, which turns `OnlyOneTrailingClosureArgument` off). The one in-code
+  exception is the `swift-format-ignore` on the test matrix's `SlotRow` row IDs.
 - `swift build` and `swift test` (no third-party packages, so no network; the tests use fakes, temp homes and fake HTTP).
 - `scripts/check.sh` is the local gate: `swift build`, `swift test`, a release build of the CLI that proves the debug-only
   `SIDELOAD_TEST_FORCE_SLOT` hook is compiled out, `pnpm test`, `check-secrets --all`. Run it before opening a PR.

@@ -168,7 +168,8 @@ struct InterruptTests {
         let interrupt = Interrupt(
             writer: w.writer, children: LiveChildren(), emitTimeout: .seconds(10))
         let handler = Background { interrupt.handle(signal: SIGTERM) }
-        #expect(w.entered.wait(timeout: .now() + 10) == .success)  // the handler's write is in flight
+        // the handler's write is in flight
+        #expect(w.entered.wait(timeout: .now() + 10) == .success)
 
         #expect(interrupt.finishMain(.result("x")).isYield)
         #expect(w.writes.count == 1, "main wrote while the handler owned stdout")
@@ -411,7 +412,8 @@ struct BinarySignalTests {
         let pipe = try Self.fullPipe()
         let process = Process()
         process.executableURL = binary
-        process.arguments = ["help"]  // an immediate result before the home is touched, no real doctor run on the host
+        // an immediate result before the home is touched, no real doctor run on the host
+        process.arguments = ["help"]
         var env = ProcessInfo.processInfo.environment
         env["SIDELOAD_TEST_READY"] = ready  // written once the signal handlers exist (debug builds)
         process.environment = env
@@ -428,7 +430,8 @@ struct BinarySignalTests {
                 "sideload never reported its signal handlers installed\(Self.termination(process))")
             return
         }
-        try await Task.sleep(for: .milliseconds(200))  // main reaches its blocked result write right after the marker
+        // main reaches its blocked result write right after the marker
+        try await Task.sleep(for: .milliseconds(200))
         #expect(process.isRunning, "sideload exited before the signal\(Self.termination(process))")
         let start = ContinuousClock.now
         kill(process.processIdentifier, SIGTERM)

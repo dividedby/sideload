@@ -185,7 +185,8 @@ struct SlotGraceTests {
         ) { w in
             _ = await w.install()
             w.clock.advance(10)
-            let lend = await w.slot("lend", device: "iphone", to: "lab")  // the gate: no snapshot is even taken
+            // the gate: no snapshot is even taken
+            let lend = await w.slot("lend", device: "iphone", to: "lab")
             #expect(lend.errorCodes == ["SLOT_PENDING"])
             #expect(
                 w.installs.map(\.present) == [true],
@@ -353,7 +354,8 @@ struct SlotGraceTests {
                     "\(shape): no uninstall ran")
                 try expectSlotModel(w, label: "\(shape) +60", eventually: true)
 
-                w.clock.advance(700 - 60)  // the late landing at +400 has happened; the window (645) is over
+                // the late landing at +400 has happened; the window (645) is over
+                w.clock.advance(700 - 60)
                 #expect(w.runner.deviceApps[stremioId] != nil)
                 let again = await w.slot("lend", device: "iphone", to: "lab")
                 #expect(

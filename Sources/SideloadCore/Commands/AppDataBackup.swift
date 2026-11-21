@@ -523,7 +523,8 @@ enum AppDataBackup {
         guard budget.timeout(cap: copyTimeoutSec) != nil else { return .failed(.timeLimit) }
         try secureDirectory(parentPath(destination), root: services.home.backups)
         var existing = stat()
-        if lstat(destination, &existing) == 0 || errno != ENOENT { return .failed(.localError) }  // never write over, or through, anything there
+        // never write over, or through, anything there
+        if lstat(destination, &existing) == 0 || errno != ENOENT { return .failed(.localError) }
         var attempt = 0
         while true {  // every pass returns, or retries a short copy once
             attempt += 1
@@ -624,7 +625,8 @@ enum AppDataBackup {
                 failures.add(spent)
                 continue
             }
-            if let size = file.size, bytes + size > maxBytes {  // too big by the listing: not even asked for
+            // too big by the listing: not even asked for
+            if let size = file.size, bytes + size > maxBytes {
                 failures.add(.sizeLimit)
                 continue
             }
@@ -791,7 +793,8 @@ enum AppDataBackup {
         }
         let restored = manifest.restoredAt != nil
         let superseded = manifest.supersededAt != nil
-        let notUninstalled = manifest.uninstalledAt == nil  // its lend never took the app off the device (or predates the mark)
+        // its lend never took the app off the device (or predates the mark)
+        let notUninstalled = manifest.uninstalledAt == nil
         guard readable, !restored, !superseded, !notUninstalled else {
             return .nothing(
                 restored: restored, superseded: superseded, unreadable: !readable,

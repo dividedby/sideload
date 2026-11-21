@@ -401,7 +401,8 @@ struct RunnerTests {
                     })
             }
             let quick = CommandSpec(executable: fixture("quick.sh"), timeout: .seconds(10))
-            let warm = await runner(failingAt: -1).run(quick)  // also proves a normal run leaks nothing
+            // also proves a normal run leaks nothing
+            let warm = await runner(failingAt: -1).run(quick)
             #expect(warm.code == 0)
             let before = openFds()
             for index in 0..<4 {

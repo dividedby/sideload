@@ -23,6 +23,9 @@ jobs:
           curl -fsSL -o /tmp/shfmt https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_linux_amd64
           chmod +x /tmp/shfmt
           /tmp/shfmt -d .
+      # The ubuntu-latest image ships a Swift 6.4 toolchain, which includes `swift format`.
+      - name: Lint Swift (swift-format)
+        run: swift format lint --strict --recursive .
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v7
         with:

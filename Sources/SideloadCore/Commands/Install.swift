@@ -230,7 +230,8 @@ struct FreeInstallRun: Sendable {
             failure =
                 (error as? SideloadError)
                 ?? SideloadError("INSTALL_FAILED", "The install did not finish.")
-            result = .unknown  // a throw (cancellation included) says nothing about whether the install landed
+            // a throw (cancellation included) says nothing about whether the install landed
+            result = .unknown
         }
         log("install: snapshot after")
         let read = await calls.trySnapshot(expecting: plan.expectedAfter)

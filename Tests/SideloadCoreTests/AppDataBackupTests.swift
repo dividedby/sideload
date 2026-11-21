@@ -911,7 +911,8 @@ struct AppDataBackupTests {
         "one entry that cannot be saved is counted failed and skipped; the good ones, preferences included, are kept"
     )
     func oneBadEntry() async throws {
-        let tooLong = "Documents/" + String(repeating: "a", count: 300) + "/x.json"  // a name over the filesystem's 255-byte limit
+        // a name over the filesystem's 255-byte limit
+        let tooLong = "Documents/" + String(repeating: "a", count: 300) + "/x.json"
         var files = container
         files[tooLong] = data("long")
         files["Documents/zzz-after.json"] = data("after")
