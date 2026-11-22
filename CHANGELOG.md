@@ -5,6 +5,19 @@ All notable changes to the `sideload` CLI and the menu bar app are documented he
 
 ## [Unreleased]
 
+### Added
+
+- The menu bar app has "Remove source…" beside "Add source…": pick a source you added, review what is removed (its
+  `customSources` and `approvedSources` entries) and what stays (the app, its downloaded builds, its installs), and the
+  confirm click is the owner's `source remove --app <id> --yes`. Built-in sources are not listed. If the source changed
+  or was removed after the confirm opened, the click is refused with `SOURCE_CHANGED` and nothing is written (checked under
+  `.op.lock`). There is no edit: change a source by removing and adding it. Not
+  yet run in the built app.
+
+### Changed
+
+- `source remove`'s preview is now `SourceRemove.preview`, shared with the menu; its JSON output is unchanged.
+
 ## [0.8.0] - 2026-11-21
 
 A custom GitHub source can now be pinned to one exact release file, so a repository that ships both an iOS and a tvOS IPA

@@ -208,34 +208,16 @@ public enum SourceCommand {
                 removeCommand, code: "USAGE", message: "source remove needs --app.",
                 fix: "sideload source remove --app <id> [--yes]")
         }
-        if AppRegistry.builtIns.contains(where: { $0.id == app }) {
-            throw SideloadError(
-                "SOURCE_BUILT_IN", "\(app) is a built-in app; its source is part of sideload.",
-                fix:
-                    "A built-in source cannot be removed. Narrow its hosts in approvedSources instead."
-            )
-        }
-        let config = try services.store.load()
-        let entries = try SourceAdd.entries(config, "customSources").filter {
-            SourceAdd.field($0, "app") == app
-        }
-        guard let entry = entries.first else {
-            throw notFound(app)
-        }
-        let stays = staying(services, app: app, registry: config.appRegistry)
-        let approvals = config.approvedSources.filter { approval(app, $0) }.count
+        let preview = try SourceRemove.preview(services, app: app)
+        let stays = preview.staysJSON
         guard options.yes else {
             return .result(
                 removeCommand,
                 [
                     "preview": true, "written": false, "app": .string(app),
-                    "kind": .string(printableCut(SourceAdd.field(entry, "kind") ?? "")),
-                    "source": .string(
-                        printableCut(
-                            SourceAdd.field(entry, "url") ?? SourceAdd.field(entry, "repo") ?? "",
-                            to: 200)),
-                    "customSourcesEntries": .number(Double(entries.count)),
-                    "approvedSourcesEntries": .number(Double(approvals)),
+                    "kind": .string(preview.kind), "source": .string(preview.source),
+                    "customSourcesEntries": .number(Double(preview.sourceEntries)),
+                    "approvedSourcesEntries": .number(Double(preview.approvalEntries)),
                     "stays": .object(stays),
                     "next": .string(
                         "Nothing was removed. The owner removes the source with: sideload source remove --app \(app) --yes"
@@ -243,22 +225,14 @@ public enum SourceCommand {
                 ])
         }
 
-        let lock = try OperationLock.acquire(paths: services.home)
-        defer { lock.release() }
-        let removed = try await services.store.update { config -> (sources: Int, approvals: Int) in
-            let all = try SourceAdd.entries(config, "customSources")
-            let kept = all.filter { SourceAdd.field($0, "app") != app }
-            guard kept.count < all.count else { throw notFound(app) }
-            if kept.isEmpty {
-                config.extra.removeValue(forKey: "customSources")
-            } else {
-                config.extra["customSources"] = .array(kept)
-            }
-            let approvalsBefore = config.approvedSources.count
-            config.approvedSources.removeAll { approval(app, $0) }
-            return (all.count - kept.count, approvalsBefore - config.approvedSources.count)
-        }
-        return .result(
+        let removed = try await SourceRemove.remove(services, app: app, expected: nil)
+        return removedResult(app, removed, stays: stays)
+    }
+
+    private static func removedResult(
+        _ app: String, _ removed: (sources: Int, approvals: Int), stays: [String: JSONValue]
+    ) -> Envelope {
+        .result(
             removeCommand,
             [
                 "removed": true, "written": true, "app": .string(app),
@@ -273,30 +247,16 @@ public enum SourceCommand {
             ])
     }
 
-    private static func notFound(_ app: String) -> SideloadError {
-        SideloadError(
-            "SOURCE_NOT_FOUND",
-            "\"\(printableCut(app))\" has no entry in customSources.",
-            fix: "Run `sideload source list` for the sources there are.")
-    }
-
-    private static func approval(_ app: String, _ value: JSONValue) -> Bool {
-        guard case .object(let o) = value else { return false }
-        return o["app"] == .string(app)
-    }
-
-    /// What `source remove` leaves alone, as counts and booleans.
-    private static func staying(_ services: Services, app: String, registry: AppRegistry)
-        -> [String: JSONValue]
+    /// The menu's confirm click: `source remove --app <id> --yes`, checked under the lock against the preview the owner saw.
+    static func removeReviewed(_ services: Services, _ expected: SourceRemovePreview) async
+        -> Envelope
     {
-        let manifest = (try? ManifestStore(paths: services.home).load())?.entries.filter {
-            $0.app == app
-        }.count
-        let installs = (try? services.ledgerStore.load())?.installs.filter { $0.app == app }.count
-        return [
-            "customApp": .bool(registry.app(app) != nil),
-            "manifestEntries": manifest.map { .number(Double($0)) } ?? .null,
-            "installs": installs.map { .number(Double($0)) } ?? .null,
-        ]
+        do {
+            let removed = try await SourceRemove.remove(
+                services, app: expected.app, expected: expected)
+            return removedResult(expected.app, removed, stays: expected.staysJSON)
+        } catch {
+            return .from(error, command: removeCommand)
+        }
     }
 }

@@ -29,6 +29,8 @@ struct ActionCardView: View {
             DevicePickerView(picker: picker, model: model)
         case .addingSource(let picker):
             SourcePickerView(picker: picker, model: model)
+        case .removingSource(let picker):
+            SourceRemoveView(picker: picker, model: model)
         case .finished(let outcome):
             ResultView(outcome: outcome, model: model)
         }

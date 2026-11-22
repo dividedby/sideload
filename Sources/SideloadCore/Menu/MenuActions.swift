@@ -35,6 +35,9 @@ public enum MenuAction: Hashable, Sendable {
     /// Add source: `source add --yes` for the source the owner reviewed, with the preview's confirm value. Config only; no
     /// device, no download.
     case addSource(MenuSourcePlan)
+    /// Remove source: `source remove --yes` for the source the owner reviewed. Config only; no device, nothing uninstalled or
+    /// deleted.
+    case removeSource(MenuSourceRemoval)
 
     /// Which chain a fetch or approval belongs to: Add app's first install or an Update over the installed version.
     var chain: AddChain? {
@@ -66,21 +69,22 @@ public enum MenuAction: Hashable, Sendable {
 
     /// The action changes nothing the panel's last read of the device or the ledger shows, so the model neither cancels a running
     /// load for it nor forgets the device's app read: the fetch stages (a download), the auto-renew setting (`device
-    /// auto-refresh` writes `config.json` only) and a new source (`source add` writes `config.json` only). `lendable` and
+    /// auto-refresh` writes `config.json` only) and a new or removed source (`source add` and `source remove` write
+    /// `config.json` only). `lendable` and
     /// `saveDevice` also write only config but stay false on purpose: the lab may change the ledger around a lend setting, and a
     /// saved device has no read yet, so both read the device again.
     /// What the model does when the action ends still differs (a fetch redraws nothing; the setting redraws the config).
     public var leavesDeviceReadAlone: Bool {
         switch self {
-        case .autoRenew, .addSource: return true
+        case .autoRenew, .addSource, .removeSource: return true
         default: return isFetchStage
         }
     }
 
-    /// The saved device the action is about; empty for Add source, which has none.
+    /// The saved device the action is about; empty for Add source and Remove source, which have none.
     public var device: String {
         switch self {
-        case .addSource: ""
+        case .addSource, .removeSource: ""
         case .renew(let device, _), .install(let device, _), .remove(let device, _),
             .lendable(let device, _),
             .autoRenew(let device, _), .addFetch(let device, _), .addApprove(let device, _, _),
@@ -293,13 +297,14 @@ public enum MenuActions {
         }
         // A source belongs to no device and changes no ledger: it is a config edit, which `source add` checks again itself.
         if case .addSource = action { return .enabled }
+        if case .removeSource = action { return .enabled }
         guard let card = snapshot.devices.first(where: { $0.alias == action.device }) else {
             return .disabled("Device not found")
         }
         switch action {
         // Answered above: a saved device has a card.
         case .saveDevice: return .disabled("Already saved")
-        case .addSource: return .enabled  // Answered above.
+        case .addSource, .removeSource: return .enabled  // Answered above.
         case .lendable(_, let app): return lendable(app, card: card, snapshot: snapshot)
         case .autoRenew(_, let on): return autoRenew(on, card: card)
         case .renew(_, let app):
@@ -713,10 +718,11 @@ public enum MenuActions {
             return MenuAddDevice.prompt(alias: alias, candidate: candidate)
         }
         if case .addSource(let source) = action { return MenuSourceAdd.prompt(source) }
+        if case .removeSource(let removal) = action { return MenuSourceRemove.prompt(removal) }
         guard let card = snapshot.devices.first(where: { $0.alias == action.device })
         else { return nil }
         switch action {
-        case .saveDevice, .addSource: return nil  // Answered above.
+        case .saveDevice, .addSource, .removeSource: return nil  // Answered above.
         case .renew(_, let app): return renewPrompt(app, card: card, snapshot: snapshot)
         case .install(_, let app): return installPrompt(app, card: card)
         case .remove(_, let app): return removePrompt(app, card: card)

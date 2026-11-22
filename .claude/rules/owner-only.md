@@ -12,15 +12,15 @@ prepares and explains it.
 - Deleting anything from the keychain or the developer portal.
 - Installing anything system-wide, or anything that needs root/elevated privileges.
 - Pairing changes and any new download source (`source add --yes`, `source remove --yes` and the menu bar app's "Add
-  source…" confirm click are built and are the owner's). Agents never run `source add`, with or without `--yes` (its
+  source…" and "Remove source…" confirm clicks are built and are the owner's). Agents never run `source add`, with or without `--yes` (its
   preview makes a network GET to an arbitrary address), and never run `source remove --yes`, against the real
-  `$SIDELOAD_HOME`; they never click "Add source…" in the app. Tests run them against a temp home and fake HTTP.
+  `$SIDELOAD_HOME`; they never click "Add source…" or "Remove source…" in the app. Tests run them against a temp home and fake HTTP.
 - Running `canary`, `provision`, `sign`, `install` or `refresh` (any mode) on a real device, from the CLI or from the menu
   bar app's buttons (they change the portal and/or the device), and `app remove` (it uninstalls one managed install to free a slot; owner-only, allowlisted
   to `io.github.dividedby.free.*`, `--yes` is the owner's), and `slot restore` (the owner's retry of an app-data restore: it
   pushes a saved backup into the app on the device; owner-only, `--yes` is the owner's, and it takes `--device <alias>`, never
   `--udid`).
-- The menu bar app's action buttons (Renew…, Add app…, Update…, Reinstall previous version…, Install, Remove, Lendable, Turn auto-renew on…/off…, Add device…, Register and retry… and the confirm that follows them). They are owner
+- The menu bar app's action buttons (Renew…, Add app…, Update…, Reinstall previous version…, Install, Remove, Lendable, Turn auto-renew on…/off…, Add device…, Add source…, Remove source…, Register and retry… and the confirm that follows them). They are owner
   clicks: the confirm click is the owner's `--yes` (Add device…'s is `device save --yes`, which turns auto-renew on for a new device; Turn auto-renew on…/off…'s is `device auto-refresh --on|--off --yes`, config only; Register and retry…'s also is `--register-device`), Add app… and Update… run fetch, approve, provision, sign and install on a real device
   (their second confirm is the owner's approval of that exact version and file; Update… goes over an installed app; Reinstall previous version… has one confirm and
   signs and installs an older, already approved build over the installed app, and `sign --version` is owner-run like `sign`), and agents never click them, never run the built app and never drive it
