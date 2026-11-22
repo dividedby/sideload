@@ -27,6 +27,18 @@ private func listed(_ picker: MenuSourceRemovePicker) -> [MenuRemovableSource]? 
 
 private let secondEntry: [String: JSONValue] = altstoreEntry.merging(["app": "second"]) { $1 }
 
+private func apply(_ edit: [String: JSONValue], _ services: Services) async throws {
+    try await services.store.update { config in
+        for (key, value) in edit {
+            if key == "approvedSources", case .array(let list) = value {
+                config.approvedSources = list
+            } else {
+                config.extra[key] = value
+            }
+        }
+    }
+}
+
 /// `myapp` (GitHub) and `second` (AltStore index), both approved, both custom apps.
 private func twoSources() -> Config {
     var config = customConfig(
@@ -131,19 +143,18 @@ struct MenuRemoveSourceRunTests {
         return outcome.withLock { $0 }
     }
 
-    @Test("the confirm click is source remove --app <id> --yes")
-    func options() async throws {
+    @Test("the confirm click hands the command the preview the owner saw")
+    func handsPreview() async throws {
         try await withSourceHome(config: twoSources(), http: SourceHTTP()) { _, services in
             let source = try #require(removal(MenuSourceRemove.preview(services, app: "myapp")))
-            let seen = Mutex<SourceOptions?>(nil)
+            let seen = Mutex<SourceRemovePreview?>(nil)
             var steps = MenuActionSteps()
-            steps.removeSource = { _, options in
-                seen.withLock { $0 = options }
+            steps.removeSource = { _, preview in
+                seen.withLock { $0 = preview }
                 return Envelope(ok: true, command: "source remove")
             }
             _ = await perform(source, services: services, steps: steps)
-            #expect(
-                seen.withLock { $0 } == SourceOptions(sub: "remove", app: "myapp", yes: true))
+            #expect(seen.withLock { $0 } == source.preview)
         }
     }
 
@@ -170,34 +181,54 @@ struct MenuRemoveSourceRunTests {
         }
     }
 
+    /// The edits a second front end could make between the preview and the click: remove the source, re-add it at another
+    /// address, or drop its approval.
+    static let edits: [[String: JSONValue]] = [
+        ["customSources": .array([.object(secondEntry)])],
+        [
+            "customSources": .array(
+                [githubEntry.merging(["repo": "evil/widget"]) { $1 }, secondEntry].map(
+                    JSONValue.object))
+        ],
+        ["approvedSources": .array([["app": "second"]])],
+    ]
+
     @Test(
-        "a source removed or changed after the confirm opened is not run, and nothing is written",
-        arguments: [
-            ["customSources": .array([.object(secondEntry)])],
-            [
-                "customSources": .array(
-                    [githubEntry.merging(["repo": "evil/widget"]) { $1 }, secondEntry].map(
-                        JSONValue.object))
-            ],
-        ] as [[String: JSONValue]])
+        "a source removed or changed after the confirm opened is SOURCE_CHANGED with no retry, and nothing is written",
+        arguments: edits)
     func changed(_ edit: [String: JSONValue]) async throws {
         try await withSourceHome(config: twoSources(), http: SourceHTTP()) { paths, services in
             let source = try #require(removal(MenuSourceRemove.preview(services, app: "myapp")))
-            try await services.store.update { config in
-                for (key, value) in edit { config.extra[key] = value }
-            }
+            try await apply(edit, services)
             let before = try configBytes(paths)
-            let ran = Mutex(false)
-            var steps = MenuActionSteps()
-            steps.removeSource = { _, _ in
-                ran.withLock { $0 = true }
-                return Envelope(ok: true, command: "source remove")
-            }
-            let outcome = try #require(await perform(source, services: services, steps: steps))
-            #expect(outcome.kind == .failed && outcome.headline == "Not run")
-            #expect(outcome.issues.first?.message == MenuSourceRemove.changedReason)
-            #expect(!ran.withLock { $0 })
+            let outcome = try #require(await perform(source, services: services))
+            #expect(outcome.kind == .failed)
+            #expect(outcome.headline == "The source changed since you reviewed it")
+            #expect(outcome.issues.first?.code == "SOURCE_CHANGED")
+            #expect(outcome.notes == [MenuSourceRemove.changedNote] && outcome.lines.isEmpty)
             #expect(try configBytes(paths) == before)
+            expectLockFree(paths)
+        }
+    }
+
+    @Test(
+        "the comparison is made under the lock: a change landing just before the command takes it is still refused",
+        arguments: edits)
+    func changedJustBeforeTheLock(_ edit: [String: JSONValue]) async throws {
+        try await withSourceHome(config: twoSources(), http: SourceHTTP()) { paths, services in
+            let source = try #require(removal(MenuSourceRemove.preview(services, app: "myapp")))
+            let before = Mutex<Data?>(nil)
+            var steps = MenuActionSteps()
+            // The edit lands after the menu handed over and before `source remove` takes `.op.lock`.
+            steps.removeSource = { services, preview in
+                try? await apply(edit, services)
+                before.withLock { $0 = try? configBytes(paths) }
+                return await SourceCommand.removeReviewed(services, preview)
+            }
+            let outcome = try #require(
+                await perform(source, services: services, steps: steps))
+            #expect(outcome.issues.first?.code == "SOURCE_CHANGED")
+            #expect(try configBytes(paths) == before.withLock { $0 })
         }
     }
 

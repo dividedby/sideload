@@ -26,9 +26,10 @@ public struct MenuActionSteps: Sendable {
     public var addSource: @Sendable (Services, SourceOptions) async -> Envelope = {
         await SourceCommand.run($0, $1)
     }
-    /// Remove source: `source remove --yes`, which takes `.op.lock` itself around the one config edit.
-    public var removeSource: @Sendable (Services, SourceOptions) async -> Envelope = {
-        await SourceCommand.run($0, $1)
+    /// Remove source: `source remove --yes`, which takes `.op.lock` itself around the one config edit and, inside it, refuses
+    /// with `SOURCE_CHANGED` when the source is not the preview the owner saw.
+    public var removeSource: @Sendable (Services, SourceRemovePreview) async -> Envelope = {
+        await SourceCommand.removeReviewed($0, $1)
     }
     /// Add app: `fetch` (stage 1, and `--approve --version` in stage 2), then `provision`, `sign` and `install`.
     public var fetch: @Sendable (Services, FetchOptions) async -> Envelope = {
@@ -124,13 +125,7 @@ public enum MenuActionRunner {
         case .addSource(let source):
             envelope = await steps.addSource(services, MenuSourceAdd.options(source))
         case .removeSource(let removal):
-            // `source remove` takes no confirm value: the preview is read again here, so a source that changed after the
-            // confirm opened (re-added at another address, or already removed) is not removed unseen.
-            if let reason = MenuSourceRemove.stop(removal, services: services) {
-                await deliver(.notRun(reason))
-                return
-            }
-            envelope = await steps.removeSource(services, MenuSourceRemove.options(removal))
+            envelope = await steps.removeSource(services, removal.preview)
         case .autoRenew(let device, let on):
             // The same config-only command the CLI runs, with the owner's click as `--yes`. It takes no `.op.lock` and reads no
             // ledger: auto-renew does not collide with the lab, and `refresh --auto` reads the setting afresh at each run.

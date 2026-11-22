@@ -17,6 +17,13 @@ public struct SourceRemovePreview: Sendable, Hashable {
     public var manifestEntries: Int?
     public var installs: Int?
 
+    /// What the removal removes: compared under the lock when the remove is checked against a preview the owner saw.
+    var target: SourceRemove.Target {
+        SourceRemove.Target(
+            kind: kind, source: source, sourceEntries: sourceEntries,
+            approvalEntries: approvalEntries)
+    }
+
     var staysJSON: [String: JSONValue] {
         [
             "customApp": .bool(customApp),
@@ -37,6 +44,26 @@ public enum SourceRemove {
     public static let builtInCode = "SOURCE_BUILT_IN"
     public static let notFoundCode = "SOURCE_NOT_FOUND"
 
+    /// The part of the config a removal acts on: the first entry's kind and address, and the entry counts.
+    struct Target: Sendable, Hashable {
+        var kind: String
+        var source: String
+        var sourceEntries: Int
+        var approvalEntries: Int
+    }
+
+    /// `app`'s target in `config`; nil when it has no `customSources` entry.
+    static func target(_ config: Config, app: String) throws -> Target? {
+        let entries = try SourceAdd.entries(config, "customSources").filter {
+            SourceAdd.field($0, "app") == app
+        }
+        guard let entry = entries.first else { return nil }
+        return Target(
+            kind: printableCut(SourceAdd.field(entry, "kind") ?? ""), source: address(entry),
+            sourceEntries: entries.count,
+            approvalEntries: config.approvedSources.filter { approval(app, $0) }.count)
+    }
+
     /// The preview for `app`. Throws `SOURCE_BUILT_IN` for a built-in app and `SOURCE_NOT_FOUND` for an app with no entry.
     public static func preview(_ services: Services, app: String) throws -> SourceRemovePreview {
         if AppRegistry.builtIns.contains(where: { $0.id == app }) {
@@ -47,20 +74,50 @@ public enum SourceRemove {
             )
         }
         let config = try services.store.load()
-        let entries = try SourceAdd.entries(config, "customSources").filter {
-            SourceAdd.field($0, "app") == app
-        }
-        guard let entry = entries.first else { throw notFound(app) }
+        guard let target = try target(config, app: app) else { throw notFound(app) }
         let manifest = (try? ManifestStore(paths: services.home).load())?.entries.filter {
             $0.app == app
         }.count
         let installs = (try? services.ledgerStore.load())?.installs.filter { $0.app == app }.count
         return SourceRemovePreview(
-            app: app, kind: printableCut(SourceAdd.field(entry, "kind") ?? ""),
-            source: address(entry), sourceEntries: entries.count,
-            approvalEntries: config.approvedSources.filter { approval(app, $0) }.count,
+            app: app, kind: target.kind, source: target.source,
+            sourceEntries: target.sourceEntries, approvalEntries: target.approvalEntries,
             customApp: config.appRegistry.app(app) != nil, manifestEntries: manifest,
             installs: installs)
+    }
+
+    /// The write behind `source remove --yes`: under `.op.lock`, one config edit removes `app`'s `customSources` and
+    /// `approvedSources` entries. With `expected` (the menu's confirm click), the edit first compares the config with the
+    /// preview the owner saw, under the same lock, and refuses with `SOURCE_CHANGED`, writing nothing, when the source is gone
+    /// or differs. Returns how many entries of each went.
+    static func remove(_ services: Services, app: String, expected: SourceRemovePreview?)
+        async throws -> (sources: Int, approvals: Int)
+    {
+        let lock = try OperationLock.acquire(paths: services.home)
+        defer { lock.release() }
+        return try await services.store.update { config -> (sources: Int, approvals: Int) in
+            if let expected, try target(config, app: app) != expected.target {
+                throw changed()
+            }
+            let all = try SourceAdd.entries(config, "customSources")
+            let kept = all.filter { SourceAdd.field($0, "app") != app }
+            guard kept.count < all.count else { throw notFound(app) }
+            if kept.isEmpty {
+                config.extra.removeValue(forKey: "customSources")
+            } else {
+                config.extra["customSources"] = .array(kept)
+            }
+            let approvalsBefore = config.approvedSources.count
+            config.approvedSources.removeAll { approval(app, $0) }
+            return (all.count - kept.count, approvalsBefore - config.approvedSources.count)
+        }
+    }
+
+    static func changed() -> SideloadError {
+        SideloadError(
+            SourceAdd.changedCode,
+            "The source is not what the preview showed: it was removed, or its address, kind or entries differ.",
+            fix: "Nothing was removed. Review the source again before removing it.")
     }
 
     /// Every app with a `customSources` entry, once each in file order, built-in apps left out (their entry cannot be

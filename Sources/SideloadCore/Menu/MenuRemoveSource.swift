@@ -2,8 +2,8 @@ import Foundation
 
 // Remove source (design section 12): the owner picks one of the sources they added, the panel reads what `source remove` would
 // remove and what stays (the same local, read-only preview the command prints), and the confirm click is the owner's
-// `source remove --yes`. Built-in sources are not listed and the command refuses them. Pure, apart from `list`, `preview` and
-// `stop`, which read local files through `Services`. Nothing here writes: the write is `MenuAction.removeSource`, run by
+// `source remove --yes`, checked under `.op.lock` against the preview shown (`SOURCE_CHANGED` when it differs). Built-in sources
+// are not listed and the command refuses them. Pure, apart from `list` and `preview`, which read local files through `Services`. Nothing here writes: the write is `MenuAction.removeSource`, run by
 // `MenuActionRunner` through `SourceCommand`. There is no edit: changing a source is Remove source then Add source.
 
 /// A source the owner is reviewing for removal: what the confirm shows. The click removes the app's entries by app ID.
@@ -58,8 +58,6 @@ public enum MenuSourceRemove {
     static let removedNote =
         "The app, its downloaded builds and its installs stay, and Renew keeps working. Add app… and updates no longer offer it; Add source… adds it again."
     static let changedNote = "Nothing was removed. Choose Remove source… again to review it."
-    static let changedReason =
-        "The source changed since you reviewed it. Nothing was removed. Choose Remove source… again to review it."
 
     // MARK: reading
 
@@ -89,18 +87,6 @@ public enum MenuSourceRemove {
         } catch {
             return .failed(MenuIssue(error))
         }
-    }
-
-    /// Checked again just before the click runs: nil when the preview is still what the owner saw, else why nothing runs (the
-    /// source was removed, or changed, meanwhile).
-    static func stop(_ removal: MenuSourceRemoval, services: Services) -> String? {
-        guard case .confirm(let now) = preview(services, app: removal.appId),
-            now.preview.app == removal.preview.app, now.preview.kind == removal.preview.kind,
-            now.preview.source == removal.preview.source,
-            now.preview.sourceEntries == removal.preview.sourceEntries,
-            now.preview.approvalEntries == removal.preview.approvalEntries
-        else { return changedReason }
-        return nil
     }
 
     private static func name(_ app: String, _ registry: AppRegistry) -> String {
@@ -153,10 +139,5 @@ public enum MenuSourceRemove {
 
     private static func count(_ n: Int, _ one: String, _ many: String) -> String {
         "\(n) \(n == 1 ? one : many)"
-    }
-
-    /// What the click runs: `source remove --app <id> --yes`.
-    static func options(_ removal: MenuSourceRemoval) -> SourceOptions {
-        SourceOptions(sub: "remove", app: removal.appId, yes: true)
     }
 }

@@ -100,10 +100,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
                 chain: .update(from: from))
         case .addSource(let source): readAddSource(source, envelope: envelope, action: action)
         case .removeSource(let removal):
-            readSingle(
-                envelope, action: action, app: "", done: "Removed the source for \(removal.name)",
-                failed: "Source not removed")
-            if envelope.ok { notes = [MenuSourceRemove.removedNote] }
+            readRemoveSource(removal, envelope: envelope, action: action)
         case .saveDevice(let alias, _):
             readSingle(
                 envelope, action: action, app: "", done: "Saved \(alias)",
@@ -328,6 +325,28 @@ public struct MenuActionOutcome: Sendable, Equatable {
         } else {
             headline = "Source not added"
         }
+    }
+
+    // MARK: remove source
+
+    /// `source remove --yes`: done, busy, or failed with the command's errors. A source that changed since the preview has no
+    /// Retry, as for Add source: the owner reviews it afresh.
+    private mutating func readRemoveSource(
+        _ removal: MenuSourceRemoval, envelope: Envelope, action: MenuAction
+    ) {
+        if envelope.errors.first?.code == SourceAdd.changedCode {
+            kind = .failed
+            headline = "The source changed since you reviewed it"
+            issues = envelope.errors.map {
+                MenuIssue(code: $0.code, message: $0.message, fix: $0.fix)
+            }
+            notes = [MenuSourceRemove.changedNote]
+            return
+        }
+        readSingle(
+            envelope, action: action, app: "", done: "Removed the source for \(removal.name)",
+            failed: "Source not removed")
+        if envelope.ok { notes = [MenuSourceRemove.removedNote] }
     }
 
     // MARK: install, remove, lendable

@@ -225,22 +225,14 @@ public enum SourceCommand {
                 ])
         }
 
-        let lock = try OperationLock.acquire(paths: services.home)
-        defer { lock.release() }
-        let removed = try await services.store.update { config -> (sources: Int, approvals: Int) in
-            let all = try SourceAdd.entries(config, "customSources")
-            let kept = all.filter { SourceAdd.field($0, "app") != app }
-            guard kept.count < all.count else { throw notFound(app) }
-            if kept.isEmpty {
-                config.extra.removeValue(forKey: "customSources")
-            } else {
-                config.extra["customSources"] = .array(kept)
-            }
-            let approvalsBefore = config.approvedSources.count
-            config.approvedSources.removeAll { approval(app, $0) }
-            return (all.count - kept.count, approvalsBefore - config.approvedSources.count)
-        }
-        return .result(
+        let removed = try await SourceRemove.remove(services, app: app, expected: nil)
+        return removedResult(app, removed, stays: stays)
+    }
+
+    private static func removedResult(
+        _ app: String, _ removed: (sources: Int, approvals: Int), stays: [String: JSONValue]
+    ) -> Envelope {
+        .result(
             removeCommand,
             [
                 "removed": true, "written": true, "app": .string(app),
@@ -255,9 +247,16 @@ public enum SourceCommand {
             ])
     }
 
-    private static func notFound(_ app: String) -> SideloadError { SourceRemove.notFound(app) }
-
-    private static func approval(_ app: String, _ value: JSONValue) -> Bool {
-        SourceRemove.approval(app, value)
+    /// The menu's confirm click: `source remove --app <id> --yes`, checked under the lock against the preview the owner saw.
+    static func removeReviewed(_ services: Services, _ expected: SourceRemovePreview) async
+        -> Envelope
+    {
+        do {
+            let removed = try await SourceRemove.remove(
+                services, app: expected.app, expected: expected)
+            return removedResult(expected.app, removed, stays: expected.staysJSON)
+        } catch {
+            return .from(error, command: removeCommand)
+        }
     }
 }
