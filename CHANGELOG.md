@@ -5,6 +5,24 @@ All notable changes to the `sideload` CLI and the menu bar app are documented he
 
 ## [Unreleased]
 
+### Added
+
+- Template pins for sources you add, so a source can follow a publisher's naming without being re-added each release.
+  `source add --asset` also takes a name with one `{version}` (`App-{version}-iOS.ipa`: the release's version is filled in,
+  then the name is matched exactly); `--tag-rule underscoreSuffix` reads the version from a `v<x>_<ver>` tag;
+  `--download-path '/apple/{versionKey}/App.ipa'` pins an index app's exact download path; `--require-build` insists the
+  index declares a build number. The same fields are valid in a `customSources` entry (`asset`, `tagRule`, `downloadPath`,
+  `requireBuild`), are shown by `source list`, the preview and the printed command, and are part of the confirm value only
+  when set: the confirm value of every source added without them is unchanged. Nothing about the built-in sources
+  changes; a test runs Apollo's and Stremio's documents through the built-in resolvers and through entries with these pins
+  and expects the same result. Not yet run against a real source. The menu bar app's Add source… still adds exact pins
+  only; the new flags are CLI-only.
+
+### Changed
+
+- An `asset` containing braces was an invalid `customSources` entry (`CUSTOM_SOURCE_IGNORED`); one `{version}` is now valid.
+  An older build still ignores such an entry.
+
 ## [0.9.0] - 2026-11-21
 
 The menu bar app can now remove a download source you added: Remove source… beside Add source… shows what is removed and

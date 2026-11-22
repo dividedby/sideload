@@ -10,12 +10,20 @@ struct SourceAddRequest: Sendable, Equatable {
     var bundle: String?
     var platform: String?
     var name: String?
-    /// The exact file name of the release asset to pin, for a GitHub repository that publishes several IPAs.
+    /// The file name of the release asset to pin, for a GitHub repository that publishes several IPAs: exact, or with one
+    /// `{version}` for a repository whose file names carry the release's version.
     var asset: String?
+    /// `underscoreSuffix` for a GitHub repository whose tags are `v<x>_<ver>`.
+    var tagRule: String?
+    /// The exact path of an index app's download, with one `{versionKey}` for `<ver>b<build>` (or `<ver>`).
+    var downloadPath: String?
+    /// An index app whose entries must declare a build number.
+    var requireBuild: Bool
 
     init(
         url: String, app: String? = nil, bundle: String? = nil, platform: String? = nil,
-        name: String? = nil, asset: String? = nil
+        name: String? = nil, asset: String? = nil, tagRule: String? = nil,
+        downloadPath: String? = nil, requireBuild: Bool = false
     ) {
         self.url = url
         self.app = app
@@ -23,6 +31,9 @@ struct SourceAddRequest: Sendable, Equatable {
         self.platform = platform
         self.name = name
         self.asset = asset
+        self.tagRule = tagRule
+        self.downloadPath = downloadPath
+        self.requireBuild = requireBuild
     }
 }
 
@@ -69,8 +80,14 @@ struct SourcePlan: Sendable, Hashable {
     let url: String
     /// `<owner>/<repo>` of a GitHub source.
     let repo: String?
-    /// The exact IPA file name a GitHub source is pinned to; nil when the release must have exactly one IPA.
+    /// The IPA file name (or `{version}` template) a GitHub source is pinned to; nil when the release must have exactly one IPA.
     let asset: String?
+    /// `underscoreSuffix` for a GitHub source whose tags are `v<x>_<ver>`; nil for the plain tag.
+    let tagRule: String?
+    /// The exact download path of an index source, with its `{versionKey}`; nil when the path is not pinned.
+    let downloadPath: String?
+    /// An index source that insists on a build number.
+    let requireBuild: Bool
     /// The upstream bundle ID of an index app.
     let bundleId: String?
     /// The latest version the source offers now.
@@ -109,6 +126,11 @@ struct SourcePlan: Sendable, Hashable {
         ]
         if let bundleId { parts.append("--bundle \(bundleId)") }
         if let asset { parts.append("--asset \(SourceAdd.shellQuote(asset))") }
+        if let tagRule { parts.append("--tag-rule \(tagRule)") }
+        if requireBuild { parts.append("--require-build") }
+        if let downloadPath {
+            parts.append("--download-path \(SourceAdd.shellQuote(downloadPath))")
+        }
         parts.append("--platform \(platform)")
         if let explicitName { parts.append("--name \(SourceAdd.shellQuote(explicitName))") }
         parts.append("--confirm \(confirm) --yes")
@@ -128,7 +150,8 @@ enum SourceAdd {
 
     // MARK: arguments
 
-    /// A malformed `--app`, `--bundle`, `--platform`, `--name` or `--asset`, before anything is read.
+    /// A malformed `--app`, `--bundle`, `--platform`, `--name`, `--asset`, `--tag-rule` or `--download-path`, before anything is
+    /// read.
     static func validate(_ request: SourceAddRequest) throws {
         if let app = request.app, !AppRegistry.isValidName(app) {
             throw invalidArgument(
@@ -137,9 +160,17 @@ enum SourceAdd {
         if let bundle = request.bundle, !CustomSources.isValidBundleId(bundle) {
             throw invalidArgument("--bundle is not a reverse-DNS bundle ID.")
         }
-        if let asset = request.asset, !CustomSources.isValidAssetName(asset) {
+        if let asset = request.asset, !CustomSources.isValidAssetPin(asset) {
             throw invalidArgument(
-                "--asset is not a plain .ipa file name (letters, digits, `.`, `_` and `-`, at most 64 characters, ending in .ipa or .IPA in any case; the name itself is matched exactly)."
+                "--asset is not a plain .ipa file name (letters, digits, `.`, `_` and `-`, at most 64 characters, ending in .ipa or .IPA in any case; the name itself is matched exactly), nor such a name with one {version}."
+            )
+        }
+        if let rule = request.tagRule, rule != TagRule.underscoreSuffix.rawValue {
+            throw invalidArgument("--tag-rule is not underscoreSuffix.")
+        }
+        if let path = request.downloadPath, !CustomSources.isValidDownloadPath(path) {
+            throw invalidArgument(
+                "--download-path is not a plain /-separated path ending in .ipa with at most one {versionKey} (at most 200 characters)."
             )
         }
         if let platform = request.platform, !AppRegistry.platforms.contains(platform) {
@@ -254,9 +285,12 @@ enum SourceAdd {
     /// The apps of an index, at most `maxListed`, and whether more were left out. A GitHub release is its one asset: the pinned
     /// one, or the only `.ipa`. A release with several IPAs and no pin lists them all (`preview` refuses it as
     /// `SOURCE_AMBIGUOUS`; the menu asks which).
-    static func listing(_ probe: SourceProbe, asset: String? = nil) throws -> (
-        apps: [SourceCandidate], truncated: Bool
-    ) {
+    static func listing(_ probe: SourceProbe, asset: String? = nil, tagRule: TagRule = .plain)
+        throws
+        -> (
+            apps: [SourceCandidate], truncated: Bool
+        )
+    {
         switch probe.kind {
         case .github(let repo):
             if asset == nil {
@@ -271,7 +305,7 @@ enum SourceAdd {
                 }
             }
             let resolved = try SourceResolver.customGithub(
-                app: "source", repo: repo, asset: asset, json: probe.body)
+                app: "source", repo: repo, asset: asset, tagRule: tagRule, json: probe.body)
             return ([githubCandidate(resolved, repo: repo)], false)
         case .altstore:
             let all = try indexApps(probe.body)
@@ -300,7 +334,8 @@ enum SourceAdd {
         -> Preview
     {
         try validate(request)
-        let listed = try listing(probe, asset: request.asset)
+        let tagRule = request.tagRule.flatMap(TagRule.init(rawValue:)) ?? .plain
+        let listed = try listing(probe, asset: request.asset, tagRule: tagRule)
         let kind: String
         let repo: String?
         let bundleId: String?
@@ -314,6 +349,11 @@ enum SourceAdd {
                 throw invalidArgument(
                     "--bundle picks an app out of an index, not a GitHub release.")
             }
+            if request.downloadPath != nil || request.requireBuild {
+                throw invalidArgument(
+                    "--download-path and --require-build describe an app of an index, not a GitHub release."
+                )
+            }
             kind = "githubRelease"
             repo = named
             bundleId = nil
@@ -321,7 +361,8 @@ enum SourceAdd {
                 throw githubAmbiguous(listed)
             }
             asset = try SourceResolver.customGithub(
-                app: "source", repo: named, asset: request.asset, json: probe.body)
+                app: "source", repo: named, asset: request.asset, tagRule: tagRule,
+                json: probe.body)
             // Only a pin is read for a default platform: an unpinned single IPA keeps today's plan and confirm value.
             if let pinned = request.asset, pinned.lowercased().contains("tvos") {
                 detectedPlatform = "tvos"
@@ -334,13 +375,19 @@ enum SourceAdd {
                     "--asset picks a release asset of a GitHub repository, not an app of an index; use --bundle."
                 )
             }
+            if request.tagRule != nil {
+                throw invalidArgument(
+                    "--tag-rule reads a GitHub release's tag, not an index.")
+            }
             kind = "altstoreIndex"
             repo = nil
             let app = try pick(probe, bundle: request.bundle, listed: listed)
             bundleId = app.bundleId
             downloadHosts = try hosts(of: app)
             asset = try SourceResolver.customAltstore(
-                app: "source", bundleId: app.bundleId, hosts: Set(downloadHosts), json: probe.body)
+                app: "source", bundleId: app.bundleId, hosts: Set(downloadHosts),
+                downloadPath: request.downloadPath, requireBuild: request.requireBuild,
+                json: probe.body)
             nameSource = app.name
             if app.tvos { detectedPlatform = "tvos" }
         }
@@ -364,11 +411,16 @@ enum SourceAdd {
         let free = prefix + ".free." + target.suffix
         let metadataHost = probe.metadataHost
         let confirm = confirmValue(
-            kind: kind, url: probe.url, repo: repo, asset: request.asset, bundleId: bundleId,
-            app: target, metadataHosts: [metadataHost], downloadHosts: downloadHosts)
+            kind: kind, url: probe.url, repo: repo, asset: request.asset,
+            tagRule: tagRule == .plain ? nil : tagRule.rawValue,
+            downloadPath: request.downloadPath, requireBuild: request.requireBuild,
+            bundleId: bundleId, app: target, metadataHosts: [metadataHost],
+            downloadHosts: downloadHosts)
         let plan = SourcePlan(
-            kind: kind, url: probe.url, repo: repo, asset: request.asset, bundleId: bundleId,
-            version: asset.version,
+            kind: kind, url: probe.url, repo: repo, asset: request.asset,
+            tagRule: tagRule == .plain ? nil : tagRule.rawValue,
+            downloadPath: request.downloadPath, requireBuild: request.requireBuild,
+            bundleId: bundleId, version: asset.version,
             size: asset.size, metadataHost: metadataHost, downloadHosts: downloadHosts,
             appId: target.id, suffix: target.suffix, platform: target.platform, name: target.name,
             attaches: target.attaches, freeBundleId: free, confirm: confirm)
@@ -540,7 +592,8 @@ enum SourceAdd {
     /// The first 16 hex characters of SHA-256 over the sorted-key JSON of what the owner trusts. Version and digest are left
     /// out on purpose: a new release is not a change of trust.
     static func confirmValue(
-        kind: String, url: String, repo: String?, asset: String? = nil, bundleId: String?,
+        kind: String, url: String, repo: String?, asset: String? = nil, tagRule: String? = nil,
+        downloadPath: String? = nil, requireBuild: Bool = false, bundleId: String?,
         app: AppTarget, metadataHosts: [String], downloadHosts: [String]
     ) -> String {
         // `attaches` is part of what is confirmed: giving an existing app a source and creating a new app are different writes.
@@ -555,6 +608,10 @@ enum SourceAdd {
         if let bundleId { fields["bundleId"] = .string(bundleId) }
         // Which IPA is trusted is part of the trust; an unpinned source leaves the key out, so its value is what it always was.
         if let asset { fields["asset"] = .string(asset) }
+        // The same for the three template-pin fields: a source without them hashes as it did before they existed.
+        if let tagRule { fields["tagRule"] = .string(tagRule) }
+        if let downloadPath { fields["downloadPath"] = .string(downloadPath) }
+        if requireBuild { fields["requireBuild"] = .bool(true) }
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         let data = (try? encoder.encode(JSONValue.object(fields))) ?? Data()
@@ -605,10 +662,13 @@ enum SourceAdd {
         ]
         if let repo = plan.repo { source["repo"] = .string(repo) }
         if let asset = plan.asset { source["asset"] = .string(asset) }
+        if let tagRule = plan.tagRule { source["tagRule"] = .string(tagRule) }
         if let bundleId = plan.bundleId {
             source["url"] = .string(plan.url)
             source["bundleId"] = .string(bundleId)
         }
+        if let downloadPath = plan.downloadPath { source["downloadPath"] = .string(downloadPath) }
+        if plan.requireBuild { source["requireBuild"] = .bool(true) }
         var sources = try entries(config, "customSources")
         sources.append(.object(source))
         config.extra["customSources"] = .array(sources)
@@ -645,7 +705,10 @@ enum SourceAdd {
         ]
         if let repo = plan.repo { out["repo"] = .string(repo) }
         if let asset = plan.asset { out["asset"] = .string(asset) }
+        if let tagRule = plan.tagRule { out["tagRule"] = .string(tagRule) }
         if let bundleId = plan.bundleId { out["bundleId"] = .string(bundleId) }
+        if let downloadPath = plan.downloadPath { out["downloadPath"] = .string(downloadPath) }
+        if plan.requireBuild { out["requireBuild"] = true }
         return out
     }
 }

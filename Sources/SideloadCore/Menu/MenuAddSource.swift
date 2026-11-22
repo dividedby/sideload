@@ -162,20 +162,22 @@ public enum MenuSourceAdd {
         do {
             return try plan(
                 source.probe, bundle: source.plan.bundleId, asset: source.plan.asset,
-                app: source.appId, platform: platform, services: services)
+                pins: source.plan, app: source.appId, platform: platform, services: services)
         } catch {
             return .failed(MenuIssue(error))
         }
     }
 
     private static func plan(
-        _ probe: SourceProbe, bundle: String?, asset: String? = nil, app: String? = nil,
-        platform: String? = nil, services: Services
+        _ probe: SourceProbe, bundle: String?, asset: String? = nil, pins: SourcePlan? = nil,
+        app: String? = nil, platform: String? = nil, services: Services
     ) throws -> MenuSourceStep {
         let preview = try SourceAdd.preview(
             probe,
             request: SourceAddRequest(
-                url: probe.url, app: app, bundle: bundle, platform: platform, asset: asset),
+                url: probe.url, app: app, bundle: bundle, platform: platform, asset: asset,
+                tagRule: pins?.tagRule, downloadPath: pins?.downloadPath,
+                requireBuild: pins?.requireBuild ?? false),
             config: try services.store.load())
         return .confirm(MenuSourcePlan(plan: preview.plan, probe: probe))
     }
@@ -217,11 +219,14 @@ public enum MenuSourceAdd {
                 "Metadata from \(plan.metadataHost)",
                 "Downloads from \(plan.downloadHosts.joined(separator: ", "))",
                 upstream,
-            ] + (plan.asset.map { ["Asset \($0)"] } ?? []) + [
-                app,
-                "Bundle ID \(plan.freeBundleId)",
-                "Saves the source in config.json and approves it. Nothing is downloaded: Add app… fetches it, and you approve each version.",
-            ],
+            ] + (plan.asset.map { ["Asset \($0)"] } ?? [])
+                + (plan.tagRule.map { ["Tag rule \($0)"] } ?? [])
+                + (plan.downloadPath.map { ["Download path \($0)"] } ?? [])
+                + (plan.requireBuild ? ["The index must declare a build number"] : []) + [
+                    app,
+                    "Bundle ID \(plan.freeBundleId)",
+                    "Saves the source in config.json and approves it. Nothing is downloaded: Add app… fetches it, and you approve each version.",
+                ],
             confirmLabel: confirmLabel, destructive: false, runningLabel: "Adding the source…",
             apps: [], monospacedLines: [1], platformChoice: platformChoice(plan))
     }
@@ -244,6 +249,7 @@ public enum MenuSourceAdd {
         return SourceOptions(
             sub: "add", url: plan.url, app: plan.appId, bundle: plan.bundleId,
             platform: plan.platform, name: plan.attaches ? nil : plan.name, asset: plan.asset,
-            confirm: plan.confirm, yes: true)
+            tagRule: plan.tagRule, downloadPath: plan.downloadPath,
+            requireBuild: plan.requireBuild, confirm: plan.confirm, yes: true)
     }
 }

@@ -21,6 +21,46 @@ enum DownloadPolicy {
     }
 }
 
+/// How a custom GitHub source's release tag gives the version (design section 8, custom sources). A closed set: a general tag
+/// template would match ambiguously, and nothing needs it.
+enum TagRule: String, Sendable, Equatable {
+    /// The tag without one leading `v`.
+    case plain
+    /// `v<x>_<ver>`: the version is what follows the underscore.
+    case underscoreSuffix
+}
+
+/// A custom GitHub source's `asset`: an exact file name, or a template holding one `{version}` that the release's version
+/// fills in. Braces never occur in a plain file name, so the two forms cannot be confused.
+enum AssetPin: Equatable, Sendable {
+    case exact(String)
+    case template(prefix: String, suffix: String)
+
+    static let placeholder = "{version}"
+
+    /// Nil unless `raw` is a valid exact name (`CustomSources.isValidAssetName`) or a valid template: exactly one `{version}`,
+    /// no other brace, and the name it gives for the version `0` is a valid exact name.
+    init?(_ raw: String) {
+        if !raw.contains("{") && !raw.contains("}") {
+            guard CustomSources.isValidAssetName(raw) else { return nil }
+            self = .exact(raw)
+            return
+        }
+        let pieces = raw.components(separatedBy: Self.placeholder)
+        guard pieces.count == 2, !pieces.joined().contains("{"), !pieces.joined().contains("}"),
+            CustomSources.isValidAssetName(pieces[0] + "0" + pieces[1])
+        else { return nil }
+        self = .template(prefix: pieces[0], suffix: pieces[1])
+    }
+
+    func name(version: String) -> String {
+        switch self {
+        case .exact(let name): name
+        case .template(let prefix, let suffix): prefix + version + suffix
+        }
+    }
+}
+
 /// One source `fetch` knows how to read (design section 8, approved sources). Each comes from an app in `AppRegistry`,
 /// which pins the metadata URL, the asset selection and the host ceiling. `approvedSources` in `config.json` is the owner's
 /// switch for each of them and may only narrow the hosts.
@@ -32,11 +72,15 @@ struct FetchSource: Sendable, Equatable {
         /// path shape (design section 8).
         case altstoreIndex(url: String, bundleId: String, host: String, tvos: Bool)
         /// An owner-added GitHub repository (`customSources`, design section 8): the latest release's `.ipa` asset, pinned from
-        /// the first approved version by bundle ID. With `asset` the one asset of exactly that name; without it the release must
-        /// have exactly one `.ipa`.
-        case customGithubRelease(repo: String, asset: String?)
-        /// An owner-added AltStore index: the one app with `bundleId`, which every fetched IPA must carry.
-        case customAltstoreIndex(url: String, bundleId: String)
+        /// the first approved version by bundle ID. With `asset` the one asset of exactly that name (or, when it holds one
+        /// `{version}`, of that name with the release's version in it); without it the release must have exactly one `.ipa`.
+        /// `tagRule` says how the tag gives the version.
+        case customGithubRelease(repo: String, asset: String?, tagRule: TagRule = .plain)
+        /// An owner-added AltStore index: the one app with `bundleId`, which every fetched IPA must carry. `downloadPath` pins
+        /// the download's exact path (one `{versionKey}` stands for the version key) and `requireBuild` makes the index's
+        /// `buildVersion` mandatory, so the version key is always `<ver>b<build>`.
+        case customAltstoreIndex(
+            url: String, bundleId: String, downloadPath: String? = nil, requireBuild: Bool = false)
 
         var isThirdParty: Bool {
             switch self {
@@ -53,10 +97,28 @@ struct FetchSource: Sendable, Equatable {
             }
         }
 
-        /// The exact asset name a custom GitHub source is pinned to, if any.
+        /// The asset a custom GitHub source is pinned to, if any: an exact file name or a template with one `{version}`.
         var pinnedAsset: String? {
-            if case .customGithubRelease(_, let asset) = self { return asset }
+            if case .customGithubRelease(_, let asset, _) = self { return asset }
             return nil
+        }
+
+        /// The tag rule of a custom GitHub source when it is not the plain one.
+        var tagRule: TagRule? {
+            if case .customGithubRelease(_, _, let rule) = self, rule != .plain { return rule }
+            return nil
+        }
+
+        /// The download path template of a custom index source, if it has one.
+        var downloadPath: String? {
+            if case .customAltstoreIndex(_, _, let path, _) = self { return path }
+            return nil
+        }
+
+        /// A custom index source that insists on a build number.
+        var requiresBuild: Bool {
+            if case .customAltstoreIndex(_, _, _, let required) = self { return required }
+            return false
         }
 
         /// Added by the owner in `customSources` rather than defined in code.
@@ -77,9 +139,9 @@ struct FetchSource: Sendable, Equatable {
 
     var metadataURL: URL {
         switch kind {
-        case .githubRelease(let repo), .customGithubRelease(let repo, _):
+        case .githubRelease(let repo), .customGithubRelease(let repo, _, _):
             URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
-        case .altstoreIndex(let url, _, _, _), .customAltstoreIndex(let url, _):
+        case .altstoreIndex(let url, _, _, _), .customAltstoreIndex(let url, _, _, _):
             URL(string: url)!
         }
     }

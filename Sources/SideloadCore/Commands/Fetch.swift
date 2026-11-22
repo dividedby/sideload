@@ -406,7 +406,7 @@ private struct FetchRun {
     ) throws {
         let expected: String?
         switch source.kind {
-        case .customAltstoreIndex(_, let bundleId): expected = bundleId
+        case .customAltstoreIndex(_, let bundleId, _, _): expected = bundleId
         case .customGithubRelease:
             let first = manifest.entries
                 .filter { $0.app == source.app && $0.approved && $0.version != version }

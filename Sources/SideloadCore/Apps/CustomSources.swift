@@ -66,10 +66,10 @@ enum SourceURL {
 /// entry is checked on its own, strictly and fail-closed; one that is not exactly the shape below is left out with a
 /// `CUSTOM_SOURCE_IGNORED` warning, and never stops a built-in source or another valid entry.
 ///
-///     {"app", "kind": "githubRelease", "repo": "<owner>/<repo>", "asset"?: "<file>.ipa",
-///      "metadataHosts": ["api.github.com"], "downloadHosts": [...], "addedAt"?}
-///     {"app", "kind": "altstoreIndex", "url", "bundleId", "metadataHosts": [<url host>], "downloadHosts": [...],
-///      "addedAt"?}
+///     {"app", "kind": "githubRelease", "repo": "<owner>/<repo>", "asset"?: "<file>.ipa" or a template with one {version},
+///      "tagRule"?: "underscoreSuffix", "metadataHosts": ["api.github.com"], "downloadHosts": [...], "addedAt"?}
+///     {"app", "kind": "altstoreIndex", "url", "bundleId", "downloadPath"?: "/<plain path>/{versionKey}/<file>.ipa",
+///      "requireBuild"?: true, "metadataHosts": [<url host>], "downloadHosts": [...], "addedAt"?}
 enum CustomSources {
     static let warningCode = "CUSTOM_SOURCE_IGNORED"
     static let githubMetadataHost = "api.github.com"
@@ -80,9 +80,12 @@ enum CustomSources {
     private static let commonKeys: Set<String> = [
         "app", "kind", "metadataHosts", "downloadHosts", "addedAt",
     ]
-    private static let githubKeys = commonKeys.union(["repo", "asset"])
-    private static let altstoreKeys = commonKeys.union(["url", "bundleId"])
+    private static let githubKeys = commonKeys.union(["repo", "asset", "tagRule"])
+    private static let altstoreKeys = commonKeys.union([
+        "url", "bundleId", "downloadPath", "requireBuild",
+    ])
     private static let maxAddedAt = 40
+    private static let maxDownloadPath = 200
 
     struct Outcome {
         var fetches: [String: AppDefinition.Fetch] = [:]
@@ -199,12 +202,18 @@ enum CustomSources {
         }
         var asset: String?
         if let declared = fields["asset"] {
-            guard case .string(let name) = declared, isValidAssetName(name) else {
+            guard case .string(let name) = declared, isValidAssetPin(name) else {
                 return .failure(
-                    "its asset is not a plain file name ending in .ipa or .IPA (the name itself is matched exactly)"
+                    "its asset is not a plain file name ending in .ipa or .IPA (the name itself is matched exactly), or such a name with one {version}"
                 )
             }
             asset = name
+        }
+        var tagRule = TagRule.plain
+        if let declared = fields["tagRule"] {
+            guard case .string(let name) = declared, name == TagRule.underscoreSuffix.rawValue
+            else { return .failure("its tagRule is not \"underscoreSuffix\"") }
+            tagRule = .underscoreSuffix
         }
         guard metadata == [githubMetadataHost] else {
             return .failure("its metadataHosts is not exactly [\"\(githubMetadataHost)\"]")
@@ -214,7 +223,8 @@ enum CustomSources {
         }
         return .success(
             AppDefinition.Fetch(
-                kind: .customGithubRelease(repo: repo, asset: asset), metadataHosts: Set(metadata),
+                kind: .customGithubRelease(repo: repo, asset: asset, tagRule: tagRule),
+                metadataHosts: Set(metadata),
                 downloadHosts: Set(downloads)))
     }
 
@@ -232,12 +242,30 @@ enum CustomSources {
         guard case .string(let bundleId)? = fields["bundleId"], isValidBundleId(bundleId) else {
             return .failure("its bundleId is not a reverse-DNS bundle ID")
         }
+        var downloadPath: String?
+        if let declared = fields["downloadPath"] {
+            guard case .string(let path) = declared, isValidDownloadPath(path) else {
+                return .failure(
+                    "its downloadPath is not a plain /-separated path ending in .ipa with at most one {versionKey}"
+                )
+            }
+            downloadPath = path
+        }
+        var requireBuild = false
+        if let declared = fields["requireBuild"] {
+            guard case .bool(true) = declared else {
+                return .failure("its requireBuild is not true")
+            }
+            requireBuild = true
+        }
         guard metadata == [url.host] else {
             return .failure("its metadataHosts is not exactly the url's host")
         }
         return .success(
             AppDefinition.Fetch(
-                kind: .customAltstoreIndex(url: url.url, bundleId: bundleId),
+                kind: .customAltstoreIndex(
+                    url: url.url, bundleId: bundleId, downloadPath: downloadPath,
+                    requireBuild: requireBuild),
                 metadataHosts: Set(metadata), downloadHosts: Set(downloads)))
     }
 
@@ -274,9 +302,31 @@ enum CustomSources {
 
     /// A pinned release asset: a plain file name that ends in `.ipa` (any case, as the unpinned rule reads it) and passes the resolver's safe token (so no path
     /// character, and at most 64 characters, the same ceiling a resolved asset's name has). The name is matched case-sensitively and in
-    /// full; there are no globs and no version placeholder.
+    /// full; there are no globs (a template with `{version}` is `isValidAssetPin`).
     static func isValidAssetName(_ name: String) -> Bool {
         name.lowercased().hasSuffix(".ipa") && SourceResolver.isSafeToken(name)
+    }
+
+    /// A `githubRelease` `asset`: an exact name (`isValidAssetName`) or a template with one `{version}` that gives a valid name.
+    static func isValidAssetPin(_ raw: String) -> Bool {
+        AssetPin(raw) != nil
+    }
+
+    /// An index source's `downloadPath`: printable ASCII from `/`, plain segments (none empty, `.` or `..`), the last ending in
+    /// `.ipa`, at most one `{versionKey}` and no other brace, no `%`, and at most 200 characters. The file name (with the
+    /// placeholder replaced by `0`) must be a safe token, as the resolver reads a resolved file name.
+    static func isValidDownloadPath(_ path: String) -> Bool {
+        let pieces = path.components(separatedBy: SourceResolver.versionKeyPlaceholder)
+        guard path.utf8.count <= maxDownloadPath, SourceURL.isPrintableASCII(path),
+            path.hasPrefix("/"), pieces.count <= 2,
+            !pieces.joined().contains("{"), !pieces.joined().contains("}"),
+            !path.contains("?"), !path.contains("#"), !path.contains("%"), !path.contains("\\")
+        else { return false }
+        let expanded = pieces.joined(separator: "0")
+        let segments = expanded.dropFirst().split(separator: "/", omittingEmptySubsequences: false)
+        guard let last = segments.last.map(String.init) else { return false }
+        return !segments.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." })
+            && last.hasSuffix(".ipa") && SourceResolver.isSafeToken(last)
     }
 
     static func isValidBundleId(_ text: String) -> Bool {

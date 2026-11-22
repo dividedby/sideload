@@ -8,12 +8,16 @@ public struct SourceOptions: Sendable, Equatable {
     public var platform: String?
     public var name: String?
     public var asset: String?
+    public var tagRule: String?
+    public var downloadPath: String?
+    public var requireBuild: Bool
     public var confirm: String?
     public var yes: Bool
 
     public init(
         sub: String? = nil, url: String? = nil, app: String? = nil, bundle: String? = nil,
         platform: String? = nil, name: String? = nil, asset: String? = nil,
+        tagRule: String? = nil, downloadPath: String? = nil, requireBuild: Bool = false,
         confirm: String? = nil, yes: Bool = false
     ) {
         self.sub = sub
@@ -23,6 +27,9 @@ public struct SourceOptions: Sendable, Equatable {
         self.platform = platform
         self.name = name
         self.asset = asset
+        self.tagRule = tagRule
+        self.downloadPath = downloadPath
+        self.requireBuild = requireBuild
         self.confirm = confirm
         self.yes = yes
     }
@@ -30,7 +37,8 @@ public struct SourceOptions: Sendable, Equatable {
     var request: SourceAddRequest? {
         url.map {
             SourceAddRequest(
-                url: $0, app: app, bundle: bundle, platform: platform, name: name, asset: asset)
+                url: $0, app: app, bundle: bundle, platform: platform, name: name, asset: asset,
+                tagRule: tagRule, downloadPath: downloadPath, requireBuild: requireBuild)
         }
     }
 }
@@ -38,7 +46,8 @@ public struct SourceOptions: Sendable, Equatable {
 /// `source list`, `source add` and `source remove` (design section 8, custom sources).
 ///
 /// `list` is read-only and offline: every source `fetch` knows, built-in and custom, with the metadata URL, the exact hosts and
-/// whether the owner approved it in `approvedSources`. No network, no `.op.lock`, no write; it is safe for an agent to run. A
+/// whether the owner approved it in `approvedSources` (an `asset` may be a template with one `{version}`; `tagRule`,
+/// `downloadPath` and `requireBuild` appear only when a custom source sets them). No network, no `.op.lock`, no write; it is safe for an agent to run. A
 /// `customSources` entry that was left out is a `CUSTOM_SOURCE_IGNORED` warning.
 ///
 /// `add --url U` is a preview: one bounded metadata GET through `Services.http`, no lock, no write. With `--confirm <value>
@@ -86,6 +95,8 @@ public enum SourceCommand {
             ("url", options.url != nil), ("app", options.app != nil),
             ("bundle", options.bundle != nil), ("platform", options.platform != nil),
             ("name", options.name != nil), ("asset", options.asset != nil),
+            ("tag-rule", options.tagRule != nil), ("download-path", options.downloadPath != nil),
+            ("require-build", options.requireBuild),
             ("confirm", options.confirm != nil),
             ("yes", options.yes),
         ]
@@ -117,6 +128,9 @@ public enum SourceCommand {
                 "approved": .bool(approved != nil),
             ]
             if let asset = source.kind.pinnedAsset { entry["asset"] = .string(asset) }
+            if let rule = source.kind.tagRule { entry["tagRule"] = .string(rule.rawValue) }
+            if let path = source.kind.downloadPath { entry["downloadPath"] = .string(path) }
+            if source.kind.requiresBuild { entry["requireBuild"] = true }
             return .object(entry)
         }
         return ["sources": .array(sources), "warnings": .array(registry.warnings)]
@@ -128,7 +142,7 @@ public enum SourceCommand {
         -> Envelope
     {
         let usage =
-            "sideload source add --url <https url> [--app <id>] [--asset <file.ipa>] [--confirm <value> --yes]"
+            "sideload source add --url <https url> [--app <id>] [--asset <file.ipa>] [--tag-rule underscoreSuffix] [--download-path <path>] [--require-build] [--confirm <value> --yes]"
         if options.sub == "add", options.url == nil {
             return .fail(
                 SourceAdd.command, code: "USAGE", message: "source add needs --url.", fix: usage)
