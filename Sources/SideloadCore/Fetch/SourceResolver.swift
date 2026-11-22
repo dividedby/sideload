@@ -267,12 +267,14 @@ enum SourceResolver {
 
     /// An owner-added GitHub repository: the latest release (never a draft or pre-release). Without `asset` it must have exactly
     /// one asset named `*.ipa`, whatever its name; with `asset` (the owner's pin) the one asset of exactly that name, compared
-    /// case-sensitively and in full. Other assets (checksum files, dSYMs, the other platform's IPA) are ignored. The version is
-    /// the tag without one leading `v`, and the asset's download URL must be exactly the repository's
-    /// `releases/download/<tag>/<name>`.
-    static func customGithub(app: String, repo: String, asset pin: String? = nil, json: Data) throws
-        -> ResolvedAsset
-    {
+    /// case-sensitively and in full. A pin holding `{version}` is that name with the release's version filled in. Other assets
+    /// (checksum files, dSYMs, the other platform's IPA) are ignored. The version is the tag without one leading `v` (`tagRule`
+    /// `plain`) or what follows the `_` of a `v<x>_<ver>` tag (`underscoreSuffix`), and the asset's download URL must be exactly
+    /// the repository's `releases/download/<tag>/<name>`.
+    static func customGithub(
+        app: String, repo: String, asset rawPin: String? = nil, tagRule: TagRule = .plain,
+        json: Data
+    ) throws -> ResolvedAsset {
         let release: Release
         do { release = try JSONDecoder().decode(Release.self, from: json) } catch {
             throw invalid("the release is not valid JSON")
@@ -280,11 +282,40 @@ enum SourceResolver {
         if release.draft == true || release.prerelease == true {
             throw notAllowed("the latest release is a draft or pre-release")
         }
-        guard let tag = release.tagName, isSafeToken(tag) else {
-            throw notAllowed("the tag has unexpected characters")
+        let tag: String
+        let version: String
+        switch tagRule {
+        case .plain:
+            guard let named = release.tagName, isSafeToken(named) else {
+                throw notAllowed("the tag has unexpected characters")
+            }
+            tag = named
+            version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
+            guard isSafeToken(version) else { throw notAllowed("the tag is not a plain version") }
+        case .underscoreSuffix:
+            guard let named = release.tagName else { throw invalid("no tag") }
+            let parts = named.split(separator: "_", omittingEmptySubsequences: false)
+            guard parts.count == 2, parts[0].hasPrefix("v"),
+                isSafeToken(String(parts[0].dropFirst())), isSafeToken(String(parts[1]))
+            else { throw notAllowed("the tag is not v<x>_<ver>") }
+            tag = named
+            version = String(parts[1])
         }
-        let version = tag.hasPrefix("v") ? String(tag.dropFirst()) : tag
-        guard isSafeToken(version) else { throw notAllowed("the tag is not a plain version") }
+        var pin: String?
+        if let rawPin {
+            if rawPin.contains(where: { $0 == "{" || $0 == "}" }) {
+                guard let parsed = AssetPin(rawPin) else {
+                    throw notAllowed("the asset pin is not a {version} template")
+                }
+                let name = parsed.name(version: version)
+                guard isSafeToken(name) else {
+                    throw notAllowed("the pinned asset name has unexpected characters")
+                }
+                pin = name
+            } else {
+                pin = rawPin
+            }
+        }
         let assets = release.assets ?? []
         let ipas: [Release.Asset]
         if let pin {
@@ -388,11 +419,17 @@ enum SourceResolver {
             && Array(parts[5...]) == ["releases", "download", tag, name]
     }
 
-    /// An owner-added AltStore index: the one app with `bundleId`, its first (latest) version, downloaded over https from one
-    /// of `hosts`. Like the Stremio index, with no pin on the path beyond a plain `.ipa` name.
-    static func customAltstore(app: String, bundleId: String, hosts: Set<String>, json: Data) throws
-        -> ResolvedAsset
-    {
+    /// The placeholder an index source's `downloadPath` holds for the version key.
+    static let versionKeyPlaceholder = "{versionKey}"
+
+    /// An owner-added AltStore index: the one app with `bundleId`, its first (latest) version, downloaded over https from one of
+    /// `hosts`. With no `downloadPath` there is no pin on the path beyond a plain `.ipa` name; with one the download's path is
+    /// exactly that, its `{versionKey}` filled in. With `requireBuild` the index must declare a build, so the version key is
+    /// `<ver>b<build>`.
+    static func customAltstore(
+        app: String, bundleId: String, hosts: Set<String>, downloadPath: String? = nil,
+        requireBuild: Bool = false, json: Data
+    ) throws -> ResolvedAsset {
         let index: Index
         do { index = try JSONDecoder().decode(Index.self, from: json) } catch {
             throw invalid("the index is not valid JSON")
@@ -407,13 +444,15 @@ enum SourceResolver {
         guard let ver = latest.version?.text, isSafeToken(ver) else {
             throw invalid("the version is missing or has unexpected characters")
         }
-        // Unlike Stremio's index, a source may leave the build out; the version then stands alone.
+        // Unless `requireBuild` says otherwise, a source may leave the build out; the version then stands alone.
         var build: String?
         if let declared = latest.buildVersion {
             guard let text = declared.text, isSafeToken(text) else {
                 throw invalid("the build has unexpected characters")
             }
             build = text
+        } else if requireBuild {
+            throw invalid("the build is missing")
         }
         let digest = try parseDigest(latest.sha256, prefixed: false)
         let size = try checkSize(latest.size)
@@ -441,6 +480,12 @@ enum SourceResolver {
             isSafeToken(last),
             !components.dropFirst().contains(where: { $0.isEmpty || $0 == "." || $0 == ".." })
         else { throw notAllowed("the download path is not a plain .ipa path") }
+        if let downloadPath,
+            parts.percentEncodedPath
+                != downloadPath.replacingOccurrences(of: versionKeyPlaceholder, with: versionKey)
+        {
+            throw notAllowed("the download path is not \(printableCut(downloadPath, to: 120))")
+        }
         return ResolvedAsset(
             app: app, version: versionKey, fileName: last, url: url, upstreamDigest: digest,
             size: size, build: build, minOS: minOS)
@@ -451,11 +496,13 @@ enum SourceResolver {
         case .githubRelease(let repo): try apollo(app: source.app, repo: repo, json: json)
         case .altstoreIndex(_, let bundleId, let host, let tvos):
             try stremio(app: source.app, bundleId: bundleId, host: host, tvos: tvos, json: json)
-        case .customGithubRelease(let repo, let asset):
-            try customGithub(app: source.app, repo: repo, asset: asset, json: json)
-        case .customAltstoreIndex(_, let bundleId):
+        case .customGithubRelease(let repo, let asset, let tagRule):
+            try customGithub(
+                app: source.app, repo: repo, asset: asset, tagRule: tagRule, json: json)
+        case .customAltstoreIndex(_, let bundleId, let downloadPath, let requireBuild):
             try customAltstore(
-                app: source.app, bundleId: bundleId, hosts: source.downloadHosts, json: json)
+                app: source.app, bundleId: bundleId, hosts: source.downloadHosts,
+                downloadPath: downloadPath, requireBuild: requireBuild, json: json)
         }
     }
 }

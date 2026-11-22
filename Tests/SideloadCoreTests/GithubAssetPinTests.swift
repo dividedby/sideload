@@ -181,7 +181,7 @@ struct AssetPinConfigTests {
         arguments: [
             JSONValue.number(1), .bool(true), .null, .array([]), .string(""), .string("App"),
             .string("App.zip"), .string("App.ipa.txt"), .string("a/App.ipa"), .string("../App.ipa"),
-            .string("App ipa.ipa"), .string("App*.ipa"), .string("{version}.ipa"),
+            .string("App ipa.ipa"), .string("App*.ipa"),
             .string(String(repeating: "a", count: 70) + ".ipa"), .string("é.ipa"),
         ])
     func invalid(value: JSONValue) {
