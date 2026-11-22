@@ -5,6 +5,16 @@ All notable changes to the `sideload` CLI and the menu bar app are documented he
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-21
+
+A custom GitHub source can now be pinned to one exact release file, so a repository that ships both an iOS and a tvOS IPA
+can be added, each app as its own source. Use `source add --asset
+<file.ipa>`, or pick the file in the menu bar app's Add source…. Sources without a pin behave and confirm exactly as before.
+Not yet run against a real repository or in the built app. CLI changes in behaviour: new `--asset` option on `source add`;
+an unpinned release with several IPAs is now `SOURCE_AMBIGUOUS` at `source add` (it was `SOURCE_NOT_ALLOWED`), with the
+file names in `data.candidates`; `source list` and the `source add` preview show `asset` when pinned. CI now also runs
+swift-format lint, oxlint and shellcheck, with a `ci-ok` merge gate.
+
 ### Added
 
 - A custom GitHub source can be pinned to one exact release asset, so a repository that publishes an iOS and a tvOS IPA
@@ -1257,7 +1267,8 @@ max(lent, labApps) - lent)`, `used = managed + unmanaged + lent + pending`. If t
 - The CLI no longer crashes with an `EPIPE` stack trace when its stdout reader closes early
   (e.g. `sideload doctor | head`).
 
-[Unreleased]: https://github.com/dividedby/sideload/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/dividedby/sideload/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/dividedby/sideload/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/dividedby/sideload/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/dividedby/sideload/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/dividedby/sideload/compare/v0.5.0...v0.6.0
