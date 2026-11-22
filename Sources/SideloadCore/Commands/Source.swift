@@ -208,34 +208,16 @@ public enum SourceCommand {
                 removeCommand, code: "USAGE", message: "source remove needs --app.",
                 fix: "sideload source remove --app <id> [--yes]")
         }
-        if AppRegistry.builtIns.contains(where: { $0.id == app }) {
-            throw SideloadError(
-                "SOURCE_BUILT_IN", "\(app) is a built-in app; its source is part of sideload.",
-                fix:
-                    "A built-in source cannot be removed. Narrow its hosts in approvedSources instead."
-            )
-        }
-        let config = try services.store.load()
-        let entries = try SourceAdd.entries(config, "customSources").filter {
-            SourceAdd.field($0, "app") == app
-        }
-        guard let entry = entries.first else {
-            throw notFound(app)
-        }
-        let stays = staying(services, app: app, registry: config.appRegistry)
-        let approvals = config.approvedSources.filter { approval(app, $0) }.count
+        let preview = try SourceRemove.preview(services, app: app)
+        let stays = preview.staysJSON
         guard options.yes else {
             return .result(
                 removeCommand,
                 [
                     "preview": true, "written": false, "app": .string(app),
-                    "kind": .string(printableCut(SourceAdd.field(entry, "kind") ?? "")),
-                    "source": .string(
-                        printableCut(
-                            SourceAdd.field(entry, "url") ?? SourceAdd.field(entry, "repo") ?? "",
-                            to: 200)),
-                    "customSourcesEntries": .number(Double(entries.count)),
-                    "approvedSourcesEntries": .number(Double(approvals)),
+                    "kind": .string(preview.kind), "source": .string(preview.source),
+                    "customSourcesEntries": .number(Double(preview.sourceEntries)),
+                    "approvedSourcesEntries": .number(Double(preview.approvalEntries)),
                     "stays": .object(stays),
                     "next": .string(
                         "Nothing was removed. The owner removes the source with: sideload source remove --app \(app) --yes"
@@ -273,30 +255,9 @@ public enum SourceCommand {
             ])
     }
 
-    private static func notFound(_ app: String) -> SideloadError {
-        SideloadError(
-            "SOURCE_NOT_FOUND",
-            "\"\(printableCut(app))\" has no entry in customSources.",
-            fix: "Run `sideload source list` for the sources there are.")
-    }
+    private static func notFound(_ app: String) -> SideloadError { SourceRemove.notFound(app) }
 
     private static func approval(_ app: String, _ value: JSONValue) -> Bool {
-        guard case .object(let o) = value else { return false }
-        return o["app"] == .string(app)
-    }
-
-    /// What `source remove` leaves alone, as counts and booleans.
-    private static func staying(_ services: Services, app: String, registry: AppRegistry)
-        -> [String: JSONValue]
-    {
-        let manifest = (try? ManifestStore(paths: services.home).load())?.entries.filter {
-            $0.app == app
-        }.count
-        let installs = (try? services.ledgerStore.load())?.installs.filter { $0.app == app }.count
-        return [
-            "customApp": .bool(registry.app(app) != nil),
-            "manifestEntries": manifest.map { .number(Double($0)) } ?? .null,
-            "installs": installs.map { .number(Double($0)) } ?? .null,
-        ]
+        SourceRemove.approval(app, value)
     }
 }

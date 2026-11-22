@@ -99,6 +99,11 @@ public struct MenuActionOutcome: Sendable, Equatable {
                 app, alias: alias, envelope: envelope, action: action, cancelled: cancelled,
                 chain: .update(from: from))
         case .addSource(let source): readAddSource(source, envelope: envelope, action: action)
+        case .removeSource(let removal):
+            readSingle(
+                envelope, action: action, app: "", done: "Removed the source for \(removal.name)",
+                failed: "Source not removed")
+            if envelope.ok { notes = [MenuSourceRemove.removedNote] }
         case .saveDevice(let alias, _):
             readSingle(
                 envelope, action: action, app: "", done: "Saved \(alias)",
@@ -135,6 +140,7 @@ public struct MenuActionOutcome: Sendable, Equatable {
                     notes.append(chain.keptNote)
                 }
             case .addSource: notes = ["Nothing was added."]
+            case .removeSource: break
             case .renew, .lendable, .autoRenew, .saveDevice: break
             }
             // What finished before the stop stays visible; what was cut short is not a failure to retry.
@@ -603,6 +609,8 @@ public enum MenuActionState: Sendable, Equatable {
     case addingDevice(MenuDevicePicker)
     /// Add source: the address field, the read, or the list of an index's apps. Read-only; the write goes through `confirming`.
     case addingSource(MenuSourcePicker)
+    /// Remove source: the list of the owner's sources. Read-only; the removal goes through `confirming`.
+    case removingSource(MenuSourceRemovePicker)
     case finished(MenuActionOutcome)
 }
 

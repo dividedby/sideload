@@ -1,8 +1,8 @@
 import SideloadCore
 import SwiftUI
 
-/// "Add device…" and "Add source…", under the panel's content. Opening either only reads: a device list, or nothing until an
-/// address is given.
+/// "Add device…", "Add source…" and "Remove source…", under the panel's content. Opening any of them only reads: a device list,
+/// nothing until an address is given, or the config's list of added sources.
 struct AddDeviceRow: View {
     var model: MenuModel
 
@@ -16,6 +16,10 @@ struct AddDeviceRow: View {
                 .buttonStyle(.plain)
                 .disabled(!model.canAddSource)
                 .help(MenuSourceAdd.entryHelp)
+            Button(MenuSourceRemove.entryLabel) { model.openRemoveSource() }
+                .buttonStyle(.plain)
+                .disabled(!model.canRemoveSource)
+                .help(MenuSourceRemove.entryHelp)
             Spacer(minLength: 0)
         }
     }

@@ -134,6 +134,11 @@ platform (an iOS / Apple TV choice for a new app, starting at what the index say
 confirm value, so a source that changed meanwhile ends as "The source changed since you reviewed it" and nothing is written.
 Nothing is downloaded; the new app then appears under Add app….
 
+Remove source… (beside Add source…) removes a source you added, the same as `source remove --app <id> --yes`. It lists the
+sources in `customSources` (built-in sources are not listed), and the inline confirm shows the address and what stays: the
+app, its downloaded builds and its installs, so Renew keeps working; Add app… and updates stop offering it. There is no edit:
+to change a source, remove it and add it again. Not yet run in the built app.
+
 Add device… (under the panel's content, also on first run) adds a device without the terminal. It lists the physical iOS and
 tvOS devices `devicectl` sees that are not saved yet, each as its type, connection and last four UDID characters ("iPad · USB ·
 …ab12", never its name). Pick one, edit the suggested alias, and an inline confirm saves it, the same as `device save --yes`;
@@ -330,7 +335,7 @@ capitalised, not its `name`), but does not offer to add it. None of this has bee
 
 ## Custom download sources (`customSources`)
 
-Issue 47: **`source add`, `source remove` and the menu bar app's "Add source…" write the `customSources` array (below) for
+Issue 47: **`source add`, `source remove` and the menu bar app's "Add source…" and "Remove source…" write the `customSources` array (below) for
 you, or you can edit it by hand.** The owner added and installed a GitHub source (PhotosBackup) through the menu on 2026-11-16; `source remove` and an AltStore source have not been run for real. Per the
 owner's rule (2026-11-01) a source is the owner's to add: an agent never adds one to `config.json`.
 

@@ -430,6 +430,34 @@ final class MenuModel {
         }
     }
 
+    // MARK: Remove source
+
+    /// Remove source… takes a click when Add source… does.
+    var canRemoveSource: Bool { canAddSource }
+
+    /// Opens the list of the owner's sources (a read of `config.json`). Nothing is removed until the confirm.
+    func openRemoveSource() {
+        guard canRemoveSource else { return }
+        closePicker()
+        actionState = .removingSource(MenuSourceRemove.list(services))
+    }
+
+    /// The list's Continue: the preview of what goes and what stays, then the confirm.
+    func chooseSourceToRemove(_ source: MenuRemovableSource) {
+        guard case .removingSource(.choosing(let listed, _)) = actionState, actionTask == nil
+        else { return }
+        let issue: MenuIssue
+        switch MenuSourceRemove.preview(services, app: source.app) {
+        case .confirm(let removal):
+            request(.removeSource(removal))
+            if case .confirming = actionState { return }
+            issue = MenuActionOutcome.notRunIssue(MenuSourceAdd.panelNotReady)
+        case .failed(let failed):
+            issue = failed
+        }
+        actionState = .removingSource(.choosing(listed, problem: issue))
+    }
+
     private func closePicker() {
         pickerGeneration += 1
         pickerTask?.cancel()
@@ -456,7 +484,7 @@ final class MenuModel {
     func dismiss() {
         switch actionState {
         case .confirming, .finished: actionState = .idle
-        case .addingDevice, .addingSource:
+        case .addingDevice, .addingSource, .removingSource:
             closePicker()
             actionState = .idle
         case .idle, .running: break
@@ -469,7 +497,7 @@ final class MenuModel {
         case .idle: true
         // A result is replaced by the next action, but not while the command's post-result work still runs.
         case .finished: actionTask == nil
-        case .confirming, .running, .addingDevice, .addingSource: false
+        case .confirming, .running, .addingDevice, .addingSource, .removingSource: false
         }
     }
 
