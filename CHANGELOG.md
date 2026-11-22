@@ -5,6 +5,13 @@ All notable changes to the `sideload` CLI and the menu bar app are documented he
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-21
+
+The menu bar app can now remove a download source you added: Remove source… beside Add source… shows what is removed and
+what stays (the app, its downloaded builds and its installs), and the confirm click does what `source remove --yes` does.
+If the source changed after the confirm opened, nothing is written. Not yet run in the built app. No change in CLI
+behaviour: `source remove` prints the same JSON as before.
+
 ### Added
 
 - The menu bar app has "Remove source…" beside "Add source…": pick a source you added, review what is removed (its
@@ -1280,7 +1287,8 @@ max(lent, labApps) - lent)`, `used = managed + unmanaged + lent + pending`. If t
 - The CLI no longer crashes with an `EPIPE` stack trace when its stdout reader closes early
   (e.g. `sideload doctor | head`).
 
-[Unreleased]: https://github.com/dividedby/sideload/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/dividedby/sideload/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/dividedby/sideload/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/dividedby/sideload/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/dividedby/sideload/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/dividedby/sideload/compare/v0.6.0...v0.7.0
