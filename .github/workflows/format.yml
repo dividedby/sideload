@@ -26,7 +26,7 @@ jobs:
       # The ubuntu-latest image ships a Swift 6.4 toolchain, which includes `swift format`.
       - name: Lint Swift (swift-format)
         run: swift format lint --strict --recursive .
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v7
         with:
           node-version: 22
