@@ -112,47 +112,7 @@ enum SourceResolver {
         }
     }
 
-    /// Tag `v<x>_<ver>`; the asset must be named exactly `Apollo-Reborn-<ver>-GLASS-NOEXTENSIONS.ipa`, and its
-    /// download URL exactly the repository's `releases/download/<tag>/<name>`. Look-alikes (`-NOEXTENSIONS`,
-    /// `-GLASSICONS-NOEXTENSIONS`, `-GLASS`, dSYMs, `.deb`) never match, whatever their order.
-    static func apollo(app: String, repo: String, json: Data) throws -> ResolvedAsset {
-        let release: Release
-        do { release = try JSONDecoder().decode(Release.self, from: json) } catch {
-            throw invalid("the release is not valid JSON")
-        }
-        if release.draft == true || release.prerelease == true {
-            throw notAllowed("the latest release is a draft or pre-release")
-        }
-        guard let tag = release.tagName else { throw invalid("no tag") }
-        let parts = tag.split(separator: "_", omittingEmptySubsequences: false)
-        guard parts.count == 2, parts[0].hasPrefix("v"), isSafeToken(String(parts[0].dropFirst())),
-            isSafeToken(String(parts[1]))
-        else {
-            throw notAllowed("the tag is not v<x>_<ver>")
-        }
-        let version = String(parts[1])
-        let name = "Apollo-Reborn-\(version)-GLASS-NOEXTENSIONS.ipa"
-        let matches = (release.assets ?? []).filter { $0.name == name }
-        guard matches.count == 1, let asset = matches.first else {
-            throw notAllowed(
-                matches.isEmpty
-                    ? "no asset named exactly the GLASS-NOEXTENSIONS IPA"
-                    : "more than one asset with the IPA's name")
-        }
-        if let state = asset.state, state != "uploaded" {
-            throw notAllowed("the asset is not fully uploaded")
-        }
-        let digest = try parseDigest(asset.digest, prefixed: true)
-        let size = try checkSize(asset.size)
-        guard let link = asset.browserDownloadURL, let url = URL(string: link),
-            url.absoluteString == "https://github.com/\(repo)/releases/download/\(tag)/\(name)"
-        else { throw notAllowed("the asset's download URL is not the repository's release URL") }
-        return ResolvedAsset(
-            app: app, version: version, fileName: name, url: url, upstreamDigest: digest,
-            size: size, build: nil, minOS: nil)
-    }
-
-    // MARK: Stremio (gorlev AltStore-style indexes)
+    // MARK: AltStore-style indexes
 
     struct Loose: Decodable {
         let text: String?
@@ -193,65 +153,6 @@ enum SourceResolver {
         }
     }
 
-    /// The app with `bundleId` (Stremio's `com.stremio.pal`), its first (latest) version. The URL must be https on
-    /// `host` (`dl.strem.io`); for tvOS it must be exactly `/apple/<ver>b<build>/tvos/stremio_tvOS.ipa` (design section 8);
-    /// for iOS the path is pinned only to a plain `.ipa` name until the first approved fetch shows its shape.
-    static func stremio(app: String, bundleId: String, host: String, tvos: Bool, json: Data) throws
-        -> ResolvedAsset
-    {
-        let index: Index
-        do { index = try JSONDecoder().decode(Index.self, from: json) } catch {
-            throw invalid("the index is not valid JSON")
-        }
-        let candidates = (index.apps ?? []).filter {
-            $0.bundleIdentifier == bundleId
-        }
-        guard candidates.count == 1 else {
-            throw notAllowed("the index has \(candidates.count) apps with the Stremio bundle ID")
-        }
-        guard let latest = candidates[0].versions?.first else {
-            throw invalid("the app has no versions")
-        }
-        guard let ver = latest.version?.text, isSafeToken(ver),
-            let build = latest.buildVersion?.text, isSafeToken(build)
-        else {
-            throw invalid("the version or build is missing or has unexpected characters")
-        }
-        let digest = try parseDigest(latest.sha256, prefixed: false)
-        let size = try checkSize(latest.size)
-        var minOS: String?
-        if let declared = latest.minOSVersion {
-            guard let text = declared.text,
-                text.range(of: #"^[0-9]{1,3}(\.[0-9]{1,3}){0,2}$"#, options: .regularExpression)
-                    != nil
-            else {
-                throw invalid("minOSVersion is not a version number")
-            }
-            minOS = text
-        }
-        let versionKey = "\(ver)b\(build)"
-        guard isSafeToken(versionKey), let link = latest.downloadURL, let url = URL(string: link),
-            let parts = URLComponents(url: url, resolvingAgainstBaseURL: false),
-            parts.scheme == "https", parts.host == host, parts.port == nil,
-            parts.user == nil,
-            parts.password == nil, parts.query == nil, parts.fragment == nil
-        else { throw notAllowed("the download URL is not https on \(host)") }
-        let path = parts.percentEncodedPath
-        let components = path.split(separator: "/", omittingEmptySubsequences: false)
-        guard components.count >= 2, components[0].isEmpty,
-            let last = components.last.map(String.init), last.hasSuffix(".ipa"),
-            isSafeToken(last),
-            !components.dropFirst().contains(where: { $0.isEmpty || $0 == "." || $0 == ".." })
-        else { throw notAllowed("the download path is not a plain .ipa path") }
-        if tvos, path != "/apple/\(versionKey)/tvos/stremio_tvOS.ipa" {
-            throw notAllowed(
-                "the tvOS download path is not /apple/<ver>b<build>/tvos/stremio_tvOS.ipa")
-        }
-        return ResolvedAsset(
-            app: app, version: versionKey, fileName: last, url: url, upstreamDigest: digest,
-            size: size, build: build, minOS: minOS)
-    }
-
     /// The asset's URL must be https on one of the source's (possibly narrowed) download hosts; `fetch` and `updates` both ask.
     static func requireDownloadHost(_ asset: ResolvedAsset, source: FetchSource) throws {
         guard DownloadPolicy.permits(asset.url, hosts: source.downloadHosts) else {
@@ -263,15 +164,15 @@ enum SourceResolver {
         }
     }
 
-    // MARK: custom sources (design section 8, custom sources)
+    // MARK: sources (design section 8)
 
-    /// An owner-added GitHub repository: the latest release (never a draft or pre-release). Without `asset` it must have exactly
+    /// A GitHub repository: the latest release (never a draft or pre-release). Without `asset` it must have exactly
     /// one asset named `*.ipa`, whatever its name; with `asset` (the owner's pin) the one asset of exactly that name, compared
     /// case-sensitively and in full. A pin holding `{version}` is that name with the release's version filled in. Other assets
     /// (checksum files, dSYMs, the other platform's IPA) are ignored. The version is the tag without one leading `v` (`tagRule`
     /// `plain`) or what follows the `_` of a `v<x>_<ver>` tag (`underscoreSuffix`), and the asset's download URL must be exactly
     /// the repository's `releases/download/<tag>/<name>`.
-    static func customGithub(
+    static func github(
         app: String, repo: String, asset rawPin: String? = nil, tagRule: TagRule = .plain,
         json: Data
     ) throws -> ResolvedAsset {
@@ -422,11 +323,11 @@ enum SourceResolver {
     /// The placeholder an index source's `downloadPath` holds for the version key.
     static let versionKeyPlaceholder = "{versionKey}"
 
-    /// An owner-added AltStore index: the one app with `bundleId`, its first (latest) version, downloaded over https from one of
+    /// An AltStore index: the one app with `bundleId`, its first (latest) version, downloaded over https from one of
     /// `hosts`. With no `downloadPath` there is no pin on the path beyond a plain `.ipa` name; with one the download's path is
     /// exactly that, its `{versionKey}` filled in. With `requireBuild` the index must declare a build, so the version key is
     /// `<ver>b<build>`.
-    static func customAltstore(
+    static func altstore(
         app: String, bundleId: String, hosts: Set<String>, downloadPath: String? = nil,
         requireBuild: Bool = false, json: Data
     ) throws -> ResolvedAsset {
@@ -493,14 +394,10 @@ enum SourceResolver {
 
     static func resolve(_ source: FetchSource, json: Data) throws -> ResolvedAsset {
         switch source.kind {
-        case .githubRelease(let repo): try apollo(app: source.app, repo: repo, json: json)
-        case .altstoreIndex(_, let bundleId, let host, let tvos):
-            try stremio(app: source.app, bundleId: bundleId, host: host, tvos: tvos, json: json)
-        case .customGithubRelease(let repo, let asset, let tagRule):
-            try customGithub(
-                app: source.app, repo: repo, asset: asset, tagRule: tagRule, json: json)
-        case .customAltstoreIndex(_, let bundleId, let downloadPath, let requireBuild):
-            try customAltstore(
+        case .githubRelease(let repo, let asset, let tagRule, _):
+            try github(app: source.app, repo: repo, asset: asset, tagRule: tagRule, json: json)
+        case .altstoreIndex(_, let bundleId, let downloadPath, let requireBuild):
+            try altstore(
                 app: source.app, bundleId: bundleId, hosts: source.downloadHosts,
                 downloadPath: downloadPath, requireBuild: requireBuild, json: json)
         }

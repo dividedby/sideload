@@ -174,7 +174,8 @@ actor SampleIPAs {
     static let shared = SampleIPAs()
     private var cache: [String: Task<Data, any Error>] = [:]
 
-    /// `plain`: one app and no extension. `withExtension`: the app plus a Share extension.
+    /// `plain`: one app and no extension (`io.example.apollo`). `apollo`: one app with Apollo's real bundle ID.
+    /// `withExtension`: the app plus a Share extension (`com.stremio.pal`).
     func data(_ kind: String) async throws -> Data {
         if let task = cache[kind] { return try await task.value }
         let task = Task<Data, any Error> {
@@ -186,7 +187,11 @@ actor SampleIPAs {
                     .app(bundleId: "com.stremio.pal"),
                     .appex(bundleId: "com.stremio.pal.share", point: "com.apple.share-services"),
                 ]
-                : [.app(bundleId: "io.example.apollo")]
+                : [
+                    .app(
+                        bundleId: kind == "apollo"
+                            ? "com.christianselig.Apollo" : "io.example.apollo")
+                ]
             return try Data(
                 contentsOf: URL(fileURLWithPath: try await makeIPA(bundles, in: dir.path)))
         }

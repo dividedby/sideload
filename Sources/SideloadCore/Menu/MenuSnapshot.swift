@@ -366,7 +366,7 @@ public struct MenuRefreshTarget: Sendable, Equatable {
 public struct MenuAddOption: Sendable, Equatable, Hashable {
     public var app: String
     public var name: String
-    /// Where the download comes from: "github.com", "dl.strem.io (third-party index)".
+    /// Where the download comes from: "github.com (third-party repository)", "dl.strem.io (third-party index)".
     public var source: String
     /// Adding it registers a new App ID (the bundle ID has no live epoch in the ledger).
     public var newAppId: Bool
@@ -381,8 +381,6 @@ public struct MenuAddSource: Sendable, Equatable {
     public var source: String
     /// The saved device `platform` it runs on.
     public var platform: String
-    /// A third-party index, which vouches for the file less than the publisher does.
-    public var thirdParty: Bool
 }
 
 /// What the device's own app list said, for the card's actions (they need a successful read).

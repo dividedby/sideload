@@ -408,9 +408,9 @@ struct SourceAddPreviewTests {
                 let out = await source(addArgs(widgetURL, extra), services)
                 #expect(code(out) == "INVALID_ARGUMENT", "\(extra)")
             }
-            // A bundle ID picks an app of an index; a release has none.
+            // On a release `--bundle` is the pin every IPA must carry; it is a preview like any other.
             let bundle = await source(addArgs(widgetURL, ["--bundle", "io.example.x"]), services)
-            #expect(code(bundle) == "INVALID_ARGUMENT")
+            #expect(bundle.ok && bundle.data["bundleId"] == "io.example.x", "\(bundle.errors)")
             #expect(http.getRequests.count == 1, "only the last one got as far as the GET")
         }
     }
@@ -481,16 +481,17 @@ struct SourceAddYesTests {
 
             var expected = before
             expected.extra["customApps"] = [["id": "widget", "platform": "ios"]]
-            expected.extra["customSources"] = [
-                [
-                    "app": "widget", "kind": "githubRelease", "repo": "acme/widget",
-                    "metadataHosts": ["api.github.com"],
-                    "downloadHosts": [
-                        "github.com", "objects.githubusercontent.com",
-                        "release-assets.githubusercontent.com",
-                    ], "addedAt": .string(ISO8601DateFormatter().string(from: testNow)),
-                ]
-            ]
+            expected.extra["customSources"] = .array(
+                (before.extra["customSources"]?.array ?? []) + [
+                    [
+                        "app": "widget", "kind": "githubRelease", "repo": "acme/widget",
+                        "metadataHosts": ["api.github.com"],
+                        "downloadHosts": [
+                            "github.com", "objects.githubusercontent.com",
+                            "release-assets.githubusercontent.com",
+                        ], "addedAt": .string(ISO8601DateFormatter().string(from: testNow)),
+                    ]
+                ])
             expected.approvedSources = before.approvedSources + [["app": "widget"]]
             #expect(try loadConfig(paths) == expected)
 
@@ -511,7 +512,8 @@ struct SourceAddYesTests {
             let (_, yes) = try await add(sourceIndexURL, services: services)
             #expect(yes.ok, "\(yes.errors)")
             let config = try loadConfig(paths)
-            let entry = try #require(config.extra["customSources"]?.array?.first)
+            let entry = try #require(
+                config.extra["customSources"]?.array?.first { $0["app"] == "widget" })
             #expect(entry["kind"] == "altstoreIndex" && entry["url"] == .string(sourceIndexURL))
             #expect(entry["bundleId"] == "io.example.widget")
             #expect(entry["metadataHosts"] == ["index.example.org"])
@@ -637,7 +639,12 @@ struct SourceAddYesTests {
         try await withSourceHome(config: sourceBaseConfig(extra: extra), http: http) {
             paths, services in
             let before = try configBytes(paths)
-            for app in ["apollo", "stremio-ios", "filler", "stremio", "taken", "broken"] {
+            // A built-in app with a source is SOURCE_EXISTS; the filler has no IPA.
+            for app in ["apollo", "stremio-ios"] {
+                let preview = await source(addArgs(widgetURL, ["--app", app]), services)
+                #expect(code(preview) == "SOURCE_EXISTS", "\(app) \(preview.errors)")
+            }
+            for app in ["filler", "stremio", "taken", "broken"] {
                 let preview = await source(addArgs(widgetURL, ["--app", app]), services)
                 #expect(code(preview) == "APP_EXISTS", "\(app) \(preview.errors)")
             }
@@ -876,7 +883,8 @@ struct SourceRemoveTests {
             expectLockFree(paths)
 
             var expected = before
-            expected.extra["customSources"] = [.object(other)]
+            expected.extra["customSources"] = .array(
+                [.object(other)] + BuiltInSources.definitions.map(\.entry))
             expected.approvedSources = before.approvedSources.filter { $0["app"] != "myapp" }
             #expect(try loadConfig(paths) == expected)
             let registry = try loadConfig(paths).appRegistry
@@ -886,21 +894,18 @@ struct SourceRemoveTests {
             // The last one takes the key with it.
             let last = await source(["remove", "--app", "second", "--yes"], services)
             #expect(last.ok)
-            #expect(try loadConfig(paths).extra["customSources"] == nil)
+            #expect(
+                try loadConfig(paths).extra["customSources"]
+                    == .array(BuiltInSources.definitions.map(\.entry)))
             #expect(await source(["list"], services).ok)
         }
     }
 
-    @Test("a built-in app is SOURCE_BUILT_IN, an unknown one SOURCE_NOT_FOUND")
+    @Test("the filler and an unknown app are SOURCE_NOT_FOUND")
     func refusals() async throws {
         try await withSourceHome(config: config(), http: SourceHTTP()) { paths, services in
             let before = try configBytes(paths)
-            for app in ["apollo", "stremio-ios", "filler"] {
-                #expect(
-                    code(await source(["remove", "--app", app, "--yes"], services))
-                        == "SOURCE_BUILT_IN")
-            }
-            for app in ["nothere", "Bad ID"] {
+            for app in ["filler", "nothere", "Bad ID"] {
                 #expect(
                     code(await source(["remove", "--app", app, "--yes"], services))
                         == "SOURCE_NOT_FOUND")
@@ -935,7 +940,7 @@ struct SourceRemoveTests {
             let out = await source(["remove", "--app", "myapp", "--yes"], services)
             #expect(out.ok && out.data["wrote"]?["approvedSources"] == 0, "\(out.errors)")
             let after = try loadConfig(paths)
-            #expect(after.extra["customSources"] == nil)
+            #expect(after.extra["customSources"] == .array(BuiltInSources.definitions.map(\.entry)))
         }
     }
 }

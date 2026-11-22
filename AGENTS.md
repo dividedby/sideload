@@ -88,6 +88,10 @@ the real `$SIDELOAD_HOME`. Full list with the exceptions: `.claude/rules/owner-o
 - A new source is allowed only when the owner confirms its URL and exact hosts, by `source add --yes` or the menu bar app's
   confirm click. Agents never pass that flag, never click it and never add a source to `config.json`. Each version from any
   source still needs the owner's approval, with version and SHA-256 recorded (issue 47).
+- Owner decision 2026-11-21: the one-time migration at upgrade writes the three former built-in sources (apollo, stremio-ios,
+  stremio-tvos) into `customSources` itself, copying only the definitions that shipped in code (same addresses, hosts and
+  pins, the owner's existing approval untouched, never a new host). It is the only case where sideload writes source entries
+  without the owner's confirm; every other source is still the owner's confirm. Detail: `docs/design.md` section 8.
 
 ## Code
 

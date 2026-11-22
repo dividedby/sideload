@@ -121,7 +121,8 @@ struct UpdateCacheStore: Sendable {
     /// The entries that hold a good listing (a version), by app: the last good one even when the last attempt failed. An entry
     /// with only an error says nothing and is left out, so an empty result means the file lists no version at all (missing,
     /// corrupt, wrong schema or only errors). Throws as `load` does.
-    func listings(now: Date, apps known: [String] = FetchCatalog.appNames) throws -> [String:
+    func listings(now: Date, apps known: [String]) throws
+        -> [String:
         UpdateCacheEntry]
     {
         try load(now: now, apps: known).cache.apps.filter { $0.value.upstream != nil }
@@ -130,7 +131,7 @@ struct UpdateCacheStore: Sendable {
     /// Never throws for a bad file: a missing, oversized, unparseable, wrong-schema file is an empty cache, and an entry that
     /// is future-dated or carries a value that fails the resolver's own checks is dropped. `repaired` says the file on disk is
     /// not what a clean write would leave, so the caller rewrites it. Only an unreadable file (an I/O error) throws.
-    func load(now: Date, apps known: [String] = FetchCatalog.appNames) throws -> (
+    func load(now: Date, apps known: [String]) throws -> (
         cache: UpdateCache, repaired: Bool
     ) {
         guard let data = try readFile(paths.updates) else { return (UpdateCache(), false) }

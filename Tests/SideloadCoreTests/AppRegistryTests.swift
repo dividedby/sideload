@@ -70,12 +70,19 @@ struct AppRegistryTests {
         #expect(AppDefinition.apollo.freeBundleId(prefix: "not valid!") == nil)
     }
 
-    @Test("golden: the built-in sources, their order, and the usage lists")
+    @Test("golden: the migrated sources, their order, and the usage lists")
     func builtInSources() throws {
-        let sources = AppRegistry.builtIn.fetchSources
+        // The built-in apps carry no source of their own; the migration gives an unmigrated config these three.
+        #expect(AppRegistry.builtIn.fetchSources.isEmpty)
+        let registry = Config().appRegistry
+        let sources = registry.fetchSources
         #expect(sources.map(\.app) == ["apollo", "stremio-ios", "stremio-tvos"])
         #expect(
-            sources[0].kind == .githubRelease(repo: "Apollo-Reborn/Apollo-Reborn")
+            sources[0].kind
+                == .githubRelease(
+                    repo: "Apollo-Reborn/Apollo-Reborn",
+                    asset: "Apollo-Reborn-{version}-GLASS-NOEXTENSIONS.ipa",
+                    tagRule: .underscoreSuffix, bundleId: "com.christianselig.Apollo")
                 && sources[0].metadataHosts == ["api.github.com"]
                 && sources[0].downloadHosts == [
                     "github.com", "objects.githubusercontent.com",
@@ -87,14 +94,17 @@ struct AppRegistryTests {
                 source.kind
                     == .altstoreIndex(
                         url: "https://raw.githubusercontent.com/gorlev/stremio-altstore/main/"
-                            + index, bundleId: "com.stremio.pal", host: "dl.strem.io", tvos: tvos))
+                            + index, bundleId: "com.stremio.pal",
+                        downloadPath: tvos ? "/apple/{versionKey}/tvos/stremio_tvOS.ipa" : nil,
+                        requireBuild: true))
             #expect(source.metadataHosts == ["raw.githubusercontent.com"])
             #expect(source.downloadHosts == ["dl.strem.io"])
         }
         #expect(AppRegistry.builtIn.names == ["stremio-ios", "stremio-tvos", "apollo", "filler"])
         #expect(AppRegistry.builtIn.choices(.all) == "apollo|stremio-ios|stremio-tvos|filler")
         #expect(AppRegistry.builtIn.choices(.signed) == "apollo|stremio-ios|stremio-tvos")
-        #expect(AppRegistry.builtIn.choices(.fetchable) == "apollo|stremio-ios|stremio-tvos")
+        #expect(registry.choices(.fetchable) == "apollo|stremio-ios|stremio-tvos")
+        #expect(registry.apps.filter(\.builtIn).count == 4)
     }
 
     @Test("with no customApps the config's registry is the built-ins, with no warning")
@@ -122,8 +132,8 @@ struct AppRegistryTests {
         #expect(
             tv.displayName == "TV Thing" && tv.devicePlatform == "tvos" && tv.sdk == "appletvos")
         #expect(tv.freeBundleId(prefix: prefix) == "io.github.dividedby.free.tvthing")
-        // A custom app has no source yet, so fetch and updates list exactly the built-in ones.
-        #expect(apps.fetchSources == AppRegistry.builtIn.fetchSources)
+        // A custom app has no source yet, so fetch and updates list exactly the migrated ones.
+        #expect(apps.fetchSources == Config().appRegistry.fetchSources)
         #expect(apps.apps(for: "tvos").map(\.id) == ["stremio-tvos", "tv-thing"])
         #expect(apps.choices(.all) == "apollo|myapp|stremio-ios|stremio-tvos|tv-thing|filler")
     }

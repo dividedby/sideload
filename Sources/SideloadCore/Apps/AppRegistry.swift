@@ -21,7 +21,7 @@ public struct AppDefinition: Sendable {
     /// The saved device's `platform` this app needs: "ios" or "tvos".
     public let devicePlatform: String
     let signer: Signer
-    /// Where `fetch` and `updates` read it from; nil for an app with no upstream (the filler, every custom entry).
+    /// Where `fetch` and `updates` read it from: its `customSources` entry; nil for an app with none (the filler, or one whose source was removed).
     let fetch: Fetch?
     /// Defined in code rather than in `customApps`.
     public let builtIn: Bool
@@ -98,48 +98,29 @@ extension AppDefinition: Hashable {
 // MARK: - Built-ins
 
 extension AppDefinition {
-    static let apolloRepo = "Apollo-Reborn/Apollo-Reborn"
-    static let stremioIndexBase = "https://raw.githubusercontent.com/gorlev/stremio-altstore/main/"
-    static let stremioBundleId = "com.stremio.pal"
-    static let stremioHost = "dl.strem.io"
-
+    /// The built-ins define the app (ID, suffix, platform, signer); none defines its source. The sources of `apollo`,
+    /// `stremio-ios` and `stremio-tvos` are `customSources` entries (`BuiltInSources`).
     static let stremioIOS = AppDefinition(
         id: "stremio-ios", displayName: "Stremio", suffix: "stremio", devicePlatform: "ios",
-        signer: .sign, fetch: stremioFetch(index: "stremio-ios.json", tvos: false), builtIn: true)
+        signer: .sign, fetch: nil, builtIn: true)
     static let stremioTVOS = AppDefinition(
         id: "stremio-tvos", displayName: "Stremio", suffix: "stremio", devicePlatform: "tvos",
-        signer: .sign, fetch: stremioFetch(index: "stremio-tvos.json", tvos: true), builtIn: true)
-    /// Release assets are served by github.com, which redirects to its object store; GitHub has used both
-    /// `objects.githubusercontent.com` and `release-assets.githubusercontent.com` for that.
+        signer: .sign, fetch: nil, builtIn: true)
     static let apollo = AppDefinition(
         id: "apollo", displayName: "Apollo", suffix: "apollo", devicePlatform: "ios",
-        signer: .sign,
-        fetch: Fetch(
-            kind: .githubRelease(repo: apolloRepo), metadataHosts: ["api.github.com"],
-            downloadHosts: [
-                "github.com", "objects.githubusercontent.com",
-                "release-assets.githubusercontent.com",
-            ]),
-        builtIn: true)
+        signer: .sign, fetch: nil, builtIn: true)
     /// A tiny app with no IPA: the Xcode-signed profile carrier itself. `provision` stages it as the `freeSigned`
     /// build, so `install` and `slot` can be exercised without a fetched IPA. Uses one App ID and one managed slot.
     static let filler = AppDefinition(
         id: "filler", displayName: "Filler", suffix: "filler", devicePlatform: "ios",
         signer: .provision, fetch: nil, builtIn: true)
-
-    private static func stremioFetch(index: String, tvos: Bool) -> Fetch {
-        Fetch(
-            kind: .altstoreIndex(
-                url: stremioIndexBase + index, bundleId: stremioBundleId, host: stremioHost,
-                tvos: tvos),
-            metadataHosts: ["raw.githubusercontent.com"], downloadHosts: [stremioHost])
-    }
 }
 
 // MARK: - Registry
 
 /// Every app sideload knows, by ID: the built-ins, then the valid entries of `customApps` in `config.json`. The registry
-/// only reads `customApps` and `customSources`; only `source add` and `source remove` write them. Each custom entry is checked on its own
+/// only reads `customApps` and `customSources`; only `source add`, `source remove` and the one-time `BuiltInSources` migration
+/// write them. Each custom entry is checked on its own
 /// and fails closed: an invalid one is left out with a warning, and never stops a built-in or another valid entry.
 public struct AppRegistry: Sendable {
     /// Built-ins first in their fixed order, then custom entries in `customApps` order.
@@ -150,7 +131,7 @@ public struct AppRegistry: Sendable {
 
     static let builtIns: [AppDefinition] = [.stremioIOS, .stremioTVOS, .apollo, .filler]
 
-    /// The built-ins alone, for places with no config in hand.
+    /// The built-in apps alone, with no source, for places with no config in hand.
     public static let builtIn = AppRegistry(apps: builtIns, warnings: [])
 
     static let warningCode = "CUSTOM_APP_IGNORED"
@@ -176,18 +157,25 @@ public struct AppRegistry: Sendable {
 
     /// The built-ins plus the valid entries of `config.customApps`. `customApps` is an optional array of
     /// `{"id", "platform", "suffix"?, "name"?}` objects; `suffix` defaults to the ID and `name` to the ID capitalised. A valid
-    /// entry of `config.customSources` (design section 8) becomes the `fetch` of the custom app it names.
+    /// entry of `config.customSources` (design section 8) becomes the `fetch` of the app it names, a built-in `sign` app included.
+    /// A config that has not had the one-time source migration yet (one built in memory, not read by `ConfigStore`) gets it
+    /// here, so every registry sees the same sources.
     public init(config: Config) {
+        var config = config
+        BuiltInSources.migrate(&config)
         var (custom, warnings) = Self.customApps(config)
-        let sources = CustomSources.load(config.extra["customSources"], customApps: custom)
-        custom = custom.map { app in
+        let signed = Self.builtIns.filter { !$0.signedByProvision }
+        let sources = CustomSources.load(config.extra["customSources"], apps: signed + custom)
+        func attach(_ app: AppDefinition) -> AppDefinition {
             guard let fetch = sources.fetches[app.id] else { return app }
             return AppDefinition(
                 id: app.id, displayName: app.displayName, suffix: app.suffix,
                 devicePlatform: app.devicePlatform, signer: app.signer, fetch: fetch,
-                builtIn: false)
+                builtIn: app.builtIn)
         }
-        self.init(apps: Self.builtIns + custom, warnings: warnings + sources.warnings)
+        custom = custom.map(attach)
+        warnings.append(contentsOf: sources.warnings)
+        self.init(apps: Self.builtIns.map(attach) + custom, warnings: warnings)
     }
 
     /// The valid `customApps` entries, without a source, and a warning for each one left out.

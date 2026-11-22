@@ -90,7 +90,9 @@ struct ConfigTests {
     func missingConfig() async throws {
         try await withTestHome { _, store in
             let cfg = try store.load()
-            #expect(cfg == Config())
+            var defaults = Config()
+            BuiltInSources.migrate(&defaults)
+            #expect(cfg == defaults)
             #expect(
                 cfg.teamId == Team.id && cfg.devices.isEmpty && cfg.approvedSources.isEmpty
                     && cfg.lastNotified.isEmpty)

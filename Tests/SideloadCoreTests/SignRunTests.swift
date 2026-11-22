@@ -678,3 +678,27 @@ struct SignWorkFailureTests {
         }
     }
 }
+
+@Suite("sign: the owner removed every migrated source")
+struct SignWithoutSourcesTests {
+    @Test(
+        "sign never reads a source: an approved fetched version signs with customSources empty and the marker set",
+        arguments: [SampleApp.apollo, .stremioIOS, .stremioTVOS])
+    func signs(app: SampleApp) async throws {
+        try await withSignWorld(
+            app: app,
+            config: { config in
+                config.extra["customSources"] = .array([])
+                config.extra[BuiltInSources.markerKey] = true
+                config.approvedSources = []
+            }
+        ) { w in
+            let registry = try w.store.load().appRegistry
+            #expect(registry.fetchSources.isEmpty && registry.app(app.rawValue) != nil)
+            let out = await w.run()
+            #expect(out.ok, "\(out.errors)")
+            #expect(out.data["app"] == .string(app.rawValue))
+            #expect(out.data["signed"] == .string(w.relativeSigned))
+        }
+    }
+}

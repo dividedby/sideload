@@ -180,6 +180,25 @@ extension StatusCommand {
             ])
         }
 
+        // The one explicit write of the source migration: a config that still lacks it is rewritten (under the config lock, never
+        // `.op.lock`), so the status agent persists it even when nothing else is to be recorded. A busy lock is tried again at
+        // the next run.
+        if (try? services.store.loadReporting())?.migrationPending == true {
+            do {
+                try await services.store.update { _ in }
+                warnings.removeAll {
+                    guard case .object(let o) = $0 else { return false }
+                    return o["code"] == .string(BuiltInSources.warningCode)
+                }
+            } catch {
+                let why = (error as? SideloadError).map { " (\($0.code))" } ?? ""
+                warn(
+                    "SOURCE_MIGRATION_NOT_SAVED",
+                    "config.json could not be updated\(why), so the source migration is not saved yet; every command still sees the migrated sources.",
+                    "It is retried at the next `sideload status --notify` or config write.")
+            }
+        }
+
         if let config = snapshot.config {
             let updates = updateItems(services, snapshot: snapshot, config: config)
             let current =

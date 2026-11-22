@@ -12,7 +12,9 @@ prepares and explains it.
 - Deleting anything from the keychain or the developer portal.
 - Installing anything system-wide, or anything that needs root/elevated privileges.
 - Pairing changes and any new download source (`source add --yes`, `source remove --yes` and the menu bar app's "Add
-  source…" and "Remove source…" confirm clicks are built and are the owner's). Agents never run `source add`, with or without `--yes` (its
+  source…" and "Remove source…" confirm clicks are built and are the owner's; restoring a removed apollo or Stremio source is a
+  `source add`, the owner's too. The one-time migration of the three former built-in sources is the single case where sideload
+  writes source entries without the owner's confirm: it copies only what shipped in code, decision 2026-11-21). Agents never run `source add`, with or without `--yes` (its
   preview makes a network GET to an arbitrary address), and never run `source remove --yes`, against the real
   `$SIDELOAD_HOME`; they never click "Add source…" or "Remove source…" in the app. Tests run them against a temp home and fake HTTP.
 - Running `canary`, `provision`, `sign`, `install` or `refresh` (any mode) on a real device, from the CLI or from the menu
@@ -52,6 +54,8 @@ prepares and explains it.
   no lock, no device, and it writes only `$SIDELOAD_HOME/updates.json`. It never approves, fetches, signs or installs
   anything; a newer version it reports is still `fetch`, the owner's `--approve`, `sign` and `install`.
 - `sideload source list` is read-only and safe for an agent to run: no network, no lock, no device, no write. It lists
-  every source, built-in and custom, with its exact hosts and whether `approvedSources` approves it. `source add` without
+  every source (apollo, stremio-ios and stremio-tvos included, which the one-time migration of 2026-11-21 made ordinary
+  `customSources` entries), with its exact hosts and whether `approvedSources` approves it. It never writes the migration; the
+  first config write or `status --notify` does. `source add` without
   `--yes` is a preview that writes nothing, but it does one GET to the address it is given, so it is the owner's to run
   too (see "Ask the owner first").

@@ -180,7 +180,7 @@ struct StremioIndexTests {
         #expect(asset.url.host == "dl.strem.io")
         #expect(asset.minOS == "14.0" && asset.build == "142")
         #expect(FetchCatalog.sources.map(\.app) == ["apollo", "stremio-ios", "stremio-tvos"])
-        #expect(AppDefinition.stremioBundleId == "com.stremio.pal")
+        #expect(BuiltInSources.stremioBundleId == "com.stremio.pal")
     }
 
     @Test(

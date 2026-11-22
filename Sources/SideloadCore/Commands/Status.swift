@@ -106,13 +106,14 @@ public enum StatusCommand {
         var slotDevices: [JSONValue] = []
         var loadedConfig: Config?
         do {
-            let config = try services.store.load()
+            let (config, migrationPending) = try services.store.loadReporting()
             loadedConfig = config
             slotDevices = Self.slotDevices(
                 config: config, ledger: ledgerRead, readable: ledgerReadable, now: now)
             apps = config.apps.keys.sorted().map { .string($0) }
             // A custom app that is left out says why here; none is said when there is no `customApps`.
             warnings += config.appRegistry.warnings
+            if migrationPending { warnings.append(BuiltInSources.pendingWarning) }
             // A device without IDs is its own warning; the apps above still count.
             do {
                 devices = try config.savedDevices().map { d in

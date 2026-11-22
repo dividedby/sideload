@@ -33,7 +33,7 @@ private func twoIPAs(tag: String = "0.3.8") -> Data {
 }
 
 private func resolve(_ json: Data, asset pin: String?) throws -> ResolvedAsset {
-    try SourceResolver.customGithub(app: "myapp", repo: "acme/widget", asset: pin, json: json)
+    try SourceResolver.github(app: "myapp", repo: "acme/widget", asset: pin, json: json)
 }
 
 private func failure(_ body: () throws -> Any) -> SideloadError? {
@@ -170,7 +170,7 @@ struct AssetPinConfigTests {
         #expect(pinned.warnings.isEmpty)
         #expect(
             pinned.app("myapp")?.fetch?.kind
-                == .customGithubRelease(repo: "acme/widget", asset: tvosName))
+                == .githubRelease(repo: "acme/widget", asset: tvosName))
         #expect(pinned.app("myapp")?.fetch?.kind.pinnedAsset == tvosName)
         let plain = customConfig(sources: [entry(nil)]).appRegistry
         #expect(plain.app("myapp")?.fetch?.kind.pinnedAsset == nil)
@@ -209,7 +209,7 @@ struct AssetPinConfigTests {
             let mine = try #require(out.data["sources"]?.array?.first { $0["app"] == "myapp" })
             #expect(mine["asset"] == .string(tvosName))
             let builtIn = try #require(out.data["sources"]?.array?.first { $0["app"] == "apollo" })
-            #expect(builtIn["asset"] == nil)
+            #expect(builtIn["asset"] == "Apollo-Reborn-{version}-GLASS-NOEXTENSIONS.ipa")
         }
     }
 }
@@ -376,12 +376,13 @@ struct AssetPinAddTests {
             #expect(yes.ok, "\(yes.errors)")
             let config = try loadConfig(paths)
             let entries = try #require(config.extra["customSources"]?.array)
-            #expect(entries.count == 1 && entries[0]["asset"] == .string(tvosName))
+            let widget = entries.filter { $0["app"] == "widget" }
+            #expect(widget.count == 1 && widget[0]["asset"] == .string(tvosName))
             let registry = config.appRegistry
             #expect(registry.warnings.isEmpty)
             #expect(
                 registry.app("widget")?.fetch?.kind
-                    == .customGithubRelease(repo: "acme/widget", asset: tvosName))
+                    == .githubRelease(repo: "acme/widget", asset: tvosName))
             #expect(registry.app("widget")?.devicePlatform == "tvos")
         }
     }
@@ -394,7 +395,7 @@ struct AssetPinAddTests {
             let confirm = try #require(preview.data["confirm"]?.string)
             #expect(await source(addArgs(widgetURL, confirm: confirm), services).ok)
             let entries = try #require(try loadConfig(paths).extra["customSources"]?.array)
-            #expect(entries[0]["asset"] == nil)
+            #expect(entries.first { $0["app"] == "widget" }?["asset"] == nil)
         }
     }
 

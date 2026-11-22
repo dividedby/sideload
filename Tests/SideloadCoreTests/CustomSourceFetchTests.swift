@@ -43,7 +43,7 @@ private func widgetRelease(
 }
 
 private func resolveGithub(_ json: Data) throws -> ResolvedAsset {
-    try SourceResolver.customGithub(app: "myapp", repo: "acme/widget", json: json)
+    try SourceResolver.github(app: "myapp", repo: "acme/widget", json: json)
 }
 
 private func code(_ body: () throws -> Any) -> String? {
@@ -136,14 +136,14 @@ struct CustomGithubResolverTests {
     @Test("owner and repo compare without regard to case; the rest of the URL stays exact")
     func repoCase() throws {
         // The config says Acme/WIDGET; the API serves the canonical acme/widget.
-        let asset = try SourceResolver.customGithub(
+        let asset = try SourceResolver.github(
             app: "myapp", repo: "Acme/WIDGET", json: widgetRelease(blob))
         #expect(asset.url.absoluteString == assetURL("App.ipa"))
         // And the other way round.
         var upper = widgetAssets(blob)
         upper[0].url = "https://github.com/ACME/Widget/releases/download/0.3.8/App.ipa"
         #expect(
-            try SourceResolver.customGithub(
+            try SourceResolver.github(
                 app: "myapp", repo: "acme/widget", json: widgetRelease(blob, assets: upper)
             ).version == "0.3.8")
         // A different repository still refuses, and so does a changed case anywhere else.
@@ -160,7 +160,7 @@ struct CustomGithubResolverTests {
             assets[0].url = url
             #expect(
                 code {
-                    try SourceResolver.customGithub(
+                    try SourceResolver.github(
                         app: "myapp", repo: "Acme/WIDGET", json: widgetRelease(blob, assets: assets)
                     )
                 } == "SOURCE_NOT_ALLOWED", "\(url)")
@@ -197,7 +197,7 @@ struct CustomAltstoreResolverTests {
     private func resolve(_ json: Data, hosts: Set<String> = ["cdn.example.org"]) throws
         -> ResolvedAsset
     {
-        try SourceResolver.customAltstore(
+        try SourceResolver.altstore(
             app: "myapp", bundleId: "io.example.apollo", hosts: hosts, json: json)
     }
 
@@ -258,15 +258,11 @@ struct CustomAltstoreResolverTests {
         #expect(code { try resolve(Data(odd.utf8)) } == "SOURCE_INVALID")
     }
 
-    @Test("the built-in Stremio resolver still requires the build")
+    @Test("the migrated Stremio entry still requires the build")
     func stremioStillNeedsBuild() throws {
         let json = try withoutBuild(stremioIndexJSON(tvos: false))
-        #expect(
-            code {
-                try SourceResolver.stremio(
-                    app: "stremio-ios", bundleId: AppDefinition.stremioBundleId,
-                    host: AppDefinition.stremioHost, tvos: false, json: json)
-            } == "SOURCE_INVALID")
+        let source = try #require(FetchCatalog.sources.first { $0.app == "stremio-ios" })
+        #expect(code { try SourceResolver.resolve(source, json: json) } == "SOURCE_INVALID")
     }
 
     @Test("an index without the pinned bundle ID is refused")
@@ -562,17 +558,6 @@ struct CustomFetchTests {
             }
             #expect(partFiles(paths).isEmpty && scratchFolders(paths).isEmpty)
             expectLockFree(paths)
-        }
-    }
-
-    @Test("a built-in source records no bundle ID in the manifest")
-    func builtInUnchanged() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
-        try await withCustom(sources: [githubEntry]) { paths, _ in
-            let out = await fetch(paths, apolloTransport(ipa: ipa), app: "apollo")
-            #expect(out.ok, "\(out.errors)")
-            let manifest = try ManifestStore(paths: paths).load()
-            #expect(manifest.entries.count == 1 && manifest.entries[0].bundleId == nil)
         }
     }
 }

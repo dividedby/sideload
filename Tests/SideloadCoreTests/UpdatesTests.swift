@@ -44,16 +44,16 @@ struct VersionOrderTests {
 
     @Test("the strings the resolver produces parse")
     func resolverStrings() throws {
-        let apollo = try SourceResolver.apollo(
-            app: "apollo", repo: AppDefinition.apolloRepo,
+        let source = { (app: String) in FetchCatalog.sources.first { $0.app == app }! }
+        let apollo = try SourceResolver.resolve(
+            source("apollo"),
             json: releaseJSON(
                 tag: "v1.15.11_3.9.0",
                 assets: [ReleaseAsset(name: "Apollo-Reborn-3.9.0-GLASS-NOEXTENSIONS.ipa")]))
         #expect(
             VersionOrder.parse(apollo.version) == VersionOrder.Parsed(parts: [3, 9, 0], build: nil))
-        let stremio = try SourceResolver.stremio(
-            app: "stremio-ios", bundleId: AppDefinition.stremioBundleId,
-            host: AppDefinition.stremioHost, tvos: false, json: stremioIndexJSON(tvos: false))
+        let stremio = try SourceResolver.resolve(
+            source("stremio-ios"), json: stremioIndexJSON(tvos: false))
         #expect(
             VersionOrder.parse(stremio.version)
                 == VersionOrder.Parsed(parts: [1, 9, 6], build: 142))
@@ -90,7 +90,8 @@ struct UpdateCacheTests {
             ).failed(code: "FETCH_HTTP_ERROR", retryAfter: 600, at: testNow.addingTimeInterval(60))
             try store.save(cache)
             #expect(modeOf(paths.updates) == 0o600)
-            let (loaded, repaired) = try store.load(now: testNow.addingTimeInterval(120))
+            let (loaded, repaired) = try store.load(
+                now: testNow.addingTimeInterval(120), apps: FetchCatalog.appNames)
             #expect(loaded == cache && !repaired)
             let raw = try String(contentsOfFile: paths.updates, encoding: .utf8)
             #expect(raw.contains("\"schema\" : 1"))
@@ -115,7 +116,7 @@ struct UpdateCacheTests {
     @Test("a missing file is an empty cache and needs no rewrite")
     func missing() async throws {
         try await cacheStore { store, _ in
-            let (cache, repaired) = try store.load(now: testNow)
+            let (cache, repaired) = try store.load(now: testNow, apps: FetchCatalog.appNames)
             #expect(cache == UpdateCache() && !repaired)
         }
     }
@@ -130,12 +131,12 @@ struct UpdateCacheTests {
     func corrupt(text: String) async throws {
         try await cacheStore { store, paths in
             try writeRaw(text, paths)
-            let (cache, repaired) = try store.load(now: testNow)
+            let (cache, repaired) = try store.load(now: testNow, apps: FetchCatalog.appNames)
             #expect(cache == UpdateCache() && repaired)
         }
         try await cacheStore { store, paths in
             try writeRaw(String(repeating: " ", count: UpdateCacheStore.maxBytes + 1), paths)
-            let (cache, repaired) = try store.load(now: testNow)
+            let (cache, repaired) = try store.load(now: testNow, apps: FetchCatalog.appNames)
             #expect(cache == UpdateCache() && repaired)
         }
     }
@@ -149,11 +150,13 @@ struct UpdateCacheTests {
             cache.apps["apollo"] = UpdateCacheEntry().failed(
                 code: "FETCH_NETWORK", retryAfter: nil, at: testNow.addingTimeInterval(7200))
             try store.save(cache)
-            let (loaded, repaired) = try store.load(now: testNow)
+            let (loaded, repaired) = try store.load(now: testNow, apps: FetchCatalog.appNames)
             #expect(Set(loaded.apps.keys) == ["stremio-tvos"] && repaired)
             // A few seconds ahead is clock noise, not skew.
             #expect(
-                try store.load(now: testNow.addingTimeInterval(3600 - 30)).cache.apps["stremio-ios"]
+                try store.load(
+                    now: testNow.addingTimeInterval(3600 - 30), apps: FetchCatalog.appNames
+                ).cache.apps["stremio-ios"]
                     != nil)
         }
     }
@@ -174,7 +177,7 @@ struct UpdateCacheTests {
                 "\"version\":\"3.9.0\",\"size\":1000",
             ] {
                 try writeRaw(entry(bad), paths)
-                let (cache, repaired) = try store.load(now: testNow)
+                let (cache, repaired) = try store.load(now: testNow, apps: FetchCatalog.appNames)
                 #expect(cache.apps["apollo"] == nil && repaired, "\(bad)")
             }
             // Optional strings that fail are dropped on their own; the rest of the entry survives.
@@ -183,7 +186,7 @@ struct UpdateCacheTests {
                     good
                         + ",\"build\":\"a b\",\"minOS\":\"15.x\",\"errorAt\":\"\(stamp)\",\"errorCode\":\"lower case\""
                 ), paths)
-            let (cache, repaired) = try store.load(now: testNow)
+            let (cache, repaired) = try store.load(now: testNow, apps: FetchCatalog.appNames)
             let kept = try #require(cache.apps["apollo"])
             #expect(
                 kept.version == "3.9.0" && kept.build == nil && kept.minOS == nil
@@ -198,7 +201,7 @@ struct UpdateCacheTests {
             try writeRaw(
                 "{\"schema\":1,\"apps\":{\"evil\":{\"checkedAt\":\"\(stamp)\",\"version\":\"1.0\",\"size\":5,\"sha256\":\"\(goodDigest)\"}}}",
                 paths)
-            let (cache, repaired) = try store.load(now: testNow)
+            let (cache, repaired) = try store.load(now: testNow, apps: FetchCatalog.appNames)
             #expect(cache.apps.isEmpty && repaired)
         }
     }
@@ -338,8 +341,10 @@ private struct UpdatesWorld {
     }
 
     func cache() -> UpdateCache {
-        (try? UpdateCacheStore(paths: paths).load(now: testNow.addingTimeInterval(10 * 86_400))
-            .cache) ?? UpdateCache()
+        (try? UpdateCacheStore(paths: paths).load(
+            now: testNow.addingTimeInterval(10 * 86_400), apps: FetchCatalog.appNames
+        )
+        .cache) ?? UpdateCache()
     }
 
     /// The command ran no subprocess and asked for no IPA.

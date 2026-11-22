@@ -386,7 +386,7 @@ struct MenuAddSourceRunTests {
             #expect(outcome.notes == [MenuSourceAdd.addedNote] && outcome.lines.isEmpty)
             let config = try loadConfig(paths)
             #expect(config.extra["customApps"] == [["id": "widget", "platform": "ios"]])
-            #expect(config.extra["customSources"]?.array?.count == 1)
+            #expect(config.extra["customSources"]?.array?.count == 4)
             #expect(config.approvedSources.last == ["app": "widget"])
             #expect(http.downloadCount == 0)
             expectLockFree(paths)
@@ -394,7 +394,7 @@ struct MenuAddSourceRunTests {
             // The new app is what Add app… offers.
             let snapshot = menuBuild(config: config)
             let offered = snapshot.addSources.first { $0.app == "widget" }
-            #expect(offered?.thirdParty == true && offered?.platform == "ios")
+            #expect(offered?.platform == "ios")
         }
     }
 
@@ -535,7 +535,9 @@ struct MenuAddSourceModelTests {
         }
         #expect(w.http.getRequests.count == 1 && w.http.downloadCount == 0)
         // Nothing is written before the click.
-        #expect(try w.model.services.store.load().extra["customSources"] == nil)
+        #expect(
+            try w.model.services.store.load().extra["customSources"]
+                == .array(BuiltInSources.definitions.map(\.entry)))
 
         w.model.confirm()
         try await until { !w.model.actionBusy }
@@ -545,7 +547,7 @@ struct MenuAddSourceModelTests {
         }
         #expect(outcome.kind == .done && outcome.headline == "Added the source for Widget")
         #expect(w.http.getRequests.count == 2, "the click repeated the read")
-        #expect(try w.model.services.store.load().extra["customSources"]?.array?.count == 1)
+        #expect(try w.model.services.store.load().extra["customSources"]?.array?.count == 4)
         #expect(source.confirm.count == 16)
 
         // The panel redraws from the config at once (no device read) and Add app… knows the app.
@@ -712,7 +714,9 @@ struct MenuAddSourceModelTests {
         }
         #expect(outcome.headline == "The source changed since you reviewed it")
         #expect(outcome.issues.first?.code == "SOURCE_CHANGED" && outcome.lines.isEmpty)
-        #expect(try w.model.services.store.load().extra["customSources"] == nil)
+        #expect(
+            try w.model.services.store.load().extra["customSources"]
+                == .array(BuiltInSources.definitions.map(\.entry)))
     }
 
     @Test(

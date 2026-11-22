@@ -11,10 +11,12 @@ let builtCommands: [JSONValue] = [
 
 private let helpFlags: Set<String> = ["-h", "--help"]
 
-private func help() -> Envelope {
+private func help(_ services: Services? = nil) -> Envelope {
     let all = AppRegistry.builtIn.choices(.all)
     let signed = AppRegistry.builtIn.choices(.signed)
-    let fetchable = AppRegistry.builtIn.choices(.fetchable)
+    // The apps with a source are the owner's `customSources`: listed from the config when it reads, else a placeholder.
+    let sourced = (try? (services ?? liveServices()).store.load())?.appRegistry.choices(.fetchable)
+    let fetchable = sourced.flatMap { $0.isEmpty ? nil : $0 } ?? "app"
     return .result(
         "help",
         [
@@ -112,12 +114,12 @@ func run(argv: [String], services: Services? = nil) async -> Envelope {
 }
 
 private func dispatch(argv: [String], services: Services?) async -> Envelope {
-    guard let command = argv.first, command != "help" else { return help() }
+    guard let command = argv.first, command != "help" else { return help(services) }
     let rest = Array(argv.dropFirst())
     let wantsHelp = rest.contains { helpFlags.contains($0) }
 
     if command.hasPrefix("-") {
-        if helpFlags.contains(command) { return help() }
+        if helpFlags.contains(command) { return help(services) }
         return Envelope.from(ArgParser.usage("Unknown option '\(command)'."), command: "sideload")
     }
 
@@ -141,7 +143,7 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     case "app": spec = appSpec
     case "slot": spec = slotSpec
     default:
-        if wantsHelp { return help() }
+        if wantsHelp { return help(services) }
         guard allCommands.contains(.string(command)) else {
             return .fail(
                 command, code: "UNKNOWN_COMMAND", message: "Unknown command \"\(command)\".",
@@ -159,7 +161,7 @@ private func dispatch(argv: [String], services: Services?) async -> Envelope {
     } catch {
         return .from(error, command: command)
     }
-    if parsed.help { return help() }
+    if parsed.help { return help(services) }
 
     // `device` takes one subcommand, `canary` only `history`, `ledger` only `refresh`, `portal` one list name, `inspect` one path; `doctor` and `status` take none.
     let maxPositionals =

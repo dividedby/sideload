@@ -21,7 +21,7 @@ enum DownloadPolicy {
     }
 }
 
-/// How a custom GitHub source's release tag gives the version (design section 8, custom sources). A closed set: a general tag
+/// How a GitHub source's release tag gives the version (design section 8, custom sources). A closed set: a general tag
 /// template would match ambiguously, and nothing needs it.
 enum TagRule: String, Sendable, Equatable {
     /// The tag without one leading `v`.
@@ -30,7 +30,7 @@ enum TagRule: String, Sendable, Equatable {
     case underscoreSuffix
 }
 
-/// A custom GitHub source's `asset`: an exact file name, or a template holding one `{version}` that the release's version
+/// A GitHub source's `asset`: an exact file name, or a template holding one `{version}` that the release's version
 /// fills in. Braces never occur in a plain file name, so the two forms cannot be confused.
 enum AssetPin: Equatable, Sendable {
     case exact(String)
@@ -61,72 +61,59 @@ enum AssetPin: Equatable, Sendable {
     }
 }
 
-/// One source `fetch` knows how to read (design section 8, approved sources). Each comes from an app in `AppRegistry`,
-/// which pins the metadata URL, the asset selection and the host ceiling. `approvedSources` in `config.json` is the owner's
-/// switch for each of them and may only narrow the hosts.
+/// One source `fetch` knows how to read (design section 8, sources). Each is a `customSources` entry of the owner's config
+/// (the three former built-in ones included, seeded once by `BuiltInSources`), which pins the metadata URL, the asset selection
+/// and the host ceiling. `approvedSources` in `config.json` is the owner's switch for each of them and may only narrow the hosts.
 struct FetchSource: Sendable, Equatable {
     enum Kind: Sendable, Equatable {
-        /// GitHub releases API; the asset is chosen by exact name.
-        case githubRelease(repo: String)
-        /// A gorlev AltStore-style index: the one app with `bundleId`, downloaded from `host`; `tvos` pins the exact CDN
-        /// path shape (design section 8).
-        case altstoreIndex(url: String, bundleId: String, host: String, tvos: Bool)
-        /// An owner-added GitHub repository (`customSources`, design section 8): the latest release's `.ipa` asset, pinned from
-        /// the first approved version by bundle ID. With `asset` the one asset of exactly that name (or, when it holds one
+        /// A GitHub repository: the latest release's `.ipa` asset, pinned from the first approved version by bundle ID (or by
+        /// `bundleId` when the entry declares it). With `asset` the one asset of exactly that name (or, when it holds one
         /// `{version}`, of that name with the release's version in it); without it the release must have exactly one `.ipa`.
         /// `tagRule` says how the tag gives the version.
-        case customGithubRelease(repo: String, asset: String?, tagRule: TagRule = .plain)
-        /// An owner-added AltStore index: the one app with `bundleId`, which every fetched IPA must carry. `downloadPath` pins
+        case githubRelease(
+            repo: String, asset: String?, tagRule: TagRule = .plain, bundleId: String? = nil)
+        /// An AltStore index: the one app with `bundleId`, which every fetched IPA must carry. `downloadPath` pins
         /// the download's exact path (one `{versionKey}` stands for the version key) and `requireBuild` makes the index's
         /// `buildVersion` mandatory, so the version key is always `<ver>b<build>`.
-        case customAltstoreIndex(
+        case altstoreIndex(
             url: String, bundleId: String, downloadPath: String? = nil, requireBuild: Bool = false)
-
-        var isThirdParty: Bool {
-            switch self {
-            case .githubRelease: false
-            case .altstoreIndex, .customGithubRelease, .customAltstoreIndex: true
-            }
-        }
 
         /// The `kind` a source of this shape has in `customSources` and in `source list`.
         var configKind: String {
             switch self {
-            case .githubRelease, .customGithubRelease: "githubRelease"
-            case .altstoreIndex, .customAltstoreIndex: "altstoreIndex"
+            case .githubRelease: "githubRelease"
+            case .altstoreIndex: "altstoreIndex"
             }
         }
 
-        /// The asset a custom GitHub source is pinned to, if any: an exact file name or a template with one `{version}`.
+        /// The asset a GitHub source is pinned to, if any: an exact file name or a template with one `{version}`.
         var pinnedAsset: String? {
-            if case .customGithubRelease(_, let asset, _) = self { return asset }
+            if case .githubRelease(_, let asset, _, _) = self { return asset }
             return nil
         }
 
-        /// The tag rule of a custom GitHub source when it is not the plain one.
+        /// The tag rule of a GitHub source when it is not the plain one.
         var tagRule: TagRule? {
-            if case .customGithubRelease(_, _, let rule) = self, rule != .plain { return rule }
+            if case .githubRelease(_, _, let rule, _) = self, rule != .plain { return rule }
             return nil
         }
 
-        /// The download path template of a custom index source, if it has one.
+        /// The bundle ID a GitHub source declares for its IPAs, if any.
+        var pinnedBundleId: String? {
+            if case .githubRelease(_, _, _, let bundleId) = self { return bundleId }
+            return nil
+        }
+
+        /// The download path template of an index source, if it has one.
         var downloadPath: String? {
-            if case .customAltstoreIndex(_, _, let path, _) = self { return path }
+            if case .altstoreIndex(_, _, let path, _) = self { return path }
             return nil
         }
 
-        /// A custom index source that insists on a build number.
+        /// An index source that insists on a build number.
         var requiresBuild: Bool {
-            if case .customAltstoreIndex(_, _, _, let required) = self { return required }
+            if case .altstoreIndex(_, _, _, let required) = self { return required }
             return false
-        }
-
-        /// Added by the owner in `customSources` rather than defined in code.
-        var isCustom: Bool {
-            switch self {
-            case .customGithubRelease, .customAltstoreIndex: true
-            case .githubRelease, .altstoreIndex: false
-            }
         }
     }
 
@@ -139,9 +126,9 @@ struct FetchSource: Sendable, Equatable {
 
     var metadataURL: URL {
         switch kind {
-        case .githubRelease(let repo), .customGithubRelease(let repo, _, _):
+        case .githubRelease(let repo, _, _, _):
             URL(string: "https://api.github.com/repos/\(repo)/releases/latest")!
-        case .altstoreIndex(let url, _, _, _), .customAltstoreIndex(let url, _, _, _):
+        case .altstoreIndex(let url, _, _, _):
             URL(string: url)!
         }
     }
@@ -155,19 +142,14 @@ struct FetchSource: Sendable, Equatable {
 
 /// The fetch sources of the apps in `AppRegistry`, and the owner's `approvedSources` switch over them.
 enum FetchCatalog {
-    /// The built-in apps' sources, in app-ID order.
-    static var sources: [FetchSource] { AppRegistry.builtIn.fetchSources }
-
-    static var appNames: [String] { sources.map(\.app) }
-
-    /// The apps with a source in `config`'s registry: the built-ins' and the valid `customSources`.
+    /// The apps with a source in `config`'s registry: the valid `customSources`.
     static func appNames(_ config: Config) -> [String] {
         config.appRegistry.fetchSources.map(\.app)
     }
 
-    /// The same for a command that has not read the config: the built-ins' when it cannot be read.
+    /// The same for a command that has not read the config: none when it cannot be read.
     static func appNames(_ services: Services) -> [String] {
-        (try? services.store.load()).map(appNames) ?? appNames
+        (try? services.store.load()).map(appNames) ?? []
     }
 
     /// The source of `app` in the config's registry, if the owner approved it in `config.approvedSources`. An entry is an
