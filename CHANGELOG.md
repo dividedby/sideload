@@ -5,6 +5,16 @@ All notable changes to the `sideload` CLI and the menu bar app are documented he
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-22
+
+No download source is built in any more. On upgrade, Apollo, Stremio iOS and Stremio tvOS become ordinary entries in
+`config.json`, copied exactly from what shipped and with your approvals unchanged, so you can see, remove and restore them
+like any source you added. The write waits for the first config write or the next `status --notify`; until then `status`,
+`source list` and `updates` warn `BUILT_IN_SOURCES_MIGRATED`. Fetches of the three are now pinned to their bundle IDs.
+Sources you add can use template pins (an asset name with `{version}`, a tag rule, a download-path template). Installed apps
+keep renewing whether or not their source is there. Run `scripts/install-local.sh` so the menu app and agents use the new
+build. Not yet run against the real config or a real source.
+
 ### Breaking (JSON and config)
 
 - Apollo, Stremio iOS and Stremio tvOS are no longer built-in sources. Each is an ordinary `customSources` entry that
@@ -1338,7 +1348,8 @@ max(lent, labApps) - lent)`, `used = managed + unmanaged + lent + pending`. If t
 - The CLI no longer crashes with an `EPIPE` stack trace when its stdout reader closes early
   (e.g. `sideload doctor | head`).
 
-[Unreleased]: https://github.com/dividedby/sideload/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/dividedby/sideload/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/dividedby/sideload/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/dividedby/sideload/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/dividedby/sideload/compare/v0.7.1...v0.8.0
 [0.7.1]: https://github.com/dividedby/sideload/compare/v0.7.0...v0.7.1
