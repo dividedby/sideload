@@ -33,7 +33,7 @@ public struct SourceRemovePreview: Sendable, Hashable {
     }
 }
 
-/// One app `source remove` can take: an app with a `customSources` entry that is not built in.
+/// One app `source remove` can take: an app with a `customSources` entry.
 public struct SourceRemovable: Sendable, Equatable {
     public var app: String
     public var kind: String
@@ -41,7 +41,6 @@ public struct SourceRemovable: Sendable, Equatable {
 }
 
 public enum SourceRemove {
-    public static let builtInCode = "SOURCE_BUILT_IN"
     public static let notFoundCode = "SOURCE_NOT_FOUND"
 
     /// The part of the config a removal acts on: the first entry's kind and address, and the entry counts.
@@ -64,15 +63,8 @@ public enum SourceRemove {
             approvalEntries: config.approvedSources.filter { approval(app, $0) }.count)
     }
 
-    /// The preview for `app`. Throws `SOURCE_BUILT_IN` for a built-in app and `SOURCE_NOT_FOUND` for an app with no entry.
+    /// The preview for `app`. Throws `SOURCE_NOT_FOUND` for an app with no entry.
     public static func preview(_ services: Services, app: String) throws -> SourceRemovePreview {
-        if AppRegistry.builtIns.contains(where: { $0.id == app }) {
-            throw SideloadError(
-                builtInCode, "\(app) is a built-in app; its source is part of sideload.",
-                fix:
-                    "A built-in source cannot be removed. Narrow its hosts in approvedSources instead."
-            )
-        }
         let config = try services.store.load()
         guard let target = try target(config, app: app) else { throw notFound(app) }
         let manifest = (try? ManifestStore(paths: services.home).load())?.entries.filter {
@@ -120,15 +112,12 @@ public enum SourceRemove {
             fix: "Nothing was removed. Review the source again before removing it.")
     }
 
-    /// Every app with a `customSources` entry, once each in file order, built-in apps left out (their entry cannot be
-    /// removed). Reads only the config.
+    /// Every app with a `customSources` entry, once each in file order. Reads only the config.
     public static func removable(_ config: Config) throws -> [SourceRemovable] {
         var seen = Set<String>()
         var listed: [SourceRemovable] = []
         for entry in try SourceAdd.entries(config, "customSources") {
-            guard let app = SourceAdd.field(entry, "app"), !seen.contains(app),
-                !AppRegistry.builtIns.contains(where: { $0.id == app })
-            else { continue }
+            guard let app = SourceAdd.field(entry, "app"), !seen.contains(app) else { continue }
             seen.insert(app)
             listed.append(
                 SourceRemovable(

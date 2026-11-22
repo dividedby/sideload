@@ -17,10 +17,20 @@ public struct ConfigStore: Sendable {
     }
 
     /// Never locks: writers rename atomically, so a reader sees the old or the new file, never a partial one.
-    /// A missing file yields the defaults.
-    public func load() throws -> Config {
-        guard let data = try readFile(paths.config) else { return Config() }
-        return try Config.parse(data)
+    /// A missing file yields the defaults. The one-time source migration (`BuiltInSources`) is applied in memory, never
+    /// written here: the next `update` persists it.
+    public func load() throws -> Config { try loadReporting().config }
+
+    /// `load()`, and whether the file exists and still lacks the migration `load()` applied in memory.
+    public func loadReporting() throws -> (config: Config, migrationPending: Bool) {
+        guard let data = try readFile(paths.config) else {
+            var config = Config()
+            BuiltInSources.migrate(&config)
+            return (config, false)
+        }
+        var config = try Config.parse(data)
+        let pending = BuiltInSources.migrate(&config)
+        return (config, pending)
     }
 
     /// Takes an exclusive `flock` on `.config.lock` (bounded `LOCK_NB` retry, then `BUSY`), re-reads the

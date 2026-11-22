@@ -32,7 +32,13 @@ func withTestHome<T>(
     let paths = Paths(home: dir.path)
     try paths.ensureHome()
     let store = ConfigStore(paths: paths)
-    if let config { try await store.update { $0 = config } }
+    // The home is written as a migrated one: the sources of the three former built-ins are in the file with their marker.
+    if let config {
+        try await store.update {
+            $0 = config
+            BuiltInSources.migrate(&$0)
+        }
+    }
     return try await body(paths, store)
 }
 
@@ -48,4 +54,10 @@ func listing(_ path: String) -> [String] {
 
 func errorCode(of error: any Error) -> String? {
     (error as? SideloadError)?.code
+}
+
+extension FetchCatalog {
+    /// The three sources the one-time migration gives an unmigrated config, in app-ID order (the former built-in sources).
+    static var sources: [FetchSource] { Config().appRegistry.fetchSources }
+    static var appNames: [String] { sources.map(\.app) }
 }

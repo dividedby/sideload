@@ -96,7 +96,7 @@ struct TemplatePinValidationTests {
         #expect(ghRegistry.warnings.isEmpty)
         #expect(
             ghRegistry.app("myapp")?.fetch?.kind
-                == .customGithubRelease(
+                == .githubRelease(
                     repo: "acme/widget", asset: "Apollo-Reborn-{version}-GLASS-NOEXTENSIONS.ipa",
                     tagRule: .underscoreSuffix))
 
@@ -107,7 +107,7 @@ struct TemplatePinValidationTests {
         #expect(idxRegistry.warnings.isEmpty)
         #expect(
             idxRegistry.app("myapp")?.fetch?.kind
-                == .customAltstoreIndex(
+                == .altstoreIndex(
                     url: "https://index.example.org/apps/index.json", bundleId: "io.example.apollo",
                     downloadPath: "/apple/{versionKey}/tvos/stremio_tvOS.ipa", requireBuild: true))
     }
@@ -172,7 +172,7 @@ struct TemplatePinValidationTests {
             let bare = try entry("plain")
             #expect(bare["tagRule"] == nil && bare["asset"] == nil && bare["requireBuild"] == nil)
             let apollo = try entry("apollo")
-            #expect(apollo["tagRule"] == nil && apollo["downloadPath"] == nil)
+            #expect(apollo["tagRule"] == "underscoreSuffix" && apollo["downloadPath"] == nil)
         }
     }
 }
@@ -246,14 +246,15 @@ struct TemplatePinAddTests {
             let yes = await source(addArgs(widgetURL, githubFlags, confirm: confirm), services)
             #expect(yes.ok, "\(yes.errors)")
             let config = try loadConfig(paths)
-            let entry = try #require(config.extra["customSources"]?.array?.first)
+            let entry = try #require(
+                config.extra["customSources"]?.array?.first { $0["app"] == "widget" })
             #expect(
                 entry["asset"] == "Widget-{version}.ipa" && entry["tagRule"] == "underscoreSuffix")
             #expect(entry["downloadPath"] == nil && entry["requireBuild"] == nil)
             #expect(config.appRegistry.warnings.isEmpty)
             #expect(
                 config.appRegistry.app("widget")?.fetch?.kind
-                    == .customGithubRelease(
+                    == .githubRelease(
                         repo: "acme/widget", asset: "Widget-{version}.ipa",
                         tagRule: .underscoreSuffix))
         }
@@ -277,13 +278,14 @@ struct TemplatePinAddTests {
             let yes = await source(addArgs(sourceIndexURL, indexFlags, confirm: confirm), services)
             #expect(yes.ok, "\(yes.errors)")
             let config = try loadConfig(paths)
-            let entry = try #require(config.extra["customSources"]?.array?.first)
+            let entry = try #require(
+                config.extra["customSources"]?.array?.first { $0["app"] == "widget" })
             #expect(entry["downloadPath"] == "/apple/{versionKey}/Widget.ipa")
             #expect(entry["requireBuild"] == true && entry["tagRule"] == nil)
             #expect(config.appRegistry.warnings.isEmpty)
             #expect(
                 config.appRegistry.app("widget")?.fetch?.kind
-                    == .customAltstoreIndex(
+                    == .altstoreIndex(
                         url: sourceIndexURL, bundleId: "io.example.widget",
                         downloadPath: "/apple/{versionKey}/Widget.ipa", requireBuild: true))
         }

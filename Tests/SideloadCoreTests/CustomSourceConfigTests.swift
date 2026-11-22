@@ -85,7 +85,7 @@ private let refusals: [Bad] = [
     Bad("an unknown kind") { $0["kind"] = "ftp" },
     Bad("a missing kind") { $0["kind"] = nil },
     Bad("a bad addedAt") { $0["addedAt"] = "yesterday" },
-    Bad("a built-in app") { $0["app"] = "apollo" },
+    Bad("the filler, which has no IPA") { $0["app"] = "filler" },
     Bad("an app that is not in customApps") { $0["app"] = "other" },
     Bad("an app that is not a string") { $0["app"] = 7 },
     // URL
@@ -161,9 +161,9 @@ struct CustomSourceValidationTests {
         #expect(codes(registry) == ["CUSTOM_SOURCE_IGNORED"], "\(messages(registry))")
         #expect(registry.app("myapp") != nil && registry.app("myapp")?.fetch == nil)
         #expect(registry.fetchSources.map(\.app) == ["apollo", "stremio-ios", "stremio-tvos"])
-        #expect(registry.app("apollo")?.fetch == AppDefinition.apollo.fetch)
+        #expect(registry.app("apollo")?.fetch == Config().appRegistry.app("apollo")?.fetch)
         let source = try FetchCatalog.approved(app: "apollo", config: config)
-        #expect(source.kind == AppDefinition.apollo.fetch?.kind)
+        #expect(source.kind == Config().appRegistry.app("apollo")?.fetch?.kind)
         #expect(throws: SideloadError.self) {
             try FetchCatalog.approved(app: "myapp", config: config)
         }
@@ -187,27 +187,24 @@ struct CustomSourceValidationTests {
         let github = customConfig(sources: [githubEntry]).appRegistry
         #expect(github.warnings.isEmpty)
         let ghFetch = try #require(github.app("myapp")?.fetch)
-        #expect(ghFetch.kind == .customGithubRelease(repo: "acme/widget", asset: nil))
+        #expect(ghFetch.kind == .githubRelease(repo: "acme/widget", asset: nil))
         #expect(ghFetch.metadataHosts == ["api.github.com"])
         #expect(
             ghFetch.downloadHosts == [
                 "github.com", "objects.githubusercontent.com",
                 "release-assets.githubusercontent.com",
             ])
-        #expect(ghFetch.kind.isThirdParty && ghFetch.kind.isCustom)
 
         let alt = customConfig(sources: [altstoreEntry]).appRegistry
         #expect(alt.warnings.isEmpty)
         let altFetch = try #require(alt.app("myapp")?.fetch)
         #expect(
             altFetch.kind
-                == .customAltstoreIndex(
+                == .altstoreIndex(
                     url: "https://index.example.org/apps/index.json", bundleId: "io.example.apollo")
         )
         #expect(altFetch.metadataHosts == ["index.example.org"])
         #expect(altFetch.downloadHosts == ["cdn.example.org"])
-        #expect(altFetch.kind.isThirdParty)
-        #expect(!(AppDefinition.apollo.fetch?.kind.isCustom ?? true))
         // Exactly 4 hosts and an addedAt with fractional seconds are fine.
         var four = altstoreEntry
         four["downloadHosts"] = .array(Array(manyHosts.prefix(4)))
@@ -259,7 +256,8 @@ struct CustomSourceValidationTests {
             messages(registry) == [
                 "customSources is not an array, so every custom source is ignored."
             ])
-        #expect(registry.fetchSources.map(\.app) == ["apollo", "stremio-ios", "stremio-tvos"])
+        // The registry ignores the whole key, the three former built-in sources included.
+        #expect(registry.fetchSources.isEmpty)
 
         var bare = customConfig(sources: [githubEntry])
         bare.extra["customApps"] = nil
@@ -293,7 +291,7 @@ struct CustomSourceValidationTests {
 
         let approved = customConfig(sources: [githubEntry])
         let source = try FetchCatalog.approved(app: "myapp", config: approved)
-        #expect(source.kind == .customGithubRelease(repo: "acme/widget", asset: nil))
+        #expect(source.kind == .githubRelease(repo: "acme/widget", asset: nil))
         #expect(FetchCatalog.approvedSources(approved).map(\.app).contains("myapp"))
     }
 

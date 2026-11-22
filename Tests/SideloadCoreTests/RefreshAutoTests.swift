@@ -624,6 +624,27 @@ struct RefreshAutoTests {
         }
     }
 
+    @Test(
+        "with the owner having removed every migrated source, a due install is still renewed: refresh never reads a source",
+        arguments: [AppDefinition.apollo, .stremioIOS])
+    func renewsWithNoSources(app: AppDefinition) async throws {
+        try await withAutoWorld([app], profileDays: 2) { a in
+            try await a.w.store.update { config in
+                config.extra["customSources"] = .array([])
+                config.extra[BuiltInSources.markerKey] = true
+                config.approvedSources = []
+            }
+            let config = try a.w.store.load()
+            #expect(
+                config.appRegistry.fetchSources.isEmpty && config.appRegistry.app(app.id) != nil)
+            let log = CallBox([])
+            let out = await auto(a, autoSteps(log))
+            #expect(out.ok && out.exitCode == 0, "\(out.errors)")
+            #expect(log.value == ["provision \(app.id)", "sign \(app.id)", "install \(app.id)"])
+            #expect(autoResult(out, app)?["status"] == "renewed")
+        }
+    }
+
     @Test("a manual run writes no auto log and says nothing to the owner")
     func manualIsQuiet() async throws {
         try await withAutoWorld(profileDays: 2) { a in

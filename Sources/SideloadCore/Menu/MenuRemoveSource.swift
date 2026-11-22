@@ -1,9 +1,10 @@
 import Foundation
 
-// Remove source (design section 12): the owner picks one of the sources they added, the panel reads what `source remove` would
+// Remove source (design section 12): the owner picks one of the sources, the panel reads what `source remove` would
 // remove and what stays (the same local, read-only preview the command prints), and the confirm click is the owner's
-// `source remove --yes`, checked under `.op.lock` against the preview shown (`SOURCE_CHANGED` when it differs). Built-in sources
-// are not listed and the command refuses them. Pure, apart from `list` and `preview`, which read local files through `Services`. Nothing here writes: the write is `MenuAction.removeSource`, run by
+// `source remove --yes`, checked under `.op.lock` against the preview shown (`SOURCE_CHANGED` when it differs). The three
+// former built-in sources are listed like any other; their default is restored with the CLI `source add` command the confirm
+// shows. Pure, apart from `list` and `preview`, which read local files through `Services`. Nothing here writes: the write is `MenuAction.removeSource`, run by
 // `MenuActionRunner` through `SourceCommand`. There is no edit: changing a source is Remove source then Add source.
 
 /// A source the owner is reviewing for removal: what the confirm shows. The click removes the app's entries by app ID.
@@ -48,12 +49,12 @@ public enum MenuSourceRemoveStep: Sendable, Equatable {
 public enum MenuSourceRemove {
     /// The words the views draw, here so they can be tested.
     public static let entryLabel = "Remove source…"
-    public static let entryHelp = "Remove a download source you added"
+    public static let entryHelp = "Remove a download source"
     public static let cardTitle = "Remove source"
     public static let pickerIntro =
         "Pick the source to remove. The app, its downloaded builds and its installs stay; to change a source, remove it and add it again."
     public static let noneAdded =
-        "There is no source to remove: only a source added with Add source… or `sideload source add` can be removed. Built-in sources are part of sideload."
+        "There is no source to remove: no app has a source in config.json."
     public static let confirmLabel = "Remove source"
     static let removedNote =
         "The app, its downloaded builds and its installs stay, and Renew keeps working. Add app… and updates no longer offer it; Add source… adds it again."
@@ -131,6 +132,9 @@ public enum MenuSourceRemove {
         lines.append(
             "Add app… and updates no longer offer \(removal.name). Nothing is uninstalled or deleted."
         )
+        if let readd = BuiltInSources.readd(app: p.app) {
+            lines.append("To restore the default source, run in a terminal: \(readd)")
+        }
         return MenuPrompt(
             title: "Remove the source for \(removal.name)?", lines: lines,
             confirmLabel: confirmLabel, destructive: true, runningLabel: "Removing the source…",

@@ -982,11 +982,9 @@ public enum MenuActions {
     private static func fetchedLines(
         _ app: String, _ fetched: MenuFetched, card: MenuDeviceCard, snapshot: MenuSnapshot
     ) -> [String] {
-        let thirdParty = snapshot.addSources.first { $0.app == app }?.thirdParty == true
+        // Every source is a third party's: the digest guards against corruption, not a bad index.
         let vouched =
-            thirdParty
-            ? "Matches the index's; a third party, so this guards against corruption, not a bad index"
-            : "Matches the publisher's"
+            "Matches the index's; a third party, so this guards against corruption, not a bad index"
         return buildLines(app, fetched, card: card) + [vouched]
     }
 

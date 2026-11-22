@@ -644,7 +644,7 @@ struct CleanPrunedEntryTests {
         "a later fetch of the same version stores the file again, clears prunedAt and keeps the approval; approving a pruned one says so"
     )
     func fetchClears() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
             let transport = apolloTransport(ipa: ipa)
             let services = fetchServices(paths, http: transport, runner: RecordingRunner())

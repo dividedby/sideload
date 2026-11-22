@@ -5,6 +5,35 @@ All notable changes to the `sideload` CLI and the menu bar app are documented he
 
 ## [Unreleased]
 
+### Breaking (JSON and config)
+
+- Apollo, Stremio iOS and Stremio tvOS are no longer built-in sources. Each is an ordinary `customSources` entry that
+  `source remove` and `source add` work on; the apps themselves (IDs, suffixes, platforms, lending rules, the filler) stay in
+  code. On upgrade a one-time migration copies the three former definitions (same addresses, hosts and pins; Apollo's
+  `{version}` asset with `tagRule underscoreSuffix`, Stremio tvOS's `downloadPath` and `requireBuild`, Stremio iOS's
+  `requireBuild`; no new host) into `customSources` and sets `builtInSourcesMigrated: true`. It never touches
+  `approvedSources`, so an approved app stays approved (host narrowing included) and an unapproved one stays unapproved. The
+  write is deferred: `status`, `source list` and `updates` never write and report the warning `BUILT_IN_SOURCES_MIGRATED`;
+  the first config write or the next `status --notify` persists the entries and the marker in one atomic rename. A source
+  removed after the marker exists is never brought back; deleting the marker by hand restores every missing default. This is
+  the one case where sideload writes source entries without the owner's confirm (owner decision 2026-11-21).
+- `source remove --app apollo|stremio-ios|stremio-tvos` no longer answers `SOURCE_BUILT_IN` (the code is retired); the
+  preview and the result carry `readd` and `next` names the exact `source add` command that restores the default (CLI only).
+  `source add --app <one of the three>` is `SOURCE_EXISTS` while it has a source and attaches like a custom app with no source
+  once removed (it was `APP_EXISTS`); the filler is still `APP_EXISTS`. `CUSTOM_SOURCE_IGNORED` no longer fires for an entry
+  naming one of the three.
+- Every fetched IPA is checked against a bundle-ID pin: Apollo `com.christianselig.Apollo`, both Stremio apps
+  `com.stremio.pal`, so a swapped file is `BUNDLE_ID_MISMATCH`. Older approved manifest entries of these apps with no recorded
+  bundle ID are skipped by the check, not refused. New manifest entries of the three carry `bundleId`. A GitHub
+  `customSources` entry and `source add --bundle` take an optional `bundleId` pin (older builds ignore such an entry).
+- `fetch` and `updates` of the three: the text of `SOURCE_NOT_ALLOWED`/`SOURCE_INVALID` changes (codes do not); Apollo's
+  download URL compares the owner and repository without case and an expanded asset name over 64 characters is refused.
+- `source list` keeps `builtIn`, now meaning the app is defined in code; entries may carry `tagRule`, `downloadPath` and
+  `requireBuild`, and `asset` may be a template. The menu's Add app… labels Apollo "github.com (third-party repository)" and
+  shows the third-party note for it like any source. `help` lists the apps that have a source from the config.
+- Run `scripts/install-local.sh` after upgrading: an older menu app or agent next to the new CLI ignores the three entries
+  (`CUSTOM_SOURCE_IGNORED` x3) and uses its built-in sources until it is replaced.
+
 ### Added
 
 - Template pins for sources you add, so a source can follow a publisher's naming without being re-added each release.
@@ -13,13 +42,14 @@ All notable changes to the `sideload` CLI and the menu bar app are documented he
   `--download-path '/apple/{versionKey}/App.ipa'` pins an index app's exact download path; `--require-build` insists the
   index declares a build number. The same fields are valid in a `customSources` entry (`asset`, `tagRule`, `downloadPath`,
   `requireBuild`), are shown by `source list`, the preview and the printed command, and are part of the confirm value only
-  when set: the confirm value of every source added without them is unchanged. Nothing about the built-in sources
-  changes; a test runs Apollo's and Stremio's documents through the built-in resolvers and through entries with these pins
-  and expects the same result. Not yet run against a real source. The menu bar app's Add source… still adds exact pins
+  when set: the confirm value of every source added without them is unchanged. The fixtures of the former Apollo and Stremio
+  resolvers now run through the migrated entries. Not yet run against a real source. The menu bar app's Add source… still adds exact pins
   only; the new flags are CLI-only.
 
 ### Changed
 
+- Remove source… lists the three former built-in sources too; their confirm shows the `source add` command that restores the
+  default.
 - An `asset` containing braces was an invalid `customSources` entry (`CUSTOM_SOURCE_IGNORED`); one `{version}` is now valid.
   An older build still ignores such an entry.
 

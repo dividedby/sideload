@@ -234,7 +234,7 @@ private struct FetchRun {
             approvedAt: keepApproval ? prior?.approvedAt : nil,
             build: asset.build ?? inspected.build,
             declaredSize: asset.size, minOS: asset.minOS, inspectMinOS: inspected.minOS,
-            bundleId: source.kind.isCustom ? inspected.bundleId : nil)
+            bundleId: inspected.bundleId)
         manifest.upsert(entry)
         do {
             try store.save(manifest)
@@ -395,21 +395,28 @@ private struct FetchRun {
 
     // MARK: bundle-ID pin
 
-    /// A custom source pins the app's bundle ID so a later upload cannot swap in a different app, and fails closed: an IPA
-    /// with no bundle ID is refused too. An AltStore source pins the `bundleId` the owner confirmed. A GitHub source pins the
-    /// bundle ID of the earliest approved version of the app (recorded in the manifest); nothing is pinned until one version
-    /// is approved, and an earliest approved entry with no recorded bundle ID (approved by an older build) refuses rather than
-    /// letting the pin move to a later version. Built-in sources have their own pins. `version` is left out of the search
-    /// when it is the one being approved.
+    /// Every source pins the app's bundle ID so a later upload cannot swap in a different app, and fails closed: an IPA with no
+    /// bundle ID is refused too. An AltStore source pins the `bundleId` of its entry. A GitHub source pins the entry's
+    /// `bundleId` when it declares one, else the bundle ID of the earliest approved version of the app (recorded in the
+    /// manifest): nothing is pinned until one version is approved, and an earliest approved entry with no recorded bundle ID
+    /// (approved by an older build) refuses rather than letting the pin move to a later version. The exception is a built-in
+    /// app: its approved entries from before this build were recorded without a bundle ID by the code-defined source, so
+    /// they are skipped and the pin is the earliest approved entry that has one. `version` is left out of the search when it
+    /// is the one being approved.
     private func checkBundleId(
         _ inspected: Inspected, manifest: Manifest, excluding version: String? = nil, action: String
     ) throws {
         let expected: String?
         switch source.kind {
-        case .customAltstoreIndex(_, let bundleId, _, _): expected = bundleId
-        case .customGithubRelease:
+        case .altstoreIndex(_, let bundleId, _, _): expected = bundleId
+        case .githubRelease(_, _, _, let declared?): expected = declared
+        case .githubRelease:
+            let legacyUnpinned = AppRegistry.builtIns.contains { $0.id == source.app }
             let first = manifest.entries
-                .filter { $0.app == source.app && $0.approved && $0.version != version }
+                .filter {
+                    $0.app == source.app && $0.approved && $0.version != version
+                        && !(legacyUnpinned && $0.bundleId == nil)
+                }
                 .min { ($0.approvedAt ?? .distantFuture) < ($1.approvedAt ?? .distantFuture) }
             if let first, first.bundleId == nil {
                 throw SideloadError(
@@ -420,7 +427,6 @@ private struct FetchRun {
                 )
             }
             expected = first?.bundleId
-        case .githubRelease, .altstoreIndex: return
         }
         guard let actual = inspected.bundleId else {
             throw SideloadError(

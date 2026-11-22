@@ -388,7 +388,7 @@ struct MenuUpdatePromptTests {
         #expect(
             shown.lines == [
                 "Installed 3.9.0; the source lists 3.10.0",
-                "Downloads the Apollo release from github.com and checks it",
+                "Downloads the Apollo release from github.com (third-party repository) and checks it",
                 "Nothing is approved, signed or installed; iphone and the portal are unchanged",
             ])
         let failed = try #require(
@@ -464,7 +464,7 @@ struct MenuUpdatePromptTests {
             shown.lines == [
                 "Apollo 3.10.0 (build 142) · 45.2 MB · iOS 16.0 or later",
                 "SHA-256 \(addSha)",
-                "Matches the publisher's",
+                "Matches the index's; a third party, so this guards against corruption, not a bad index",
                 "2 extensions will be removed",
                 "Approves this exact version for signing",
                 "Profile reused (7 d left), no portal change",
@@ -666,7 +666,9 @@ struct MenuUpdatesReadTests {
                 inputs.upstream["stremio-ios"]?.errorCode == "FETCH_NETWORK"
                     && inputs.upstream["stremio-ios"]?.version == "1.9.6b142")
             // Reading wrote nothing.
-            #expect(try UpdateCacheStore(paths: paths).load(now: testNow).cache == cache)
+            #expect(
+                try UpdateCacheStore(paths: paths).load(now: testNow, apps: FetchCatalog.appNames)
+                    .cache == cache)
         }
     }
 

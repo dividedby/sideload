@@ -59,7 +59,10 @@ struct MenuAddOfferTests {
         #expect(phone?.addable.map(\.app) == ["apollo", "stremio-ios"])
         // Apple TV gets Add app like any device.
         #expect(tv?.addable.map(\.app) == ["stremio-tvos"])
-        #expect(phone?.addable.map(\.source) == ["github.com", "dl.strem.io (third-party index)"])
+        #expect(
+            phone?.addable.map(\.source) == [
+                "github.com (third-party repository)", "dl.strem.io (third-party index)",
+            ])
 
         // A source the owner did not approve is hidden, not shown disabled.
         let narrow = addBuild(config: addConfig(approved: ["stremio-ios"]))
@@ -306,7 +309,7 @@ struct MenuAddPromptTests {
                 && shown.runningLabel == "Fetching Apollo…")
         #expect(
             shown.lines == [
-                "Downloads the latest Apollo release from github.com and checks it",
+                "Downloads the latest Apollo release from github.com (third-party repository) and checks it",
                 "Nothing is signed or installed; iphone and the portal are unchanged",
             ])
         let stremio = try #require(
@@ -331,7 +334,7 @@ struct MenuAddPromptTests {
             shown.lines == [
                 "Apollo 3.9.0 (build 142) · 45.2 MB · iOS 16.0 or later",
                 "SHA-256 \(addSha)",
-                "Matches the publisher's",
+                "Matches the index's; a third party, so this guards against corruption, not a bad index",
                 "2 extensions will be removed",
                 "Approves this exact version for signing",
                 "Portal: creates one App ID and a 7-day profile (0 of 10 used in 7 days, 4 reserved)",

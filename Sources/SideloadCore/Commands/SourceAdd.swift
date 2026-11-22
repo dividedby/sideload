@@ -100,7 +100,7 @@ struct SourcePlan: Sendable, Hashable {
     let suffix: String
     let platform: String
     let name: String
-    /// The app is an existing custom app with no source; nothing is added to `customApps`.
+    /// The app is an existing app (custom, or built-in) with no source; nothing is added to `customApps`.
     let attaches: Bool
     let freeBundleId: String
     let confirm: String
@@ -211,13 +211,13 @@ enum SourceAdd {
         if let repo = githubRepo(parsed) {
             kind = .github(repo: repo)
             source = FetchSource(
-                app: "source", kind: .customGithubRelease(repo: repo, asset: nil),
+                app: "source", kind: .githubRelease(repo: repo, asset: nil),
                 metadataHosts: [CustomSources.githubMetadataHost],
                 downloadHosts: CustomSources.githubDownloadHosts)
         } else {
             kind = .altstore
             source = FetchSource(
-                app: "source", kind: .customAltstoreIndex(url: parsed.url, bundleId: ""),
+                app: "source", kind: .altstoreIndex(url: parsed.url, bundleId: ""),
                 metadataHosts: [parsed.host], downloadHosts: [])
         }
         let body = try await SourceMetadata.fetch(services, source, command: command)
@@ -304,7 +304,7 @@ enum SourceAdd {
                     return (candidates, release.ipas.count > maxListed)
                 }
             }
-            let resolved = try SourceResolver.customGithub(
+            let resolved = try SourceResolver.github(
                 app: "source", repo: repo, asset: asset, tagRule: tagRule, json: probe.body)
             return ([githubCandidate(resolved, repo: repo)], false)
         case .altstore:
@@ -345,10 +345,6 @@ enum SourceAdd {
         var detectedPlatform: String?
         switch probe.kind {
         case .github(let named):
-            if request.bundle != nil {
-                throw invalidArgument(
-                    "--bundle picks an app out of an index, not a GitHub release.")
-            }
             if request.downloadPath != nil || request.requireBuild {
                 throw invalidArgument(
                     "--download-path and --require-build describe an app of an index, not a GitHub release."
@@ -356,11 +352,12 @@ enum SourceAdd {
             }
             kind = "githubRelease"
             repo = named
-            bundleId = nil
+            // A GitHub release has no app list to pick from: `--bundle` is the bundle ID every IPA of the source must carry.
+            bundleId = request.bundle
             if request.asset == nil, listed.apps.count > 1 {
                 throw githubAmbiguous(listed)
             }
-            asset = try SourceResolver.customGithub(
+            asset = try SourceResolver.github(
                 app: "source", repo: named, asset: request.asset, tagRule: tagRule,
                 json: probe.body)
             // Only a pin is read for a default platform: an unpinned single IPA keeps today's plan and confirm value.
@@ -384,7 +381,7 @@ enum SourceAdd {
             let app = try pick(probe, bundle: request.bundle, listed: listed)
             bundleId = app.bundleId
             downloadHosts = try hosts(of: app)
-            asset = try SourceResolver.customAltstore(
+            asset = try SourceResolver.altstore(
                 app: "source", bundleId: app.bundleId, hosts: Set(downloadHosts),
                 downloadPath: request.downloadPath, requireBuild: request.requireBuild,
                 json: probe.body)
@@ -512,7 +509,7 @@ enum SourceAdd {
         let suffix: String
         let platform: String
         let name: String
-        /// An existing custom app with no source.
+        /// An existing app (custom, or built-in) with no source.
         let attaches: Bool
     }
 
@@ -535,13 +532,15 @@ enum SourceAdd {
         return text
     }
 
-    /// Whether `id` can be added as a new app, or is an existing custom app that can be given this source. Written to be
+    /// Whether `id` can be added as a new app, or is an existing app (custom, or built-in) that can be given this source. Written to be
     /// checked again under the lock against the config as it is then.
     static func resolveApp(
         _ config: Config, id: String, platform: String?, detected: String?, name: String?
     ) throws -> AppTarget {
-        if AppRegistry.builtIns.contains(where: { $0.id == id }) {
-            throw appExists("\(id) is a built-in app.")
+        if let builtIn = AppRegistry.builtIns.first(where: { $0.id == id }),
+            builtIn.signedByProvision
+        {
+            throw appExists("\(id) has no IPA and takes no source.")
         }
         let customSources = try entries(config, "customSources")
         let customApps = try entries(config, "customApps")
@@ -551,10 +550,11 @@ enum SourceAdd {
                 fix: "Remove it first: `sideload source remove --app \(id)`.")
         }
         let registry = config.appRegistry
-        if let app = registry.app(id), !app.builtIn {
+        // An existing app with no source: a custom app, or a built-in whose source was removed.
+        if let app = registry.app(id) {
             guard platform == nil || platform == app.devicePlatform else {
                 throw appExists(
-                    "\(id) is an existing custom app for \(app.devicePlatform); --platform \(platform ?? "") does not match."
+                    "\(id) is an existing app for \(app.devicePlatform); --platform \(platform ?? "") does not match."
                 )
             }
             guard name == nil else {
@@ -663,10 +663,8 @@ enum SourceAdd {
         if let repo = plan.repo { source["repo"] = .string(repo) }
         if let asset = plan.asset { source["asset"] = .string(asset) }
         if let tagRule = plan.tagRule { source["tagRule"] = .string(tagRule) }
-        if let bundleId = plan.bundleId {
-            source["url"] = .string(plan.url)
-            source["bundleId"] = .string(bundleId)
-        }
+        if let bundleId = plan.bundleId { source["bundleId"] = .string(bundleId) }
+        if !plan.isGithub { source["url"] = .string(plan.url) }
         if let downloadPath = plan.downloadPath { source["downloadPath"] = .string(downloadPath) }
         if plan.requireBuild { source["requireBuild"] = .bool(true) }
         var sources = try entries(config, "customSources")

@@ -64,10 +64,10 @@ enum SourceURL {
 
 /// The owner's `customSources` in `config.json` (design section 8): a data-driven source for one `customApps` entry. Each
 /// entry is checked on its own, strictly and fail-closed; one that is not exactly the shape below is left out with a
-/// `CUSTOM_SOURCE_IGNORED` warning, and never stops a built-in source or another valid entry.
+/// `CUSTOM_SOURCE_IGNORED` warning, and never stops another valid entry.
 ///
 ///     {"app", "kind": "githubRelease", "repo": "<owner>/<repo>", "asset"?: "<file>.ipa" or a template with one {version},
-///      "tagRule"?: "underscoreSuffix", "metadataHosts": ["api.github.com"], "downloadHosts": [...], "addedAt"?}
+///      "tagRule"?: "underscoreSuffix", "bundleId"?: the pin every fetched IPA must carry, "metadataHosts": ["api.github.com"], "downloadHosts": [...], "addedAt"?}
 ///     {"app", "kind": "altstoreIndex", "url", "bundleId", "downloadPath"?: "/<plain path>/{versionKey}/<file>.ipa",
 ///      "requireBuild"?: true, "metadataHosts": [<url host>], "downloadHosts": [...], "addedAt"?}
 enum CustomSources {
@@ -80,7 +80,7 @@ enum CustomSources {
     private static let commonKeys: Set<String> = [
         "app", "kind", "metadataHosts", "downloadHosts", "addedAt",
     ]
-    private static let githubKeys = commonKeys.union(["repo", "asset", "tagRule"])
+    private static let githubKeys = commonKeys.union(["repo", "asset", "tagRule", "bundleId"])
     private static let altstoreKeys = commonKeys.union([
         "url", "bundleId", "downloadPath", "requireBuild",
     ])
@@ -98,16 +98,16 @@ enum CustomSources {
         let fetch: AppDefinition.Fetch
     }
 
-    /// The valid sources by app, and one warning for every entry left out. `customApps` is the registry's valid custom apps:
-    /// a source may only name one of those.
-    static func load(_ raw: JSONValue?, customApps: [AppDefinition]) -> Outcome {
+    /// The valid sources by app, and one warning for every entry left out. `apps` is the apps a source may name: the registry's
+    /// valid custom apps and the built-in apps that `sign` signs (the filler has no IPA).
+    static func load(_ raw: JSONValue?, apps: [AppDefinition]) -> Outcome {
         guard let raw else { return Outcome() }
         guard case .array(let entries) = raw else {
             return Outcome(warnings: [
                 warning("customSources is not an array, so every custom source is ignored.")
             ])
         }
-        let checked = entries.map { (name: appName($0), result: check($0, customApps: customApps)) }
+        let checked = entries.map { (name: appName($0), result: check($0, apps: apps)) }
         let counts = Dictionary(grouping: checked.compactMap(\.name), by: { $0 }).mapValues(\.count)
         var out = Outcome()
         for (index, item) in checked.enumerated() {
@@ -144,7 +144,7 @@ enum CustomSources {
     }
 
     /// The checks every kind shares, then the one sub-parser of its kind.
-    private static func check(_ entry: JSONValue, customApps: [AppDefinition]) -> Result<
+    private static func check(_ entry: JSONValue, apps: [AppDefinition]) -> Result<
         Entry, AppRegistry.Reason
     > {
         guard case .object(let fields) = entry else { return .failure("it is not an object") }
@@ -164,11 +164,11 @@ enum CustomSources {
             return .failure("its app is missing or not a string")
         }
         guard AppRegistry.isValidName(app) else { return .failure("its app is not a valid app ID") }
-        if AppRegistry.builtIns.contains(where: { $0.id == app }) {
-            return .failure("\(app) is a built-in app")
+        if AppRegistry.builtIns.contains(where: { $0.id == app && $0.signedByProvision }) {
+            return .failure("\(app) has no IPA, so it takes no source")
         }
-        guard customApps.contains(where: { $0.id == app }) else {
-            return .failure("\(app) is not a valid entry of customApps")
+        guard apps.contains(where: { $0.id == app }) else {
+            return .failure("\(app) is not a built-in app or a valid entry of customApps")
         }
         if let added = fields["addedAt"] {
             guard case .string(let text) = added, text.count <= maxAddedAt,
@@ -215,6 +215,13 @@ enum CustomSources {
             else { return .failure("its tagRule is not \"underscoreSuffix\"") }
             tagRule = .underscoreSuffix
         }
+        var bundleId: String?
+        if let declared = fields["bundleId"] {
+            guard case .string(let text) = declared, isValidBundleId(text) else {
+                return .failure("its bundleId is not a reverse-DNS bundle ID")
+            }
+            bundleId = text
+        }
         guard metadata == [githubMetadataHost] else {
             return .failure("its metadataHosts is not exactly [\"\(githubMetadataHost)\"]")
         }
@@ -223,7 +230,8 @@ enum CustomSources {
         }
         return .success(
             AppDefinition.Fetch(
-                kind: .customGithubRelease(repo: repo, asset: asset, tagRule: tagRule),
+                kind: .githubRelease(
+                    repo: repo, asset: asset, tagRule: tagRule, bundleId: bundleId),
                 metadataHosts: Set(metadata),
                 downloadHosts: Set(downloads)))
     }
@@ -263,7 +271,7 @@ enum CustomSources {
         }
         return .success(
             AppDefinition.Fetch(
-                kind: .customAltstoreIndex(
+                kind: .altstoreIndex(
                     url: url.url, bundleId: bundleId, downloadPath: downloadPath,
                     requireBuild: requireBuild),
                 metadataHosts: Set(metadata), downloadHosts: Set(downloads)))
@@ -354,7 +362,7 @@ enum CustomSources {
     private static func warning(_ message: String) -> JSONValue {
         CanaryCommand.warning(
             warningCode, message,
-            "Fix or remove the entry in customSources in $SIDELOAD_HOME/config.json. Built-in sources are not affected."
+            "Fix or remove the entry in customSources in $SIDELOAD_HOME/config.json. Other sources are not affected."
         )
     }
 }

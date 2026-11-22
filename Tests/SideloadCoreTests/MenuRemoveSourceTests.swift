@@ -59,7 +59,7 @@ private func keepOnlySecond(_ paths: Paths) async throws {
 @Suite("menu remove source: the list and the preview")
 struct MenuRemoveSourceReadTests {
     @Test(
-        "the list has each added source once, in file order, with its kind and host; built-ins are left out"
+        "the list has each source once, in file order, with its kind and host; the former built-ins come last"
     )
     func list() async throws {
         var config = twoSources()
@@ -68,7 +68,8 @@ struct MenuRemoveSourceReadTests {
             [githubEntry, githubEntry, secondEntry, builtIn].map(JSONValue.object))
         try await withSourceHome(config: config, http: SourceHTTP()) { _, services in
             let sources = try #require(listed(MenuSourceRemove.list(services)))
-            #expect(sources.map(\.app) == ["myapp", "second"])
+            #expect(
+                sources.map(\.app) == ["myapp", "second", "apollo", "stremio-ios", "stremio-tvos"])
             #expect(sources[0].title.hasSuffix(" · myapp"))
             #expect(sources[0].detail == "GitHub release · acme/widget")
             #expect(sources[1].detail == "AltStore index · index.example.org")
@@ -78,7 +79,8 @@ struct MenuRemoveSourceReadTests {
     @Test(
         "no added source is an empty list; a customSources that is not an array is CONFIG_INVALID")
     func emptyAndInvalid() async throws {
-        try await withSourceHome(config: sourceBaseConfig(), http: SourceHTTP()) { _, services in
+        let migrated = sourceBaseConfig(extra: [BuiltInSources.markerKey: true])
+        try await withSourceHome(config: migrated, http: SourceHTTP()) { _, services in
             #expect(MenuSourceRemove.list(services) == .choosing([], problem: nil))
         }
         let broken = sourceBaseConfig(extra: ["customSources": "oops"])
@@ -116,12 +118,19 @@ struct MenuRemoveSourceReadTests {
         }
     }
 
-    @Test("a built-in app is SOURCE_BUILT_IN and an unknown one SOURCE_NOT_FOUND")
+    @Test(
+        "a former built-in source is removable and its confirm shows the restore command; the filler and an unknown app are SOURCE_NOT_FOUND"
+    )
     func refusals() async throws {
         try await withSourceHome(config: twoSources(), http: SourceHTTP()) { _, services in
+            let apollo = try #require(removal(MenuSourceRemove.preview(services, app: "apollo")))
+            let readd = try #require(BuiltInSources.readd(app: "apollo"))
             #expect(
-                failure(MenuSourceRemove.preview(services, app: "apollo"))?.code
-                    == "SOURCE_BUILT_IN")
+                MenuSourceRemove.prompt(apollo).lines.contains(
+                    "To restore the default source, run in a terminal: \(readd)"))
+            #expect(
+                failure(MenuSourceRemove.preview(services, app: "filler"))?.code
+                    == "SOURCE_NOT_FOUND")
             #expect(
                 failure(MenuSourceRemove.preview(services, app: "nothere"))?.code
                     == "SOURCE_NOT_FOUND")
@@ -174,7 +183,9 @@ struct MenuRemoveSourceRunTests {
             expectLockFree(paths)
 
             let after = try loadConfig(paths)
-            #expect(after.extra["customSources"] == [.object(secondEntry)])
+            #expect(
+                after.extra["customSources"]
+                    == .array([.object(secondEntry)] + BuiltInSources.definitions.map(\.entry)))
             #expect(!after.approvedSources.contains(["app": "myapp"]))
             #expect(after.extra["customApps"] == before.extra["customApps"])
             #expect(!menuBuild(config: after).addSources.contains { $0.app == "myapp" })
@@ -307,7 +318,7 @@ struct MenuRemoveSourceModelTests {
 
         w.model.openRemoveSource()
         let sources = try #require(picker(w.model).flatMap(listed))
-        #expect(sources.map(\.app) == ["myapp", "second"])
+        #expect(sources.map(\.app) == ["myapp", "second", "apollo", "stremio-ios", "stremio-tvos"])
         #expect(!w.model.controlsEnabled && !w.model.canRemoveSource)
 
         w.model.chooseSourceToRemove(sources[0])
@@ -317,7 +328,7 @@ struct MenuRemoveSourceModelTests {
         }
         #expect(source.appId == "myapp" && prompt.destructive)
         // Nothing is written before the click.
-        #expect(try loadConfig(w.paths).extra["customSources"]?.array?.count == 2)
+        #expect(try loadConfig(w.paths).extra["customSources"]?.array?.count == 5)
 
         w.model.confirm()
         try await until { !w.model.actionBusy }
@@ -326,7 +337,7 @@ struct MenuRemoveSourceModelTests {
             return
         }
         #expect(outcome.kind == .done, "\(outcome.issues)")
-        #expect(try loadConfig(w.paths).extra["customSources"]?.array?.count == 1)
+        #expect(try loadConfig(w.paths).extra["customSources"]?.array?.count == 4)
         try await until {
             if case .loaded(let snapshot) = w.model.panel {
                 return !snapshot.addSources.contains { $0.app == "myapp" }

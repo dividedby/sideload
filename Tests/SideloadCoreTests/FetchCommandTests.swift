@@ -41,7 +41,7 @@ struct FetchDownloadTests {
         "Apollo: downloads the exact asset, verifies it, inspects it and records an unapproved manifest entry"
     )
     func apollo() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         let transport = apolloTransport(ipa: ipa)
         try await withFetch(
             FetchOptions(app: "apollo"), http: transport, runner: RecordingRunner(),
@@ -96,7 +96,7 @@ struct FetchDownloadTests {
 
     @Test("the manifest records app, version, host, hashes, size, time and approved:false")
     func manifestRecord() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         try await withFetch(
             FetchOptions(app: "apollo"), http: apolloTransport(ipa: ipa), runner: RecordingRunner()
         ) { envelope, paths, _ in
@@ -434,7 +434,7 @@ struct FetchRefusalTests {
         "a busy operation lock stops --approve at once; a download is not stopped early, it stages its verified file"
     )
     func busyLock() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         let transport = apolloTransport(ipa: ipa)
         try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
             let held = try OperationLock.acquire(paths: paths)
@@ -468,7 +468,7 @@ struct FetchApprovalTests {
 
     @Test("--approve marks the fetched version approved without touching the network")
     func approveFlow() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         let transport = apolloTransport(ipa: ipa)
         try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
             let fetched = await run(FetchOptions(app: "apollo"), paths, transport)
@@ -484,7 +484,7 @@ struct FetchApprovalTests {
                 json["approved"] == true && json["alreadyApproved"] == false
                     && json["downloaded"] == false)
             #expect(json["approvedAt"] != nil && json["next"] == nil)
-            #expect(json["inspect"]?["bundleId"] == "io.example.apollo")
+            #expect(json["inspect"]?["bundleId"] == "com.christianselig.Apollo")
             #expect(
                 json["sha256"] == .string(sha256Hex(ipa))
                     && json["upstreamDigest"] == .string(sha256Hex(ipa)))
@@ -520,7 +520,7 @@ struct FetchApprovalTests {
 
     @Test("a stored file that changed after the fetch is not approved")
     func tamperedFile() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
             let transport = apolloTransport(ipa: ipa)
             #expect(await run(FetchOptions(app: "apollo"), paths, transport).ok)
@@ -542,7 +542,7 @@ struct FetchApprovalTests {
 
     @Test("fetching the same version again downloads nothing and keeps the approval")
     func refetchUnchanged() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
             let transport = apolloTransport(ipa: ipa)
             #expect(await run(FetchOptions(app: "apollo"), paths, transport).ok)
@@ -562,7 +562,7 @@ struct FetchApprovalTests {
 
     @Test("a deleted file is downloaded again and, being the same bytes, stays approved")
     func redownloadKeepsApproval() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
             let transport = apolloTransport(ipa: ipa)
             #expect(await run(FetchOptions(app: "apollo"), paths, transport).ok)
@@ -585,7 +585,7 @@ struct FetchApprovalTests {
         "the publisher changing a version's digest is VERSION_CONTENT_CHANGED, and the old entry stays"
     )
     func contentChanged() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
             #expect(await run(FetchOptions(app: "apollo"), paths, apolloTransport(ipa: ipa)).ok)
             let before = try ManifestStore(paths: paths).load()
@@ -600,7 +600,7 @@ struct FetchApprovalTests {
 
     @Test("--approve applies to the exact --version only; another version stays unapproved")
     func exactVersion() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
             #expect(
                 await run(
@@ -619,7 +619,7 @@ struct FetchApprovalTests {
             let json = try older.printed().json
             #expect(json["version"] == "3.9.0" && json["approved"] == true)
             #expect(json["sha256"] == .string(sha256Hex(ipa)))
-            #expect(json["inspect"]?["bundleId"] == "io.example.apollo")
+            #expect(json["inspect"]?["bundleId"] == "com.christianselig.Apollo")
             var manifest = try ManifestStore(paths: paths).load()
             #expect(manifest.entries.map(\.version) == ["3.9.0", "3.10.0"])
             #expect(manifest.entries.map(\.approved) == [true, false])
@@ -723,7 +723,7 @@ struct FetchInterruptTests {
         "a download in flight keeps its partial file in a registered 0700 folder that the interrupt path removes"
     )
     func interruptRemovesPartial() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         let split = ipa.count / 2
         let (name, digest) = ("Apollo-Reborn-3.9.0-GLASS-NOEXTENSIONS.ipa", sha256Hex(ipa))
         let json = releaseJSON(assets: [
@@ -823,7 +823,7 @@ private func nothingStaged(_ paths: Paths, sourceLocation: SourceLocation = #_so
 struct FetchLockTests {
     @Test("mid-download the operation lock is free, and it is free again after every path")
     func downloadHoldsNoLock() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         let transport = gatedApollo(ipa)
         try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
             let running = launch(paths, transport, FetchOptions(app: "apollo"))
@@ -843,7 +843,7 @@ struct FetchLockTests {
         "a busy lock at commit keeps the verified file for 24 h; the re-run downloads nothing and records it"
     )
     func stagedThenClaimed() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         let digest = sha256Hex(ipa)
         try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
             let held = try OperationLock.acquire(paths: paths)
@@ -879,7 +879,7 @@ struct FetchLockTests {
 
     @Test("a re-run that finds the version already stored deletes the staged file for that digest")
     func storedDropsStaged() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         let digest = sha256Hex(ipa)
         try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
             let first = await runFetch(
@@ -901,7 +901,7 @@ struct FetchLockTests {
         "a corrupted staged file, a wrong-sized one and a staged symlink are deleted and the file is downloaded"
     )
     func badStagedFile() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         let name = "staged-\(sha256Hex(ipa)).ipa"
         let flipped = Data(ipa.map { $0 ^ 0xff })
         for variant in ["corrupt", "short", "symlink"] {
@@ -937,7 +937,7 @@ struct FetchLockTests {
         "a second fetch sweeps the dead and spares the living: a running download's backdated folder survives"
     )
     func sweepSparesLiveRun() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         let other = try await SampleIPAs.shared.data("withExtension")
         let transport = gatedApollo(ipa)
         try await withTestHome(config: Config(approvedSources: apolloApproved + stremioApproved)) {
@@ -1056,7 +1056,7 @@ struct FetchLockTests {
         "two fetches of one version: the one that commits second returns downloaded:false and keeps the approval"
     )
     func sameVersionLoser() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         let transport = gatedApollo(ipa)
         try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
             let slow = launch(paths, transport, FetchOptions(app: "apollo"))
@@ -1078,7 +1078,7 @@ struct FetchLockTests {
                 json["downloaded"] == false && json["approved"] == true
                     && json["alreadyApproved"] == true)
             #expect(
-                json["inspect"]?["bundleId"] == "io.example.apollo",
+                json["inspect"]?["bundleId"] == "com.christianselig.Apollo",
                 "reported from its own inspection")
             let manifest = try ManifestStore(paths: paths).load()
             #expect(
@@ -1092,7 +1092,7 @@ struct FetchLockTests {
         "lost update: a fetch that finishes while another is downloading does not drop its manifest entry"
     )
     func noLostUpdate() async throws {
-        let apollo = try await SampleIPAs.shared.data("plain")
+        let apollo = try await SampleIPAs.shared.data("apollo")
         let stremio = try await SampleIPAs.shared.data("withExtension")
         let transport = gatedApollo(apollo)
         try await withTestHome(config: Config(approvedSources: apolloApproved + stremioApproved)) {
@@ -1118,7 +1118,7 @@ struct FetchLockTests {
         "a conflicting digest recorded while a download ran is VERSION_CONTENT_CHANGED at commit; nothing is staged"
     )
     func conflictAtCommit() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         let transport = gatedApollo(ipa)
         try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
             let running = launch(paths, transport, FetchOptions(app: "apollo"))
@@ -1147,7 +1147,7 @@ struct FetchLockTests {
         "a cancelled task is CANCELLED during the download and after it, and keeps, stages and records nothing"
     )
     func cancelled() async throws {
-        let ipa = try await SampleIPAs.shared.data("plain")
+        let ipa = try await SampleIPAs.shared.data("apollo")
         try await withTestHome(config: Config(approvedSources: apolloApproved)) { paths, _ in
             let transport = gatedApollo(ipa)
             let running = launch(paths, transport, FetchOptions(app: "apollo"))

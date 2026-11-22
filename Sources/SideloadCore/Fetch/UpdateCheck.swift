@@ -39,7 +39,7 @@ enum UpdateCheck {
 
     /// `app` limits the run to one source and, like `fetch`, refuses one that is unknown or not in `approvedSources`.
     static func run(_ services: Services, app named: String?, force: Bool) async throws -> Report {
-        let config = try services.store.load()
+        let (config, migrationPending) = try services.store.loadReporting()
         let named = named.flatMap { $0.isEmpty ? nil : $0 }
         if let named { _ = try FetchCatalog.approved(app: named, config: config) }
         let ledger = try services.ledgerStore.load()
@@ -47,6 +47,7 @@ enum UpdateCheck {
         var report = Report(checkedAt: now)
         // A custom source that is left out says why, as `status` does.
         report.warnings += CustomSources.ignoredWarnings(in: config.appRegistry)
+        if migrationPending { report.warnings.append(BuiltInSources.pendingWarning) }
 
         let store = UpdateCacheStore(paths: services.home)
         var cache = UpdateCache()

@@ -45,10 +45,12 @@ public struct SourceOptions: Sendable, Equatable {
 
 /// `source list`, `source add` and `source remove` (design section 8, custom sources).
 ///
-/// `list` is read-only and offline: every source `fetch` knows, built-in and custom, with the metadata URL, the exact hosts and
+/// `list` is read-only and offline: every source `fetch` knows, with the metadata URL, the exact hosts and
 /// whether the owner approved it in `approvedSources` (an `asset` may be a template with one `{version}`; `tagRule`,
-/// `downloadPath` and `requireBuild` appear only when a custom source sets them). No network, no `.op.lock`, no write; it is safe for an agent to run. A
-/// `customSources` entry that was left out is a `CUSTOM_SOURCE_IGNORED` warning.
+/// `downloadPath` and `requireBuild` appear only when a source sets them; `builtIn` says the app is defined in code, not the
+/// source). No network, no `.op.lock`, no write; it is safe for an agent to run. A
+/// `customSources` entry that was left out is a `CUSTOM_SOURCE_IGNORED` warning, and a config that has not been rewritten
+/// since the upgrade carries `BUILT_IN_SOURCES_MIGRATED` (`list` never writes it).
 ///
 /// `add --url U` is a preview: one bounded metadata GET through `Services.http`, no lock, no write. With `--confirm <value>
 /// --yes` (owner-only; the menu's confirm click is the same) it repeats the GET outside the lock, refuses with
@@ -112,7 +114,7 @@ public enum SourceCommand {
     // MARK: list
 
     private static func list(_ services: Services) throws -> [String: JSONValue] {
-        let config = try services.store.load()
+        let (config, migrationPending) = try services.store.loadReporting()
         let registry = config.appRegistry
         let sources = registry.fetchSources.map { declared -> JSONValue in
             // The approved source carries the hosts as `approvedSources` narrowed them: what a fetch may actually use.
@@ -133,7 +135,11 @@ public enum SourceCommand {
             if source.kind.requiresBuild { entry["requireBuild"] = true }
             return .object(entry)
         }
-        return ["sources": .array(sources), "warnings": .array(registry.warnings)]
+        return [
+            "sources": .array(sources),
+            "warnings": .array(
+                registry.warnings + (migrationPending ? [BuiltInSources.pendingWarning] : [])),
+        ]
     }
 
     // MARK: add
@@ -142,7 +148,7 @@ public enum SourceCommand {
         -> Envelope
     {
         let usage =
-            "sideload source add --url <https url> [--app <id>] [--asset <file.ipa>] [--tag-rule underscoreSuffix] [--download-path <path>] [--require-build] [--confirm <value> --yes]"
+            "sideload source add --url <https url> [--app <id>] [--bundle <bundle id>] [--asset <file.ipa>] [--tag-rule underscoreSuffix] [--download-path <path>] [--require-build] [--confirm <value> --yes]"
         if options.sub == "add", options.url == nil {
             return .fail(
                 SourceAdd.command, code: "USAGE", message: "source add needs --url.", fix: usage)
@@ -225,40 +231,48 @@ public enum SourceCommand {
         let preview = try SourceRemove.preview(services, app: app)
         let stays = preview.staysJSON
         guard options.yes else {
-            return .result(
-                removeCommand,
-                [
-                    "preview": true, "written": false, "app": .string(app),
-                    "kind": .string(preview.kind), "source": .string(preview.source),
-                    "customSourcesEntries": .number(Double(preview.sourceEntries)),
-                    "approvedSourcesEntries": .number(Double(preview.approvalEntries)),
-                    "stays": .object(stays),
-                    "next": .string(
-                        "Nothing was removed. The owner removes the source with: sideload source remove --app \(app) --yes"
-                    ),
-                ])
+            var out: [String: JSONValue] = [
+                "preview": true, "written": false, "app": .string(app),
+                "kind": .string(preview.kind), "source": .string(preview.source),
+                "customSourcesEntries": .number(Double(preview.sourceEntries)),
+                "approvedSourcesEntries": .number(Double(preview.approvalEntries)),
+                "stays": .object(stays),
+                "next": .string(
+                    "Nothing was removed. The owner removes the source with: sideload source remove --app \(app) --yes"
+                        + readdSentence(app)),
+            ]
+            if let readd = BuiltInSources.readd(app: app) { out["readd"] = .string(readd) }
+            return .result(removeCommand, out)
         }
 
         let removed = try await SourceRemove.remove(services, app: app, expected: nil)
         return removedResult(app, removed, stays: stays)
     }
 
+    /// What the owner runs to get the default source of one of the three former built-in apps back; empty for any other app.
+    /// The command is a preview; the owner confirms it with the `--confirm <value> --yes` it prints.
+    private static func readdSentence(_ app: String) -> String {
+        BuiltInSources.readd(app: app).map {
+            ". Restore the default source with: \($0) (it prints a preview and the --confirm <value> --yes to run)"
+        } ?? ""
+    }
+
     private static func removedResult(
         _ app: String, _ removed: (sources: Int, approvals: Int), stays: [String: JSONValue]
     ) -> Envelope {
-        .result(
-            removeCommand,
-            [
-                "removed": true, "written": true, "app": .string(app),
-                "wrote": [
-                    "customSources": .number(Double(removed.sources)),
-                    "approvedSources": .number(Double(removed.approvals)),
-                ],
-                "stays": .object(stays),
-                "next": .string(
-                    "The app, its fetched files and its installs are unchanged: sign and refresh keep working. `fetch` and `updates` no longer know \(app); add the source again with `sideload source add`."
-                ),
-            ])
+        var out: [String: JSONValue] = [
+            "removed": true, "written": true, "app": .string(app),
+            "wrote": [
+                "customSources": .number(Double(removed.sources)),
+                "approvedSources": .number(Double(removed.approvals)),
+            ],
+            "stays": .object(stays),
+            "next": .string(
+                "The app, its fetched files and its installs are unchanged: sign and refresh keep working. `fetch` and `updates` no longer know \(app); add the source again with `sideload source add`"
+                    + (BuiltInSources.readd(app: app) == nil ? "." : "") + readdSentence(app)),
+        ]
+        if let readd = BuiltInSources.readd(app: app) { out["readd"] = .string(readd) }
+        return .result(removeCommand, out)
     }
 
     /// The menu's confirm click: `source remove --app <id> --yes`, checked under the lock against the preview the owner saw.
