@@ -52,6 +52,9 @@ All notable changes to the `sideload` CLI and the menu bar app are documented he
   default.
 - An `asset` containing braces was an invalid `customSources` entry (`CUSTOM_SOURCE_IGNORED`); one `{version}` is now valid.
   An older build still ignores such an entry.
+- The fetched-file line of Add app… and Update… now reads "Matches the SHA-256 the source publishes; a third party, so
+  this guards against corruption, not a bad release" for every source. It used to call a GitHub release an index
+  ("Matches the index's … not a bad index"), and Apollo said "Matches the publisher's".
 
 ## [0.9.0] - 2026-11-21
 

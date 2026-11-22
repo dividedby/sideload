@@ -464,7 +464,7 @@ struct MenuUpdatePromptTests {
             shown.lines == [
                 "Apollo 3.10.0 (build 142) · 45.2 MB · iOS 16.0 or later",
                 "SHA-256 \(addSha)",
-                "Matches the index's; a third party, so this guards against corruption, not a bad index",
+                "Matches the SHA-256 the source publishes; a third party, so this guards against corruption, not a bad release",
                 "2 extensions will be removed",
                 "Approves this exact version for signing",
                 "Profile reused (7 d left), no portal change",
@@ -536,7 +536,7 @@ struct MenuUpdatePromptTests {
         #expect(shown.lines[0] == "Stremio 1.9.6 (142) · 2.0 GB · iOS 14.0 or later")
         #expect(
             shown.lines[2]
-                == "Matches the index's; a third party, so this guards against corruption, not a bad index"
+                == "Matches the SHA-256 the source publishes; a third party, so this guards against corruption, not a bad release"
         )
         #expect(shown.lines.contains("Approves this exact version for signing (approved earlier)"))
     }

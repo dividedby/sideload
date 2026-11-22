@@ -334,7 +334,7 @@ struct MenuAddPromptTests {
             shown.lines == [
                 "Apollo 3.9.0 (build 142) · 45.2 MB · iOS 16.0 or later",
                 "SHA-256 \(addSha)",
-                "Matches the index's; a third party, so this guards against corruption, not a bad index",
+                "Matches the SHA-256 the source publishes; a third party, so this guards against corruption, not a bad release",
                 "2 extensions will be removed",
                 "Approves this exact version for signing",
                 "Portal: creates one App ID and a 7-day profile (0 of 10 used in 7 days, 4 reserved)",
@@ -392,7 +392,7 @@ struct MenuAddPromptTests {
         #expect(shown.lines[0] == "Stremio 1.9.6 · 1.5 GB · tvOS 17.0 or later")
         #expect(
             shown.lines[2]
-                == "Matches the index's; a third party, so this guards against corruption, not a bad index"
+                == "Matches the SHA-256 the source publishes; a third party, so this guards against corruption, not a bad release"
         )
     }
 
