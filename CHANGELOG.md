@@ -8,8 +8,8 @@ All notable changes to the `sideload` CLI and the menu bar app are documented he
 ## [0.8.0] - 2026-11-21
 
 A custom GitHub source can now be pinned to one exact release file, so a repository that ships both an iOS and a tvOS IPA
-can be added, each app as its own source. Use `source add --asset
-<file.ipa>`, or pick the file in the menu bar app's Add source…. Sources without a pin behave and confirm exactly as before.
+can be added, each app as its own source. Use `source add --asset <file.ipa>`, or pick the file in the menu bar app's Add
+source…. Sources without a pin behave and confirm exactly as before.
 Not yet run against a real repository or in the built app. CLI changes in behaviour: new `--asset` option on `source add`;
 an unpinned release with several IPAs is now `SOURCE_AMBIGUOUS` at `source add` (it was `SOURCE_NOT_ALLOWED`), with the
 file names in `data.candidates`; `source list` and the `source add` preview show `asset` when pinned. CI now also runs
